@@ -3,6 +3,9 @@ import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 
 describe("agency-swarm.adapter", () => {
   const originalFetch = globalThis.fetch
+  const asFetch = (
+    value: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+  ): typeof fetch => value as unknown as typeof fetch
 
   afterEach(() => {
     globalThis.fetch = originalFetch
@@ -29,7 +32,7 @@ describe("agency-swarm.adapter", () => {
   test("discover reads openapi and validates metadata endpoints", async () => {
     const calls: string[] = []
 
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
+    globalThis.fetch = asFetch(async (input: RequestInfo | URL) => {
       const url = input.toString()
       calls.push(url)
 
@@ -65,7 +68,7 @@ describe("agency-swarm.adapter", () => {
       }
 
       return new Response("not found", { status: 404 })
-    }) as typeof fetch
+    })
 
     const result = await AgencySwarmAdapter.discover({
       baseURL: "https://example.com/proxy",
@@ -82,7 +85,7 @@ describe("agency-swarm.adapter", () => {
   })
 
   test("streamRun parses meta data messages and end frames", async () => {
-    globalThis.fetch = (async () => {
+    globalThis.fetch = asFetch(async () => {
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
           const encoder = new TextEncoder()
@@ -104,7 +107,7 @@ describe("agency-swarm.adapter", () => {
           "Content-Type": "text/event-stream",
         },
       })
-    }) as typeof fetch
+    })
 
     const frames: AgencySwarmAdapter.StreamFrame[] = []
     for await (const frame of AgencySwarmAdapter.streamRun({
@@ -121,7 +124,7 @@ describe("agency-swarm.adapter", () => {
   })
 
   test("streamRun surfaces error-only stream payloads", async () => {
-    globalThis.fetch = (async () => {
+    globalThis.fetch = asFetch(async () => {
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
           const encoder = new TextEncoder()
@@ -136,7 +139,7 @@ describe("agency-swarm.adapter", () => {
           "Content-Type": "text/event-stream",
         },
       })
-    }) as typeof fetch
+    })
 
     const frames: AgencySwarmAdapter.StreamFrame[] = []
     for await (const frame of AgencySwarmAdapter.streamRun({
@@ -153,7 +156,7 @@ describe("agency-swarm.adapter", () => {
   })
 
   test("cancel treats 404 responses as successful terminal state", async () => {
-    globalThis.fetch = (async () => new Response(JSON.stringify({ detail: "not found" }), { status: 404 })) as typeof fetch
+    globalThis.fetch = asFetch(async () => new Response(JSON.stringify({ detail: "not found" }), { status: 404 }))
 
     const result = await AgencySwarmAdapter.cancel({
       baseURL: "http://127.0.0.1:8000",

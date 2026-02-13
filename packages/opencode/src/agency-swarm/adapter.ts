@@ -86,7 +86,7 @@ export namespace AgencySwarmAdapter {
       url.pathname = cleanPath || "/"
       url.search = ""
       url.hash = ""
-      return url.toString().replace(/\/$/, cleanPath ? "" : "/")
+      return url.toString().replace(/\/$/, "")
     } catch {
       return raw.replace(/\/+$/, "")
     }

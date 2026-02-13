@@ -142,18 +142,20 @@ export async function reconcileFromMessages(input: {
   }
 
   for (const raw of input.newMessages) {
-    if (!asRecord(raw)) continue
+    const message = asRecord(raw)
+    if (!message) continue
 
-    const type = asString(raw["type"])
+    const type = asString(message["type"])
     if (type === "function_call_output") continue
 
     if (type === "message" && input.textPart) {
-      const content = Array.isArray(raw["content"]) ? raw["content"] : []
+      const content = Array.isArray(message["content"]) ? message["content"] : []
       const fromHistory = content
-        .map((part) => {
-          if (!asRecord(part)) return ""
-          if (asString(part["type"]) !== "output_text") return ""
-          return asString(part["text"]) || ""
+        .map((part: unknown) => {
+          const record = asRecord(part)
+          if (!record) return ""
+          if (asString(record["type"]) !== "output_text") return ""
+          return asString(record["text"]) || ""
         })
         .filter(Boolean)
         .join("\n")

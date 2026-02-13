@@ -35,27 +35,30 @@ export function compactMetadata(input: AgencySwarmEventMeta): Record<string, unk
 export function extractFunctionCallOutputs(newMessages: unknown[]): Array<{ callID: string; output: string }> {
   const outputs: Array<{ callID: string; output: string }> = []
   for (const raw of newMessages) {
-    if (!asRecord(raw)) continue
-    if (asString(raw["type"]) !== "function_call_output") continue
-    const callID = asString(raw["call_id"])
+    const message = asRecord(raw)
+    if (!message) continue
+    if (asString(message["type"]) !== "function_call_output") continue
+    const callID = asString(message["call_id"])
     if (!callID) continue
     outputs.push({
       callID,
-      output: stringifyToolOutput(raw["output"]),
+      output: stringifyToolOutput(message["output"]),
     })
   }
   return outputs
 }
 
 export function parseToolInput(raw: unknown): Record<string, unknown> {
-  if (asRecord(raw)) return raw
+  const rawRecord = asRecord(raw)
+  if (rawRecord) return rawRecord
 
   if (typeof raw === "string") {
     const text = raw.trim()
     if (!text) return {}
     try {
       const parsed = JSON.parse(text)
-      if (asRecord(parsed)) return parsed
+      const parsedRecord = asRecord(parsed)
+      if (parsedRecord) return parsedRecord
       return { value: parsed }
     } catch {
       return { raw: text }
