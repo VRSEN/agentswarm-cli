@@ -45,6 +45,7 @@ import { LLM } from "./llm"
 import { iife } from "@/util/iife"
 import { Shell } from "@/shell/shell"
 import { Truncate } from "@/tool/truncation"
+import { SessionAgencySwarm } from "./agency-swarm"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -68,6 +69,7 @@ export namespace SessionPrompt {
         string,
         {
           abort: AbortController
+          managedCancel?: () => Promise<void> | void
           callbacks: {
             resolve(input: MessageV2.WithParts): void
             reject(reason?: any): void
@@ -255,6 +257,29 @@ export namespace SessionPrompt {
     return s[sessionID].abort.signal
   }
 
+  function setManagedCancel(sessionID: string, handler?: () => Promise<void> | void) {
+    const current = state()[sessionID]
+    if (!current) return
+    current.managedCancel = handler
+  }
+
+  function finish(sessionID: string) {
+    const s = state()
+    const match = s[sessionID]
+    if (!match) {
+      SessionStatus.set(sessionID, { type: "idle" })
+      return
+    }
+
+    match.abort.abort()
+    for (const item of match.callbacks) {
+      item.reject(new DOMException("Aborted", "AbortError"))
+    }
+    match.callbacks = []
+    delete s[sessionID]
+    SessionStatus.set(sessionID, { type: "idle" })
+  }
+
   export function cancel(sessionID: string) {
     log.info("cancel", { sessionID })
     const s = state()
@@ -263,9 +288,21 @@ export namespace SessionPrompt {
       SessionStatus.set(sessionID, { type: "idle" })
       return
     }
-    match.abort.abort()
-    delete s[sessionID]
-    SessionStatus.set(sessionID, { type: "idle" })
+    if (match.managedCancel) {
+      void Promise.resolve(match.managedCancel()).catch((error) => {
+        log.error("managed cancel failed", {
+          sessionID,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
+      for (const item of match.callbacks) {
+        item.reject(new DOMException("Aborted", "AbortError"))
+      }
+      match.callbacks = []
+      return
+    }
+
+    finish(sessionID)
     return
   }
 
@@ -284,7 +321,7 @@ export namespace SessionPrompt {
       })
     }
 
-    using _ = defer(() => cancel(sessionID))
+    using _ = defer(() => finish(sessionID))
 
     // Structured output state
     // Note: On session resumption, state is reset but outputFormat is preserved
@@ -559,41 +596,76 @@ export namespace SessionPrompt {
         session,
       })
 
-      const processor = SessionProcessor.create({
-        assistantMessage: (await Session.updateMessage({
-          id: Identifier.ascending("message"),
-          parentID: lastUser.id,
-          role: "assistant",
-          mode: agent.name,
-          agent: agent.name,
-          variant: lastUser.variant,
-          path: {
-            cwd: Instance.directory,
-            root: Instance.worktree,
-          },
-          cost: 0,
-          tokens: {
-            input: 0,
-            output: 0,
-            reasoning: 0,
-            cache: { read: 0, write: 0 },
-          },
-          modelID: model.id,
-          providerID: model.providerID,
-          time: {
-            created: Date.now(),
-          },
-          sessionID,
-        })) as MessageV2.Assistant,
-        sessionID: sessionID,
-        model,
-        abort,
-      })
-      using _ = defer(() => InstructionPrompt.clear(processor.message.id))
+      const assistantMessage = (await Session.updateMessage({
+        id: Identifier.ascending("message"),
+        parentID: lastUser.id,
+        role: "assistant",
+        mode: agent.name,
+        agent: agent.name,
+        variant: lastUser.variant,
+        path: {
+          cwd: Instance.directory,
+          root: Instance.worktree,
+        },
+        cost: 0,
+        tokens: {
+          input: 0,
+          output: 0,
+          reasoning: 0,
+          cache: { read: 0, write: 0 },
+        },
+        modelID: model.id,
+        providerID: model.providerID,
+        time: {
+          created: Date.now(),
+        },
+        sessionID,
+      })) as MessageV2.Assistant
+      using _ = defer(() => InstructionPrompt.clear(assistantMessage.id))
 
       // Check if user explicitly invoked an agent via @ in this turn
       const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
       const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
+
+      if (step === 1) {
+        SessionSummary.summarize({
+          sessionID: sessionID,
+          messageID: lastUser.id,
+        })
+      }
+
+      if (model.providerID === SessionAgencySwarm.PROVIDER_ID) {
+        const provider = await Provider.getProvider(model.providerID)
+        const currentUser = msgs.findLast(
+          (item): item is MessageV2.WithParts => item.info.role === "user" && item.info.id === lastUser.id,
+        )
+
+        if (!currentUser) {
+          throw new Error("Failed to resolve current user message for Agency Swarm turn.")
+        }
+
+        await SessionAgencySwarm.processTurn({
+          sessionID,
+          assistantMessage,
+          userMessage: currentUser,
+          options: SessionAgencySwarm.optionsFromProvider(provider),
+          abort,
+          registerManagedCancel(handler) {
+            setManagedCancel(sessionID, handler)
+          },
+          clearManagedCancel() {
+            setManagedCancel(sessionID, undefined)
+          },
+        })
+        break
+      }
+
+      const processor = SessionProcessor.create({
+        assistantMessage,
+        sessionID: sessionID,
+        model,
+        abort,
+      })
 
       const tools = await resolveTools({
         agent,
@@ -614,14 +686,6 @@ export namespace SessionPrompt {
           },
         })
       }
-
-      if (step === 1) {
-        SessionSummary.summarize({
-          sessionID: sessionID,
-          messageID: lastUser.id,
-        })
-      }
-
       const sessionMessages = clone(msgs)
 
       // Ephemerally wrap queued user messages with a reminder to stay on track

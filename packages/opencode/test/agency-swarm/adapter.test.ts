@@ -1,0 +1,168 @@
+import { afterEach, describe, expect, test } from "bun:test"
+import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
+
+describe("agency-swarm.adapter", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test("joinURL preserves reverse-proxy path prefixes", () => {
+    const url = AgencySwarmAdapter.joinURL("https://example.com/proxy", "/builder/get_metadata")
+    expect(url).toBe("https://example.com/proxy/builder/get_metadata")
+  })
+
+  test("parseAgencyIDsFromOpenAPI extracts static agency ids", () => {
+    const result = AgencySwarmAdapter.parseAgencyIDsFromOpenAPI({
+      paths: {
+        "/builder/get_metadata": {},
+        "/research/get_metadata": {},
+        "/{agency}/get_metadata": {},
+        "/builder/get_response_stream": {},
+      },
+    })
+
+    expect(result).toEqual(["builder", "research"])
+  })
+
+  test("discover reads openapi and validates metadata endpoints", async () => {
+    const calls: string[] = []
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = input.toString()
+      calls.push(url)
+
+      if (url.endsWith("/proxy/openapi.json")) {
+        return new Response(
+          JSON.stringify({
+            paths: {
+              "/builder/get_metadata": {},
+            },
+          }),
+          { status: 200 },
+        )
+      }
+
+      if (url.endsWith("/proxy/builder/get_metadata")) {
+        return new Response(
+          JSON.stringify({
+            metadata: {
+              agencyName: "Builder",
+              entryPoints: ["PM"],
+            },
+            nodes: [
+              {
+                id: "PM",
+                data: {
+                  description: "Planning agent",
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        )
+      }
+
+      return new Response("not found", { status: 404 })
+    }) as typeof fetch
+
+    const result = await AgencySwarmAdapter.discover({
+      baseURL: "https://example.com/proxy",
+    })
+
+    expect(result.agencies).toHaveLength(1)
+    expect(result.agencies[0].id).toBe("builder")
+    expect(result.agencies[0].name).toBe("Builder")
+    expect(result.agencies[0].description).toBe("Planning agent")
+    expect(calls).toEqual([
+      "https://example.com/proxy/openapi.json",
+      "https://example.com/proxy/builder/get_metadata",
+    ])
+  })
+
+  test("streamRun parses meta data messages and end frames", async () => {
+    globalThis.fetch = (async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const encoder = new TextEncoder()
+          const payload = [
+            'event: meta\ndata: {"run_id":"run_123"}\n\n',
+            'data: {"data":{"type":"raw_response_event","data":{"type":"response.output_text.delta","delta":"hi"}}}\n\n',
+            'event: messages\ndata: {"new_messages":[{"type":"message"}],"run_id":"run_123"}\n\n',
+            "event: end\ndata: [DONE]\n\n",
+          ]
+          for (const chunk of payload) {
+            controller.enqueue(encoder.encode(chunk))
+          }
+          controller.close()
+        },
+      })
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+        },
+      })
+    }) as typeof fetch
+
+    const frames: AgencySwarmAdapter.StreamFrame[] = []
+    for await (const frame of AgencySwarmAdapter.streamRun({
+      baseURL: "http://127.0.0.1:8000",
+      agency: "builder",
+      message: "hello",
+      chatHistory: [],
+    })) {
+      frames.push(frame)
+    }
+
+    expect(frames.map((frame) => frame.type)).toEqual(["meta", "data", "messages", "end"])
+    expect(frames[0]).toEqual({ type: "meta", runID: "run_123" })
+  })
+
+  test("streamRun surfaces error-only stream payloads", async () => {
+    globalThis.fetch = (async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const encoder = new TextEncoder()
+          controller.enqueue(encoder.encode('data: {"error":"boom"}\n\n'))
+          controller.enqueue(encoder.encode("event: end\ndata: [DONE]\n\n"))
+          controller.close()
+        },
+      })
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+        },
+      })
+    }) as typeof fetch
+
+    const frames: AgencySwarmAdapter.StreamFrame[] = []
+    for await (const frame of AgencySwarmAdapter.streamRun({
+      baseURL: "http://127.0.0.1:8000",
+      agency: "builder",
+      message: "hello",
+      chatHistory: [],
+    })) {
+      frames.push(frame)
+    }
+
+    expect(frames.map((frame) => frame.type)).toEqual(["error", "end"])
+    expect(frames[0]).toEqual({ type: "error", error: "boom" })
+  })
+
+  test("cancel treats 404 responses as successful terminal state", async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ detail: "not found" }), { status: 404 })) as typeof fetch
+
+    const result = await AgencySwarmAdapter.cancel({
+      baseURL: "http://127.0.0.1:8000",
+      agency: "builder",
+      runID: "run_404",
+    })
+
+    expect(result.ok).toBeTrue()
+    expect(result.cancelled).toBeTrue()
+    expect(result.notFound).toBeTrue()
+  })
+})

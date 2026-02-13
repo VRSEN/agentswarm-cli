@@ -41,6 +41,7 @@ import { createVercel } from "@ai-sdk/vercel"
 import { createGitLab, VERSION as GITLAB_PROVIDER_VERSION } from "@gitlab/gitlab-ai-provider"
 import { ProviderTransform } from "./transform"
 import { Installation } from "../installation"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 
 export namespace Provider {
   const log = Log.create({ service: "provider" })
@@ -701,11 +702,77 @@ export namespace Provider {
     }
   }
 
+  function createAgencySwarmProvider(): Info {
+    const modelID = AgencySwarmAdapter.DEFAULT_MODEL_ID
+    return {
+      id: AgencySwarmAdapter.PROVIDER_ID,
+      name: "Agency Swarm",
+      source: "config",
+      env: [],
+      options: {
+        baseURL: AgencySwarmAdapter.DEFAULT_BASE_URL,
+        discoveryTimeoutMs: AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS,
+      },
+      models: {
+        [modelID]: {
+          id: modelID,
+          providerID: AgencySwarmAdapter.PROVIDER_ID,
+          name: "Agency Swarm Default",
+          family: "agency-swarm",
+          api: {
+            id: modelID,
+            url: AgencySwarmAdapter.DEFAULT_BASE_URL,
+            npm: "@ai-sdk/openai-compatible",
+          },
+          status: "active",
+          headers: {},
+          options: {},
+          cost: {
+            input: 0,
+            output: 0,
+            cache: {
+              read: 0,
+              write: 0,
+            },
+          },
+          limit: {
+            context: 0,
+            output: 0,
+          },
+          capabilities: {
+            temperature: false,
+            reasoning: false,
+            attachment: true,
+            toolcall: true,
+            input: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: true,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+            interleaved: false,
+          },
+          release_date: "",
+          variants: {},
+        },
+      },
+    }
+  }
+
   const state = Instance.state(async () => {
     using _ = log.time("state")
     const config = await Config.get()
     const modelsDev = await ModelsDev.get()
     const database = mapValues(modelsDev, fromModelsDevProvider)
+    database[AgencySwarmAdapter.PROVIDER_ID] = createAgencySwarmProvider()
 
     const disabled = new Set(config.disabled_providers ?? [])
     const enabled = config.enabled_providers ? new Set(config.enabled_providers) : null

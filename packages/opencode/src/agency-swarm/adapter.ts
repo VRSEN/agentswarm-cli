@@ -1,0 +1,460 @@
+import { Log } from "@/util/log"
+
+export namespace AgencySwarmAdapter {
+  const log = Log.create({ service: "agency-swarm.adapter" })
+
+  export const PROVIDER_ID = "agency-swarm"
+  export const DEFAULT_MODEL_ID = "default"
+  export const DEFAULT_BASE_URL = "http://127.0.0.1:8000"
+  export const DEFAULT_DISCOVERY_TIMEOUT_MS = 5000
+
+  export type AgencyMetadata = {
+    [key: string]: unknown
+  }
+
+  export type AgencyDescriptor = {
+    id: string
+    name: string
+    description?: string
+    metadata: AgencyMetadata
+  }
+
+  export type DiscoverResult = {
+    agencies: AgencyDescriptor[]
+    rawOpenAPI: Record<string, unknown>
+  }
+
+  export type StreamRunInput = {
+    baseURL: string
+    agency: string
+    message: string
+    chatHistory: Array<Record<string, unknown>>
+    recipientAgent?: string | null
+    token?: string | null
+    fileURLs?: Record<string, string>
+    abort?: AbortSignal
+  }
+
+  export type CancelMode = "immediate" | "after_turn"
+
+  export type CancelInput = {
+    baseURL: string
+    agency: string
+    runID: string
+    cancelMode?: CancelMode
+    token?: string | null
+    abort?: AbortSignal
+  }
+
+  export type CancelResult = {
+    ok: boolean
+    status: number
+    cancelled: boolean
+    notFound: boolean
+    data?: Record<string, unknown>
+    error?: string
+  }
+
+  export type StreamFrame =
+    | {
+        type: "meta"
+        runID: string
+      }
+    | {
+        type: "data"
+        payload: Record<string, unknown>
+      }
+    | {
+        type: "messages"
+        payload: Record<string, unknown>
+      }
+    | {
+        type: "error"
+        error: string
+      }
+    | {
+        type: "end"
+      }
+
+  export function normalizeBaseURL(baseURL: string): string {
+    const raw = baseURL.trim()
+    if (!raw) return DEFAULT_BASE_URL
+
+    try {
+      const url = new URL(raw)
+      const cleanPath = url.pathname.replace(/\/+$/, "")
+      url.pathname = cleanPath || "/"
+      url.search = ""
+      url.hash = ""
+      return url.toString().replace(/\/$/, cleanPath ? "" : "/")
+    } catch {
+      return raw.replace(/\/+$/, "")
+    }
+  }
+
+  export function joinURL(baseURL: string, relativePath: string): string {
+    const normalizedBaseURL = normalizeBaseURL(baseURL)
+    const cleanBase = normalizedBaseURL.endsWith("/") ? normalizedBaseURL : normalizedBaseURL + "/"
+    const cleanRelativePath = relativePath.replace(/^\/+/, "")
+    return new URL(cleanRelativePath, cleanBase).toString()
+  }
+
+  export function parseAgencyIDsFromOpenAPI(openapi: Record<string, unknown>): string[] {
+    const paths = openapi["paths"]
+    if (!paths || typeof paths !== "object") return []
+
+    const result = new Set<string>()
+    for (const pathKey of Object.keys(paths)) {
+      if (!pathKey.endsWith("/get_metadata")) continue
+      const segments = pathKey.split("/").filter(Boolean)
+      const metadataSegment = segments.lastIndexOf("get_metadata")
+      if (metadataSegment <= 0) continue
+      const agency = segments[metadataSegment - 1]
+      if (!agency || agency.startsWith("{") || agency.endsWith("}")) continue
+      result.add(agency)
+    }
+
+    return Array.from(result.values()).sort()
+  }
+
+  export async function discover(input: {
+    baseURL: string
+    token?: string | null
+    timeoutMs?: number
+  }): Promise<DiscoverResult> {
+    const baseURL = normalizeBaseURL(input.baseURL)
+    const timeoutMs = input.timeoutMs ?? DEFAULT_DISCOVERY_TIMEOUT_MS
+    const openapiURL = joinURL(baseURL, "openapi.json")
+    const response = await fetchWithTimeout(
+      openapiURL,
+      {
+        method: "GET",
+        headers: authHeaders(input.token),
+      },
+      timeoutMs,
+    )
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "")
+      throw new Error(`OpenAPI discovery failed (${response.status}): ${body || "No response body"}`)
+    }
+
+    const rawOpenAPI = (await response.json()) as Record<string, unknown>
+    const agencyIDs = parseAgencyIDsFromOpenAPI(rawOpenAPI)
+
+    const agencies: AgencyDescriptor[] = []
+    for (const agencyID of agencyIDs) {
+      try {
+        const metadata = await getMetadata({ baseURL, agency: agencyID, token: input.token, timeoutMs })
+        agencies.push({
+          id: agencyID,
+          name: readAgencyName(metadata, agencyID),
+          description: readAgencyDescription(metadata),
+          metadata,
+        })
+      } catch (error) {
+        log.warn("skipping agency metadata during discovery", {
+          agencyID,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
+    return {
+      agencies,
+      rawOpenAPI,
+    }
+  }
+
+  export async function getMetadata(input: {
+    baseURL: string
+    agency: string
+    token?: string | null
+    timeoutMs?: number
+  }): Promise<AgencyMetadata> {
+    const url = joinURL(input.baseURL, `${input.agency}/get_metadata`)
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: "GET",
+        headers: authHeaders(input.token),
+      },
+      input.timeoutMs,
+    )
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "")
+      throw new Error(`Metadata request failed (${response.status}): ${body || "No response body"}`)
+    }
+
+    return (await response.json()) as AgencyMetadata
+  }
+
+  export async function* streamRun(input: StreamRunInput): AsyncGenerator<StreamFrame> {
+    const url = joinURL(input.baseURL, `${input.agency}/get_response_stream`)
+    const requestBody: Record<string, unknown> = {
+      message: input.message,
+      chat_history: input.chatHistory,
+    }
+    if (input.recipientAgent) requestBody["recipient_agent"] = input.recipientAgent
+    if (input.fileURLs && Object.keys(input.fileURLs).length > 0) requestBody["file_urls"] = input.fileURLs
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        ...authHeaders(input.token),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+      signal: input.abort,
+    })
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "")
+      yield {
+        type: "error",
+        error: `Streaming request failed (${response.status}): ${body || "No response body"}`,
+      }
+      yield { type: "end" }
+      return
+    }
+
+    for await (const event of parseSSE(response)) {
+      if (event.event === "meta") {
+        const payload = parseJSON(event.data)
+        const runID = payload && typeof payload["run_id"] === "string" ? payload["run_id"] : ""
+        if (runID) {
+          yield { type: "meta", runID }
+          continue
+        }
+      }
+
+      if (event.event === "messages") {
+        const payload = parseJSON(event.data)
+        if (!payload) {
+          yield {
+            type: "error",
+            error: "Received malformed messages payload from Agency Swarm stream",
+          }
+          continue
+        }
+        yield { type: "messages", payload }
+        continue
+      }
+
+      if (event.event === "end") {
+        yield { type: "end" }
+        break
+      }
+
+      const payload = parseJSON(event.data)
+      if (!payload) {
+        yield {
+          type: "error",
+          error: "Received malformed stream payload from Agency Swarm",
+        }
+        continue
+      }
+
+      if (typeof payload["error"] === "string") {
+        yield {
+          type: "error",
+          error: payload["error"],
+        }
+        continue
+      }
+
+      if (isRecord(payload["data"])) {
+        yield {
+          type: "data",
+          payload: payload["data"],
+        }
+        continue
+      }
+
+      yield {
+        type: "data",
+        payload,
+      }
+    }
+  }
+
+  export async function cancel(input: CancelInput): Promise<CancelResult> {
+    const url = joinURL(input.baseURL, `${input.agency}/cancel_response_stream`)
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        ...authHeaders(input.token),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        run_id: input.runID,
+        cancel_mode: input.cancelMode,
+      }),
+      signal: input.abort,
+    })
+
+    const body = (await safeJSON(response)) ?? {}
+
+    if (response.status === 404) {
+      return {
+        ok: true,
+        status: response.status,
+        cancelled: true,
+        notFound: true,
+        data: isRecord(body) ? body : undefined,
+      }
+    }
+
+    if (!response.ok) {
+      const error = isRecord(body) && typeof body["detail"] === "string" ? body["detail"] : response.statusText
+      return {
+        ok: false,
+        status: response.status,
+        cancelled: false,
+        notFound: false,
+        error,
+        data: isRecord(body) ? body : undefined,
+      }
+    }
+
+    const cancelled = isRecord(body) && typeof body["cancelled"] === "boolean" ? body["cancelled"] : true
+    return {
+      ok: true,
+      status: response.status,
+      cancelled,
+      notFound: false,
+      data: isRecord(body) ? body : undefined,
+    }
+  }
+
+  async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs?: number): Promise<Response> {
+    if (!timeoutMs || timeoutMs <= 0) {
+      return fetch(input, init)
+    }
+
+    const signal = init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs)
+    return fetch(input, {
+      ...init,
+      signal,
+    })
+  }
+
+  function authHeaders(token?: string | null): Record<string, string> {
+    if (!token) return {}
+    return {
+      Authorization: `Bearer ${token}`,
+    }
+  }
+
+  function readAgencyName(metadata: AgencyMetadata, fallback: string): string {
+    const info = asRecord(metadata["metadata"])
+    if (info && typeof info["agencyName"] === "string" && info["agencyName"].trim()) return info["agencyName"]
+    return fallback
+  }
+
+  function readAgencyDescription(metadata: AgencyMetadata): string | undefined {
+    const entryPoints = asArray(asRecord(metadata["metadata"])?.["entryPoints"])
+    const nodes = asArray(metadata["nodes"])
+
+    const firstEntry = entryPoints.find((item): item is string => typeof item === "string")
+    if (!firstEntry) return undefined
+
+    for (const node of nodes) {
+      if (!isRecord(node)) continue
+      if (node["id"] !== firstEntry) continue
+      const data = asRecord(node["data"])
+      if (data && typeof data["description"] === "string" && data["description"].trim()) {
+        return data["description"]
+      }
+    }
+
+    return undefined
+  }
+
+  async function safeJSON(response: Response): Promise<unknown | undefined> {
+    const text = await response.text().catch(() => undefined)
+    if (!text) return undefined
+    try {
+      return JSON.parse(text)
+    } catch {
+      return undefined
+    }
+  }
+
+  function parseJSON(input: string): Record<string, unknown> | undefined {
+    try {
+      const parsed = JSON.parse(input)
+      return isRecord(parsed) ? parsed : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  async function* parseSSE(response: Response): AsyncGenerator<{ event: string; data: string }> {
+    if (!response.body) return
+
+    const decoder = new TextDecoder()
+    const reader = response.body.getReader()
+    let buffer = ""
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      buffer = buffer.replace(/\r\n/g, "\n")
+
+      while (true) {
+        const boundary = buffer.indexOf("\n\n")
+        if (boundary === -1) break
+
+        const chunk = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 2)
+
+        const parsed = parseSSEChunk(chunk)
+        if (!parsed) continue
+        yield parsed
+      }
+    }
+
+    const finalChunk = buffer.trim()
+    if (!finalChunk) return
+    const parsed = parseSSEChunk(finalChunk)
+    if (parsed) yield parsed
+  }
+
+  function parseSSEChunk(chunk: string): { event: string; data: string } | undefined {
+    let event = "message"
+    const dataLines: string[] = []
+
+    for (const line of chunk.split("\n")) {
+      if (!line || line.startsWith(":")) continue
+      if (line.startsWith("event:")) {
+        event = line.slice("event:".length).trim() || "message"
+        continue
+      }
+      if (line.startsWith("data:")) {
+        dataLines.push(line.slice("data:".length).trimStart())
+      }
+    }
+
+    if (dataLines.length === 0) return undefined
+    return {
+      event,
+      data: dataLines.join("\n"),
+    }
+  }
+
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === "object" && !Array.isArray(value)
+  }
+
+  function asRecord(value: unknown): Record<string, unknown> | undefined {
+    return isRecord(value) ? value : undefined
+  }
+
+  function asArray(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : []
+  }
+}
