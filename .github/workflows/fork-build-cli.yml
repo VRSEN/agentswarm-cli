@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   build-cli:
-    name: build-cli (${{ runner.os }})
+    name: build-cli
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -40,7 +40,7 @@ jobs:
 
       - name: Build CLI
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.full_build }}" = "true" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.full_build }}" = "true" ]; then
             ./packages/opencode/script/build.ts
           else
             ./packages/opencode/script/build.ts --single --skip-install
@@ -48,9 +48,9 @@ jobs:
 
       - name: Smoke test built binary
         run: |
-          BIN="$(find packages/opencode/dist -maxdepth 3 -type f -name opencode | head -n1)"
+          BIN="$(find packages/opencode/dist -maxdepth 3 -type f -name agency | head -n1)"
           if [ -z "$BIN" ]; then
-            echo "No opencode binary produced."
+            echo "No agency binary produced."
             exit 1
           fi
           chmod +x "$BIN"
@@ -60,7 +60,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: opencode-cli-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          name: agency-code-cli-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
           path: packages/opencode/dist
           if-no-files-found: error
           retention-days: 14
