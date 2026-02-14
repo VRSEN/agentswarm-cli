@@ -1,0 +1,66 @@
+name: fork-build-cli
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/fork-build-cli.yml"
+      - "packages/opencode/**"
+      - "package.json"
+      - "bun.lock"
+  workflow_dispatch:
+    inputs:
+      full_build:
+        description: "Build all CLI targets (slower). Default builds only runner-native target."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-cli:
+    name: build-cli (${{ runner.os }})
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build CLI
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.full_build }}" = "true" ]; then
+            ./packages/opencode/script/build.ts
+          else
+            ./packages/opencode/script/build.ts --single --skip-install
+          fi
+
+      - name: Smoke test built binary
+        run: |
+          BIN="$(find packages/opencode/dist -maxdepth 3 -type f -name opencode | head -n1)"
+          if [ -z "$BIN" ]; then
+            echo "No opencode binary produced."
+            exit 1
+          fi
+          chmod +x "$BIN"
+          "$BIN" --version
+          "$BIN" --help >/dev/null
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-cli-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          path: packages/opencode/dist
+          if-no-files-found: error
+          retention-days: 14
