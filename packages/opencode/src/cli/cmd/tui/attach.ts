@@ -4,7 +4,7 @@ import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 
 export const AttachCommand = cmd({
   command: "attach <url>",
-  describe: "attach to a running opencode server",
+  describe: "attach to a running agency server",
   builder: (yargs) =>
     yargs
       .positional("url", {

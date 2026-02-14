@@ -84,7 +84,7 @@ export const McpListCommand = cmd({
 
         if (servers.length === 0) {
           prompts.log.warn("No MCP servers configured")
-          prompts.outro("Add servers with: opencode mcp add")
+          prompts.outro("Add servers with: agency mcp add")
           return
         }
 
@@ -482,7 +482,7 @@ export const McpAddCommand = cmd({
         if (type === "local") {
           const command = await prompts.text({
             message: "Enter command to run",
-            placeholder: "e.g., opencode x @modelcontextprotocol/server-filesystem",
+            placeholder: "e.g., agency x @modelcontextprotocol/server-filesystem",
             validate: (x) => (x && x.length > 0 ? undefined : "Required"),
           })
           if (prompts.isCancel(command)) throw new UI.CancelledError()
@@ -663,7 +663,7 @@ export const McpDebugCommand = cmd({
               params: {
                 protocolVersion: "2024-11-05",
                 capabilities: {},
-                clientInfo: { name: "opencode-debug", version: Installation.VERSION },
+                clientInfo: { name: "agency-debug", version: Installation.VERSION },
               },
               id: 1,
             }),
@@ -704,7 +704,7 @@ export const McpDebugCommand = cmd({
 
             try {
               const client = new Client({
-                name: "opencode-debug",
+                name: "agency-debug",
                 version: Installation.VERSION,
               })
               await client.connect(transport)
