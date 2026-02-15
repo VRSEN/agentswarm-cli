@@ -120,6 +120,11 @@ export function asString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
+export function asRawString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined
+  return value
+}
+
 export function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
   return value as Record<string, unknown>

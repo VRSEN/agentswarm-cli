@@ -8,6 +8,7 @@ import { NamedError } from "@opencode-ai/util/error"
 import type { Provider } from "@/provider/provider"
 import {
   asRecord,
+  asRawString,
   asString,
   buildOutgoingMessage,
   collectFileURLs,
@@ -320,8 +321,8 @@ export namespace SessionAgencySwarm {
             }
 
             if (responseType === "response.output_text.delta") {
-              const delta = asString(nested["delta"])
-              if (!delta) continue
+              const delta = asRawString(nested["delta"])
+              if (delta === undefined) continue
 
               textPart = await ensureTextPart({
                 sessionID: input.sessionID,
@@ -339,7 +340,7 @@ export namespace SessionAgencySwarm {
             }
 
             if (responseType === "response.output_text.done") {
-              const doneText = asString(nested["text"])
+              const doneText = asRawString(nested["text"])
               textPart = await ensureTextPart({
                 sessionID: input.sessionID,
                 messageID: input.assistantMessage.id,
@@ -347,7 +348,7 @@ export namespace SessionAgencySwarm {
                 metadata: eventMeta,
               })
               if (textPart) {
-                if (doneText) textPart.text = doneText
+                if (doneText !== undefined) textPart.text = doneText
                 textPart.time = {
                   start: textPart.time?.start ?? Date.now(),
                   end: Date.now(),
