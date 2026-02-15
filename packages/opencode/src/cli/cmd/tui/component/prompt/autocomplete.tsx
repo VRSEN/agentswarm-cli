@@ -1,10 +1,12 @@
 import type { BoxRenderable, TextareaRenderable, KeyEvent, ScrollBoxRenderable } from "@opentui/core"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { pathToFileURL } from "bun"
 import fuzzysort from "fuzzysort"
 import { firstBy } from "remeda"
 import { createMemo, createResource, createEffect, onMount, onCleanup, Index, Show, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useSDK } from "@tui/context/sdk"
+import { useLocal } from "@tui/context/local"
 import { useSync } from "@tui/context/sync"
 import { useTheme, selectedForeground } from "@tui/context/theme"
 import { SplitBorder } from "@tui/component/border"
@@ -46,6 +48,19 @@ function extractLineRange(input: string) {
   }
 }
 
+function readString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function readPositiveNumber(value: unknown): number | undefined {
+  if (typeof value !== "number") return undefined
+  if (!Number.isFinite(value)) return undefined
+  if (value <= 0) return undefined
+  return value
+}
+
 export type AutocompleteRef = {
   onInput: (value: string) => void
   onKeyDown: (e: KeyEvent) => void
@@ -76,11 +91,52 @@ export function Autocomplete(props: {
   promptPartTypeId: () => number
 }) {
   const sdk = useSDK()
+  const local = useLocal()
   const sync = useSync()
   const command = useCommandDialog()
   const { theme } = useTheme()
   const dimensions = useTerminalDimensions()
   const frecency = useFrecency()
+
+  const providerOptions = createMemo(() => {
+    const provider = sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID]
+    const options = provider?.options
+    const baseURL =
+      readString(options?.["baseURL"]) ?? readString(options?.["base_url"]) ?? AgencySwarmAdapter.DEFAULT_BASE_URL
+    const agency = readString(options?.["agency"])
+    const token = readString(options?.["token"])
+    const discoveryTimeoutMs =
+      readPositiveNumber(options?.["discoveryTimeoutMs"]) ??
+      readPositiveNumber(options?.["discovery_timeout_ms"]) ??
+      AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS
+
+    return {
+      baseURL: AgencySwarmAdapter.normalizeBaseURL(baseURL),
+      agency,
+      token,
+      discoveryTimeoutMs,
+    }
+  })
+
+  const agencySwarmEnabled = createMemo(() => local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID)
+
+  const discoveryInput = createMemo(() => {
+    if (!agencySwarmEnabled()) return undefined
+    const options = providerOptions()
+    return {
+      baseURL: options.baseURL,
+      token: options.token,
+      timeoutMs: options.discoveryTimeoutMs,
+    }
+  })
+
+  const [agencyDiscovery] = createResource(discoveryInput, async (input) => {
+    return AgencySwarmAdapter.discover({
+      baseURL: input.baseURL,
+      token: input.token,
+      timeoutMs: input.timeoutMs,
+    })
+  })
 
   const [store, setStore] = createStore({
     index: 0,
@@ -331,8 +387,34 @@ export function Autocomplete(props: {
   })
 
   const agents = createMemo(() => {
-    const agents = sync.data.agent
-    return agents
+    if (agencySwarmEnabled()) {
+      const discovered = agencyDiscovery()
+      const configuredAgency = providerOptions().agency
+      const defaultAgency =
+        configuredAgency ?? (discovered && discovered.agencies.length === 1 ? discovered.agencies[0].id : undefined)
+
+      const selectedAgency = discovered?.agencies.find((agency) => agency.id === defaultAgency)
+      if (!selectedAgency) return []
+
+      return selectedAgency.agents.map(
+        (agent): AutocompleteOption => ({
+          display: "@" + agent.name,
+          onSelect: () => {
+            insertPart(agent.id, {
+              type: "agent",
+              name: agent.id,
+              source: {
+                start: 0,
+                end: 0,
+                value: "",
+              },
+            })
+          },
+        }),
+      )
+    }
+
+    return sync.data.agent
       .filter((agent) => !agent.hidden && agent.mode !== "primary")
       .map(
         (agent): AutocompleteOption => ({

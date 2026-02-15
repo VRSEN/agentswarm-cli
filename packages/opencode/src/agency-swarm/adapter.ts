@@ -12,10 +12,18 @@ export namespace AgencySwarmAdapter {
     [key: string]: unknown
   }
 
+  export type AgencyAgentDescriptor = {
+    id: string
+    name: string
+    description?: string
+    isEntryPoint: boolean
+  }
+
   export type AgencyDescriptor = {
     id: string
     name: string
     description?: string
+    agents: AgencyAgentDescriptor[]
     metadata: AgencyMetadata
   }
 
@@ -30,8 +38,13 @@ export namespace AgencySwarmAdapter {
     message: string
     chatHistory: Array<Record<string, unknown>>
     recipientAgent?: string | null
+    additionalInstructions?: string
+    userContext?: Record<string, unknown>
+    fileIDs?: string[]
     token?: string | null
     fileURLs?: Record<string, string>
+    generateChatName?: boolean
+    clientConfig?: Record<string, unknown>
     abort?: AbortSignal
   }
 
@@ -150,6 +163,7 @@ export namespace AgencySwarmAdapter {
           id: agencyID,
           name: readAgencyName(metadata, agencyID),
           description: readAgencyDescription(metadata),
+          agents: readAgencyAgents(metadata),
           metadata,
         })
       } catch (error) {
@@ -197,7 +211,13 @@ export namespace AgencySwarmAdapter {
       chat_history: input.chatHistory,
     }
     if (input.recipientAgent) requestBody["recipient_agent"] = input.recipientAgent
+    if (input.additionalInstructions) requestBody["additional_instructions"] = input.additionalInstructions
+    if (input.userContext && Object.keys(input.userContext).length > 0) requestBody["user_context"] = input.userContext
+    if (Array.isArray(input.fileIDs) && input.fileIDs.length > 0) requestBody["file_ids"] = input.fileIDs
     if (input.fileURLs && Object.keys(input.fileURLs).length > 0) requestBody["file_urls"] = input.fileURLs
+    if (typeof input.generateChatName === "boolean") requestBody["generate_chat_name"] = input.generateChatName
+    const normalizedClientConfig = normalizeClientConfig(input.clientConfig)
+    if (normalizedClientConfig) requestBody["client_config"] = normalizedClientConfig
 
     const response = await fetch(url, {
       method: "POST",
@@ -333,7 +353,9 @@ export namespace AgencySwarmAdapter {
       return fetch(input, init)
     }
 
-    const signal = init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs)
+    const signal = init.signal
+      ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)])
+      : AbortSignal.timeout(timeoutMs)
     return fetch(input, {
       ...init,
       signal,
@@ -370,6 +392,62 @@ export namespace AgencySwarmAdapter {
     }
 
     return undefined
+  }
+
+  function readAgencyAgents(metadata: AgencyMetadata): AgencyAgentDescriptor[] {
+    const metadataRecord = asRecord(metadata["metadata"])
+    const nodes = asArray(metadata["nodes"])
+    const entryPoints = new Set(readStringArray(metadataRecord?.["entryPoints"]))
+
+    const result = new Map<string, AgencyAgentDescriptor>()
+
+    for (const agentID of readStringArray(metadataRecord?.["agents"])) {
+      result.set(agentID, {
+        id: agentID,
+        name: agentID,
+        isEntryPoint: entryPoints.has(agentID),
+      })
+    }
+
+    for (const node of nodes) {
+      const nodeRecord = asRecord(node)
+      if (!nodeRecord) continue
+
+      const id = asString(nodeRecord["id"])
+      if (!id) continue
+
+      const nodeType = asString(nodeRecord["type"])
+      const data = asRecord(nodeRecord["data"])
+      const label = asString(data?.["label"]) ?? id
+      const description = asString(data?.["description"])
+      const dataEntryPoint = asBoolean(data?.["isEntryPoint"]) === true
+      const knownAgent = result.get(id)
+      const includeNode = nodeType === "agent" || !!knownAgent
+      if (!includeNode) continue
+
+      result.set(id, {
+        id,
+        name: label,
+        description: description || knownAgent?.description,
+        isEntryPoint: entryPoints.has(id) || dataEntryPoint || knownAgent?.isEntryPoint === true,
+      })
+    }
+
+    return Array.from(result.values()).sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  function normalizeClientConfig(value: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+    if (!value) return undefined
+    const baseURL = asString(value["base_url"]) ?? asString(value["baseURL"])
+    const apiKey = asString(value["api_key"]) ?? asString(value["apiKey"])
+    const litellmKeys = asRecord(value["litellm_keys"]) ?? asRecord(value["litellmKeys"])
+
+    const payload: Record<string, unknown> = {}
+    if (baseURL) payload["base_url"] = baseURL
+    if (apiKey) payload["api_key"] = apiKey
+    if (litellmKeys && Object.keys(litellmKeys).length > 0) payload["litellm_keys"] = litellmKeys
+
+    return Object.keys(payload).length > 0 ? payload : undefined
   }
 
   async function safeJSON(response: Response): Promise<unknown | undefined> {
@@ -454,7 +532,24 @@ export namespace AgencySwarmAdapter {
     return isRecord(value) ? value : undefined
   }
 
+  function asString(value: unknown): string | undefined {
+    if (typeof value !== "string") return undefined
+    const trimmed = value.trim()
+    return trimmed ? trimmed : undefined
+  }
+
   function asArray(value: unknown): unknown[] {
     return Array.isArray(value) ? value : []
+  }
+
+  function readStringArray(value: unknown): string[] {
+    return asArray(value).flatMap((item) => {
+      const parsed = asString(item)
+      return parsed ? [parsed] : []
+    })
+  }
+
+  function asBoolean(value: unknown): boolean | undefined {
+    return typeof value === "boolean" ? value : undefined
   }
 }

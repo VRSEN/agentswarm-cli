@@ -36,6 +36,12 @@ export namespace SessionAgencySwarm {
   export type RuntimeOptions = {
     baseURL: string
     agency?: string
+    recipientAgent?: string
+    additionalInstructions?: string
+    userContext?: Record<string, unknown>
+    fileIDs?: string[]
+    generateChatName?: boolean
+    clientConfig?: Record<string, unknown>
     token?: string
     discoveryTimeoutMs: number
   }
@@ -55,12 +61,29 @@ export namespace SessionAgencySwarm {
   export function optionsFromProvider(provider: Provider.Info | undefined): RuntimeOptions {
     const rawBaseURL = asString(provider?.options?.["baseURL"])
     const rawAgency = asString(provider?.options?.["agency"])
+    const rawRecipientAgent =
+      asString(provider?.options?.["recipientAgent"]) ?? asString(provider?.options?.["recipient_agent"])
+    const rawAdditionalInstructions =
+      asString(provider?.options?.["additionalInstructions"]) ??
+      asString(provider?.options?.["additional_instructions"])
+    const rawUserContext = asRecord(provider?.options?.["userContext"]) ?? asRecord(provider?.options?.["user_context"])
+    const rawFileIDs = asStringArray(provider?.options?.["fileIDs"] ?? provider?.options?.["file_ids"])
+    const rawGenerateChatName =
+      asBoolean(provider?.options?.["generateChatName"]) ?? asBoolean(provider?.options?.["generate_chat_name"])
+    const rawClientConfig =
+      asRecord(provider?.options?.["clientConfig"]) ?? asRecord(provider?.options?.["client_config"])
     const rawToken = asString(provider?.options?.["token"])
     const rawTimeout = provider?.options?.["discoveryTimeoutMs"]
 
     return {
       baseURL: AgencySwarmAdapter.normalizeBaseURL(rawBaseURL || AgencySwarmAdapter.DEFAULT_BASE_URL),
       agency: rawAgency || undefined,
+      recipientAgent: rawRecipientAgent || undefined,
+      additionalInstructions: rawAdditionalInstructions || undefined,
+      userContext: rawUserContext,
+      fileIDs: rawFileIDs.length > 0 ? rawFileIDs : undefined,
+      generateChatName: rawGenerateChatName,
+      clientConfig: rawClientConfig,
       token: rawToken || undefined,
       discoveryTimeoutMs:
         typeof rawTimeout === "number" && Number.isFinite(rawTimeout) && rawTimeout > 0
@@ -106,9 +129,7 @@ export namespace SessionAgencySwarm {
     return normalizeCallerAgentValue(value)
   }
 
-  export function extractFunctionCallOutputs(
-    newMessages: unknown[],
-  ): Array<{ callID: string; output: string }> {
+  export function extractFunctionCallOutputs(newMessages: unknown[]): Array<{ callID: string; output: string }> {
     return extractFunctionCallOutputsFromMessages(newMessages)
   }
 
@@ -117,11 +138,7 @@ export namespace SessionAgencySwarm {
     try {
       agency = await resolveAgency(input.options)
     } catch (error) {
-      markError(
-        input.sessionID,
-        input.assistantMessage,
-        error instanceof Error ? error.message : String(error),
-      )
+      markError(input.sessionID, input.assistantMessage, error instanceof Error ? error.message : String(error))
       input.assistantMessage.time.completed = Date.now()
       input.assistantMessage.finish = "error"
       await Session.updateMessage(input.assistantMessage)
@@ -135,7 +152,7 @@ export namespace SessionAgencySwarm {
 
     const history = await AgencySwarmHistory.load(scope)
     const outgoingMessage = buildOutgoingMessage(input.userMessage)
-    const recipientAgent = findRecipientAgent(input.userMessage)
+    const recipientAgent = findRecipientAgent(input.userMessage) ?? input.options.recipientAgent
     const fileURLs = collectFileURLs(input.userMessage)
 
     const toolByCallID = new Map<string, MessageV2.ToolPart>()
@@ -202,8 +219,13 @@ export namespace SessionAgencySwarm {
         message: outgoingMessage,
         chatHistory: history.chat_history,
         recipientAgent,
+        additionalInstructions: input.options.additionalInstructions,
+        userContext: input.options.userContext,
+        fileIDs: input.options.fileIDs,
         token: input.options.token,
         fileURLs,
+        generateChatName: input.options.generateChatName,
+        clientConfig: input.options.clientConfig,
         abort: streamSignal,
       })) {
         if (frame.type === "meta") {
@@ -216,9 +238,7 @@ export namespace SessionAgencySwarm {
         }
 
         if (frame.type === "messages") {
-          const newMessages = Array.isArray(frame.payload["new_messages"])
-            ? frame.payload["new_messages"]
-            : []
+          const newMessages = Array.isArray(frame.payload["new_messages"]) ? frame.payload["new_messages"] : []
           await AgencySwarmHistory.appendMessages(scope, newMessages)
           const runFromMessages = asString(frame.payload["run_id"])
           if (runFromMessages) {
@@ -413,11 +433,7 @@ export namespace SessionAgencySwarm {
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError") && !cancelRequested) {
         hadError = true
-        markError(
-          input.sessionID,
-          input.assistantMessage,
-          error instanceof Error ? error.message : String(error),
-        )
+        markError(input.sessionID, input.assistantMessage, error instanceof Error ? error.message : String(error))
       }
     } finally {
       if (cancelBeforeMetaTimer) {
@@ -475,6 +491,18 @@ export namespace SessionAgencySwarm {
     Bus.publish(Session.Event.Error, {
       sessionID,
       error,
+    })
+  }
+
+  function asBoolean(value: unknown): boolean | undefined {
+    return typeof value === "boolean" ? value : undefined
+  }
+
+  function asStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) return []
+    return value.flatMap((item) => {
+      const parsed = asString(item)
+      return parsed ? [parsed] : []
     })
   }
 }

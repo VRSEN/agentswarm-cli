@@ -3,9 +3,8 @@ import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 
 describe("agency-swarm.adapter", () => {
   const originalFetch = globalThis.fetch
-  const asFetch = (
-    value: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
-  ): typeof fetch => value as unknown as typeof fetch
+  const asFetch = (value: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): typeof fetch =>
+    value as unknown as typeof fetch
 
   afterEach(() => {
     globalThis.fetch = originalFetch
@@ -52,13 +51,24 @@ describe("agency-swarm.adapter", () => {
           JSON.stringify({
             metadata: {
               agencyName: "Builder",
+              agents: ["PM", "Researcher"],
               entryPoints: ["PM"],
             },
             nodes: [
               {
                 id: "PM",
+                type: "agent",
                 data: {
+                  label: "Project Manager",
                   description: "Planning agent",
+                  isEntryPoint: true,
+                },
+              },
+              {
+                id: "Researcher",
+                type: "agent",
+                data: {
+                  description: "Research support",
                 },
               },
             ],
@@ -78,10 +88,21 @@ describe("agency-swarm.adapter", () => {
     expect(result.agencies[0].id).toBe("builder")
     expect(result.agencies[0].name).toBe("Builder")
     expect(result.agencies[0].description).toBe("Planning agent")
-    expect(calls).toEqual([
-      "https://example.com/proxy/openapi.json",
-      "https://example.com/proxy/builder/get_metadata",
+    expect(result.agencies[0].agents).toEqual([
+      {
+        id: "PM",
+        name: "Project Manager",
+        description: "Planning agent",
+        isEntryPoint: true,
+      },
+      {
+        id: "Researcher",
+        name: "Researcher",
+        description: "Research support",
+        isEntryPoint: false,
+      },
     ])
+    expect(calls).toEqual(["https://example.com/proxy/openapi.json", "https://example.com/proxy/builder/get_metadata"])
   })
 
   test("streamRun parses meta data messages and end frames", async () => {
@@ -121,6 +142,77 @@ describe("agency-swarm.adapter", () => {
 
     expect(frames.map((frame) => frame.type)).toEqual(["meta", "data", "messages", "end"])
     expect(frames[0]).toEqual({ type: "meta", runID: "run_123" })
+  })
+
+  test("streamRun maps supported request payload fields", async () => {
+    let requestBody: Record<string, unknown> | undefined
+    globalThis.fetch = asFetch(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const rawBody = typeof init?.body === "string" ? init.body : "{}"
+      requestBody = JSON.parse(rawBody) as Record<string, unknown>
+
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const encoder = new TextEncoder()
+          controller.enqueue(encoder.encode("event: end\ndata: [DONE]\n\n"))
+          controller.close()
+        },
+      })
+
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+        },
+      })
+    })
+
+    for await (const _frame of AgencySwarmAdapter.streamRun({
+      baseURL: "http://127.0.0.1:8000",
+      agency: "builder",
+      message: "hello",
+      chatHistory: [{ type: "message" }],
+      recipientAgent: "PM",
+      additionalInstructions: "keep it brief",
+      userContext: {
+        tenant: "acme",
+      },
+      fileIDs: ["file_1"],
+      fileURLs: {
+        "readme.md": "https://example.com/readme.md",
+      },
+      generateChatName: true,
+      clientConfig: {
+        baseURL: "https://proxy.example.com/v1",
+        apiKey: "secret",
+        litellmKeys: {
+          anthropic: "ant-secret",
+        },
+      },
+    })) {
+      // consume stream
+    }
+
+    expect(requestBody).toEqual({
+      message: "hello",
+      chat_history: [{ type: "message" }],
+      recipient_agent: "PM",
+      additional_instructions: "keep it brief",
+      user_context: {
+        tenant: "acme",
+      },
+      file_ids: ["file_1"],
+      file_urls: {
+        "readme.md": "https://example.com/readme.md",
+      },
+      generate_chat_name: true,
+      client_config: {
+        base_url: "https://proxy.example.com/v1",
+        api_key: "secret",
+        litellm_keys: {
+          anthropic: "ant-secret",
+        },
+      },
+    })
   })
 
   test("streamRun surfaces error-only stream payloads", async () => {

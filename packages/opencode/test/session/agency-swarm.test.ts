@@ -34,9 +34,44 @@ describe("session.agency-swarm", () => {
     expect(called).toBeFalse()
   })
 
+  test("optionsFromProvider maps supported FastAPI request options", () => {
+    const options = SessionAgencySwarm.optionsFromProvider({
+      id: "agency-swarm",
+      name: "Agency Swarm",
+      source: "config",
+      env: [],
+      models: {},
+      options: {
+        baseURL: "http://127.0.0.1:8080",
+        agency: "builder",
+        recipientAgent: "Planner",
+        additionalInstructions: "reply with short updates",
+        userContext: {
+          tenant: "acme",
+        },
+        fileIDs: ["file_1", "file_2"],
+        generateChatName: true,
+        clientConfig: {
+          base_url: "https://proxy.example.com/v1",
+        },
+        discoveryTimeoutMs: 12000,
+      },
+    })
+
+    expect(options.baseURL).toBe("http://127.0.0.1:8080")
+    expect(options.agency).toBe("builder")
+    expect(options.recipientAgent).toBe("Planner")
+    expect(options.additionalInstructions).toBe("reply with short updates")
+    expect(options.userContext).toEqual({ tenant: "acme" })
+    expect(options.fileIDs).toEqual(["file_1", "file_2"])
+    expect(options.generateChatName).toBeTrue()
+    expect(options.clientConfig).toEqual({ base_url: "https://proxy.example.com/v1" })
+    expect(options.discoveryTimeoutMs).toBe(12000)
+  })
+
   test("resolveAgency uses single discovered agency", async () => {
     AgencySwarmAdapter.discover = (async () => ({
-      agencies: [{ id: "builder", name: "Builder", metadata: {} }],
+      agencies: [{ id: "builder", name: "Builder", agents: [], metadata: {} }],
       rawOpenAPI: {},
     })) as typeof AgencySwarmAdapter.discover
 
@@ -70,8 +105,8 @@ describe("session.agency-swarm", () => {
   test("resolveAgency throws when multiple agencies are discovered", async () => {
     AgencySwarmAdapter.discover = (async () => ({
       agencies: [
-        { id: "builder", name: "Builder", metadata: {} },
-        { id: "research", name: "Research", metadata: {} },
+        { id: "builder", name: "Builder", agents: [], metadata: {} },
+        { id: "research", name: "Research", agents: [], metadata: {} },
       ],
       rawOpenAPI: {},
     })) as typeof AgencySwarmAdapter.discover
