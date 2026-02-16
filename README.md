@@ -8,6 +8,11 @@
   </a>
 </p>
 <p align="center">The open source AI coding agent.</p>
+
+> [!NOTE]
+> This repository is the private `agency-code` fork used to ship Agency Swarm integration on top of the OpenCode TUI.
+> Keep OpenCode client/server contracts intact while extending the runtime under `packages/opencode/src/agency-swarm/`.
+
 <p align="center">
   <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
   <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>

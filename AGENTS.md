@@ -4,6 +4,12 @@
 - Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
 - Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
 
+## Fork Context
+
+- This is `agency-code`, a private fork of OpenCode focused on Agency Swarm integration.
+- Primary runtime integration lives in `packages/opencode/src/agency-swarm/` and hooks through session/provider code.
+- Preserve OpenCode session/event/storage contracts when adding Agency Swarm behavior so upstream sync stays feasible.
+
 ## Style Guide
 
 ### General Principles
