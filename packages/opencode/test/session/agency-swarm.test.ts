@@ -596,4 +596,134 @@ describe("session.agency-swarm", () => {
     ])
     expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("error")
   })
+
+  test("stream preserves teardown when raw_response_event emits type=error", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = (async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "message", id: "msg_err2" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_err2",
+            output_index: "0",
+            delta: "partial",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "error",
+            message: "nested stream error",
+          },
+        },
+      }
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    expect(events.map((event) => event.type)).toEqual([
+      "start",
+      "start-step",
+      "text-start",
+      "text-delta",
+      "text-end",
+      "finish-step",
+      "finish",
+      "error",
+    ])
+    expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("error")
+  })
+
+  test("stream does not reopen reasoning parts on output_item.done after summary done", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = (async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: { type: "reasoning", id: "rs_dup" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_dup",
+            summary_index: "0",
+            output_index: "1",
+            delta: "Thinking",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_dup",
+            summary_index: "0",
+            output_index: "1",
+            text: "Thinking",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "1",
+            item: { type: "reasoning", id: "rs_dup" },
+          },
+        },
+      }
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const starts: any[] = []
+    const ends: any[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-start") {
+        starts.push(event)
+      }
+      if (event.type === "reasoning-end") {
+        ends.push(event)
+      }
+    }
+
+    expect(starts).toHaveLength(1)
+    expect(ends).toHaveLength(1)
+  })
 })

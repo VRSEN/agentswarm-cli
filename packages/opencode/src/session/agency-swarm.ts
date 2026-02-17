@@ -466,8 +466,12 @@ export namespace SessionAgencySwarm {
       extra?: Record<string, unknown>,
     ) => {
       const key = reasoningKey(itemID, index)
-      const parts = ensureReasoning(itemID, index, meta, extra)
       const current = reasoningBuffer.get(key) || ""
+      const isOpen = reasoningOpen.has(key)
+      if (!isOpen && (text === undefined || text === current)) {
+        return []
+      }
+      const parts = isOpen ? [] : ensureReasoning(itemID, index, meta, extra)
       const suffix = text
         ? text.startsWith(current)
           ? text.slice(current.length)
@@ -480,6 +484,13 @@ export namespace SessionAgencySwarm {
       }
       if (reasoningOpen.has(key)) {
         reasoningOpen.delete(key)
+        const set = reasoningByItem.get(itemID)
+        if (set) {
+          set.delete(key)
+          if (set.size === 0) {
+            reasoningByItem.delete(itemID)
+          }
+        }
         parts.push({
           type: "reasoning-end",
           id: key,
@@ -1092,7 +1103,7 @@ export namespace SessionAgencySwarm {
               if (itemType === "reasoning") {
                 const itemID = asString(item["id"]) || lastReasoningItemID
                 if (!itemID) continue
-                for (const key of Array.from(reasoningByItem.get(itemID) ?? [])) {
+                for (const key of Array.from(reasoningByItem.get(itemID) ?? []).filter((value) => reasoningOpen.has(value))) {
                   const index = Number(key.split(":")[1] || "0")
                   yield* finishReasoning(itemID, Number.isFinite(index) ? index : 0, undefined, eventMeta, {
                     output_index: outputIndex,
@@ -1179,11 +1190,8 @@ export namespace SessionAgencySwarm {
 
             if (responseType === "error") {
               const message = asString(nested["message"]) || asString(nested["error"]) || "Unknown stream error"
-              yield {
-                type: "error",
-                error: new Error(message),
-              }
-              return
+              streamError = new Error(message)
+              break
             }
 
             continue
