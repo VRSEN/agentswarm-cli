@@ -684,6 +684,257 @@ export namespace SessionAgencySwarm {
         .join("\n")
     }
 
+    const toolNameFor = (callID: string) => tools.get(callID)?.tool || "tool"
+
+    const outputMeta = (outputIndex: number | undefined, extra?: Record<string, unknown>) => {
+      return {
+        output_index: outputIndex,
+        ...(extra ?? {}),
+      }
+    }
+
+    const textItemID = (event: Record<string, unknown>) => asString(event["item_id"]) || lastTextItemID
+    const reasoningItemID = (event: Record<string, unknown>) => asString(event["item_id"]) || lastReasoningItemID
+
+    const handleMessagesPayload = async function* (payload: Record<string, unknown>) {
+      const newMessages = Array.isArray(payload["new_messages"]) ? payload["new_messages"] : []
+      await AgencySwarmHistory.appendMessages(scope, newMessages)
+      setUsage(asRecord(payload["usage"]))
+
+      const runFromMessages = asString(payload["run_id"])
+      if (runFromMessages) {
+        runID = runFromMessages
+        await AgencySwarmHistory.setLastRunID(scope, runID)
+      }
+
+      for (const output of extractFunctionCallOutputsFromMessages(newMessages)) {
+        const tool = ensureTool(output.callID, toolNameFor(output.callID))
+        yield* completeTool(output.callID, tool.tool, output.output, {})
+      }
+
+      for (const raw of newMessages) {
+        const message = asRecord(raw)
+        if (!message || asString(message["type"]) !== "message") continue
+        const itemID = asString(message["id"])
+        if (!itemID) continue
+        const text = extractMessageText(message)
+        if (!text) continue
+        yield* finishText(itemID, 0, text, {}, { source: "messages" })
+      }
+    }
+
+    const handleOutputItemAdded = (
+      item: Record<string, unknown>,
+      outputIndex: number | undefined,
+      eventMeta: AgencySwarmEventMeta,
+    ) => {
+      const itemType = asString(item["type"]) || ""
+      const itemID = asString(item["id"])
+
+      if (itemID && outputIndex !== undefined) {
+        callByOutput.set(outputIndex, itemID)
+      }
+
+      if (itemType === "message") {
+        if (!itemID) return []
+        textIndex.set(itemID, 0)
+        return ensureText(itemID, 0, eventMeta, outputMeta(outputIndex))
+      }
+
+      if (itemType === "reasoning") {
+        if (!itemID) return []
+        return ensureReasoning(
+          itemID,
+          0,
+          eventMeta,
+          outputMeta(outputIndex, { encrypted_content: item["encrypted_content"] ?? null }),
+        )
+      }
+
+      if (itemType.endsWith("_call")) {
+        sawToolCall = true
+        const callID = asString(item["call_id"]) || itemID
+        if (!callID) return []
+        const toolName = normalizeToolName(itemType, item)
+        const raw = toolRawInput(itemType, item)
+        if (itemID) callByItem.set(itemID, callID)
+        if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
+        return ensureToolInput(
+          callID,
+          toolName,
+          raw,
+          eventMeta,
+          outputMeta(outputIndex, {
+            item_id: itemID,
+            item_type: itemType,
+          }),
+        )
+      }
+
+      if (itemType.endsWith("_output")) {
+        const callID = asString(item["call_id"])
+        if (!callID) return []
+        const tool = ensureTool(callID, toolNameFor(callID))
+        return completeTool(
+          callID,
+          tool.tool,
+          toolOutput(itemType, item),
+          eventMeta,
+          outputMeta(outputIndex, {
+            item_id: itemID,
+            item_type: itemType,
+          }),
+        )
+      }
+
+      return []
+    }
+
+    const handleOutputItemDone = (
+      item: Record<string, unknown>,
+      outputIndex: number | undefined,
+      eventMeta: AgencySwarmEventMeta,
+    ) => {
+      const itemType = asString(item["type"]) || ""
+
+      if (itemType === "message") {
+        const itemID = asString(item["id"]) || lastTextItemID
+        if (!itemID) return []
+        return finishText(itemID, textIndex.get(itemID) ?? 0, undefined, eventMeta, outputMeta(outputIndex))
+      }
+
+      if (itemType === "reasoning") {
+        const itemID = asString(item["id"]) || lastReasoningItemID
+        if (!itemID) return []
+        return Array.from(reasoningByItem.get(itemID) ?? [])
+          .filter((value) => reasoningOpen.has(value))
+          .flatMap((key) => {
+            const index = Number(key.split(":")[1] || "0")
+            return finishReasoning(
+              itemID,
+              Number.isFinite(index) ? index : 0,
+              undefined,
+              eventMeta,
+              outputMeta(outputIndex, { encrypted_content: item["encrypted_content"] ?? null }),
+            )
+          })
+      }
+
+      if (itemType.endsWith("_output")) {
+        const callID = asString(item["call_id"])
+        if (!callID) return []
+        const tool = ensureTool(callID, toolNameFor(callID))
+        return completeTool(
+          callID,
+          tool.tool,
+          toolOutput(itemType, item),
+          eventMeta,
+          outputMeta(outputIndex, { item_type: itemType }),
+        )
+      }
+
+      if (itemType.endsWith("_call")) {
+        sawToolCall = true
+        const callID = asString(item["call_id"]) || asString(item["id"])
+        if (!callID) return []
+        const itemID = asString(item["id"])
+        const toolName = normalizeToolName(itemType, item)
+        if (itemID) callByItem.set(itemID, callID)
+        if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
+        const parts = runTool(
+          callID,
+          toolName,
+          eventMeta,
+          outputMeta(outputIndex, {
+            item_type: itemType,
+          }),
+        )
+        if (itemType === "function_call") {
+          return parts
+        }
+        return [
+          ...parts,
+          ...completeTool(
+            callID,
+            toolName,
+            toolOutput(itemType, item),
+            eventMeta,
+            outputMeta(outputIndex, { item_type: itemType }),
+          ),
+        ]
+      }
+
+      return []
+    }
+
+    const handleRunItemEvent = (payload: Record<string, unknown>, eventMeta: AgencySwarmEventMeta) => {
+      const name = asString(payload["name"])
+      const item = asRecord(payload["item"])
+      const rawItem = asRecord(item?.["raw_item"])
+      if (!name || !rawItem) return []
+
+      const itemType = asString(rawItem["type"]) || ""
+      if (name === "tool_called" && itemType.endsWith("_call")) {
+        sawToolCall = true
+        const callID = asString(rawItem["call_id"]) || asString(rawItem["id"])
+        if (!callID) return []
+        const toolName = normalizeToolName(itemType, rawItem)
+        const itemID = asString(rawItem["id"])
+        if (itemID) callByItem.set(itemID, callID)
+        return [
+          ...ensureToolInput(callID, toolName, toolRawInput(itemType, rawItem), eventMeta, {
+            item_id: itemID,
+            source: "run_item_stream_event",
+          }),
+          ...runTool(callID, toolName, eventMeta, {
+            item_id: itemID,
+            source: "run_item_stream_event",
+          }),
+        ]
+      }
+
+      if (name === "tool_output" && itemType.endsWith("_output")) {
+        const callID = asString(rawItem["call_id"])
+        if (!callID) return []
+        const tool = ensureTool(callID, toolNameFor(callID))
+        return completeTool(callID, tool.tool, stringifyToolOutput(item?.["output"] ?? rawItem["output"]), eventMeta, {
+          source: "run_item_stream_event",
+        })
+      }
+
+      if (name === "message_output_created" && itemType === "message") {
+        const itemID = asString(rawItem["id"]) || lastTextItemID
+        if (!itemID) return []
+        const text = extractMessageText(rawItem)
+        if (!text) return []
+        return finishText(itemID, 0, text, eventMeta, { source: "run_item_stream_event" })
+      }
+
+      if (name !== "reasoning_item_created" || itemType !== "reasoning") {
+        return []
+      }
+
+      const itemID = asString(rawItem["id"])
+      if (!itemID) return []
+      const summary = Array.isArray(rawItem["summary"]) ? rawItem["summary"] : []
+      if (summary.length === 0) {
+        return [
+          ...ensureReasoning(itemID, 0, eventMeta, { source: "run_item_stream_event" }),
+          ...finishReasoning(itemID, 0, undefined, eventMeta, { source: "run_item_stream_event" }),
+        ]
+      }
+
+      return summary.flatMap((raw, index) => {
+        const record = asRecord(raw)
+        const text = asString(record?.["text"]) || ""
+        return [
+          ...ensureReasoning(itemID, index, eventMeta, { source: "run_item_stream_event" }),
+          ...(text ? reasoningDelta(itemID, index, text, eventMeta, { source: "run_item_stream_event" }) : []),
+          ...finishReasoning(itemID, index, text || undefined, eventMeta, { source: "run_item_stream_event" }),
+        ]
+      })
+    }
+
     const flushOpen = () => {
       const parts: any[] = []
 
@@ -789,35 +1040,7 @@ export namespace SessionAgencySwarm {
           }
 
           if (frame.type === "messages") {
-            const payload = frame.payload
-            const newMessages = Array.isArray(payload["new_messages"]) ? payload["new_messages"] : []
-            await AgencySwarmHistory.appendMessages(scope, newMessages)
-            setUsage(asRecord(payload["usage"]))
-
-            const runFromMessages = asString(payload["run_id"])
-            if (runFromMessages) {
-              runID = runFromMessages
-              await AgencySwarmHistory.setLastRunID(scope, runID)
-            }
-
-            for (const output of extractFunctionCallOutputsFromMessages(newMessages)) {
-              const tool = ensureTool(output.callID, tools.get(output.callID)?.tool || "tool")
-              yield* completeTool(output.callID, tool.tool, output.output, {})
-            }
-
-            for (const raw of newMessages) {
-              const message = asRecord(raw)
-              if (!message) continue
-              if (asString(message["type"]) !== "message") continue
-              const itemID = asString(message["id"])
-              if (!itemID) continue
-
-              const text = extractMessageText(message)
-              if (!text) continue
-
-              const index = 0
-              yield* finishText(itemID, index, text, {}, { source: "messages" })
-            }
+            yield* handleMessagesPayload(frame.payload)
             continue
           }
 
@@ -860,12 +1083,8 @@ export namespace SessionAgencySwarm {
               continue
             }
 
-            if (responseType === "response.created") {
-              setUsage(asRecord(asRecord(nested["response"])?.["usage"]))
-              continue
-            }
-
             if (
+              responseType === "response.created" ||
               responseType === "response.in_progress" ||
               responseType === "response.completed" ||
               responseType === "response.incomplete"
@@ -874,73 +1093,25 @@ export namespace SessionAgencySwarm {
               continue
             }
 
-            if (responseType === "response.output_item.added") {
-              if (!item) continue
-              const itemType = asString(item["type"]) || ""
-              const itemID = asString(item["id"])
+            if (responseType === "response.output_item.added" && item) {
+              yield* handleOutputItemAdded(item, outputIndex, eventMeta)
+              continue
+            }
 
-              if (itemID && outputIndex !== undefined) {
-                callByOutput.set(outputIndex, itemID)
-              }
-
-              if (itemType === "message") {
-                if (!itemID) continue
-                textIndex.set(itemID, 0)
-                yield* ensureText(itemID, 0, eventMeta, { output_index: outputIndex })
-                continue
-              }
-
-              if (itemType === "reasoning") {
-                if (!itemID) continue
-                yield* ensureReasoning(itemID, 0, eventMeta, {
-                  output_index: outputIndex,
-                  encrypted_content: item["encrypted_content"] ?? null,
-                })
-                continue
-              }
-
-              if (itemType.endsWith("_call")) {
-                sawToolCall = true
-                const callID = asString(item["call_id"]) || itemID
-                if (!callID) continue
-                const toolName = normalizeToolName(itemType, item)
-                const raw = toolRawInput(itemType, item)
-                if (itemID) callByItem.set(itemID, callID)
-                if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
-                yield* ensureToolInput(callID, toolName, raw, eventMeta, {
-                  item_id: itemID,
-                  output_index: outputIndex,
-                  item_type: itemType,
-                })
-                continue
-              }
-
-              if (itemType.endsWith("_output")) {
-                const callID = asString(item["call_id"])
-                if (!callID) continue
-                const tool = ensureTool(callID, tools.get(callID)?.tool || "tool")
-                yield* completeTool(callID, tool.tool, toolOutput(itemType, item), eventMeta, {
-                  item_id: itemID,
-                  output_index: outputIndex,
-                  item_type: itemType,
-                })
-              }
+            if (responseType === "response.output_item.done" && item) {
+              yield* handleOutputItemDone(item, outputIndex, eventMeta)
               continue
             }
 
             if (responseType === "response.content_part.added") {
-              const itemID = asString(nested["item_id"]) || lastTextItemID
+              const itemID = textItemID(nested)
               if (!itemID) continue
               const part = asRecord(nested["part"])
               const partType = asString(part?.["type"]) || ""
               if (partType === "output_text" || partType === "refusal") {
                 const contentIndex = asNumber(nested["content_index"]) ?? 0
                 textIndex.set(itemID, contentIndex)
-                yield* ensureText(itemID, contentIndex, eventMeta, {
-                  output_index: outputIndex,
-                  content_index: contentIndex,
-                  content_type: partType,
-                })
+                yield* ensureText(itemID, contentIndex, eventMeta, outputMeta(outputIndex, { content_index: contentIndex, content_type: partType }))
               }
               continue
             }
@@ -948,117 +1119,77 @@ export namespace SessionAgencySwarm {
             if (responseType === "response.output_text.delta" || responseType === "response.refusal.delta") {
               const delta = asRawString(nested["delta"])
               if (delta === undefined) continue
-              const itemID = asString(nested["item_id"]) || lastTextItemID
+              const itemID = textItemID(nested)
               if (!itemID) continue
               const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
               textIndex.set(itemID, contentIndex)
-              yield* ensureText(itemID, contentIndex, eventMeta, {
-                output_index: outputIndex,
-                content_index: contentIndex,
-              })
-              yield* textDelta(itemID, contentIndex, delta, eventMeta, {
-                output_index: outputIndex,
-                content_index: contentIndex,
-              })
+              const textMeta = outputMeta(outputIndex, { content_index: contentIndex })
+              yield* ensureText(itemID, contentIndex, eventMeta, textMeta)
+              yield* textDelta(itemID, contentIndex, delta, eventMeta, textMeta)
               continue
             }
 
-            if (responseType === "response.output_text.done") {
-              const itemID = asString(nested["item_id"]) || lastTextItemID
-              if (!itemID) continue
-              const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
-              const final = asRawString(nested["text"])
-              yield* finishText(itemID, contentIndex, final, eventMeta, {
-                output_index: outputIndex,
-                content_index: contentIndex,
-              })
-              continue
-            }
-
-            if (responseType === "response.content_part.done") {
-              const itemID = asString(nested["item_id"]) || lastTextItemID
+            if (responseType === "response.output_text.done" || responseType === "response.content_part.done") {
+              const itemID = textItemID(nested)
               if (!itemID) continue
               const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
               const part = asRecord(nested["part"])
               const final =
+                asRawString(nested["text"]) ??
                 asRawString(part?.["text"]) ??
                 asRawString(part?.["refusal"]) ??
-                asRawString(nested["text"]) ??
                 asRawString(nested["delta"])
-              yield* finishText(itemID, contentIndex, final, eventMeta, {
-                output_index: outputIndex,
-                content_index: contentIndex,
-              })
+              yield* finishText(itemID, contentIndex, final, eventMeta, outputMeta(outputIndex, { content_index: contentIndex }))
               continue
             }
 
             if (responseType === "response.reasoning_summary_part.added") {
-              const itemID = asString(nested["item_id"]) || lastReasoningItemID
+              const itemID = reasoningItemID(nested)
               if (!itemID) continue
               const summaryIndex = asNumber(nested["summary_index"]) ?? 0
-              yield* ensureReasoning(itemID, summaryIndex, eventMeta, {
-                output_index: outputIndex,
-              })
+              yield* ensureReasoning(itemID, summaryIndex, eventMeta, outputMeta(outputIndex))
               continue
             }
 
             if (responseType === "response.reasoning_summary_text.delta" || responseType === "response.reasoning_text.delta") {
-              const itemID = asString(nested["item_id"]) || lastReasoningItemID
+              const itemID = reasoningItemID(nested)
               if (!itemID) continue
               const summaryIndex = asNumber(nested["summary_index"] ?? nested["content_index"]) ?? 0
               const delta = asRawString(nested["delta"])
               if (delta === undefined) continue
-              yield* ensureReasoning(itemID, summaryIndex, eventMeta, {
-                output_index: outputIndex,
-              })
-              yield* reasoningDelta(itemID, summaryIndex, delta, eventMeta, {
-                output_index: outputIndex,
-              })
+              yield* ensureReasoning(itemID, summaryIndex, eventMeta, outputMeta(outputIndex))
+              yield* reasoningDelta(itemID, summaryIndex, delta, eventMeta, outputMeta(outputIndex))
               continue
             }
 
-            if (responseType === "response.reasoning_summary_text.done" || responseType === "response.reasoning_text.done") {
-              const itemID = asString(nested["item_id"]) || lastReasoningItemID
+            if (
+              responseType === "response.reasoning_summary_text.done" ||
+              responseType === "response.reasoning_text.done" ||
+              responseType === "response.reasoning_summary_part.done"
+            ) {
+              const itemID = reasoningItemID(nested)
               if (!itemID) continue
               const summaryIndex = asNumber(nested["summary_index"] ?? nested["content_index"]) ?? 0
-              const text = asRawString(nested["text"])
-              yield* finishReasoning(itemID, summaryIndex, text, eventMeta, {
-                output_index: outputIndex,
-              })
-              continue
-            }
-
-            if (responseType === "response.reasoning_summary_part.done") {
-              const itemID = asString(nested["item_id"]) || lastReasoningItemID
-              if (!itemID) continue
-              const summaryIndex = asNumber(nested["summary_index"]) ?? 0
               const part = asRecord(nested["part"])
-              const text = asRawString(part?.["text"])
-              yield* finishReasoning(itemID, summaryIndex, text, eventMeta, {
-                output_index: outputIndex,
-              })
+              const text = asRawString(nested["text"])
+              const final = text ?? asRawString(part?.["text"])
+              yield* finishReasoning(itemID, summaryIndex, final, eventMeta, outputMeta(outputIndex))
               continue
             }
 
-            if (responseType === "response.function_call_arguments.delta") {
+            if (
+              responseType === "response.function_call_arguments.delta" ||
+              responseType === "response.code_interpreter_call_code.delta"
+            ) {
               sawToolCall = true
               const callID = findCallID(nested, item)
               if (!callID) continue
               const delta = asRawString(nested["delta"]) ?? ""
-              const toolName = asString(nested["name"]) || tools.get(callID)?.tool || "tool"
+              const toolName =
+                responseType === "response.code_interpreter_call_code.delta"
+                  ? "code_interpreter"
+                  : asString(nested["name"]) || toolNameFor(callID)
               yield* appendToolInput(callID, toolName, delta, eventMeta, {
-                item_id: asString(nested["item_id"]),
-                output_index: outputIndex,
-              })
-              continue
-            }
-
-            if (responseType === "response.code_interpreter_call_code.delta") {
-              sawToolCall = true
-              const callID = findCallID(nested, item)
-              if (!callID) continue
-              const delta = asRawString(nested["delta"]) ?? ""
-              yield* appendToolInput(callID, "code_interpreter", delta, eventMeta, {
                 item_id: asString(nested["item_id"]),
                 output_index: outputIndex,
               })
@@ -1076,73 +1207,12 @@ export namespace SessionAgencySwarm {
               const toolName =
                 responseType === "response.code_interpreter_call_code.done"
                   ? "code_interpreter"
-                  : asString(nested["name"]) || tools.get(callID)?.tool || "tool"
-              const raw =
-                asRawString(nested["arguments"]) ?? asRawString(nested["code"]) ?? tools.get(callID)?.raw ?? ""
+                  : asString(nested["name"]) || toolNameFor(callID)
+              const raw = asRawString(nested["arguments"]) ?? asRawString(nested["code"]) ?? tools.get(callID)?.raw ?? ""
               yield* finalizeToolInput(callID, toolName, raw, eventMeta, {
                 item_id: asString(nested["item_id"]),
                 output_index: outputIndex,
               })
-              continue
-            }
-
-            if (responseType === "response.output_item.done") {
-              if (!item) continue
-              const itemType = asString(item["type"]) || ""
-
-              if (itemType === "message") {
-                const itemID = asString(item["id"]) || lastTextItemID
-                if (!itemID) continue
-                const contentIndex = textIndex.get(itemID) ?? 0
-                yield* finishText(itemID, contentIndex, undefined, eventMeta, {
-                  output_index: outputIndex,
-                })
-                continue
-              }
-
-              if (itemType === "reasoning") {
-                const itemID = asString(item["id"]) || lastReasoningItemID
-                if (!itemID) continue
-                for (const key of Array.from(reasoningByItem.get(itemID) ?? []).filter((value) => reasoningOpen.has(value))) {
-                  const index = Number(key.split(":")[1] || "0")
-                  yield* finishReasoning(itemID, Number.isFinite(index) ? index : 0, undefined, eventMeta, {
-                    output_index: outputIndex,
-                    encrypted_content: item["encrypted_content"] ?? null,
-                  })
-                }
-                continue
-              }
-
-              if (itemType.endsWith("_output")) {
-                const callID = asString(item["call_id"])
-                if (!callID) continue
-                const tool = ensureTool(callID, tools.get(callID)?.tool || "tool")
-                yield* completeTool(callID, tool.tool, toolOutput(itemType, item), eventMeta, {
-                  output_index: outputIndex,
-                  item_type: itemType,
-                })
-                continue
-              }
-
-              if (itemType.endsWith("_call")) {
-                sawToolCall = true
-                const callID = asString(item["call_id"]) || asString(item["id"])
-                if (!callID) continue
-                const toolName = normalizeToolName(itemType, item)
-                const itemID = asString(item["id"])
-                if (itemID) callByItem.set(itemID, callID)
-                if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
-                yield* runTool(callID, toolName, eventMeta, {
-                  output_index: outputIndex,
-                  item_type: itemType,
-                })
-                if (itemType !== "function_call") {
-                  yield* completeTool(callID, toolName, toolOutput(itemType, item), eventMeta, {
-                    output_index: outputIndex,
-                    item_type: itemType,
-                  })
-                }
-              }
               continue
             }
 
@@ -1198,82 +1268,7 @@ export namespace SessionAgencySwarm {
           }
 
           if (kind === "run_item_stream_event") {
-            const name = asString(frame.payload["name"])
-            const item = asRecord(frame.payload["item"])
-            const rawItem = asRecord(item?.["raw_item"])
-
-            if (name === "tool_called" && rawItem) {
-              const itemType = asString(rawItem["type"]) || ""
-              if (itemType.endsWith("_call")) {
-                sawToolCall = true
-                const callID = asString(rawItem["call_id"]) || asString(rawItem["id"])
-                if (!callID) continue
-                const toolName = normalizeToolName(itemType, rawItem)
-                const itemID = asString(rawItem["id"])
-                if (itemID) callByItem.set(itemID, callID)
-                yield* ensureToolInput(callID, toolName, toolRawInput(itemType, rawItem), eventMeta, {
-                  item_id: itemID,
-                  source: "run_item_stream_event",
-                })
-                yield* runTool(callID, toolName, eventMeta, {
-                  item_id: itemID,
-                  source: "run_item_stream_event",
-                })
-              }
-              continue
-            }
-
-            if (name === "tool_output" && rawItem) {
-              const itemType = asString(rawItem["type"]) || ""
-              if (itemType.endsWith("_output")) {
-                const callID = asString(rawItem["call_id"])
-                if (!callID) continue
-                const tool = ensureTool(callID, tools.get(callID)?.tool || "tool")
-                yield* completeTool(
-                  callID,
-                  tool.tool,
-                  stringifyToolOutput(item?.["output"] ?? rawItem["output"]),
-                  eventMeta,
-                  {
-                    source: "run_item_stream_event",
-                  },
-                )
-              }
-              continue
-            }
-
-            if (name === "message_output_created" && rawItem && asString(rawItem["type"]) === "message") {
-              const itemID = asString(rawItem["id"]) || lastTextItemID
-              if (!itemID) continue
-              const text = extractMessageText(rawItem)
-              if (!text) continue
-              yield* finishText(itemID, 0, text, eventMeta, { source: "run_item_stream_event" })
-              continue
-            }
-
-            if (name === "reasoning_item_created" && rawItem && asString(rawItem["type"]) === "reasoning") {
-              const itemID = asString(rawItem["id"])
-              if (!itemID) continue
-              const summary = Array.isArray(rawItem["summary"]) ? rawItem["summary"] : []
-              if (summary.length === 0) {
-                yield* ensureReasoning(itemID, 0, eventMeta, { source: "run_item_stream_event" })
-                yield* finishReasoning(itemID, 0, undefined, eventMeta, { source: "run_item_stream_event" })
-                continue
-              }
-              for (const [index, raw] of summary.entries()) {
-                const record = asRecord(raw)
-                const text = asString(record?.["text"]) || ""
-                yield* ensureReasoning(itemID, index, eventMeta, { source: "run_item_stream_event" })
-                if (text) {
-                  yield* reasoningDelta(itemID, index, text, eventMeta, { source: "run_item_stream_event" })
-                }
-                yield* finishReasoning(itemID, index, text || undefined, eventMeta, {
-                  source: "run_item_stream_event",
-                })
-              }
-              continue
-            }
-
+            yield* handleRunItemEvent(frame.payload, eventMeta)
             continue
           }
         }
