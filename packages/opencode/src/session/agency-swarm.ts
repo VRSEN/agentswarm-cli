@@ -1243,6 +1243,15 @@ export namespace SessionAgencySwarm {
               }
 
               if (phase === "completed") {
+                if (itemType === "function_call") {
+                  yield* runTool(callID, toolName, eventMeta, {
+                    item_id: itemID,
+                    output_index: outputIndex,
+                    item_type: itemType,
+                    phase,
+                  })
+                  continue
+                }
                 yield* completeTool(callID, toolName, toolOutput(itemType, item), eventMeta, {
                   item_id: itemID,
                   output_index: outputIndex,
@@ -1295,6 +1304,14 @@ export namespace SessionAgencySwarm {
         streamError = new Error("Tool stream ended before output was received")
       }
 
+      if (streamError) {
+        yield {
+          type: "error",
+          error: streamError,
+        }
+        return
+      }
+
       const finalUsage = usage ?? {
         inputTokens: 0,
         outputTokens: 0,
@@ -1324,13 +1341,6 @@ export namespace SessionAgencySwarm {
 
       yield {
         type: "finish",
-      }
-
-      if (streamError) {
-        yield {
-          type: "error",
-          error: streamError,
-        }
       }
     })()
 

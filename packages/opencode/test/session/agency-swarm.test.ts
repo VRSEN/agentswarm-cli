@@ -494,7 +494,8 @@ describe("session.agency-swarm", () => {
     }
 
     expect(events.some((event) => event.type === "tool-error")).toBeTrue()
-    expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("error")
+    expect(events.some((event) => event.type === "finish-step")).toBeFalse()
+    expect(events.some((event) => event.type === "finish")).toBeFalse()
     expect(events.at(-1)?.type).toBe("error")
   })
 
@@ -772,17 +773,9 @@ describe("session.agency-swarm", () => {
       events.push(event)
     }
 
-    expect(events.map((event) => event.type)).toEqual([
-      "start",
-      "start-step",
-      "text-start",
-      "text-delta",
-      "text-end",
-      "finish-step",
-      "finish",
-      "error",
-    ])
-    expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("error")
+    expect(events.map((event) => event.type)).toEqual(["start", "start-step", "text-start", "text-delta", "text-end", "error"])
+    expect(events.some((event) => event.type === "finish-step")).toBeFalse()
+    expect(events.some((event) => event.type === "finish")).toBeFalse()
   })
 
   test("stream preserves teardown when raw_response_event emits type=error", async () => {
@@ -831,17 +824,71 @@ describe("session.agency-swarm", () => {
       events.push(event)
     }
 
-    expect(events.map((event) => event.type)).toEqual([
-      "start",
-      "start-step",
-      "text-start",
-      "text-delta",
-      "text-end",
-      "finish-step",
-      "finish",
-      "error",
-    ])
-    expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("error")
+    expect(events.map((event) => event.type)).toEqual(["start", "start-step", "text-start", "text-delta", "text-end", "error"])
+    expect(events.some((event) => event.type === "finish-step")).toBeFalse()
+    expect(events.some((event) => event.type === "finish")).toBeFalse()
+  })
+
+  test("stream does not complete function_call on response.function_call.completed before output", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = (async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "2",
+            item: {
+              type: "function_call",
+              id: "fc_done",
+              call_id: "call_done",
+              name: "lookup",
+              arguments: "{\"query\":\"test\"}",
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.function_call.completed",
+            item_id: "fc_done",
+            output_index: "2",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "2",
+            item: {
+              type: "function_call_output",
+              id: "fco_done",
+              call_id: "call_done",
+              output: "real output",
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    const resultEvents = events.filter((event) => event.type === "tool-result")
+    expect(resultEvents).toHaveLength(1)
+    expect(resultEvents[0].output.output).toBe("real output")
   })
 
   test("stream does not reopen reasoning parts on output_item.done after summary done", async () => {
