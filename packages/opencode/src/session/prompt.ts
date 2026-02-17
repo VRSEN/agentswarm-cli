@@ -651,7 +651,7 @@ export namespace SessionPrompt {
           throw new Error("Failed to resolve current user message for Agency Swarm turn.")
         }
 
-        await processor.process({
+        const result = await processor.process({
           user: lastUser,
           agent,
           abort,
@@ -675,7 +675,16 @@ export namespace SessionPrompt {
               },
             }),
         })
-        break
+        if (result === "stop") break
+        if (result === "compact") {
+          await SessionCompaction.create({
+            sessionID,
+            agent: lastUser.agent,
+            model: lastUser.model,
+            auto: true,
+          })
+        }
+        continue
       }
 
       const tools = await resolveTools({
