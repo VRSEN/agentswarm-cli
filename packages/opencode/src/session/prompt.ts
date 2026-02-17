@@ -634,6 +634,13 @@ export namespace SessionPrompt {
         })
       }
 
+      const processor = SessionProcessor.create({
+        assistantMessage,
+        sessionID: sessionID,
+        model,
+        abort,
+      })
+
       if (model.providerID === SessionAgencySwarm.PROVIDER_ID) {
         const provider = await Provider.getProvider(model.providerID)
         const currentUser = msgs.findLast(
@@ -644,28 +651,32 @@ export namespace SessionPrompt {
           throw new Error("Failed to resolve current user message for Agency Swarm turn.")
         }
 
-        await SessionAgencySwarm.processTurn({
-          sessionID,
-          assistantMessage,
-          userMessage: currentUser,
-          options: SessionAgencySwarm.optionsFromProvider(provider),
+        await processor.process({
+          user: lastUser,
+          agent,
           abort,
-          registerManagedCancel(handler) {
-            setManagedCancel(sessionID, handler)
-          },
-          clearManagedCancel() {
-            setManagedCancel(sessionID, undefined)
-          },
+          sessionID,
+          system: [],
+          messages: [],
+          tools: {},
+          model,
+          createStream: () =>
+            SessionAgencySwarm.stream({
+              sessionID,
+              assistantMessage,
+              userMessage: currentUser,
+              options: SessionAgencySwarm.optionsFromProvider(provider),
+              abort,
+              registerManagedCancel(handler) {
+                setManagedCancel(sessionID, handler)
+              },
+              clearManagedCancel() {
+                setManagedCancel(sessionID, undefined)
+              },
+            }),
         })
         break
       }
-
-      const processor = SessionProcessor.create({
-        assistantMessage,
-        sessionID: sessionID,
-        model,
-        abort,
-      })
 
       const tools = await resolveTools({
         agent,

@@ -1,16 +1,15 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencySwarmHistory } from "@/agency-swarm/history"
-import { Bus } from "@/bus"
 import { Session } from "@/session"
 import { MessageV2 } from "@/session/message-v2"
 import { Log } from "@/util/log"
-import { NamedError } from "@opencode-ai/util/error"
 import type { Provider } from "@/provider/provider"
 import {
   asRecord,
   asRawString,
   asString,
   buildOutgoingMessage,
+  compactMetadata,
   collectFileURLs,
   extractEventMeta,
   extractFunctionCallOutputs as extractFunctionCallOutputsFromMessages,
@@ -20,13 +19,6 @@ import {
   stringifyToolOutput,
   type AgencySwarmEventMeta,
 } from "./agency-swarm-utils"
-import {
-  completeToolPart,
-  ensureTextPart,
-  ensureToolPart,
-  reconcileFromMessages,
-  runToolPart,
-} from "./agency-swarm-parts"
 
 export namespace SessionAgencySwarm {
   const log = Log.create({ service: "session.agency-swarm" })
@@ -47,9 +39,7 @@ export namespace SessionAgencySwarm {
     discoveryTimeoutMs: number
   }
 
-  export type ProcessResult = "stop"
-
-  export type ProcessInput = {
+  export type StreamInput = {
     sessionID: string
     assistantMessage: MessageV2.Assistant
     userMessage: MessageV2.WithParts
@@ -57,6 +47,25 @@ export namespace SessionAgencySwarm {
     abort: AbortSignal
     registerManagedCancel: (handler: () => void | Promise<void>) => void
     clearManagedCancel: () => void
+  }
+
+  type Usage = {
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    reasoningTokens: number
+    cachedInputTokens: number
+    cacheWriteInputTokens: number
+    cost?: number
+  }
+
+  type Tool = {
+    callID: string
+    tool: string
+    raw: string
+    started: boolean
+    running: boolean
+    done: boolean
   }
 
   export function optionsFromProvider(provider: Provider.Info | undefined): RuntimeOptions {
@@ -134,17 +143,8 @@ export namespace SessionAgencySwarm {
     return extractFunctionCallOutputsFromMessages(newMessages)
   }
 
-  export async function processTurn(input: ProcessInput): Promise<ProcessResult> {
-    let agency: string
-    try {
-      agency = await resolveAgency(input.options)
-    } catch (error) {
-      markError(input.sessionID, input.assistantMessage, error instanceof Error ? error.message : String(error))
-      input.assistantMessage.time.completed = Date.now()
-      input.assistantMessage.finish = "error"
-      await Session.updateMessage(input.assistantMessage)
-      return "stop"
-    }
+  export async function stream(input: StreamInput): Promise<{ fullStream: AsyncGenerator<any> }> {
+    const agency = await resolveAgency(input.options)
     const scope = {
       baseURL: input.options.baseURL,
       agency,
@@ -156,21 +156,555 @@ export namespace SessionAgencySwarm {
     const recipientAgent = findRecipientAgent(input.userMessage) ?? input.options.recipientAgent
     const fileURLs = collectFileURLs(input.userMessage)
 
-    const toolByCallID = new Map<string, MessageV2.ToolPart>()
+    const tools = new Map<string, Tool>()
+    const callByItem = new Map<string, string>()
+    const callByOutput = new Map<number, string>()
 
-    let textPart: MessageV2.TextPart | undefined
-    let hadError = false
+    const textBuffer = new Map<string, string>()
+    const textOpen = new Set<string>()
+    const textIndex = new Map<string, number>()
+
+    const reasoningBuffer = new Map<string, string>()
+    const reasoningOpen = new Set<string>()
+    const reasoningByItem = new Map<string, Set<string>>()
+
+    let usage: Usage | undefined
     let runID: string | undefined = history.last_run_id
+    let lastTextItemID: string | undefined
+    let lastReasoningItemID: string | undefined
     let cancelRequested = false
     let cancelInFlight = false
     let cancelBeforeMetaTimer: ReturnType<typeof setTimeout> | undefined
+    let sawToolCall = false
 
     const streamAbort = new AbortController()
     const streamSignal = AbortSignal.any([input.abort, streamAbort.signal])
 
+    const mergeMeta = (meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
+      return {
+        ...compactMetadata(meta),
+        ...(extra ?? {}),
+      }
+    }
+
+    const textKey = (itemID: string, index?: number) => {
+      const value = index ?? textIndex.get(itemID) ?? 0
+      return `${itemID}:${value}`
+    }
+
+    const reasoningKey = (itemID: string, index: number) => `${itemID}:${index}`
+
+    const setUsage = (value: Record<string, unknown> | undefined) => {
+      if (!value) return
+      const rawInput = asNumber(value["input_tokens"] ?? value["inputTokens"])
+      const rawOutput = asNumber(value["output_tokens"] ?? value["outputTokens"])
+      const rawTotal = asNumber(value["total_tokens"] ?? value["totalTokens"])
+      const details = asRecord(value["output_tokens_details"] ?? value["outputTokensDetails"])
+      const inputDetails = asRecord(value["input_tokens_details"] ?? value["inputTokensDetails"])
+      const rawReasoning = asNumber(details?.["reasoning_tokens"] ?? value["reasoning_tokens"] ?? value["reasoningTokens"])
+      const rawCacheRead = asNumber(inputDetails?.["cached_tokens"] ?? value["cached_tokens"] ?? value["cachedInputTokens"])
+      const rawCacheWrite = asNumber(value["cache_write_input_tokens"] ?? value["cacheWriteInputTokens"])
+      const rawCost = asNumber(value["total_cost"] ?? value["totalCost"] ?? value["cost"])
+
+      const inputTokens = rawInput ?? usage?.inputTokens ?? 0
+      const outputTokens = rawOutput ?? usage?.outputTokens ?? 0
+      const reasoningTokens = rawReasoning ?? usage?.reasoningTokens ?? 0
+      const cachedInputTokens = rawCacheRead ?? usage?.cachedInputTokens ?? 0
+      const cacheWriteInputTokens = rawCacheWrite ?? usage?.cacheWriteInputTokens ?? 0
+      const totalTokens =
+        rawTotal ?? inputTokens + outputTokens + reasoningTokens + cachedInputTokens + cacheWriteInputTokens
+
+      usage = {
+        inputTokens,
+        outputTokens,
+        totalTokens,
+        reasoningTokens,
+        cachedInputTokens,
+        cacheWriteInputTokens,
+        cost: rawCost ?? usage?.cost,
+      }
+    }
+
+    const ensureTool = (callID: string, toolName: string) => {
+      const existing = tools.get(callID)
+      if (existing) {
+        existing.tool = toolName || existing.tool
+        return existing
+      }
+      const created = {
+        callID,
+        tool: toolName || "tool",
+        raw: "",
+        started: false,
+        running: false,
+        done: false,
+      } satisfies Tool
+      tools.set(callID, created)
+      return created
+    }
+
+    const normalizeToolName = (itemType: string, item: Record<string, unknown> | undefined) => {
+      if (itemType === "function_call") return asString(item?.["name"]) || "tool"
+      if (itemType === "computer_call") return "computer_use"
+      return itemType.replace(/_call$/, "")
+    }
+
+    const toolRawInput = (itemType: string, item: Record<string, unknown> | undefined) => {
+      if (!item) return ""
+      if (itemType === "function_call") return asRawString(item["arguments"]) || ""
+      if (itemType === "mcp_call") return asRawString(item["arguments"]) || stringifyToolOutput(item["arguments"])
+      if (itemType === "code_interpreter_call") {
+        return asRawString(item["code"]) || stringifyToolOutput(asRecord(item["input"]) ?? asRecord(item["action"]) ?? {})
+      }
+      if (itemType === "file_search_call") {
+        return stringifyToolOutput({
+          queries: Array.isArray(item["queries"]) ? item["queries"] : [],
+        })
+      }
+      if (itemType === "web_search_call") {
+        return stringifyToolOutput({ action: item["action"] ?? null })
+      }
+      return stringifyToolOutput(asRecord(item["input"]) ?? asRecord(item["action"]) ?? {})
+    }
+
+    const toolOutput = (itemType: string, item: Record<string, unknown> | undefined) => {
+      if (!item) return ""
+      if (item["output"] !== undefined) return stringifyToolOutput(item["output"])
+      if (itemType === "file_search_call") return stringifyToolOutput(item["results"] ?? item)
+      if (itemType === "mcp_call") return stringifyToolOutput(item["result"] ?? item)
+      return stringifyToolOutput(item)
+    }
+
+    const findCallID = (event: Record<string, unknown>, item: Record<string, unknown> | undefined) => {
+      const direct = asString(event["call_id"])
+      if (direct) return direct
+
+      const itemID = asString(event["item_id"])
+      if (itemID && callByItem.has(itemID)) return callByItem.get(itemID)
+      if (itemID && tools.has(itemID)) return itemID
+
+      const outputIndex = asNumber(event["output_index"])
+      if (outputIndex !== undefined && callByOutput.has(outputIndex)) {
+        return callByOutput.get(outputIndex)
+      }
+
+      if (item) {
+        const fromItem = asString(item["call_id"]) || asString(item["id"])
+        if (fromItem) return fromItem
+      }
+
+      return undefined
+    }
+
+    const closeText = (
+      key: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      if (!textOpen.has(key)) return []
+      textOpen.delete(key)
+      if (lastTextItemID) {
+        const active = textKey(lastTextItemID)
+        if (active === key) {
+          lastTextItemID = undefined
+        }
+      }
+      return [
+        {
+          type: "text-end",
+          providerMetadata: mergeMeta(meta, extra),
+        },
+      ]
+    }
+
+    const ensureText = (
+      itemID: string,
+      index: number,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const parts: any[] = []
+      const key = textKey(itemID, index)
+      const activeKey = lastTextItemID ? textKey(lastTextItemID) : undefined
+      if (activeKey && activeKey !== key) {
+        parts.push(...closeText(activeKey, meta, extra))
+      }
+      if (!textOpen.has(key)) {
+        textOpen.add(key)
+        parts.push({
+          type: "text-start",
+          providerMetadata: mergeMeta(meta, {
+            item_id: itemID,
+            content_index: index,
+            ...(extra ?? {}),
+          }),
+        })
+      }
+      lastTextItemID = itemID
+      textIndex.set(itemID, index)
+      return parts
+    }
+
+    const textDelta = (
+      itemID: string,
+      index: number,
+      delta: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      if (!delta) return []
+      const key = textKey(itemID, index)
+      const existing = textBuffer.get(key) || ""
+      textBuffer.set(key, existing + delta)
+      return [
+        {
+          type: "text-delta",
+          text: delta,
+          providerMetadata: mergeMeta(meta, {
+            item_id: itemID,
+            content_index: index,
+            ...(extra ?? {}),
+          }),
+        },
+      ]
+    }
+
+    const finishText = (
+      itemID: string,
+      index: number,
+      final: string | undefined,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const key = textKey(itemID, index)
+      const current = textBuffer.get(key) || ""
+      const isOpen = textOpen.has(key)
+      if (final !== undefined && final === current) {
+        if (!isOpen) return []
+        return closeText(key, meta, extra)
+      }
+      const parts = isOpen ? [] : ensureText(itemID, index, meta, extra)
+      const suffix = final
+        ? final.startsWith(current)
+          ? final.slice(current.length)
+          : current
+            ? ""
+            : final
+        : ""
+      if (suffix) {
+        parts.push(...textDelta(itemID, index, suffix, meta, extra))
+      }
+      if (!suffix && final !== undefined && current && !final.startsWith(current) && !isOpen) {
+        return []
+      }
+      parts.push(...closeText(key, meta, extra))
+      return parts
+    }
+
+    const ensureReasoning = (
+      itemID: string,
+      index: number,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const key = reasoningKey(itemID, index)
+      if (reasoningOpen.has(key)) {
+        lastReasoningItemID = itemID
+        return []
+      }
+      reasoningOpen.add(key)
+      lastReasoningItemID = itemID
+      const set = reasoningByItem.get(itemID)
+      if (set) {
+        set.add(key)
+      } else {
+        reasoningByItem.set(itemID, new Set([key]))
+      }
+      return [
+        {
+          type: "reasoning-start",
+          id: key,
+          providerMetadata: mergeMeta(meta, {
+            item_id: itemID,
+            summary_index: index,
+            ...(extra ?? {}),
+          }),
+        },
+      ]
+    }
+
+    const reasoningDelta = (
+      itemID: string,
+      index: number,
+      delta: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      if (!delta) return []
+      const key = reasoningKey(itemID, index)
+      const existing = reasoningBuffer.get(key) || ""
+      reasoningBuffer.set(key, existing + delta)
+      return [
+        {
+          type: "reasoning-delta",
+          id: key,
+          text: delta,
+          providerMetadata: mergeMeta(meta, {
+            item_id: itemID,
+            summary_index: index,
+            ...(extra ?? {}),
+          }),
+        },
+      ]
+    }
+
+    const finishReasoning = (
+      itemID: string,
+      index: number,
+      text: string | undefined,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const key = reasoningKey(itemID, index)
+      const parts = ensureReasoning(itemID, index, meta, extra)
+      const current = reasoningBuffer.get(key) || ""
+      const suffix = text
+        ? text.startsWith(current)
+          ? text.slice(current.length)
+          : current
+            ? ""
+            : text
+        : ""
+      if (suffix) {
+        parts.push(...reasoningDelta(itemID, index, suffix, meta, extra))
+      }
+      if (reasoningOpen.has(key)) {
+        reasoningOpen.delete(key)
+        parts.push({
+          type: "reasoning-end",
+          id: key,
+          providerMetadata: mergeMeta(meta, {
+            item_id: itemID,
+            summary_index: index,
+            ...(extra ?? {}),
+          }),
+        })
+      }
+      return parts
+    }
+
+    const ensureToolInput = (
+      callID: string,
+      toolName: string,
+      rawInput: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const parts: any[] = []
+      const tool = ensureTool(callID, toolName)
+      if (!tool.started) {
+        tool.started = true
+        parts.push({
+          type: "tool-input-start",
+          id: callID,
+          toolName: tool.tool,
+          providerMetadata: mergeMeta(meta, {
+            call_id: callID,
+            ...(extra ?? {}),
+          }),
+        })
+      }
+      if (rawInput) {
+        tool.raw = rawInput
+        parts.push({
+          type: "tool-input-delta",
+          id: callID,
+          delta: rawInput,
+          providerMetadata: mergeMeta(meta, {
+            call_id: callID,
+            ...(extra ?? {}),
+          }),
+        })
+      }
+      return parts
+    }
+
+    const appendToolInput = (
+      callID: string,
+      toolName: string,
+      delta: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const parts = ensureToolInput(callID, toolName, "", meta, extra)
+      const tool = ensureTool(callID, toolName)
+      tool.raw += delta
+      if (delta) {
+        parts.push({
+          type: "tool-input-delta",
+          id: callID,
+          delta,
+          providerMetadata: mergeMeta(meta, {
+            call_id: callID,
+            ...(extra ?? {}),
+          }),
+        })
+      }
+      return parts
+    }
+
+    const finalizeToolInput = (
+      callID: string,
+      toolName: string,
+      rawInput: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const parts = ensureToolInput(callID, toolName, "", meta, extra)
+      const tool = ensureTool(callID, toolName)
+      const current = tool.raw
+      const suffix = rawInput.startsWith(current) ? rawInput.slice(current.length) : current ? "" : rawInput
+      if (suffix) {
+        parts.push(...appendToolInput(callID, toolName, suffix, meta, extra))
+      }
+      parts.push({
+        type: "tool-input-end",
+        id: callID,
+        providerMetadata: mergeMeta(meta, {
+          call_id: callID,
+          ...(extra ?? {}),
+        }),
+      })
+      return parts
+    }
+
+    const runTool = (
+      callID: string,
+      toolName: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const parts = ensureToolInput(callID, toolName, "", meta, extra)
+      const tool = ensureTool(callID, toolName)
+      if (tool.running || tool.done) {
+        return parts
+      }
+      tool.running = true
+      parts.push({
+        type: "tool-call",
+        toolCallId: callID,
+        toolName: tool.tool,
+        input: parseToolInput(tool.raw),
+        providerMetadata: mergeMeta(meta, {
+          call_id: callID,
+          ...(extra ?? {}),
+        }),
+      })
+      return parts
+    }
+
+    const completeTool = (
+      callID: string,
+      toolName: string,
+      output: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const parts = runTool(callID, toolName, meta, extra)
+      const tool = ensureTool(callID, toolName)
+      if (tool.done) {
+        return parts
+      }
+      tool.done = true
+      parts.push({
+        type: "tool-result",
+        toolCallId: callID,
+        input: parseToolInput(tool.raw),
+        output: {
+          output,
+          title: "",
+          metadata: mergeMeta(meta, {
+            call_id: callID,
+            ...(extra ?? {}),
+          }),
+        },
+      })
+      return parts
+    }
+
+    const failTool = (
+      callID: string,
+      toolName: string,
+      message: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const parts = runTool(callID, toolName, meta, extra)
+      const tool = ensureTool(callID, toolName)
+      if (tool.done) {
+        return parts
+      }
+      tool.done = true
+      parts.push({
+        type: "tool-error",
+        toolCallId: callID,
+        input: parseToolInput(tool.raw),
+        error: new Error(message),
+        providerMetadata: mergeMeta(meta, {
+          call_id: callID,
+          ...(extra ?? {}),
+        }),
+      })
+      return parts
+    }
+
+    const extractMessageText = (message: Record<string, unknown>) => {
+      const content = Array.isArray(message["content"]) ? message["content"] : []
+      return content
+        .map((entry) => {
+          const part = asRecord(entry)
+          if (!part) return ""
+          const type = asString(part["type"])
+          if (type === "output_text") return asString(part["text"]) || ""
+          if (type === "refusal") return asString(part["refusal"]) || ""
+          return ""
+        })
+        .filter(Boolean)
+        .join("\n")
+    }
+
+    const flushOpen = () => {
+      const parts: any[] = []
+
+      for (const key of Array.from(textOpen.values())) {
+        textOpen.delete(key)
+        parts.push({ type: "text-end", providerMetadata: {} })
+      }
+
+      for (const key of Array.from(reasoningOpen.values())) {
+        reasoningOpen.delete(key)
+        parts.push({ type: "reasoning-end", id: key, providerMetadata: {} })
+      }
+
+      for (const tool of Array.from(tools.values())) {
+        if (tool.done) continue
+        parts.push(
+          ...failTool(
+            tool.callID,
+            tool.tool,
+            cancelRequested ? "Cancelled" : "Tool stream ended before output was received",
+            {},
+          ),
+        )
+      }
+
+      return parts
+    }
+
     const sendCancel = async () => {
       if (!runID || cancelInFlight) return
       cancelInFlight = true
+
       const result = await AgencySwarmAdapter.cancel({
         baseURL: input.options.baseURL,
         agency,
@@ -213,215 +747,91 @@ export namespace SessionAgencySwarm {
       }
     })
 
-    try {
-      for await (const frame of AgencySwarmAdapter.streamRun({
-        baseURL: input.options.baseURL,
-        agency,
-        message: outgoingMessage,
-        chatHistory: history.chat_history,
-        recipientAgent,
-        additionalInstructions: input.options.additionalInstructions,
-        userContext: input.options.userContext,
-        fileIDs: input.options.fileIDs,
-        token: input.options.token,
-        fileURLs,
-        generateChatName: input.options.generateChatName,
-        clientConfig: input.options.clientConfig,
-        abort: streamSignal,
-      })) {
-        if (frame.type === "meta") {
-          runID = frame.runID
-          await AgencySwarmHistory.setLastRunID(scope, runID)
-          if (cancelRequested) {
-            await sendCancel()
-          }
-          continue
-        }
+    const fullStream = (async function* () {
+      yield { type: "start" }
+      yield { type: "start-step" }
 
-        if (frame.type === "messages") {
-          const newMessages = Array.isArray(frame.payload["new_messages"]) ? frame.payload["new_messages"] : []
-          await AgencySwarmHistory.appendMessages(scope, newMessages)
-          const runFromMessages = asString(frame.payload["run_id"])
-          if (runFromMessages) {
-            runID = runFromMessages
+      try {
+        for await (const frame of AgencySwarmAdapter.streamRun({
+          baseURL: input.options.baseURL,
+          agency,
+          message: outgoingMessage,
+          chatHistory: history.chat_history,
+          recipientAgent,
+          additionalInstructions: input.options.additionalInstructions,
+          userContext: input.options.userContext,
+          fileIDs: input.options.fileIDs,
+          token: input.options.token,
+          fileURLs,
+          generateChatName: input.options.generateChatName,
+          clientConfig: input.options.clientConfig,
+          abort: streamSignal,
+        })) {
+          if (frame.type === "meta") {
+            runID = frame.runID
             await AgencySwarmHistory.setLastRunID(scope, runID)
+            if (cancelRequested) {
+              await sendCancel()
+            }
+            continue
           }
-          await reconcileFromMessages({
-            textPart,
-            toolByCallID,
-            newMessages,
-          })
-          continue
-        }
 
-        if (frame.type === "error") {
-          hadError = true
-          markError(input.sessionID, input.assistantMessage, frame.error)
-          continue
-        }
+          if (frame.type === "messages") {
+            const payload = frame.payload
+            const newMessages = Array.isArray(payload["new_messages"]) ? payload["new_messages"] : []
+            await AgencySwarmHistory.appendMessages(scope, newMessages)
+            setUsage(asRecord(payload["usage"]))
 
-        if (frame.type === "end") {
-          break
-        }
+            const runFromMessages = asString(payload["run_id"])
+            if (runFromMessages) {
+              runID = runFromMessages
+              await AgencySwarmHistory.setLastRunID(scope, runID)
+            }
 
-        if (frame.type === "data") {
+            for (const output of extractFunctionCallOutputsFromMessages(newMessages)) {
+              const tool = ensureTool(output.callID, tools.get(output.callID)?.tool || "tool")
+              yield* completeTool(output.callID, tool.tool, output.output, {})
+            }
+
+            for (const raw of newMessages) {
+              const message = asRecord(raw)
+              if (!message) continue
+              if (asString(message["type"]) !== "message") continue
+              const itemID = asString(message["id"])
+              if (!itemID) continue
+
+              const text = extractMessageText(message)
+              if (!text) continue
+
+              const index = 0
+              yield* finishText(itemID, index, text, {}, { source: "messages" })
+            }
+            continue
+          }
+
+          if (frame.type === "error") {
+            yield {
+              type: "error",
+              error: new Error(frame.error),
+            }
+            return
+          }
+
+          if (frame.type === "end") {
+            break
+          }
+
+          if (frame.type !== "data") {
+            continue
+          }
+
           const eventMeta = extractEventMeta(frame.payload)
           await applyAssistantLabel(input.assistantMessage, eventMeta)
 
           const kind = asString(frame.payload["type"])
-          if (kind === "raw_response_event") {
-            const nested = asRecord(frame.payload["data"])
-            if (!nested) continue
-            const responseType = asString(nested["type"])
-
-            if (responseType === "response.output_item.added") {
-              const item = asRecord(nested["item"])
-              if (!item) continue
-
-              if (asString(item["type"]) === "message") {
-                textPart = await ensureTextPart({
-                  sessionID: input.sessionID,
-                  messageID: input.assistantMessage.id,
-                  textPart,
-                  metadata: eventMeta,
-                })
-                continue
-              }
-
-              if (asString(item["type"]) === "function_call") {
-                const callID = asString(item["call_id"]) || asString(item["id"])
-                if (!callID) continue
-
-                const parsedInput = parseToolInput(item["arguments"])
-                const toolPart = await ensureToolPart({
-                  sessionID: input.sessionID,
-                  messageID: input.assistantMessage.id,
-                  toolByCallID,
-                  callID,
-                  toolName: asString(item["name"]) || "tool",
-                  parsedInput,
-                  rawInput: asString(item["arguments"]) || "",
-                })
-                toolByCallID.set(callID, toolPart)
-
-                continue
-              }
-
-              if (asString(item["type"]) === "function_call_output") {
-                const callID = asString(item["call_id"])
-                if (!callID) continue
-                await completeToolPart({
-                  toolByCallID,
-                  callID,
-                  output: stringifyToolOutput(item["output"]),
-                  metadata: eventMeta,
-                })
-                continue
-              }
-            }
-
-            if (responseType === "response.output_text.delta") {
-              const delta = asRawString(nested["delta"])
-              if (delta === undefined) continue
-
-              textPart = await ensureTextPart({
-                sessionID: input.sessionID,
-                messageID: input.assistantMessage.id,
-                textPart,
-                metadata: eventMeta,
-              })
-
-              if (textPart) {
-                textPart.text += delta
-                await Session.updatePart({ part: textPart, delta })
-              }
-
-              continue
-            }
-
-            if (responseType === "response.output_text.done") {
-              const doneText = asRawString(nested["text"])
-              textPart = await ensureTextPart({
-                sessionID: input.sessionID,
-                messageID: input.assistantMessage.id,
-                textPart,
-                metadata: eventMeta,
-              })
-              if (textPart) {
-                if (doneText !== undefined) textPart.text = doneText
-                textPart.time = {
-                  start: textPart.time?.start ?? Date.now(),
-                  end: Date.now(),
-                }
-                await Session.updatePart(textPart)
-              }
-              continue
-            }
-
-            if (responseType === "response.output_item.done") {
-              const item = asRecord(nested["item"])
-              if (!item) continue
-              if (asString(item["type"]) === "function_call_output") {
-                const callID = asString(item["call_id"])
-                if (!callID) continue
-                await completeToolPart({
-                  toolByCallID,
-                  callID,
-                  output: stringifyToolOutput(item["output"]),
-                  metadata: eventMeta,
-                })
-                continue
-              }
-              if (asString(item["type"]) === "function_call") {
-                const callID = asString(item["call_id"]) || asString(item["id"])
-                if (!callID) continue
-                await runToolPart({
-                  toolByCallID,
-                  callID,
-                  toolName: asString(item["name"]) || undefined,
-                  parsedInput: parseToolInput(item["arguments"]),
-                  metadata: eventMeta,
-                })
-              }
-              continue
-            }
-          }
-
-          if (kind === "run_item_stream_event") {
-            const name = asString(frame.payload["name"])
-            const item = asRecord(frame.payload["item"])
-            const rawItem = item ? asRecord(item["raw_item"]) : undefined
-
-            if (name === "tool_called" && rawItem && asString(rawItem["type"]) === "function_call") {
-              const callID = asString(rawItem["call_id"]) || asString(rawItem["id"])
-              if (!callID) continue
-
-              await runToolPart({
-                toolByCallID,
-                callID,
-                toolName: asString(rawItem["name"]) || undefined,
-                parsedInput: parseToolInput(rawItem["arguments"]),
-                metadata: eventMeta,
-              })
-              continue
-            }
-
-            if (name === "tool_output" && rawItem && asString(rawItem["type"]) === "function_call_output") {
-              const callID = asString(rawItem["call_id"])
-              if (!callID) continue
-              await completeToolPart({
-                toolByCallID,
-                callID,
-                output: stringifyToolOutput(item?.["output"] ?? rawItem["output"]),
-                metadata: eventMeta,
-              })
-              continue
-            }
-          }
-
           if (kind === "agent_updated_stream_event") {
-            const newAgent = asRecord(frame.payload["new_agent"])
-            const maybeName = newAgent ? asString(newAgent["name"]) : undefined
+            const next = asRecord(frame.payload["new_agent"])
+            const maybeName = next ? asString(next["name"]) : undefined
             if (maybeName) {
               input.assistantMessage.agent = maybeName
               input.assistantMessage.mode = maybeName
@@ -429,53 +839,490 @@ export namespace SessionAgencySwarm {
             }
             continue
           }
+
+          if (kind === "raw_response_event") {
+            const nested = asRecord(frame.payload["data"])
+            if (!nested) continue
+            const responseType = asString(nested["type"])
+            const outputIndex = asNumber(nested["output_index"])
+            const item = asRecord(nested["item"])
+
+            if (!responseType) {
+              continue
+            }
+
+            if (responseType === "response.created") {
+              setUsage(asRecord(asRecord(nested["response"])?.["usage"]))
+              continue
+            }
+
+            if (
+              responseType === "response.in_progress" ||
+              responseType === "response.completed" ||
+              responseType === "response.incomplete"
+            ) {
+              setUsage(asRecord(asRecord(nested["response"])?.["usage"]))
+              continue
+            }
+
+            if (responseType === "response.output_item.added") {
+              if (!item) continue
+              const itemType = asString(item["type"]) || ""
+              const itemID = asString(item["id"])
+
+              if (itemID && outputIndex !== undefined) {
+                callByOutput.set(outputIndex, itemID)
+              }
+
+              if (itemType === "message") {
+                if (!itemID) continue
+                textIndex.set(itemID, 0)
+                yield* ensureText(itemID, 0, eventMeta, { output_index: outputIndex })
+                continue
+              }
+
+              if (itemType === "reasoning") {
+                if (!itemID) continue
+                yield* ensureReasoning(itemID, 0, eventMeta, {
+                  output_index: outputIndex,
+                  encrypted_content: item["encrypted_content"] ?? null,
+                })
+                continue
+              }
+
+              if (itemType.endsWith("_call")) {
+                sawToolCall = true
+                const callID = asString(item["call_id"]) || itemID
+                if (!callID) continue
+                const toolName = normalizeToolName(itemType, item)
+                const raw = toolRawInput(itemType, item)
+                if (itemID) callByItem.set(itemID, callID)
+                if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
+                yield* ensureToolInput(callID, toolName, raw, eventMeta, {
+                  item_id: itemID,
+                  output_index: outputIndex,
+                  item_type: itemType,
+                })
+                continue
+              }
+
+              if (itemType.endsWith("_output")) {
+                const callID = asString(item["call_id"])
+                if (!callID) continue
+                const tool = ensureTool(callID, tools.get(callID)?.tool || "tool")
+                yield* completeTool(callID, tool.tool, toolOutput(itemType, item), eventMeta, {
+                  item_id: itemID,
+                  output_index: outputIndex,
+                  item_type: itemType,
+                })
+              }
+              continue
+            }
+
+            if (responseType === "response.content_part.added") {
+              const itemID = asString(nested["item_id"]) || lastTextItemID
+              if (!itemID) continue
+              const part = asRecord(nested["part"])
+              const partType = asString(part?.["type"]) || ""
+              if (partType === "output_text" || partType === "refusal") {
+                const contentIndex = asNumber(nested["content_index"]) ?? 0
+                textIndex.set(itemID, contentIndex)
+                yield* ensureText(itemID, contentIndex, eventMeta, {
+                  output_index: outputIndex,
+                  content_index: contentIndex,
+                  content_type: partType,
+                })
+              }
+              continue
+            }
+
+            if (responseType === "response.output_text.delta" || responseType === "response.refusal.delta") {
+              const delta = asRawString(nested["delta"])
+              if (delta === undefined) continue
+              const itemID = asString(nested["item_id"]) || lastTextItemID
+              if (!itemID) continue
+              const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
+              textIndex.set(itemID, contentIndex)
+              yield* ensureText(itemID, contentIndex, eventMeta, {
+                output_index: outputIndex,
+                content_index: contentIndex,
+              })
+              yield* textDelta(itemID, contentIndex, delta, eventMeta, {
+                output_index: outputIndex,
+                content_index: contentIndex,
+              })
+              continue
+            }
+
+            if (responseType === "response.output_text.done") {
+              const itemID = asString(nested["item_id"]) || lastTextItemID
+              if (!itemID) continue
+              const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
+              const final = asRawString(nested["text"])
+              yield* finishText(itemID, contentIndex, final, eventMeta, {
+                output_index: outputIndex,
+                content_index: contentIndex,
+              })
+              continue
+            }
+
+            if (responseType === "response.content_part.done") {
+              const itemID = asString(nested["item_id"]) || lastTextItemID
+              if (!itemID) continue
+              const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
+              const part = asRecord(nested["part"])
+              const final =
+                asRawString(part?.["text"]) ??
+                asRawString(part?.["refusal"]) ??
+                asRawString(nested["text"]) ??
+                asRawString(nested["delta"])
+              yield* finishText(itemID, contentIndex, final, eventMeta, {
+                output_index: outputIndex,
+                content_index: contentIndex,
+              })
+              continue
+            }
+
+            if (responseType === "response.reasoning_summary_part.added") {
+              const itemID = asString(nested["item_id"]) || lastReasoningItemID
+              if (!itemID) continue
+              const summaryIndex = asNumber(nested["summary_index"]) ?? 0
+              yield* ensureReasoning(itemID, summaryIndex, eventMeta, {
+                output_index: outputIndex,
+              })
+              continue
+            }
+
+            if (responseType === "response.reasoning_summary_text.delta" || responseType === "response.reasoning_text.delta") {
+              const itemID = asString(nested["item_id"]) || lastReasoningItemID
+              if (!itemID) continue
+              const summaryIndex = asNumber(nested["summary_index"] ?? nested["content_index"]) ?? 0
+              const delta = asRawString(nested["delta"])
+              if (delta === undefined) continue
+              yield* ensureReasoning(itemID, summaryIndex, eventMeta, {
+                output_index: outputIndex,
+              })
+              yield* reasoningDelta(itemID, summaryIndex, delta, eventMeta, {
+                output_index: outputIndex,
+              })
+              continue
+            }
+
+            if (responseType === "response.reasoning_summary_text.done" || responseType === "response.reasoning_text.done") {
+              const itemID = asString(nested["item_id"]) || lastReasoningItemID
+              if (!itemID) continue
+              const summaryIndex = asNumber(nested["summary_index"] ?? nested["content_index"]) ?? 0
+              const text = asRawString(nested["text"])
+              yield* finishReasoning(itemID, summaryIndex, text, eventMeta, {
+                output_index: outputIndex,
+              })
+              continue
+            }
+
+            if (responseType === "response.reasoning_summary_part.done") {
+              const itemID = asString(nested["item_id"]) || lastReasoningItemID
+              if (!itemID) continue
+              const summaryIndex = asNumber(nested["summary_index"]) ?? 0
+              const part = asRecord(nested["part"])
+              const text = asRawString(part?.["text"])
+              yield* finishReasoning(itemID, summaryIndex, text, eventMeta, {
+                output_index: outputIndex,
+              })
+              continue
+            }
+
+            if (responseType === "response.function_call_arguments.delta") {
+              sawToolCall = true
+              const callID = findCallID(nested, item)
+              if (!callID) continue
+              const delta = asRawString(nested["delta"]) ?? ""
+              const toolName = asString(nested["name"]) || tools.get(callID)?.tool || "tool"
+              yield* appendToolInput(callID, toolName, delta, eventMeta, {
+                item_id: asString(nested["item_id"]),
+                output_index: outputIndex,
+              })
+              continue
+            }
+
+            if (responseType === "response.code_interpreter_call_code.delta") {
+              sawToolCall = true
+              const callID = findCallID(nested, item)
+              if (!callID) continue
+              const delta = asRawString(nested["delta"]) ?? ""
+              yield* appendToolInput(callID, "code_interpreter", delta, eventMeta, {
+                item_id: asString(nested["item_id"]),
+                output_index: outputIndex,
+              })
+              continue
+            }
+
+            if (
+              responseType === "response.function_call_arguments.done" ||
+              responseType === "response.mcp_call_arguments.done" ||
+              responseType === "response.code_interpreter_call_code.done"
+            ) {
+              sawToolCall = true
+              const callID = findCallID(nested, item)
+              if (!callID) continue
+              const toolName =
+                responseType === "response.code_interpreter_call_code.done"
+                  ? "code_interpreter"
+                  : asString(nested["name"]) || tools.get(callID)?.tool || "tool"
+              const raw =
+                asRawString(nested["arguments"]) ?? asRawString(nested["code"]) ?? tools.get(callID)?.raw ?? ""
+              yield* finalizeToolInput(callID, toolName, raw, eventMeta, {
+                item_id: asString(nested["item_id"]),
+                output_index: outputIndex,
+              })
+              continue
+            }
+
+            if (responseType === "response.output_item.done") {
+              if (!item) continue
+              const itemType = asString(item["type"]) || ""
+
+              if (itemType === "message") {
+                const itemID = asString(item["id"]) || lastTextItemID
+                if (!itemID) continue
+                const contentIndex = textIndex.get(itemID) ?? 0
+                yield* finishText(itemID, contentIndex, undefined, eventMeta, {
+                  output_index: outputIndex,
+                })
+                continue
+              }
+
+              if (itemType === "reasoning") {
+                const itemID = asString(item["id"]) || lastReasoningItemID
+                if (!itemID) continue
+                for (const key of Array.from(reasoningByItem.get(itemID) ?? [])) {
+                  const index = Number(key.split(":")[1] || "0")
+                  yield* finishReasoning(itemID, Number.isFinite(index) ? index : 0, undefined, eventMeta, {
+                    output_index: outputIndex,
+                    encrypted_content: item["encrypted_content"] ?? null,
+                  })
+                }
+                continue
+              }
+
+              if (itemType.endsWith("_output")) {
+                const callID = asString(item["call_id"])
+                if (!callID) continue
+                const tool = ensureTool(callID, tools.get(callID)?.tool || "tool")
+                yield* completeTool(callID, tool.tool, toolOutput(itemType, item), eventMeta, {
+                  output_index: outputIndex,
+                  item_type: itemType,
+                })
+                continue
+              }
+
+              if (itemType.endsWith("_call")) {
+                sawToolCall = true
+                const callID = asString(item["call_id"]) || asString(item["id"])
+                if (!callID) continue
+                const toolName = normalizeToolName(itemType, item)
+                const itemID = asString(item["id"])
+                if (itemID) callByItem.set(itemID, callID)
+                if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
+                yield* runTool(callID, toolName, eventMeta, {
+                  output_index: outputIndex,
+                  item_type: itemType,
+                })
+                if (itemType !== "function_call") {
+                  yield* completeTool(callID, toolName, toolOutput(itemType, item), eventMeta, {
+                    output_index: outputIndex,
+                    item_type: itemType,
+                  })
+                }
+              }
+              continue
+            }
+
+            const callMatch = /^response\.([a-z_]+_call)\.(in_progress|searching|running|completed|failed)$/.exec(responseType)
+            if (callMatch) {
+              sawToolCall = true
+              const itemType = callMatch[1]
+              const phase = callMatch[2]
+              const callID = findCallID(nested, item) || asString(nested["item_id"])
+              if (!callID) continue
+              const toolName = normalizeToolName(itemType, item)
+              const itemID = asString(nested["item_id"]) || asString(item?.["id"])
+              if (itemID) callByItem.set(itemID, callID)
+              if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
+
+              if (phase === "in_progress" || phase === "searching" || phase === "running") {
+                yield* runTool(callID, toolName, eventMeta, {
+                  item_id: itemID,
+                  output_index: outputIndex,
+                  item_type: itemType,
+                  phase,
+                })
+                continue
+              }
+
+              if (phase === "completed") {
+                yield* completeTool(callID, toolName, toolOutput(itemType, item), eventMeta, {
+                  item_id: itemID,
+                  output_index: outputIndex,
+                  item_type: itemType,
+                  phase,
+                })
+                continue
+              }
+
+              const message = asString(nested["error"]) || asString(nested["message"]) || `${toolName} failed`
+              yield* failTool(callID, toolName, message, eventMeta, {
+                item_id: itemID,
+                output_index: outputIndex,
+                item_type: itemType,
+                phase,
+              })
+              continue
+            }
+
+            if (responseType === "error") {
+              const message = asString(nested["message"]) || asString(nested["error"]) || "Unknown stream error"
+              yield {
+                type: "error",
+                error: new Error(message),
+              }
+              return
+            }
+
+            continue
+          }
+
+          if (kind === "run_item_stream_event") {
+            const name = asString(frame.payload["name"])
+            const item = asRecord(frame.payload["item"])
+            const rawItem = asRecord(item?.["raw_item"])
+
+            if (name === "tool_called" && rawItem) {
+              const itemType = asString(rawItem["type"]) || ""
+              if (itemType.endsWith("_call")) {
+                sawToolCall = true
+                const callID = asString(rawItem["call_id"]) || asString(rawItem["id"])
+                if (!callID) continue
+                const toolName = normalizeToolName(itemType, rawItem)
+                const itemID = asString(rawItem["id"])
+                if (itemID) callByItem.set(itemID, callID)
+                yield* ensureToolInput(callID, toolName, toolRawInput(itemType, rawItem), eventMeta, {
+                  item_id: itemID,
+                  source: "run_item_stream_event",
+                })
+                yield* runTool(callID, toolName, eventMeta, {
+                  item_id: itemID,
+                  source: "run_item_stream_event",
+                })
+              }
+              continue
+            }
+
+            if (name === "tool_output" && rawItem) {
+              const itemType = asString(rawItem["type"]) || ""
+              if (itemType.endsWith("_output")) {
+                const callID = asString(rawItem["call_id"])
+                if (!callID) continue
+                const tool = ensureTool(callID, tools.get(callID)?.tool || "tool")
+                yield* completeTool(
+                  callID,
+                  tool.tool,
+                  stringifyToolOutput(item?.["output"] ?? rawItem["output"]),
+                  eventMeta,
+                  {
+                    source: "run_item_stream_event",
+                  },
+                )
+              }
+              continue
+            }
+
+            if (name === "message_output_created" && rawItem && asString(rawItem["type"]) === "message") {
+              const itemID = asString(rawItem["id"]) || lastTextItemID
+              if (!itemID) continue
+              const text = extractMessageText(rawItem)
+              if (!text) continue
+              yield* finishText(itemID, 0, text, eventMeta, { source: "run_item_stream_event" })
+              continue
+            }
+
+            if (name === "reasoning_item_created" && rawItem && asString(rawItem["type"]) === "reasoning") {
+              const itemID = asString(rawItem["id"])
+              if (!itemID) continue
+              const summary = Array.isArray(rawItem["summary"]) ? rawItem["summary"] : []
+              if (summary.length === 0) {
+                yield* ensureReasoning(itemID, 0, eventMeta, { source: "run_item_stream_event" })
+                yield* finishReasoning(itemID, 0, undefined, eventMeta, { source: "run_item_stream_event" })
+                continue
+              }
+              for (const [index, raw] of summary.entries()) {
+                const record = asRecord(raw)
+                const text = asString(record?.["text"]) || ""
+                yield* ensureReasoning(itemID, index, eventMeta, { source: "run_item_stream_event" })
+                if (text) {
+                  yield* reasoningDelta(itemID, index, text, eventMeta, { source: "run_item_stream_event" })
+                }
+                yield* finishReasoning(itemID, index, text || undefined, eventMeta, {
+                  source: "run_item_stream_event",
+                })
+              }
+              continue
+            }
+
+            continue
+          }
         }
-      }
-    } catch (error) {
-      if (!(error instanceof DOMException && error.name === "AbortError") && !cancelRequested) {
-        hadError = true
-        markError(input.sessionID, input.assistantMessage, error instanceof Error ? error.message : String(error))
-      }
-    } finally {
-      if (cancelBeforeMetaTimer) {
-        clearTimeout(cancelBeforeMetaTimer)
-      }
-      input.clearManagedCancel()
-
-      if (textPart && !textPart.time?.end) {
-        textPart.time = {
-          start: textPart.time?.start ?? Date.now(),
-          end: Date.now(),
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError") || !cancelRequested) {
+          yield {
+            type: "error",
+            error: error instanceof Error ? error : new Error(String(error)),
+          }
+          return
         }
-        await Session.updatePart(textPart)
+      } finally {
+        if (cancelBeforeMetaTimer) {
+          clearTimeout(cancelBeforeMetaTimer)
+        }
+        input.clearManagedCancel()
       }
 
-      for (const [callID, part] of toolByCallID.entries()) {
-        if (part.state.status === "completed" || part.state.status === "error") continue
+      yield* flushOpen()
 
-        const start = part.state.status === "running" ? part.state.time.start : Date.now()
-        const next = (await Session.updatePart({
-          ...part,
-          state: {
-            status: "error",
-            input: part.state.input,
-            error: cancelRequested ? "Cancelled" : "Tool stream ended before output was received",
-            metadata: part.metadata,
-            time: {
-              start,
-              end: Date.now(),
-            },
+      const finalUsage = usage ?? {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        reasoningTokens: 0,
+        cachedInputTokens: 0,
+        cacheWriteInputTokens: 0,
+      }
+
+      yield {
+        type: "finish-step",
+        finishReason: cancelRequested ? "cancelled" : sawToolCall ? "tool-calls" : "stop",
+        usage: {
+          inputTokens: finalUsage.inputTokens,
+          outputTokens: finalUsage.outputTokens,
+          totalTokens: finalUsage.totalTokens,
+          reasoningTokens: finalUsage.reasoningTokens,
+          cachedInputTokens: finalUsage.cachedInputTokens,
+        },
+        providerMetadata: {
+          agency_swarm: {
+            cacheWriteInputTokens: finalUsage.cacheWriteInputTokens,
+            totalCost: finalUsage.cost,
           },
-        })) as MessageV2.ToolPart
-        toolByCallID.set(callID, next)
+        },
       }
 
-      input.assistantMessage.time.completed = Date.now()
-      input.assistantMessage.finish = cancelRequested ? "cancelled" : hadError ? "error" : "stop"
-      await Session.updateMessage(input.assistantMessage)
-    }
+      yield {
+        type: "finish",
+      }
+    })()
 
-    return "stop"
+    return {
+      fullStream,
+    }
   }
 
   async function applyAssistantLabel(message: MessageV2.Assistant, metadata: AgencySwarmEventMeta) {
@@ -484,15 +1331,6 @@ export namespace SessionAgencySwarm {
     message.agent = metadata.agent
     message.mode = metadata.agent
     await Session.updateMessage(message)
-  }
-
-  function markError(sessionID: string, assistantMessage: MessageV2.Assistant, message: string) {
-    const error = new NamedError.Unknown({ message }).toObject()
-    assistantMessage.error = error
-    Bus.publish(Session.Event.Error, {
-      sessionID,
-      error,
-    })
   }
 
   function asBoolean(value: unknown): boolean | undefined {
@@ -505,5 +1343,18 @@ export namespace SessionAgencySwarm {
       const parsed = asString(item)
       return parsed ? [parsed] : []
     })
+  }
+
+  function asNumber(value: unknown): number | undefined {
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : undefined
+    }
+    if (typeof value === "string") {
+      const parsed = Number(value)
+      if (Number.isFinite(parsed)) {
+        return parsed
+      }
+    }
+    return undefined
   }
 }
