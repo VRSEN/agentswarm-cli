@@ -543,4 +543,57 @@ describe("session.agency-swarm", () => {
 
     expect(deltas).toEqual(["Hi, there!"])
   })
+
+  test("stream preserves teardown before surfacing adapter error", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = (async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "message", id: "msg_err" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_err",
+            output_index: "0",
+            delta: "partial",
+          },
+        },
+      }
+      yield {
+        type: "error",
+        error: "stream failed",
+      }
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    expect(events.map((event) => event.type)).toEqual([
+      "start",
+      "start-step",
+      "text-start",
+      "text-delta",
+      "text-end",
+      "finish-step",
+      "finish",
+      "error",
+    ])
+    expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("error")
+  })
 })

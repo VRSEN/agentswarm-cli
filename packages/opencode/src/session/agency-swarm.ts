@@ -750,6 +750,7 @@ export namespace SessionAgencySwarm {
     const fullStream = (async function* () {
       yield { type: "start" }
       yield { type: "start-step" }
+      let streamError: Error | undefined
 
       try {
         for await (const frame of AgencySwarmAdapter.streamRun({
@@ -810,11 +811,8 @@ export namespace SessionAgencySwarm {
           }
 
           if (frame.type === "error") {
-            yield {
-              type: "error",
-              error: new Error(frame.error),
-            }
-            return
+            streamError = new Error(frame.error)
+            break
           }
 
           if (frame.type === "end") {
@@ -1273,11 +1271,7 @@ export namespace SessionAgencySwarm {
         }
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError") || !cancelRequested) {
-          yield {
-            type: "error",
-            error: error instanceof Error ? error : new Error(String(error)),
-          }
-          return
+          streamError = error instanceof Error ? error : new Error(String(error))
         }
       } finally {
         if (cancelBeforeMetaTimer) {
@@ -1299,7 +1293,7 @@ export namespace SessionAgencySwarm {
 
       yield {
         type: "finish-step",
-        finishReason: cancelRequested ? "cancelled" : sawToolCall ? "tool-calls" : "stop",
+        finishReason: cancelRequested ? "cancelled" : streamError ? "error" : sawToolCall ? "tool-calls" : "stop",
         usage: {
           inputTokens: finalUsage.inputTokens,
           outputTokens: finalUsage.outputTokens,
@@ -1317,6 +1311,13 @@ export namespace SessionAgencySwarm {
 
       yield {
         type: "finish",
+      }
+
+      if (streamError) {
+        yield {
+          type: "error",
+          error: streamError,
+        }
       }
     })()
 
