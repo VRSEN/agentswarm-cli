@@ -84,12 +84,13 @@ describe("session.agency-swarm", () => {
     }
   }
 
-  const mockHistory = () => {
+  const mockHistory = (lastRunID?: string) => {
     const appended: unknown[][] = []
     const runs: (string | undefined)[] = []
     AgencySwarmHistory.load = (async () => ({
       scope: "http://127.0.0.1:8000|builder|session_1",
       chat_history: [],
+      last_run_id: lastRunID,
       updated_at: Date.now(),
     })) as typeof AgencySwarmHistory.load
     AgencySwarmHistory.appendMessages = (async (_scope, newMessages) => {
@@ -421,10 +422,21 @@ describe("session.agency-swarm", () => {
             type: "response.file_search_call.completed",
             item_id: "fs_1",
             output_index: "1",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "1",
             item: {
               type: "file_search_call",
               id: "fs_1",
               status: "completed",
+              queries: [],
               results: [{ file_id: "file_1" }],
             },
           },
@@ -435,15 +447,50 @@ describe("session.agency-swarm", () => {
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
-    const types: string[] = []
+    const events: any[] = []
     for await (const event of stream.fullStream) {
-      types.push(event.type)
+      events.push(event)
     }
 
+    const types = events.map((event) => event.type)
     expect(types).toContain("tool-input-start")
     expect(types).toContain("tool-call")
     expect(types).toContain("tool-result")
+    expect(events.find((event) => event.type === "tool-result")?.output?.output).toContain("file_1")
     expect(types.at(-2)).toBe("finish-step")
+  })
+
+  test("stream does not cancel stale last_run_id before current run metadata arrives", async () => {
+    mockHistory("run_stale")
+    const cancelled: string[] = []
+    AgencySwarmAdapter.cancel = (async ({ runID }) => {
+      cancelled.push(runID)
+      return {
+        ok: true,
+        status: 200,
+        cancelled: true,
+        notFound: false,
+      }
+    }) as typeof AgencySwarmAdapter.cancel
+    AgencySwarmAdapter.streamRun = (async function* (args) {
+      yield { type: "meta", runID: "run_current" }
+      if (args.abort?.aborted) {
+        throw new DOMException("Aborted", "AbortError")
+      }
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input, triggerCancel } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    await triggerCancel?.()
+
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    expect(cancelled).toEqual(["run_current"])
+    expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("cancelled")
   })
 
   test("stream marks unfinished tool calls as error instead of tool-calls", async () => {

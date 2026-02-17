@@ -169,7 +169,7 @@ export namespace SessionAgencySwarm {
     const reasoningByItem = new Map<string, Set<string>>()
 
     let usage: Usage | undefined
-    let runID: string | undefined = history.last_run_id
+    let runID: string | undefined
     let lastTextItemID: string | undefined
     let lastReasoningItemID: string | undefined
     let cancelRequested = false
@@ -717,6 +717,9 @@ export namespace SessionAgencySwarm {
       if (runFromMessages) {
         runID = runFromMessages
         await AgencySwarmHistory.setLastRunID(scope, runID)
+        if (cancelRequested) {
+          await sendCancel()
+        }
       }
 
       for (const output of extractFunctionCallOutputsFromMessages(newMessages)) {
@@ -1243,16 +1246,9 @@ export namespace SessionAgencySwarm {
               }
 
               if (phase === "completed") {
-                if (itemType === "function_call") {
-                  yield* runTool(callID, toolName, eventMeta, {
-                    item_id: itemID,
-                    output_index: outputIndex,
-                    item_type: itemType,
-                    phase,
-                  })
-                  continue
-                }
-                yield* completeTool(callID, toolName, toolOutput(itemType, item), eventMeta, {
+                // Keep completion sourced from output_item.done/messages/tool_output.
+                // completed phase events can precede final payload and should not finalize output.
+                yield* runTool(callID, toolName, eventMeta, {
                   item_id: itemID,
                   output_index: outputIndex,
                   item_type: itemType,
