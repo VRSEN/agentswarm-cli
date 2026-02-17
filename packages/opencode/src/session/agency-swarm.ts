@@ -326,9 +326,18 @@ export namespace SessionAgencySwarm {
     ) => {
       const parts: any[] = []
       const key = textKey(itemID, index)
-      const activeKey = lastTextItemID ? textKey(lastTextItemID) : undefined
+      const activeItemID = lastTextItemID
+      const activeIndex = activeItemID ? textIndex.get(activeItemID) ?? 0 : undefined
+      const activeKey = activeItemID !== undefined ? textKey(activeItemID, activeIndex) : undefined
       if (activeKey && activeKey !== key) {
-        parts.push(...closeText(activeKey, meta, extra))
+        parts.push(
+          ...closeText(activeKey, meta, {
+            ...(extra?.["output_index"] !== undefined ? { output_index: extra["output_index"] } : {}),
+            ...(extra?.["source"] !== undefined ? { source: extra["source"] } : {}),
+            item_id: activeItemID,
+            content_index: activeIndex,
+          }),
+        )
       }
       if (!textOpen.has(key)) {
         textOpen.add(key)
@@ -380,8 +389,10 @@ export namespace SessionAgencySwarm {
       const key = textKey(itemID, index)
       const current = textBuffer.get(key) || ""
       const isOpen = textOpen.has(key)
+      if (!isOpen && (final === undefined || final === current)) {
+        return []
+      }
       if (final !== undefined && final === current) {
-        if (!isOpen) return []
         return closeText(key, meta, extra)
       }
       const parts = isOpen ? [] : ensureText(itemID, index, meta, extra)
@@ -738,7 +749,6 @@ export namespace SessionAgencySwarm {
 
       if (itemType === "message") {
         if (!itemID) return []
-        textIndex.set(itemID, 0)
         return ensureText(itemID, 0, eventMeta, outputMeta(outputIndex))
       }
 
@@ -1109,7 +1119,6 @@ export namespace SessionAgencySwarm {
               const partType = asString(part?.["type"]) || ""
               if (partType === "output_text" || partType === "refusal") {
                 const contentIndex = asNumber(nested["content_index"]) ?? 0
-                textIndex.set(itemID, contentIndex)
                 yield* ensureText(itemID, contentIndex, eventMeta, outputMeta(outputIndex, { content_index: contentIndex, content_type: partType }))
               }
               continue
@@ -1121,7 +1130,6 @@ export namespace SessionAgencySwarm {
               const itemID = textItemID(nested)
               if (!itemID) continue
               const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
-              textIndex.set(itemID, contentIndex)
               const textMeta = outputMeta(outputIndex, { content_index: contentIndex })
               yield* ensureText(itemID, contentIndex, eventMeta, textMeta)
               yield* textDelta(itemID, contentIndex, delta, eventMeta, textMeta)
