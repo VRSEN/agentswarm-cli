@@ -13,6 +13,17 @@
 > This repository is the private `agency-code` fork used to ship Agency Swarm integration on top of the OpenCode TUI.
 > Keep OpenCode client/server contracts intact while extending the runtime under `packages/opencode/src/agency-swarm/`.
 
+## Agency Swarm Integration Notes
+
+- Agency Swarm runtime integration is limited to the existing FastAPI endpoints:
+  - `get_metadata`
+  - `get_response_stream`
+  - `cancel_response_stream`
+  - `get_response`
+- OpenCode session/message/event contracts remain the UI source of truth. Agency frames are translated into standard processor stream parts (`text-*`, `reasoning-*`, `tool-*`, `finish-step`, `finish`) before persistence.
+- Provider-specific logic should not bypass `SessionProcessor` with direct message writes.
+- `chat_history` is required by the current Agency API contract, so a transport sidecar is maintained in `packages/opencode/src/agency-swarm/history.ts`. This is request continuity state, not a replacement for OpenCode session storage.
+
 <p align="center">
   <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
   <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>

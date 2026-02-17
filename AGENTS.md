@@ -9,6 +9,13 @@
 - This is `agency-code`, a private fork of OpenCode focused on Agency Swarm integration.
 - Primary runtime integration lives in `packages/opencode/src/agency-swarm/` and hooks through session/provider code.
 - Preserve OpenCode session/event/storage contracts when adding Agency Swarm behavior so upstream sync stays feasible.
+- Agency Swarm backend contract should stay limited to existing FastAPI endpoints (`get_metadata`, `get_response_stream`, `cancel_response_stream`, `get_response`) unless explicitly re-scoped.
+- Route Agency streaming through `SessionProcessor` and emit standard stream parts; avoid provider-specific direct writes to session/message storage.
+- Keep finish semantics stable for loop control:
+  - completed turn -> `stop`
+  - user/system abort or cancel -> `cancelled`
+  - stream/tool failure -> `error`
+- Keep `chat_history` sidecar usage transport-scoped only (required by current Agency API request shape), while OpenCode session storage remains the product source of truth.
 
 ## Style Guide
 
