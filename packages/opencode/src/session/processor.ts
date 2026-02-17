@@ -59,7 +59,6 @@ export namespace SessionProcessor {
             const stream = streamInput.createStream ? await streamInput.createStream() : await LLM.stream(streamInput)
 
             for await (const value of stream.fullStream) {
-              input.abort.throwIfAborted()
               switch (value.type) {
                 case "start":
                   SessionStatus.set(input.sessionID, { type: "busy" })
@@ -340,6 +339,9 @@ export namespace SessionProcessor {
                   })
                   continue
               }
+              if (!streamInput.createStream) {
+                input.abort.throwIfAborted()
+              }
               if (needsCompaction) break
             }
           } catch (e: any) {
@@ -364,6 +366,7 @@ export namespace SessionProcessor {
               await SessionRetry.sleep(delay, input.abort).catch(() => {})
               continue
             }
+            input.assistantMessage.finish = input.assistantMessage.finish ?? "error"
             input.assistantMessage.error = error
             Bus.publish(Session.Event.Error, {
               sessionID: input.assistantMessage.sessionID,
