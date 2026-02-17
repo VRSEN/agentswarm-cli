@@ -175,7 +175,8 @@ export namespace SessionAgencySwarm {
     let cancelRequested = false
     let cancelInFlight = false
     let cancelBeforeMetaTimer: ReturnType<typeof setTimeout> | undefined
-    let sawToolCall = false
+    let streamAborted = false
+    let hadDanglingTool = false
 
     const streamAbort = new AbortController()
     const streamSignal = AbortSignal.any([input.abort, streamAbort.signal])
@@ -752,7 +753,6 @@ export namespace SessionAgencySwarm {
       }
 
       if (itemType.endsWith("_call")) {
-        sawToolCall = true
         const callID = asString(item["call_id"]) || itemID
         if (!callID) return []
         const toolName = normalizeToolName(itemType, item)
@@ -834,7 +834,6 @@ export namespace SessionAgencySwarm {
       }
 
       if (itemType.endsWith("_call")) {
-        sawToolCall = true
         const callID = asString(item["call_id"]) || asString(item["id"])
         if (!callID) return []
         const itemID = asString(item["id"])
@@ -875,7 +874,6 @@ export namespace SessionAgencySwarm {
 
       const itemType = asString(rawItem["type"]) || ""
       if (name === "tool_called" && itemType.endsWith("_call")) {
-        sawToolCall = true
         const callID = asString(rawItem["call_id"]) || asString(rawItem["id"])
         if (!callID) return []
         const toolName = normalizeToolName(itemType, rawItem)
@@ -950,11 +948,12 @@ export namespace SessionAgencySwarm {
 
       for (const tool of Array.from(tools.values())) {
         if (tool.done) continue
+        hadDanglingTool = true
         parts.push(
           ...failTool(
             tool.callID,
             tool.tool,
-            cancelRequested ? "Cancelled" : "Tool stream ended before output was received",
+            cancelRequested || streamAborted ? "Cancelled" : "Tool stream ended before output was received",
             {},
           ),
         )
@@ -1181,7 +1180,6 @@ export namespace SessionAgencySwarm {
               responseType === "response.function_call_arguments.delta" ||
               responseType === "response.code_interpreter_call_code.delta"
             ) {
-              sawToolCall = true
               const callID = findCallID(nested, item)
               if (!callID) continue
               const delta = asRawString(nested["delta"]) ?? ""
@@ -1201,7 +1199,6 @@ export namespace SessionAgencySwarm {
               responseType === "response.mcp_call_arguments.done" ||
               responseType === "response.code_interpreter_call_code.done"
             ) {
-              sawToolCall = true
               const callID = findCallID(nested, item)
               if (!callID) continue
               const toolName =
@@ -1218,7 +1215,6 @@ export namespace SessionAgencySwarm {
 
             const callMatch = /^response\.([a-z_]+_call)\.(in_progress|searching|running|completed|failed)$/.exec(responseType)
             if (callMatch) {
-              sawToolCall = true
               const itemType = callMatch[1]
               const phase = callMatch[2]
               const callID = findCallID(nested, item) || asString(nested["item_id"])
@@ -1273,7 +1269,9 @@ export namespace SessionAgencySwarm {
           }
         }
       } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError") || !cancelRequested) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          streamAborted = true
+        } else {
           streamError = error instanceof Error ? error : new Error(String(error))
         }
       } finally {
@@ -1284,6 +1282,10 @@ export namespace SessionAgencySwarm {
       }
 
       yield* flushOpen()
+
+      if (!streamError && hadDanglingTool && !streamAborted && !cancelRequested) {
+        streamError = new Error("Tool stream ended before output was received")
+      }
 
       const finalUsage = usage ?? {
         inputTokens: 0,
@@ -1296,7 +1298,7 @@ export namespace SessionAgencySwarm {
 
       yield {
         type: "finish-step",
-        finishReason: cancelRequested ? "cancelled" : streamError ? "error" : sawToolCall ? "tool-calls" : "stop",
+        finishReason: cancelRequested || streamAborted ? "cancelled" : streamError ? "error" : "stop",
         usage: {
           inputTokens: finalUsage.inputTokens,
           outputTokens: finalUsage.outputTokens,

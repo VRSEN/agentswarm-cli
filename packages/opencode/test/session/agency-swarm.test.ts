@@ -21,6 +21,7 @@ describe("session.agency-swarm", () => {
   })
 
   const helper = () => {
+    const abort = new AbortController()
     let cancel: (() => void | Promise<void>) | undefined
     const input = {
       sessionID: "session_1",
@@ -67,7 +68,7 @@ describe("session.agency-swarm", () => {
         agency: "builder",
         discoveryTimeoutMs: 5000,
       },
-      abort: new AbortController().signal,
+      abort: abort.signal,
       registerManagedCancel(handler: () => void | Promise<void>) {
         cancel = handler
       },
@@ -79,6 +80,7 @@ describe("session.agency-swarm", () => {
     return {
       input,
       triggerCancel: () => cancel?.(),
+      triggerAbort: () => abort.abort(),
     }
   }
 
@@ -370,7 +372,7 @@ describe("session.agency-swarm", () => {
       "finish-step",
       "finish",
     ])
-    expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("tool-calls")
+    expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("stop")
     expect(events.find((event) => event.type === "finish-step")?.usage).toMatchObject({
       inputTokens: 2,
       outputTokens: 3,
@@ -444,6 +446,58 @@ describe("session.agency-swarm", () => {
     expect(types.at(-2)).toBe("finish-step")
   })
 
+  test("stream marks unfinished tool calls as error instead of tool-calls", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = (async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "2",
+            item: {
+              type: "function_call",
+              id: "fc_unfinished",
+              call_id: "call_unfinished",
+              name: "lookup",
+              arguments: "{\"query\":\"test\"}",
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "2",
+            item: {
+              type: "function_call",
+              id: "fc_unfinished",
+              call_id: "call_unfinished",
+              name: "lookup",
+              arguments: "{\"query\":\"test\"}",
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    expect(events.some((event) => event.type === "tool-error")).toBeTrue()
+    expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("error")
+    expect(events.at(-1)?.type).toBe("error")
+  })
+
   test("stream sends cancel after meta when user cancels before run id is known", async () => {
     mockHistory()
     const cancelled: string[] = []
@@ -475,6 +529,39 @@ describe("session.agency-swarm", () => {
 
     expect(cancelled).toEqual(["run_cancel"])
     expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("cancelled")
+  })
+
+  test("stream treats external abort as cancelled without error event", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = (async function* (args) {
+      await new Promise<void>((resolve, reject) => {
+        if (args.abort?.aborted) {
+          reject(new DOMException("Aborted", "AbortError"))
+          return
+        }
+        args.abort?.addEventListener(
+          "abort",
+          () => {
+            reject(new DOMException("Aborted", "AbortError"))
+          },
+          { once: true },
+        )
+        setTimeout(resolve, 20)
+      })
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input, triggerAbort } = helper()
+    triggerAbort()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    expect(events.map((event) => event.type)).toEqual(["start", "start-step", "finish-step", "finish"])
+    expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("cancelled")
+    expect(events.some((event) => event.type === "error")).toBeFalse()
   })
 
   test("stream does not duplicate text when message_output_created follows output_text events", async () => {
