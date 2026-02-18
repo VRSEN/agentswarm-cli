@@ -145,6 +145,7 @@ export namespace AgencySwarmAdapter {
         headers: authHeaders(input.token),
       },
       timeoutMs,
+      "discover agencies",
     )
 
     if (!response.ok) {
@@ -194,6 +195,7 @@ export namespace AgencySwarmAdapter {
         headers: authHeaders(input.token),
       },
       input.timeoutMs,
+      "load agency metadata",
     )
 
     if (!response.ok) {
@@ -219,15 +221,31 @@ export namespace AgencySwarmAdapter {
     const normalizedClientConfig = normalizeClientConfig(input.clientConfig)
     if (normalizedClientConfig) requestBody["client_config"] = normalizedClientConfig
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        ...authHeaders(input.token),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-      signal: input.abort,
-    })
+    let response: Response
+    try {
+      response = await fetchWithTimeout(
+        url,
+        {
+          method: "POST",
+          headers: {
+            ...authHeaders(input.token),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestBody),
+          signal: input.abort,
+        },
+        undefined,
+        "start response stream",
+      )
+    } catch (error) {
+      if (isAbortError(error)) throw error
+      yield {
+        type: "error",
+        error: toErrorMessage(error),
+      }
+      yield { type: "end" }
+      return
+    }
 
     if (!response.ok) {
       const body = await response.text().catch(() => "")
@@ -239,80 +257,94 @@ export namespace AgencySwarmAdapter {
       return
     }
 
-    for await (const event of parseSSE(response)) {
-      if (event.event === "meta") {
-        const payload = parseJSON(event.data)
-        const runID = payload && typeof payload["run_id"] === "string" ? payload["run_id"] : ""
-        if (runID) {
-          yield { type: "meta", runID }
+    try {
+      for await (const event of parseSSE(response)) {
+        if (event.event === "meta") {
+          const payload = parseJSON(event.data)
+          const runID = payload && typeof payload["run_id"] === "string" ? payload["run_id"] : ""
+          if (runID) {
+            yield { type: "meta", runID }
+            continue
+          }
+        }
+
+        if (event.event === "messages") {
+          const payload = parseJSON(event.data)
+          if (!payload) {
+            yield {
+              type: "error",
+              error: "Received malformed messages payload from Agency Swarm stream",
+            }
+            continue
+          }
+          yield { type: "messages", payload }
           continue
         }
-      }
 
-      if (event.event === "messages") {
+        if (event.event === "end") {
+          yield { type: "end" }
+          break
+        }
+
         const payload = parseJSON(event.data)
         if (!payload) {
           yield {
             type: "error",
-            error: "Received malformed messages payload from Agency Swarm stream",
+            error: "Received malformed stream payload from Agency Swarm",
           }
           continue
         }
-        yield { type: "messages", payload }
-        continue
-      }
 
-      if (event.event === "end") {
-        yield { type: "end" }
-        break
-      }
-
-      const payload = parseJSON(event.data)
-      if (!payload) {
-        yield {
-          type: "error",
-          error: "Received malformed stream payload from Agency Swarm",
+        if (typeof payload["error"] === "string") {
+          yield {
+            type: "error",
+            error: payload["error"],
+          }
+          continue
         }
-        continue
-      }
 
-      if (typeof payload["error"] === "string") {
-        yield {
-          type: "error",
-          error: payload["error"],
+        if (isRecord(payload["data"])) {
+          yield {
+            type: "data",
+            payload: payload["data"],
+          }
+          continue
         }
-        continue
-      }
 
-      if (isRecord(payload["data"])) {
         yield {
           type: "data",
-          payload: payload["data"],
+          payload,
         }
-        continue
       }
-
+    } catch (error) {
+      if (isAbortError(error)) throw error
       yield {
-        type: "data",
-        payload,
+        type: "error",
+        error: toErrorMessage(error),
       }
+      yield { type: "end" }
     }
   }
 
   export async function cancel(input: CancelInput): Promise<CancelResult> {
     const url = joinURL(input.baseURL, `${input.agency}/cancel_response_stream`)
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        ...authHeaders(input.token),
-        "Content-Type": "application/json",
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: {
+          ...authHeaders(input.token),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          run_id: input.runID,
+          cancel_mode: input.cancelMode,
+        }),
+        signal: input.abort,
       },
-      body: JSON.stringify({
-        run_id: input.runID,
-        cancel_mode: input.cancelMode,
-      }),
-      signal: input.abort,
-    })
+      undefined,
+      "cancel response stream",
+    )
 
     const body = (await safeJSON(response)) ?? {}
 
@@ -348,18 +380,33 @@ export namespace AgencySwarmAdapter {
     }
   }
 
-  async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs?: number): Promise<Response> {
-    if (!timeoutMs || timeoutMs <= 0) {
-      return fetch(input, init)
-    }
+  async function fetchWithTimeout(
+    input: string,
+    init: RequestInit,
+    timeoutMs?: number,
+    action?: string,
+  ): Promise<Response> {
+    try {
+      if (!timeoutMs || timeoutMs <= 0) {
+        return await fetch(input, init)
+      }
 
-    const signal = init.signal
-      ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)])
-      : AbortSignal.timeout(timeoutMs)
-    return fetch(input, {
-      ...init,
-      signal,
-    })
+      const signal = init.signal
+        ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)])
+        : AbortSignal.timeout(timeoutMs)
+      return await fetch(input, {
+        ...init,
+        signal,
+      })
+    } catch (error) {
+      if (isAbortError(error)) throw error
+      throw normalizeConnectionError({
+        action: action ?? "make request",
+        url: input,
+        error,
+        timeoutMs,
+      })
+    }
   }
 
   function authHeaders(token?: string | null): Record<string, string> {
@@ -522,6 +569,31 @@ export namespace AgencySwarmAdapter {
       event,
       data: dataLines.join("\n"),
     }
+  }
+
+  function isAbortError(error: unknown): error is DOMException {
+    return error instanceof DOMException && error.name === "AbortError"
+  }
+
+  function toErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message.trim()) return error.message
+    return String(error)
+  }
+
+  function normalizeConnectionError(input: {
+    action: string
+    url: string
+    error: unknown
+    timeoutMs?: number
+  }): Error {
+    const detail = toErrorMessage(input.error)
+    const timeoutHint =
+      input.timeoutMs && input.timeoutMs > 0 && /timeout/i.test(detail) ? ` after ${input.timeoutMs}ms` : ""
+    const message =
+      `Failed to ${input.action}: cannot reach Agency Swarm backend at ${input.url}${timeoutHint}. ` +
+      `Start the FastAPI server and verify provider.options.baseURL.` +
+      (detail ? ` (${detail})` : "")
+    return new Error(message, { cause: input.error })
   }
 
   function isRecord(value: unknown): value is Record<string, unknown> {
