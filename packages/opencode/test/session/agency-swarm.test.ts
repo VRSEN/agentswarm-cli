@@ -460,6 +460,57 @@ describe("session.agency-swarm", () => {
     expect(types.at(-2)).toBe("finish-step")
   })
 
+  test("stream reconciles non-function tool input from response.output_item.done", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = (async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: {
+              type: "file_search_call",
+              id: "fs_args",
+              status: "in_progress",
+              queries: [],
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "1",
+            item: {
+              type: "file_search_call",
+              id: "fs_args",
+              status: "completed",
+              queries: ["final-query"],
+              results: [{ file_id: "file_1" }],
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    const toolCall = events.find((event) => event.type === "tool-call")
+    expect(toolCall?.input).toEqual({ queries: ["final-query"] })
+    expect(events.find((event) => event.type === "tool-result")?.output?.output).toContain("file_1")
+  })
+
   test("stream does not cancel stale last_run_id before current run metadata arrives", async () => {
     mockHistory("run_stale")
     const cancelled: string[] = []
@@ -936,6 +987,73 @@ describe("session.agency-swarm", () => {
     const resultEvents = events.filter((event) => event.type === "tool-result")
     expect(resultEvents).toHaveLength(1)
     expect(resultEvents[0].output.output).toBe("real output")
+  })
+
+  test("stream uses final function_call arguments from response.output_item.done before tool-call", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = (async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "2",
+            item: {
+              type: "function_call",
+              id: "fc_args",
+              call_id: "call_args",
+              name: "lookup",
+              arguments: "",
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "2",
+            item: {
+              type: "function_call",
+              id: "fc_args",
+              call_id: "call_args",
+              name: "lookup",
+              arguments: "{\"query\":\"from_done\"}",
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "2",
+            item: {
+              type: "function_call_output",
+              id: "fco_args",
+              call_id: "call_args",
+              output: "done",
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    const toolCall = events.find((event) => event.type === "tool-call")
+    expect(toolCall?.input).toEqual({ query: "from_done" })
   })
 
   test("stream does not reopen reasoning parts on output_item.done after summary done", async () => {

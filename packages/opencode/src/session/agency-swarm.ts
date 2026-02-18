@@ -851,16 +851,16 @@ export namespace SessionAgencySwarm {
         if (!callID) return []
         const itemID = asString(item["id"])
         const toolName = normalizeToolName(itemType, item)
+        const metadata = outputMeta(outputIndex, {
+          item_type: itemType,
+        })
         if (itemID) callByItem.set(itemID, callID)
         if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
-        const parts = runTool(
-          callID,
-          toolName,
-          eventMeta,
-          outputMeta(outputIndex, {
-            item_type: itemType,
-          }),
-        )
+        const rawInput = toolRawInput(itemType, item)
+        const knownRaw = tools.get(callID)?.raw ?? ""
+        const reconciled =
+          rawInput && rawInput !== knownRaw ? ensureToolInput(callID, toolName, rawInput, eventMeta, metadata) : []
+        const parts = [...reconciled, ...runTool(callID, toolName, eventMeta, metadata)]
         if (itemType === "function_call") {
           return parts
         }
@@ -871,7 +871,7 @@ export namespace SessionAgencySwarm {
             toolName,
             toolOutput(itemType, item),
             eventMeta,
-            outputMeta(outputIndex, { item_type: itemType }),
+            metadata,
           ),
         ]
       }
