@@ -64,13 +64,28 @@ export function DialogAgent() {
     }
   })
 
-  const [discovery] = createResource(discoveryInput, async (input) => {
-    return AgencySwarmAdapter.discover({
-      baseURL: input.baseURL,
-      token: input.token,
-      timeoutMs: input.timeoutMs,
-    })
-  })
+  const [discovery] = createResource(
+    discoveryInput,
+    async (input): Promise<{ agencies: AgencySwarmAdapter.AgencyDescriptor[]; error?: string }> => {
+      try {
+        const result = await AgencySwarmAdapter.discover({
+          baseURL: input.baseURL,
+          token: input.token,
+          timeoutMs: input.timeoutMs,
+        })
+        return { agencies: result.agencies }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw error
+        return {
+          agencies: [],
+          error: error instanceof Error ? error.message : String(error),
+        }
+      }
+    },
+    {
+      initialValue: { agencies: [] },
+    },
+  )
 
   const options = createMemo<DialogSelectOption<AgentOptionValue>[]>(() => {
     if (!agencySwarmEnabled()) {
@@ -88,9 +103,9 @@ export function DialogAgent() {
 
     const result: DialogSelectOption<AgentOptionValue>[] = []
     const discovered = discovery()
-    const error = discovery.error
+    const error = discovered?.error
 
-    if (discovery.loading) {
+    if (discovery.loading && !error) {
       result.push({
         value: {
           kind: "agency",
@@ -110,7 +125,7 @@ export function DialogAgent() {
           agency: "__error__",
         },
         title: "Agency discovery failed",
-        description: error instanceof Error ? error.message : String(error),
+        description: error,
         disabled: true,
         category: "Agency Swarm",
       })
