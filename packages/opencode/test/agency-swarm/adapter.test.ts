@@ -247,6 +247,30 @@ describe("agency-swarm.adapter", () => {
     expect(frames[0]).toEqual({ type: "error", error: "boom" })
   })
 
+  test("streamRun surfaces connection failures as stream error frames", async () => {
+    globalThis.fetch = asFetch(async () => {
+      throw new TypeError("Unable to connect. Is the computer able to access the url?")
+    })
+
+    const frames: AgencySwarmAdapter.StreamFrame[] = []
+    for await (const frame of AgencySwarmAdapter.streamRun({
+      baseURL: "http://127.0.0.1:8000",
+      agency: "builder",
+      message: "hello",
+      chatHistory: [],
+    })) {
+      frames.push(frame)
+    }
+
+    expect(frames.map((frame) => frame.type)).toEqual(["error", "end"])
+    const first = frames[0]
+    expect(first?.type).toBe("error")
+    if (first?.type === "error") {
+      expect(first.error).toContain("cannot reach Agency Swarm backend")
+      expect(first.error).toContain("http://127.0.0.1:8000/builder/get_response_stream")
+    }
+  })
+
   test("cancel treats 404 responses as successful terminal state", async () => {
     globalThis.fetch = asFetch(async () => new Response(JSON.stringify({ detail: "not found" }), { status: 404 }))
 

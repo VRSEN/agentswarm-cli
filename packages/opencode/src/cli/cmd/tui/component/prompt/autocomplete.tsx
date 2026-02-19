@@ -11,6 +11,7 @@ import { useSync } from "@tui/context/sync"
 import { useTheme, selectedForeground } from "@tui/context/theme"
 import { SplitBorder } from "@tui/component/border"
 import { useCommandDialog } from "@tui/component/dialog-command"
+import { useToast } from "@tui/ui/toast"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Locale } from "@/util/locale"
 import type { PromptInfo } from "./history"
@@ -94,6 +95,7 @@ export function Autocomplete(props: {
   const local = useLocal()
   const sync = useSync()
   const command = useCommandDialog()
+  const toast = useToast()
   const { theme } = useTheme()
   const dimensions = useTerminalDimensions()
   const frecency = useFrecency()
@@ -130,11 +132,43 @@ export function Autocomplete(props: {
     }
   })
 
-  const [agencyDiscovery] = createResource(discoveryInput, async (input) => {
-    return AgencySwarmAdapter.discover({
-      baseURL: input.baseURL,
-      token: input.token,
-      timeoutMs: input.timeoutMs,
+  const [agencyDiscovery, { refetch: refetchAgencyDiscovery }] = createResource(
+    discoveryInput,
+    async (input): Promise<{ agencies: AgencySwarmAdapter.AgencyDescriptor[]; error?: string }> => {
+      try {
+        const result = await AgencySwarmAdapter.discover({
+          baseURL: input.baseURL,
+          token: input.token,
+          timeoutMs: input.timeoutMs,
+        })
+        return { agencies: result.agencies }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw error
+        return {
+          agencies: [],
+          error: error instanceof Error ? error.message : String(error),
+        }
+      }
+    },
+    {
+      initialValue: { agencies: [] },
+    },
+  )
+
+  const [lastAgencyDiscoveryErrorKey, setLastAgencyDiscoveryErrorKey] = createSignal<string | undefined>(undefined)
+
+  createEffect(() => {
+    if (!agencySwarmEnabled()) return
+    const discovered = agencyDiscovery()
+    const message = discovered?.error
+    if (!message) return
+    const key = `${providerOptions().baseURL}|${message}`
+    if (lastAgencyDiscoveryErrorKey() === key) return
+    setLastAgencyDiscoveryErrorKey(key)
+    toast.show({
+      variant: "error",
+      message,
+      duration: 8000,
     })
   })
 
@@ -146,6 +180,16 @@ export function Autocomplete(props: {
   })
 
   const [positionTick, setPositionTick] = createSignal(0)
+
+  createEffect(() => {
+    if (!agencySwarmEnabled()) return
+    if (store.visible !== "@") return
+    void refetchAgencyDiscovery()
+    const timer = setInterval(() => {
+      void refetchAgencyDiscovery()
+    }, 10000)
+    onCleanup(() => clearInterval(timer))
+  })
 
   createEffect(() => {
     if (store.visible) {

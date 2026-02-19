@@ -42,7 +42,13 @@ export namespace SessionProcessor {
       partFromToolCall(toolCallID: string) {
         return toolcalls[toolCallID]
       },
-      async process(streamInput: LLM.StreamInput) {
+      async process(
+        streamInput: LLM.StreamInput & {
+          createStream?: () => Promise<{
+            fullStream: AsyncIterable<any>
+          }>
+        },
+      ) {
         log.info("process")
         needsCompaction = false
         const shouldBreak = (await Config.get()).experimental?.continue_loop_on_deny !== true
@@ -50,10 +56,9 @@ export namespace SessionProcessor {
           try {
             let currentText: MessageV2.TextPart | undefined
             let reasoningMap: Record<string, MessageV2.ReasoningPart> = {}
-            const stream = await LLM.stream(streamInput)
+            const stream = streamInput.createStream ? await streamInput.createStream() : await LLM.stream(streamInput)
 
             for await (const value of stream.fullStream) {
-              input.abort.throwIfAborted()
               switch (value.type) {
                 case "start":
                   SessionStatus.set(input.sessionID, { type: "busy" })
@@ -334,6 +339,9 @@ export namespace SessionProcessor {
                   })
                   continue
               }
+              if (!streamInput.createStream) {
+                input.abort.throwIfAborted()
+              }
               if (needsCompaction) break
             }
           } catch (e: any) {
@@ -358,6 +366,7 @@ export namespace SessionProcessor {
               await SessionRetry.sleep(delay, input.abort).catch(() => {})
               continue
             }
+            input.assistantMessage.finish = input.assistantMessage.finish ?? "error"
             input.assistantMessage.error = error
             Bus.publish(Session.Event.Error, {
               sessionID: input.assistantMessage.sessionID,
