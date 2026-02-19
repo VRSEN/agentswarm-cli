@@ -153,7 +153,15 @@ export namespace SessionAgencySwarm {
 
     const history = await AgencySwarmHistory.load(scope)
     const outgoingMessage = buildOutgoingMessage(input.userMessage)
-    const recipientAgent = findRecipientAgent(input.userMessage) ?? input.options.recipientAgent
+    const recipientAgent = await resolveRecipientAgent({
+      sessionID: input.sessionID,
+      baseURL: input.options.baseURL,
+      agency,
+      token: input.options.token,
+      timeoutMs: input.options.discoveryTimeoutMs,
+      mentionedRecipient: findRecipientAgent(input.userMessage),
+      configuredRecipient: input.options.recipientAgent,
+    })
     const fileURLs = collectFileURLs(input.userMessage)
 
     const tools = new Map<string, Tool>()
@@ -1355,6 +1363,91 @@ export namespace SessionAgencySwarm {
 
   function asBoolean(value: unknown): boolean | undefined {
     return typeof value === "boolean" ? value : undefined
+  }
+
+  async function resolveRecipientAgent(input: {
+    sessionID: string
+    baseURL: string
+    agency: string
+    token?: string
+    timeoutMs: number
+    mentionedRecipient?: string
+    configuredRecipient?: string
+  }): Promise<string | undefined> {
+    const candidates = [input.mentionedRecipient, input.configuredRecipient].filter(
+      (value, index, array): value is string => !!value && array.indexOf(value) === index,
+    )
+    if (candidates.length === 0) {
+      return undefined
+    }
+
+    let metadata: AgencySwarmAdapter.AgencyMetadata
+    try {
+      metadata = await AgencySwarmAdapter.getMetadata({
+        baseURL: input.baseURL,
+        agency: input.agency,
+        token: input.token,
+        timeoutMs: input.timeoutMs,
+      })
+    } catch (error) {
+      log.warn("unable to refresh agency metadata; skipping recipient override", {
+        sessionID: input.sessionID,
+        agency: input.agency,
+        candidates,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return undefined
+    }
+
+    const recipientMap = extractRecipientMap(metadata)
+    if (recipientMap.size === 0) {
+      log.warn("agency metadata has no recipient agents; skipping recipient override", {
+        sessionID: input.sessionID,
+        agency: input.agency,
+        candidates,
+      })
+      return undefined
+    }
+
+    const availableAgents = Array.from(new Set(recipientMap.values()))
+    for (const candidate of candidates) {
+      const resolved = recipientMap.get(candidate)
+      if (resolved) return resolved
+      log.warn("ignoring stale recipient agent candidate", {
+        sessionID: input.sessionID,
+        agency: input.agency,
+        candidate,
+        source: candidate === input.mentionedRecipient ? "message" : "config",
+        availableAgents,
+      })
+    }
+
+    return undefined
+  }
+
+  function extractRecipientMap(metadata: AgencySwarmAdapter.AgencyMetadata): Map<string, string> {
+    const result = new Map<string, string>()
+    const metadataRecord = asRecord(metadata["metadata"])
+    for (const id of asStringArray(metadataRecord?.["agents"])) {
+      result.set(id, id)
+    }
+
+    const nodes = Array.isArray(metadata["nodes"]) ? metadata["nodes"] : []
+    for (const rawNode of nodes) {
+      const node = asRecord(rawNode)
+      if (!node) continue
+      const id = asString(node["id"])
+      if (!id) continue
+      const nodeType = asString(node["type"])
+      const data = asRecord(node["data"])
+      if (nodeType === "agent") {
+        result.set(id, id)
+        const label = asString(data?.["label"])
+        if (label) result.set(label, id)
+      }
+    }
+
+    return result
   }
 
   function asStringArray(value: unknown): string[] {

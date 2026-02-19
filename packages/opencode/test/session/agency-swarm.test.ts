@@ -5,6 +5,7 @@ import { SessionAgencySwarm } from "../../src/session/agency-swarm"
 
 describe("session.agency-swarm", () => {
   const originalDiscover = AgencySwarmAdapter.discover
+  const originalGetMetadata = AgencySwarmAdapter.getMetadata
   const originalStreamRun = AgencySwarmAdapter.streamRun
   const originalCancel = AgencySwarmAdapter.cancel
   const originalLoad = AgencySwarmHistory.load
@@ -13,6 +14,7 @@ describe("session.agency-swarm", () => {
 
   afterEach(() => {
     AgencySwarmAdapter.discover = originalDiscover
+    AgencySwarmAdapter.getMetadata = originalGetMetadata
     AgencySwarmAdapter.streamRun = originalStreamRun
     AgencySwarmAdapter.cancel = originalCancel
     AgencySwarmHistory.load = originalLoad
@@ -23,6 +25,11 @@ describe("session.agency-swarm", () => {
   const helper = () => {
     const abort = new AbortController()
     let cancel: (() => void | Promise<void>) | undefined
+    const options: SessionAgencySwarm.RuntimeOptions = {
+      baseURL: "http://127.0.0.1:8000",
+      agency: "builder",
+      discoveryTimeoutMs: 5000,
+    }
     const input = {
       sessionID: "session_1",
       assistantMessage: {
@@ -63,11 +70,7 @@ describe("session.agency-swarm", () => {
           },
         ],
       } as any,
-      options: {
-        baseURL: "http://127.0.0.1:8000",
-        agency: "builder",
-        discoveryTimeoutMs: 5000,
-      },
+      options,
       abort: abort.signal,
       registerManagedCancel(handler: () => void | Promise<void>) {
         cancel = handler
@@ -458,6 +461,88 @@ describe("session.agency-swarm", () => {
     expect(types).toContain("tool-result")
     expect(events.find((event) => event.type === "tool-result")?.output?.output).toContain("file_1")
     expect(types.at(-2)).toBe("finish-step")
+  })
+
+  test("stream skips stale configured recipient agent based on live metadata", async () => {
+    mockHistory()
+    let sentRecipient: string | undefined
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      metadata: {
+        agents: ["UserSupportAgent", "MathAgent"],
+      },
+    })) as typeof AgencySwarmAdapter.getMetadata
+    AgencySwarmAdapter.streamRun = (async function* (args) {
+      sentRecipient = args.recipientAgent ?? undefined
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.recipientAgent = "ExampleAgent2"
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    expect(sentRecipient).toBeUndefined()
+    expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("stop")
+  })
+
+  test("stream resolves configured recipient alias to live agent id from metadata", async () => {
+    mockHistory()
+    let sentRecipient: string | undefined
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      metadata: {
+        agents: ["support_agent"],
+      },
+      nodes: [
+        {
+          id: "support_agent",
+          type: "agent",
+          data: {
+            label: "UserSupportAgent",
+          },
+        },
+      ],
+    })) as typeof AgencySwarmAdapter.getMetadata
+    AgencySwarmAdapter.streamRun = (async function* (args) {
+      sentRecipient = args.recipientAgent ?? undefined
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.recipientAgent = "UserSupportAgent"
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _ of stream.fullStream) {
+    }
+
+    expect(sentRecipient).toBe("support_agent")
+  })
+
+  test("stream falls back to valid configured recipient when mentioned recipient is stale", async () => {
+    mockHistory()
+    let sentRecipient: string | undefined
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      metadata: {
+        agents: ["MathAgent"],
+      },
+    })) as typeof AgencySwarmAdapter.getMetadata
+    AgencySwarmAdapter.streamRun = (async function* (args) {
+      sentRecipient = args.recipientAgent ?? undefined
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.recipientAgent = "MathAgent"
+    input.userMessage.parts.push({
+      type: "agent",
+      name: "ExampleAgent2",
+    } as any)
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _ of stream.fullStream) {
+    }
+
+    expect(sentRecipient).toBe("MathAgent")
   })
 
   test("stream reconciles non-function tool input from response.output_item.done", async () => {

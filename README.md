@@ -23,6 +23,7 @@
 - OpenCode session/message/event contracts remain the UI source of truth. Agency frames are translated into standard processor stream parts (`text-*`, `reasoning-*`, `tool-*`, `finish-step`, `finish`) before persistence.
 - Provider-specific logic should not bypass `SessionProcessor` with direct message writes.
 - `chat_history` is required by the current Agency API contract, so a transport sidecar is maintained in `packages/opencode/src/agency-swarm/history.ts`. This is request continuity state, not a replacement for OpenCode session storage.
+- Recipient-agent routing is validated against live `get_metadata` on each turn before `recipient_agent` is sent. Stale saved recipients are ignored instead of causing 422 failures.
 
 <p align="center">
   <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>

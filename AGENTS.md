@@ -17,6 +17,7 @@
   - user/system abort or cancel -> `cancelled`
   - stream/tool failure -> `error`
 - Keep `chat_history` sidecar usage transport-scoped only (required by current Agency API request shape), while OpenCode session storage remains the product source of truth.
+- Resolve recipient agents from live `get_metadata` each run; do not rely on stale saved recipient ids/names from prior discovery snapshots.
 
 ## Style Guide
 

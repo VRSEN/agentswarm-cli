@@ -132,7 +132,7 @@ export function Autocomplete(props: {
     }
   })
 
-  const [agencyDiscovery] = createResource(
+  const [agencyDiscovery, { refetch: refetchAgencyDiscovery }] = createResource(
     discoveryInput,
     async (input): Promise<{ agencies: AgencySwarmAdapter.AgencyDescriptor[]; error?: string }> => {
       try {
@@ -180,6 +180,16 @@ export function Autocomplete(props: {
   })
 
   const [positionTick, setPositionTick] = createSignal(0)
+
+  createEffect(() => {
+    if (!agencySwarmEnabled()) return
+    if (store.visible !== "@") return
+    void refetchAgencyDiscovery()
+    const timer = setInterval(() => {
+      void refetchAgencyDiscovery()
+    }, 10000)
+    onCleanup(() => clearInterval(timer))
+  })
 
   createEffect(() => {
     if (store.visible) {
