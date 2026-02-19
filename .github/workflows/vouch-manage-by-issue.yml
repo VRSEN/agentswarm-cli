@@ -1,8 +1,9 @@
 name: vouch-manage-by-issue
 
 on:
-  issue_comment:
-    types: [created]
+  # Disabled by default in this fork:
+  # this workflow relies on upstream OpenCode GitHub App credentials.
+  workflow_dispatch:
 
 concurrency:
   group: vouch-manage
