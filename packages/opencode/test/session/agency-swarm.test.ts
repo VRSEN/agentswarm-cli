@@ -519,6 +519,41 @@ describe("session.agency-swarm", () => {
     expect(sentRecipient).toBe("support_agent")
   })
 
+  test("stream resolves mentioned recipient alias to live agent id from metadata", async () => {
+    mockHistory()
+    let sentRecipient: string | undefined
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      metadata: {
+        agents: ["support_agent", "MathAgent"],
+      },
+      nodes: [
+        {
+          id: "support_agent",
+          type: "agent",
+          data: {
+            label: "UserSupportAgent",
+          },
+        },
+      ],
+    })) as typeof AgencySwarmAdapter.getMetadata
+    AgencySwarmAdapter.streamRun = (async function* (args) {
+      sentRecipient = args.recipientAgent ?? undefined
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.recipientAgent = "MathAgent"
+    input.userMessage.parts.push({
+      type: "agent",
+      name: "UserSupportAgent",
+    } as any)
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _ of stream.fullStream) {
+    }
+
+    expect(sentRecipient).toBe("support_agent")
+  })
+
   test("stream falls back to valid configured recipient when mentioned recipient is stale", async () => {
     mockHistory()
     let sentRecipient: string | undefined
@@ -813,6 +848,73 @@ describe("session.agency-swarm", () => {
     }
 
     expect(deltas).toEqual(["Hi, there!"])
+  })
+
+  test("stream does not duplicate reasoning when reasoning_item_created follows summary events", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = (async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: { type: "reasoning", id: "rs_dup" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_dup",
+            summary_index: "0",
+            output_index: "1",
+            delta: "Find the right file first.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_dup",
+            summary_index: "0",
+            output_index: "1",
+            text: "Find the right file first.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "reasoning_item_created",
+          item: {
+            raw_item: {
+              type: "reasoning",
+              id: "rs_dup",
+              summary: [{ text: "Find the right file first." }],
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") deltas.push(event.text)
+    }
+
+    expect(deltas).toEqual(["Find the right file first."])
   })
 
   test("stream closes prior text part before switching content_index", async () => {

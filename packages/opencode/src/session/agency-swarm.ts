@@ -945,12 +945,8 @@ export namespace SessionAgencySwarm {
 
       return summary.flatMap((raw, index) => {
         const record = asRecord(raw)
-        const text = asString(record?.["text"]) || ""
-        return [
-          ...ensureReasoning(itemID, index, eventMeta, { source: "run_item_stream_event" }),
-          ...(text ? reasoningDelta(itemID, index, text, eventMeta, { source: "run_item_stream_event" }) : []),
-          ...finishReasoning(itemID, index, text || undefined, eventMeta, { source: "run_item_stream_event" }),
-        ]
+        const text = asString(record?.["text"]) || undefined
+        return finishReasoning(itemID, index, text, eventMeta, { source: "run_item_stream_event" })
       })
     }
 

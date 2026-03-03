@@ -1404,6 +1404,7 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
 function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMessage }) {
   const ctx = use()
   const sync = useSync()
+  const special = createMemo(() => resolveSpecialTool(props.part.tool))
 
   // Hide tool if showDetails is false and tool completed successfully
   const shouldHide = createMemo(() => {
@@ -1483,6 +1484,21 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
         <Match when={props.part.tool === "skill"}>
           <Skill {...toolprops} />
         </Match>
+        <Match when={special() === "handoff"}>
+          <HandoffSpecial {...toolprops} />
+        </Match>
+        <Match when={special() === "file_search"}>
+          <FileSearch {...toolprops} />
+        </Match>
+        <Match when={special() === "web_search"}>
+          <WebSearchSpecial {...toolprops} />
+        </Match>
+        <Match when={special() === "reasoning"}>
+          <ReasoningSpecial {...toolprops} />
+        </Match>
+        <Match when={special() === "code_interpreter"}>
+          <CodeInterpreterSpecial {...toolprops} />
+        </Match>
         <Match when={true}>
           <GenericTool {...toolprops} />
         </Match>
@@ -1499,6 +1515,9 @@ type ToolProps<T extends Tool.Info> = {
   output?: string
   part: ToolPart
 }
+
+type SpecialTool = "handoff" | "file_search" | "web_search" | "reasoning" | "code_interpreter"
+
 function GenericTool(props: ToolProps<any>) {
   return (
     <InlineTool icon="⚙" pending="Writing command..." complete={true} part={props.part}>
@@ -1841,6 +1860,96 @@ function WebSearch(props: ToolProps<any>) {
   )
 }
 
+function FileSearch(props: ToolProps<any>) {
+  const query = createMemo(() => {
+    const input = props.input as Record<string, unknown>
+    const firstQuery = input["queries"]
+    if (Array.isArray(firstQuery)) {
+      const value = firstQuery.find((item) => typeof item === "string")
+      if (typeof value === "string" && value.trim()) return value.trim()
+    }
+    const query = input["query"]
+    if (typeof query === "string" && query.trim()) return query.trim()
+    return undefined
+  })
+
+  return (
+    <InlineTool icon="⌕" pending="Searching files..." complete={props.part.state.status !== "pending"} part={props.part}>
+      File Search
+      <Show when={query()}>
+        {(value) => <> "{value()}"</>}
+      </Show>
+    </InlineTool>
+  )
+}
+
+function WebSearchSpecial(props: ToolProps<any>) {
+  const query = createMemo(() => {
+    const input = props.input as Record<string, unknown>
+    const value = input["query"]
+    if (typeof value === "string" && value.trim()) return value.trim()
+    const action = input["action"]
+    if (typeof action === "string" && action.trim()) return action.trim()
+    return undefined
+  })
+
+  return (
+    <InlineTool icon="◈" pending="Searching web..." complete={props.part.state.status !== "pending"} part={props.part}>
+      Web Search
+      <Show when={query()}>
+        {(value) => <> "{value()}"</>}
+      </Show>
+    </InlineTool>
+  )
+}
+
+function ReasoningSpecial(props: ToolProps<any>) {
+  return (
+    <InlineTool icon="💡" pending="Thinking..." complete={props.part.state.status !== "pending"} part={props.part}>
+      Thinking...
+    </InlineTool>
+  )
+}
+
+function CodeInterpreterSpecial(props: ToolProps<any>) {
+  return (
+    <InlineTool
+      icon="⌘"
+      pending="Running code interpreter..."
+      complete={props.part.state.status !== "pending"}
+      part={props.part}
+    >
+      Code Interpreter
+    </InlineTool>
+  )
+}
+
+function HandoffSpecial(props: ToolProps<any>) {
+  const recipient = createMemo(() => {
+    const input = props.input as Record<string, unknown>
+    return readFirstString(input, [
+      "recipient_agent",
+      "recipientAgent",
+      "recipient",
+      "target_agent",
+      "targetAgent",
+      "agent",
+      "agent_name",
+      "agentName",
+      "to",
+      "name",
+    ])
+  })
+
+  return (
+    <InlineTool icon="↳" pending="Handing off..." complete={props.part.state.status !== "pending"} part={props.part}>
+      <Show when={recipient()} fallback={"Agent handoff"}>
+        {(value) => <>Talked to {value()}</>}
+      </Show>
+    </InlineTool>
+  )
+}
+
 function Task(props: ToolProps<typeof TaskTool>) {
   const { theme } = useTheme()
   const keybind = useKeybind()
@@ -1905,6 +2014,46 @@ function Task(props: ToolProps<typeof TaskTool>) {
       </Match>
     </Switch>
   )
+}
+
+function readFirstString(input: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = input[key]
+    if (typeof value === "string" && value.trim()) return value.trim()
+  }
+}
+
+function resolveSpecialTool(tool: string): SpecialTool | undefined {
+  const cleaned = tool.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+  if (!cleaned) return undefined
+  const withoutTool = cleaned.endsWith("_tool")
+    ? cleaned.slice(0, -5)
+    : cleaned.endsWith("tool")
+      ? cleaned.slice(0, -4)
+      : cleaned
+  const compact = withoutTool.replace(/_/g, "")
+
+  if (compact === "filesearch" || compact.startsWith("filesearch") || compact === "codesearch") {
+    return "file_search"
+  }
+  if (compact === "websearch" || compact.startsWith("websearch")) {
+    return "web_search"
+  }
+  if (compact === "reasoning" || compact.startsWith("reasoning")) {
+    return "reasoning"
+  }
+  if (compact === "codeinterpreter" || compact.startsWith("codeinterpreter")) {
+    return "code_interpreter"
+  }
+  if (
+    compact === "sendmessage" ||
+    compact.startsWith("sendmessage") ||
+    compact === "handoff" ||
+    compact.includes("handoff") ||
+    compact.startsWith("transferto")
+  ) {
+    return "handoff"
+  }
 }
 
 function Edit(props: ToolProps<typeof EditTool>) {
