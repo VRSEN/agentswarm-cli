@@ -40,6 +40,8 @@ import { writeHeapSnapshot } from "v8"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { TuiConfigProvider } from "./context/tui-config"
 import { TuiConfig } from "@/config/tui"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -102,6 +104,10 @@ async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
 }
 
 import type { EventSource } from "./context/sdk"
+
+type AgencyServerOption = {
+  baseURL: string
+}
 
 export function tui(input: {
   url: string
@@ -284,6 +290,7 @@ function App() {
   })
 
   const args = useArgs()
+  let agencyServersChecked = false
   onMount(() => {
     batch(() => {
       if (args.agent) local.agent.set(args.agent)
@@ -356,6 +363,131 @@ function App() {
       },
     ),
   )
+
+  createEffect(() => {
+    if (agencyServersChecked) return
+    if (sync.status !== "complete") return
+
+    const model = local.model.current()
+    if (!model || model.providerID !== AgencySwarmAdapter.PROVIDER_ID) return
+    agencyServersChecked = true
+
+    const provider = sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID]
+    const rawOptions =
+      provider?.options && typeof provider.options === "object" ? (provider.options as Record<string, unknown>) : {}
+    const baseURL = AgencySwarmAdapter.normalizeBaseURL(
+      readString(rawOptions["baseURL"]) ?? readString(rawOptions["base_url"]) ?? AgencySwarmAdapter.DEFAULT_BASE_URL,
+    )
+    const token = readString(rawOptions["token"])
+    const configuredAgency = readString(rawOptions["agency"])
+    const configuredRecipient = readString(rawOptions["recipientAgent"]) ?? readString(rawOptions["recipient_agent"])
+    const discoveryTimeoutMs =
+      readPositiveNumber(rawOptions["discoveryTimeoutMs"]) ??
+      readPositiveNumber(rawOptions["discovery_timeout_ms"]) ??
+      AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS
+
+    void AgencySwarmAdapter.discoverLocalServers({
+      baseURL,
+      token,
+      timeoutMs: discoveryTimeoutMs,
+    })
+      .then(async (discovered) => {
+        if (discovered.servers.length === 0) return
+
+        const applyServer = async (server: AgencySwarmAdapter.ServerDescriptor, notify: boolean) => {
+          if (server.baseURL === baseURL && !notify) return
+
+          const keepAgency = configuredAgency && server.agencies.some((agency) => agency.id === configuredAgency)
+          const nextOptions: Record<string, unknown> = {
+            ...rawOptions,
+            baseURL: server.baseURL,
+            discoveryTimeoutMs,
+            agency: keepAgency ? configuredAgency : null,
+            recipientAgent: keepAgency ? (configuredRecipient ?? null) : null,
+            recipient_agent: keepAgency ? (configuredRecipient ?? null) : null,
+          }
+          if (token) {
+            nextOptions["token"] = token
+          }
+
+          await sdk.client.global.config.update(
+            {
+              config: {
+                model: `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
+                provider: {
+                  [AgencySwarmAdapter.PROVIDER_ID]: {
+                    name: provider?.name ?? "Agency Swarm",
+                    options: nextOptions,
+                  },
+                },
+              },
+            },
+            {
+              throwOnError: true,
+            },
+          )
+
+          await sdk.client.instance.dispose()
+          await sync.bootstrap()
+          dialog.clear()
+          if (!notify) return
+          toast.show({
+            variant: "success",
+            message: `Selected Agency Swarm server ${server.baseURL}`,
+            duration: 3000,
+          })
+        }
+
+        if (discovered.servers.length === 1) {
+          await applyServer(discovered.servers[0], false)
+          return
+        }
+
+        const options: DialogSelectOption<AgencyServerOption>[] = discovered.servers.map((server) => {
+          const list = server.agencies.map((agency) => agency.id)
+          const summary = list.slice(0, 3).join(", ")
+          const tail = list.length > 3 ? ` +${list.length - 3} more` : ""
+          const noun = server.agencies.length === 1 ? "agency" : "agencies"
+          return {
+            value: {
+              baseURL: server.baseURL,
+            },
+            title: server.baseURL,
+            description: `${server.agencies.length} ${noun}: ${summary}${tail}`,
+            category: "Agency Swarm Servers",
+          }
+        })
+
+        const selected = discovered.servers.find((server) => server.baseURL === baseURL) ?? discovered.servers[0]
+        dialog.replace(() => (
+          <DialogSelect
+            title="Select Agency Swarm server"
+            current={{
+              baseURL: selected.baseURL,
+            }}
+            options={options}
+            onSelect={(option) => {
+              const server = discovered.servers.find((item) => item.baseURL === option.value.baseURL)
+              if (!server) return
+              void applyServer(server, true).catch((error) => {
+                toast.show({
+                  variant: "error",
+                  message: error instanceof Error ? error.message : String(error),
+                  duration: 6000,
+                })
+              })
+            }}
+          />
+        ))
+      })
+      .catch((error) => {
+        toast.show({
+          variant: "warning",
+          message: `Agency Swarm server discovery failed: ${error instanceof Error ? error.message : String(error)}`,
+          duration: 5000,
+        })
+      })
+  })
 
   const connected = useConnected()
   command.register(() => [
@@ -842,4 +974,17 @@ function ErrorComponent(props: {
       <text fg={colors.text}>{props.error.message}</text>
     </box>
   )
+}
+
+function readString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function readPositiveNumber(value: unknown): number | undefined {
+  if (typeof value !== "number") return undefined
+  if (!Number.isFinite(value)) return undefined
+  if (value <= 0) return undefined
+  return value
 }

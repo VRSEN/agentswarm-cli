@@ -32,6 +32,15 @@ export namespace AgencySwarmAdapter {
     rawOpenAPI: Record<string, unknown>
   }
 
+  export type ServerDescriptor = {
+    baseURL: string
+    agencies: AgencyDescriptor[]
+  }
+
+  export type DiscoverServersResult = {
+    servers: ServerDescriptor[]
+  }
+
   export type StreamRunInput = {
     baseURL: string
     agency: string
@@ -179,6 +188,61 @@ export namespace AgencySwarmAdapter {
       agencies,
       rawOpenAPI,
     }
+  }
+
+  export async function discoverLocalServers(input: {
+    baseURL?: string
+    token?: string | null
+    timeoutMs?: number
+    ports?: number[]
+  }): Promise<DiscoverServersResult> {
+    const timeoutMs = input.timeoutMs ?? DEFAULT_DISCOVERY_TIMEOUT_MS
+    const configuredBaseURL = normalizeBaseURL(input.baseURL ?? DEFAULT_BASE_URL)
+    const configuredURL = parseURL(configuredBaseURL)
+    const configuredIsLocal = configuredURL ? isLocalHost(configuredURL.hostname) : false
+    const configuredPort = readURLPort(configuredBaseURL)
+    const ports = normalizePorts([
+      configuredPort,
+      8000,
+      ...(input.ports ?? (await readLocalPorts())),
+    ])
+    const candidates = Array.from(
+      new Set([
+        configuredBaseURL,
+        ...ports
+          .filter((port) => !(configuredIsLocal && configuredPort && port === configuredPort))
+          .map((port) => normalizeBaseURL(`http://127.0.0.1:${port}`)),
+      ]),
+    )
+
+    const servers = (
+      await Promise.all(
+        candidates.map(async (baseURL): Promise<ServerDescriptor | undefined> => {
+          try {
+            const discovered = await discover({
+              baseURL,
+              token: input.token,
+              timeoutMs,
+            })
+            if (discovered.agencies.length === 0) return undefined
+            return {
+              baseURL: normalizeBaseURL(baseURL),
+              agencies: discovered.agencies,
+            }
+          } catch {
+            return undefined
+          }
+        }),
+      )
+    )
+      .flatMap((item) => (item ? [item] : []))
+      .sort((a, b) => {
+        if (a.baseURL === configuredBaseURL && b.baseURL !== configuredBaseURL) return -1
+        if (b.baseURL === configuredBaseURL && a.baseURL !== configuredBaseURL) return 1
+        return a.baseURL.localeCompare(b.baseURL)
+      })
+
+    return { servers }
   }
 
   export async function getMetadata(input: {
@@ -594,6 +658,82 @@ export namespace AgencySwarmAdapter {
       `Start the FastAPI server and verify provider.options.baseURL.` +
       (detail ? ` (${detail})` : "")
     return new Error(message, { cause: input.error })
+  }
+
+  async function readLocalPorts(): Promise<number[]> {
+    if (process.platform === "win32") {
+      return parsePorts(await readCommand("netstat -ano -p tcp | findstr LISTENING"))
+    }
+
+    const ports = await Promise.all([
+      readCommand("lsof -nP -iTCP -sTCP:LISTEN"),
+      readCommand("netstat -an | grep LISTEN"),
+    ])
+    return normalizePorts(ports.flatMap((item) => parsePorts(item)))
+  }
+
+  async function readCommand(cmd: string): Promise<string | undefined> {
+    try {
+      const proc = Bun.spawn({
+        cmd: process.platform === "win32" ? ["cmd", "/c", cmd] : ["sh", "-lc", cmd],
+        stdout: "pipe",
+        stderr: "ignore",
+      })
+      const [exitCode, output] = await Promise.all([proc.exited, new Response(proc.stdout).text()])
+      if (exitCode !== 0) return undefined
+      const trimmed = output.trim()
+      return trimmed ? trimmed : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  function parsePorts(input: string | undefined): number[] {
+    if (!input) return []
+    return input.split(/\r?\n/).flatMap((line) => {
+      if (!/\bLISTEN(ING)?\b/i.test(line)) return []
+      return Array.from(line.matchAll(/:(\d{2,5})\b/g)).flatMap((match) => {
+        const value = Number(match[1])
+        if (!Number.isFinite(value)) return []
+        if (value <= 0 || value > 65535) return []
+        return [value]
+      })
+    })
+  }
+
+  function normalizePorts(value: Array<number | undefined>): number[] {
+    return Array.from(
+      new Set(
+        value.filter((item): item is number => {
+          if (typeof item !== "number") return false
+          if (!Number.isFinite(item)) return false
+          if (item <= 0 || item > 65535) return false
+          return true
+        }),
+      ),
+    ).sort((a, b) => a - b)
+  }
+
+  function readURLPort(value: string): number | undefined {
+    const url = parseURL(value)
+    if (!url) return undefined
+    if (url.port) return Number(url.port)
+    if (url.protocol === "http:") return 80
+    if (url.protocol === "https:") return 443
+    return undefined
+  }
+
+  function parseURL(value: string): URL | undefined {
+    try {
+      return new URL(value)
+    } catch {
+      return undefined
+    }
+  }
+
+  function isLocalHost(value: string): boolean {
+    const host = value.toLowerCase()
+    return host === "127.0.0.1" || host === "localhost" || host === "0.0.0.0"
   }
 
   function isRecord(value: unknown): value is Record<string, unknown> {
