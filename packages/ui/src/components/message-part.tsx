@@ -181,6 +181,70 @@ export type ToolInfo = {
   subtitle?: string
 }
 
+type SpecialTool = "handoff" | "file_search" | "web_search" | "reasoning" | "code_interpreter"
+
+function readToolString(input: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = input[key]
+    if (typeof value === "string" && value.trim()) return value.trim()
+  }
+}
+
+function resolveSpecialTool(tool: string): SpecialTool | undefined {
+  const cleaned = tool.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+  if (!cleaned) return undefined
+  const withoutTool = cleaned.endsWith("_tool")
+    ? cleaned.slice(0, -5)
+    : cleaned.endsWith("tool")
+      ? cleaned.slice(0, -4)
+      : cleaned
+  const compact = withoutTool.replace(/_/g, "")
+
+  if (compact === "filesearch" || compact.startsWith("filesearch") || compact === "codesearch") {
+    return "file_search"
+  }
+  if (compact === "websearch" || compact.startsWith("websearch")) {
+    return "web_search"
+  }
+  if (compact === "reasoning" || compact.startsWith("reasoning")) {
+    return "reasoning"
+  }
+  if (compact === "codeinterpreter" || compact.startsWith("codeinterpreter")) {
+    return "code_interpreter"
+  }
+  if (
+    compact === "sendmessage" ||
+    compact.startsWith("sendmessage") ||
+    compact === "handoff" ||
+    compact.includes("handoff") ||
+    compact.startsWith("transferto")
+  ) {
+    return "handoff"
+  }
+}
+
+function specialToolTitle(tool: SpecialTool, input: Record<string, unknown>) {
+  if (tool === "handoff") {
+    const recipient = readToolString(input, [
+      "recipient_agent",
+      "recipientAgent",
+      "recipient",
+      "target_agent",
+      "targetAgent",
+      "agent",
+      "agent_name",
+      "agentName",
+      "to",
+      "name",
+    ])
+    return recipient ? `Talked to ${recipient}` : "Agent handoff"
+  }
+  if (tool === "file_search") return "File Search"
+  if (tool === "web_search") return "Web Search"
+  if (tool === "reasoning") return "Thinking"
+  return "Code Interpreter"
+}
+
 export function getToolInfo(tool: string, input: any = {}): ToolInfo {
   const i18n = useI18n()
   switch (tool) {
@@ -261,7 +325,50 @@ export function getToolInfo(tool: string, input: any = {}): ToolInfo {
         icon: "bubble-5",
         title: i18n.t("ui.tool.questions"),
       }
+    case "file_search":
+      return {
+        icon: "magnifying-glass-menu",
+        title: "File Search",
+      }
+    case "web_search":
+      return {
+        icon: "window-cursor",
+        title: "Web Search",
+      }
+    case "reasoning":
+      return {
+        icon: "brain",
+        title: "Thinking",
+      }
+    case "code_interpreter":
+      return {
+        icon: "console",
+        title: "Code Interpreter",
+      }
+    case "handoff":
+      return {
+        icon: "task",
+        title: specialToolTitle("handoff", input),
+      }
     default:
+      {
+        const special = resolveSpecialTool(tool)
+        if (special) {
+          return {
+            icon:
+              special === "file_search"
+                ? "magnifying-glass-menu"
+                : special === "web_search"
+                  ? "window-cursor"
+                  : special === "reasoning"
+                    ? "brain"
+                    : special === "code_interpreter"
+                      ? "console"
+                      : "task",
+            title: specialToolTitle(special, input),
+          }
+        }
+      }
       return {
         icon: "mcp",
         title: tool,
@@ -601,7 +708,13 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     return partMetadata()
   }
 
-  const render = ToolRegistry.render(part.tool) ?? GenericTool
+  const render = (() => {
+    const direct = ToolRegistry.render(part.tool)
+    if (direct) return direct
+    const special = resolveSpecialTool(part.tool)
+    if (!special) return GenericTool
+    return ToolRegistry.render(special) ?? GenericTool
+  })()
 
   return (
     <div data-component="tool-part-wrapper" data-permission={showPermission()} data-question={showQuestion()}>
@@ -857,6 +970,130 @@ ToolRegistry.register({
               <Icon name="square-arrow-top-right" size="small" />
             </div>
           ),
+        }}
+      >
+        <Show when={props.output}>
+          {(output) => (
+            <div data-component="tool-output" data-scrollable>
+              <Markdown text={output()} />
+            </div>
+          )}
+        </Show>
+      </BasicTool>
+    )
+  },
+})
+
+ToolRegistry.register({
+  name: "handoff",
+  render(props) {
+    return (
+      <BasicTool
+        {...props}
+        icon="task"
+        trigger={{
+          title: specialToolTitle("handoff", props.input as Record<string, unknown>),
+        }}
+      />
+    )
+  },
+})
+
+ToolRegistry.register({
+  name: "file_search",
+  render(props) {
+    const query = createMemo(() => {
+      const input = props.input as Record<string, unknown>
+      const queries = input["queries"]
+      if (Array.isArray(queries)) {
+        const value = queries.find((item) => typeof item === "string")
+        if (typeof value === "string" && value.trim()) return value.trim()
+      }
+      return readToolString(input, ["query"])
+    })
+
+    return (
+      <BasicTool
+        {...props}
+        icon="magnifying-glass-menu"
+        trigger={{
+          title: specialToolTitle("file_search", props.input as Record<string, unknown>),
+          subtitle: query(),
+        }}
+      >
+        <Show when={props.output}>
+          {(output) => (
+            <div data-component="tool-output" data-scrollable>
+              <Markdown text={output()} />
+            </div>
+          )}
+        </Show>
+      </BasicTool>
+    )
+  },
+})
+
+ToolRegistry.register({
+  name: "web_search",
+  render(props) {
+    const query = createMemo(() => {
+      const input = props.input as Record<string, unknown>
+      return readToolString(input, ["query", "action"])
+    })
+
+    return (
+      <BasicTool
+        {...props}
+        icon="window-cursor"
+        trigger={{
+          title: specialToolTitle("web_search", props.input as Record<string, unknown>),
+          subtitle: query(),
+        }}
+      >
+        <Show when={props.output}>
+          {(output) => (
+            <div data-component="tool-output" data-scrollable>
+              <Markdown text={output()} />
+            </div>
+          )}
+        </Show>
+      </BasicTool>
+    )
+  },
+})
+
+ToolRegistry.register({
+  name: "reasoning",
+  render(props) {
+    return (
+      <BasicTool
+        {...props}
+        icon="brain"
+        trigger={{
+          title: specialToolTitle("reasoning", props.input as Record<string, unknown>),
+        }}
+      >
+        <Show when={props.output}>
+          {(output) => (
+            <div data-component="tool-output" data-scrollable>
+              <Markdown text={output()} />
+            </div>
+          )}
+        </Show>
+      </BasicTool>
+    )
+  },
+})
+
+ToolRegistry.register({
+  name: "code_interpreter",
+  render(props) {
+    return (
+      <BasicTool
+        {...props}
+        icon="console"
+        trigger={{
+          title: specialToolTitle("code_interpreter", props.input as Record<string, unknown>),
         }}
       >
         <Show when={props.output}>
