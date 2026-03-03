@@ -271,7 +271,30 @@ export namespace SessionAgencySwarm {
         })
       }
       if (itemType === "web_search_call") {
-        return stringifyToolOutput({ action: item["action"] ?? null })
+        const clean = (value: unknown) => {
+          const text = asString(value)
+          if (!text) return
+          if (text.toLowerCase() === "none") return
+          return text
+        }
+        const action = asRecord(item["action"])
+        const query = clean(item["query"]) || clean(action?.["query"])
+        const queries = Array.from(
+          new Set(
+            [
+              ...(Array.isArray(item["queries"]) ? item["queries"] : []),
+              ...(Array.isArray(action?.["queries"]) ? action["queries"] : []),
+              query,
+            ]
+              .map(clean)
+              .filter((value): value is string => !!value),
+          ),
+        )
+        return stringifyToolOutput({
+          query,
+          queries,
+          action: item["action"] ?? null,
+        })
       }
       return stringifyToolOutput(asRecord(item["input"]) ?? asRecord(item["action"]) ?? {})
     }

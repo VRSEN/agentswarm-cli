@@ -631,6 +631,67 @@ describe("session.agency-swarm", () => {
     expect(events.find((event) => event.type === "tool-result")?.output?.output).toContain("file_1")
   })
 
+  test("stream reconciles web search input from response.output_item.done", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = (async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: {
+              type: "web_search_call",
+              id: "ws_args",
+              status: "in_progress",
+              action: "None",
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "1",
+            item: {
+              type: "web_search_call",
+              id: "ws_args",
+              status: "completed",
+              query: "None",
+              queries: ["agency swarm events", "None"],
+              action: {
+                type: "search",
+                query: "show latest agency swarm release",
+              },
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    }) as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    const toolCall = events.find((event) => event.type === "tool-call")
+    expect(toolCall?.input).toEqual({
+      query: "show latest agency swarm release",
+      queries: ["agency swarm events", "show latest agency swarm release"],
+      action: {
+        type: "search",
+        query: "show latest agency swarm release",
+      },
+    })
+  })
+
   test("stream does not cancel stale last_run_id before current run metadata arrives", async () => {
     mockHistory("run_stale")
     const cancelled: string[] = []

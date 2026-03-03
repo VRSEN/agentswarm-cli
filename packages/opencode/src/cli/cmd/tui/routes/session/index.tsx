@@ -1885,12 +1885,9 @@ function FileSearch(props: ToolProps<any>) {
 
 function WebSearchSpecial(props: ToolProps<any>) {
   const query = createMemo(() => {
-    const input = props.input as Record<string, unknown>
-    const value = input["query"]
-    if (typeof value === "string" && value.trim()) return value.trim()
-    const action = input["action"]
-    if (typeof action === "string" && action.trim()) return action.trim()
-    return undefined
+    const values = readSearchQueries(props.input as Record<string, unknown>)
+    if (values.length === 0) return
+    return values.map((value) => `"${value}"`).join(", ")
   })
 
   return (
@@ -2021,6 +2018,38 @@ function readFirstString(input: Record<string, unknown>, keys: string[]) {
     const value = input[key]
     if (typeof value === "string" && value.trim()) return value.trim()
   }
+}
+
+function readSearchQueries(input: Record<string, unknown>) {
+  const values = new Set<string>()
+  const add = (value: unknown) => {
+    if (typeof value !== "string") return
+    const text = value.trim()
+    if (!text) return
+    const lower = text.toLowerCase()
+    if (lower === "none" || lower === "null" || lower === "undefined") return
+    values.add(text)
+  }
+  const addMany = (value: unknown) => {
+    if (!Array.isArray(value)) return
+    value.forEach(add)
+  }
+  addMany(input["queries"])
+  add(input["query"])
+  add(input["search_query"])
+  add(input["search_prompt"])
+  const action = input["action"]
+  if (typeof action === "object" && action !== null) {
+    const actionInput = action as Record<string, unknown>
+    addMany(actionInput["queries"])
+    add(actionInput["query"])
+    add(actionInput["search_query"])
+    add(actionInput["search_prompt"])
+  }
+  if (typeof action === "string") {
+    add(action)
+  }
+  return [...values]
 }
 
 function resolveSpecialTool(tool: string): SpecialTool | undefined {
