@@ -1,5 +1,5 @@
 import { Prompt, type PromptRef } from "@tui/component/prompt"
-import { createMemo, Match, onMount, Show, Switch } from "solid-js"
+import { createEffect, createMemo, Match, onMount, Show, Switch } from "solid-js"
 import { useTheme } from "@tui/context/theme"
 import { useKeybind } from "@tui/context/keybind"
 import { Logo } from "../component/logo"
@@ -14,6 +14,7 @@ import { usePromptRef } from "../context/prompt"
 import { Installation } from "@/installation"
 import { useKV } from "../context/kv"
 import { useCommandDialog } from "../component/dialog-command"
+import { useAgencyDestination } from "../context/agency-destination"
 
 // TODO: what is the best way to do this?
 let once = false
@@ -25,6 +26,7 @@ export function Home() {
   const route = useRouteData("home")
   const promptRef = usePromptRef()
   const command = useCommandDialog()
+  const destination = useAgencyDestination()
   const mcp = createMemo(() => Object.keys(sync.data.mcp).length > 0)
   const mcpError = createMemo(() => {
     return Object.values(sync.data.mcp).some((x) => x.status === "failed")
@@ -76,6 +78,7 @@ export function Home() {
 
   let prompt: PromptRef
   const args = useArgs()
+  let submitPending = false
   onMount(() => {
     if (once) return
     if (route.initialPrompt) {
@@ -84,8 +87,18 @@ export function Home() {
     } else if (args.prompt) {
       prompt.set({ input: args.prompt, parts: [] })
       once = true
-      prompt.submit()
+      submitPending = true
+      if (!destination.pending()) {
+        prompt.submit()
+        submitPending = false
+      }
     }
+  })
+  createEffect(() => {
+    if (!submitPending) return
+    if (destination.pending()) return
+    prompt.submit()
+    submitPending = false
   })
   const directory = useDirectory()
 
@@ -107,6 +120,7 @@ export function Home() {
               promptRef.set(r)
             }}
             hint={Hint}
+            disabled={destination.pending()}
           />
         </box>
         <box height={4} minHeight={0} width="100%" maxWidth={75} alignItems="center" paddingTop={3} flexShrink={1}>

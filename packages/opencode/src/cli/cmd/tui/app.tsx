@@ -42,6 +42,7 @@ import { TuiConfigProvider } from "./context/tui-config"
 import { TuiConfig } from "@/config/tui"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
+import { AgencyDestinationProvider, useAgencyDestination } from "./context/agency-destination"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -165,7 +166,9 @@ export function tui(input: {
                                         <FrecencyProvider>
                                           <PromptHistoryProvider>
                                             <PromptRefProvider>
-                                              <App />
+                                              <AgencyDestinationProvider>
+                                                <App />
+                                              </AgencyDestinationProvider>
                                             </PromptRefProvider>
                                           </PromptHistoryProvider>
                                         </FrecencyProvider>
@@ -221,6 +224,7 @@ function App() {
   const sync = useSync()
   const exit = useExit()
   const promptRef = usePromptRef()
+  const destination = useAgencyDestination()
 
   useKeyboard((evt) => {
     if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
@@ -365,12 +369,19 @@ function App() {
   )
 
   createEffect(() => {
+    const model = local.model.current()
+    if (model?.providerID === AgencySwarmAdapter.PROVIDER_ID) return
+    destination.ready()
+  })
+
+  createEffect(() => {
     if (agencyServersChecked) return
     if (sync.status !== "complete") return
 
     const model = local.model.current()
     if (!model || model.providerID !== AgencySwarmAdapter.PROVIDER_ID) return
     agencyServersChecked = true
+    destination.discovering()
 
     const provider = sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID]
     const rawOptions =
@@ -392,7 +403,10 @@ function App() {
       timeoutMs: discoveryTimeoutMs,
     })
       .then(async (discovered) => {
-        if (discovered.servers.length === 0) return
+        if (discovered.servers.length === 0) {
+          destination.ready()
+          return
+        }
 
         const applyServer = async (server: AgencySwarmAdapter.ServerDescriptor, notify: boolean) => {
           if (server.baseURL === baseURL && !notify) return
@@ -440,9 +454,11 @@ function App() {
 
         if (discovered.servers.length === 1) {
           await applyServer(discovered.servers[0], false)
+          destination.ready()
           return
         }
 
+        destination.selecting()
         const options: DialogSelectOption<AgencyServerOption>[] = discovered.servers.map((server) => {
           const list = server.agencies.map((agency) => agency.id)
           const summary = list.slice(0, 3).join(", ")
@@ -459,28 +475,53 @@ function App() {
         })
 
         const selected = discovered.servers.find((server) => server.baseURL === baseURL) ?? discovered.servers[0]
-        dialog.replace(() => (
-          <DialogSelect
-            title="Select Agency Swarm server"
-            current={{
-              baseURL: selected.baseURL,
-            }}
-            options={options}
-            onSelect={(option) => {
-              const server = discovered.servers.find((item) => item.baseURL === option.value.baseURL)
-              if (!server) return
-              void applyServer(server, true).catch((error) => {
-                toast.show({
-                  variant: "error",
-                  message: error instanceof Error ? error.message : String(error),
-                  duration: 6000,
-                })
+        let resolved = false
+        const showSelector = () =>
+          dialog.replace(
+            () => (
+              <DialogSelect
+                title="Select Agency Swarm server"
+                current={{
+                  baseURL: selected.baseURL,
+                }}
+                options={options}
+                onSelect={(option) => {
+                  const server = discovered.servers.find((item) => item.baseURL === option.value.baseURL)
+                  if (!server) return
+                  resolved = true
+                  void applyServer(server, true)
+                    .then(() => {
+                      destination.ready()
+                    })
+                    .catch((error) => {
+                      resolved = false
+                      destination.selecting()
+                      toast.show({
+                        variant: "error",
+                        message: error instanceof Error ? error.message : String(error),
+                        duration: 6000,
+                      })
+                      setTimeout(showSelector, 0)
+                    })
+                }}
+              />
+            ),
+            () => {
+              if (resolved) return
+              destination.selecting()
+              toast.show({
+                variant: "warning",
+                message: "Select an Agency Swarm server before sending your first message.",
+                duration: 4000,
               })
-            }}
-          />
-        ))
+              setTimeout(showSelector, 0)
+            },
+          )
+
+        showSelector()
       })
       .catch((error) => {
+        destination.ready()
         toast.show({
           variant: "warning",
           message: `Agency Swarm server discovery failed: ${error instanceof Error ? error.message : String(error)}`,
