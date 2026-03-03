@@ -396,11 +396,12 @@ function App() {
       readPositiveNumber(rawOptions["discoveryTimeoutMs"]) ??
       readPositiveNumber(rawOptions["discovery_timeout_ms"]) ??
       AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS
+    const startupDiscoveryTimeoutMs = Math.min(discoveryTimeoutMs, 400)
 
     void AgencySwarmAdapter.discoverLocalServers({
       baseURL,
       token,
-      timeoutMs: discoveryTimeoutMs,
+      timeoutMs: startupDiscoveryTimeoutMs,
     })
       .then(async (discovered) => {
         if (discovered.servers.length === 0) {

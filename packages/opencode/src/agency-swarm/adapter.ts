@@ -201,11 +201,14 @@ export namespace AgencySwarmAdapter {
     const configuredURL = parseURL(configuredBaseURL)
     const configuredIsLocal = configuredURL ? isLocalHost(configuredURL.hostname) : false
     const configuredPort = readURLPort(configuredBaseURL)
-    const ports = normalizePorts([
+    const ports = prioritizePorts(
+      normalizePorts([
+        configuredPort,
+        8000,
+        ...(input.ports ?? (await readLocalPorts())),
+      ]),
       configuredPort,
-      8000,
-      ...(input.ports ?? (await readLocalPorts())),
-    ])
+    ).slice(0, input.ports ? Number.MAX_SAFE_INTEGER : 24)
     const candidates = Array.from(
       new Set([
         configuredBaseURL,
@@ -712,6 +715,21 @@ export namespace AgencySwarmAdapter {
         }),
       ),
     ).sort((a, b) => a - b)
+  }
+
+  function prioritizePorts(value: number[], configured?: number): number[] {
+    return value.toSorted((a, b) => {
+      if (configured && a === configured && b !== configured) return -1
+      if (configured && b === configured && a !== configured) return 1
+      if (a === 8000 && b !== 8000) return -1
+      if (b === 8000 && a !== 8000) return 1
+      if (configured) {
+        const distanceA = Math.abs(a - configured)
+        const distanceB = Math.abs(b - configured)
+        if (distanceA !== distanceB) return distanceA - distanceB
+      }
+      return a - b
+    })
   }
 
   function readURLPort(value: string): number | undefined {
