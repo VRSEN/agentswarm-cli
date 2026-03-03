@@ -2,6 +2,7 @@ import path from "path"
 import os from "os"
 import fs from "fs/promises"
 import z from "zod"
+import { Filesystem } from "../util/filesystem"
 import { Identifier } from "../id/id"
 import { MessageV2 } from "./message-v2"
 import { Log } from "../util/log"
@@ -21,7 +22,6 @@ import PROMPT_PLAN from "../session/prompt/plan.txt"
 import BUILD_SWITCH from "../session/prompt/build-switch.txt"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
 import { defer } from "../util/defer"
-import { clone } from "remeda"
 import { ToolRegistry } from "../tool/registry"
 import { MCP } from "../mcp"
 import { LSP } from "../lsp"
@@ -176,9 +176,7 @@ export namespace SessionPrompt {
     }
     if (permissions.length > 0) {
       session.permission = permissions
-      await Session.update(session.id, (draft) => {
-        draft.permission = permissions
-      })
+      await Session.setPermission({ sessionID: session.id, permission: permissions })
     }
 
     if (input.noReply === true) {
@@ -484,6 +482,12 @@ export namespace SessionPrompt {
           log.error("subtask execution failed", { error, agent: task.agent, description: task.description })
           return undefined
         })
+        const attachments = result?.attachments?.map((attachment) => ({
+          ...attachment,
+          id: Identifier.ascending("part"),
+          sessionID,
+          messageID: assistantMessage.id,
+        }))
         await Plugin.trigger(
           "tool.execute.after",
           {
@@ -506,7 +510,7 @@ export namespace SessionPrompt {
               title: result.title,
               metadata: result.metadata,
               output: result.output,
-              attachments: result.attachments,
+              attachments,
               time: {
                 ...part.state.time,
                 end: Date.now(),
@@ -566,6 +570,7 @@ export namespace SessionPrompt {
           abort,
           sessionID,
           auto: task.auto,
+          overflow: task.overflow,
         })
         if (result === "stop") break
         continue
@@ -706,11 +711,9 @@ export namespace SessionPrompt {
           },
         })
       }
-      const sessionMessages = clone(msgs)
-
       // Ephemerally wrap queued user messages with a reminder to stay on track
       if (step > 1 && lastFinished) {
-        for (const msg of sessionMessages) {
+        for (const msg of msgs) {
           if (msg.info.role !== "user" || msg.info.id <= lastFinished.id) continue
           for (const part of msg.parts) {
             if (part.type !== "text" || part.ignored || part.synthetic) continue
@@ -727,7 +730,7 @@ export namespace SessionPrompt {
         }
       }
 
-      await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: sessionMessages })
+      await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
       // Build system prompt, adding structured output instruction if needed
       const system = [...(await SystemPrompt.environment(model)), ...(await InstructionPrompt.system())]
@@ -743,7 +746,7 @@ export namespace SessionPrompt {
         sessionID,
         system,
         messages: [
-          ...MessageV2.toModelMessages(sessionMessages, model),
+          ...MessageV2.toModelMessages(msgs, model),
           ...(isLastStep
             ? [
                 {
@@ -789,6 +792,7 @@ export namespace SessionPrompt {
           agent: lastUser.agent,
           model: lastUser.model,
           auto: true,
+          overflow: !processor.message.finish,
         })
       }
       continue
@@ -883,6 +887,15 @@ export namespace SessionPrompt {
             },
           )
           const result = await item.execute(args, ctx)
+          const output = {
+            ...result,
+            attachments: result.attachments?.map((attachment) => ({
+              ...attachment,
+              id: Identifier.ascending("part"),
+              sessionID: ctx.sessionID,
+              messageID: input.processor.message.id,
+            })),
+          }
           await Plugin.trigger(
             "tool.execute.after",
             {
@@ -891,9 +904,9 @@ export namespace SessionPrompt {
               callID: ctx.callID,
               args,
             },
-            result,
+            output,
           )
-          return result
+          return output
         },
       })
     }
@@ -941,16 +954,13 @@ export namespace SessionPrompt {
         )
 
         const textParts: string[] = []
-        const attachments: MessageV2.FilePart[] = []
+        const attachments: Omit<MessageV2.FilePart, "id" | "sessionID" | "messageID">[] = []
 
         for (const contentItem of result.content) {
           if (contentItem.type === "text") {
             textParts.push(contentItem.text)
           } else if (contentItem.type === "image") {
             attachments.push({
-              id: Identifier.ascending("part"),
-              sessionID: input.session.id,
-              messageID: input.processor.message.id,
               type: "file",
               mime: contentItem.mimeType,
               url: `data:${contentItem.mimeType};base64,${contentItem.data}`,
@@ -962,9 +972,6 @@ export namespace SessionPrompt {
             }
             if (resource.blob) {
               attachments.push({
-                id: Identifier.ascending("part"),
-                sessionID: input.session.id,
-                messageID: input.processor.message.id,
                 type: "file",
                 mime: resource.mimeType ?? "application/octet-stream",
                 url: `data:${resource.mimeType ?? "application/octet-stream"};base64,${resource.blob}`,
@@ -985,7 +992,12 @@ export namespace SessionPrompt {
           title: "",
           metadata,
           output: truncated.content,
-          attachments,
+          attachments: attachments.map((attachment) => ({
+            ...attachment,
+            id: Identifier.ascending("part"),
+            sessionID: ctx.sessionID,
+            messageID: input.processor.message.id,
+          })),
           content: result.content, // directly return content to preserve ordering when outputting to model
         }
       }
@@ -1051,17 +1063,22 @@ export namespace SessionPrompt {
     }
     using _ = defer(() => InstructionPrompt.clear(info.id))
 
+    type Draft<T> = T extends MessageV2.Part ? Omit<T, "id"> & { id?: string } : never
+    const assign = (part: Draft<MessageV2.Part>): MessageV2.Part => ({
+      ...part,
+      id: part.id ?? Identifier.ascending("part"),
+    })
+
     const parts = await Promise.all(
-      input.parts.map(async (part): Promise<MessageV2.Part[]> => {
+      input.parts.map(async (part): Promise<Draft<MessageV2.Part>[]> => {
         if (part.type === "file") {
           // before checking the protocol we check if this is an mcp resource because it needs special handling
           if (part.source?.type === "resource") {
             const { clientName, uri } = part.source
             log.info("mcp resource", { clientName, uri, mime: part.mime })
 
-            const pieces: MessageV2.Part[] = [
+            const pieces: Draft<MessageV2.Part>[] = [
               {
-                id: Identifier.ascending("part"),
                 messageID: info.id,
                 sessionID: input.sessionID,
                 type: "text",
@@ -1084,7 +1101,6 @@ export namespace SessionPrompt {
               for (const content of contents) {
                 if ("text" in content && content.text) {
                   pieces.push({
-                    id: Identifier.ascending("part"),
                     messageID: info.id,
                     sessionID: input.sessionID,
                     type: "text",
@@ -1095,7 +1111,6 @@ export namespace SessionPrompt {
                   // Handle binary content if needed
                   const mimeType = "mimeType" in content ? content.mimeType : part.mime
                   pieces.push({
-                    id: Identifier.ascending("part"),
                     messageID: info.id,
                     sessionID: input.sessionID,
                     type: "text",
@@ -1107,7 +1122,6 @@ export namespace SessionPrompt {
 
               pieces.push({
                 ...part,
-                id: part.id ?? Identifier.ascending("part"),
                 messageID: info.id,
                 sessionID: input.sessionID,
               })
@@ -1115,7 +1129,6 @@ export namespace SessionPrompt {
               log.error("failed to read MCP resource", { error, clientName, uri })
               const message = error instanceof Error ? error.message : String(error)
               pieces.push({
-                id: Identifier.ascending("part"),
                 messageID: info.id,
                 sessionID: input.sessionID,
                 type: "text",
@@ -1132,7 +1145,6 @@ export namespace SessionPrompt {
               if (part.mime === "text/plain") {
                 return [
                   {
-                    id: Identifier.ascending("part"),
                     messageID: info.id,
                     sessionID: input.sessionID,
                     type: "text",
@@ -1140,7 +1152,6 @@ export namespace SessionPrompt {
                     text: `Called the Read tool with the following input: ${JSON.stringify({ filePath: part.filename })}`,
                   },
                   {
-                    id: Identifier.ascending("part"),
                     messageID: info.id,
                     sessionID: input.sessionID,
                     type: "text",
@@ -1149,7 +1160,6 @@ export namespace SessionPrompt {
                   },
                   {
                     ...part,
-                    id: part.id ?? Identifier.ascending("part"),
                     messageID: info.id,
                     sessionID: input.sessionID,
                   },
@@ -1161,11 +1171,9 @@ export namespace SessionPrompt {
               // have to normalize, symbol search returns absolute paths
               // Decode the pathname since URL constructor doesn't automatically decode it
               const filepath = fileURLToPath(part.url)
-              const stat = await Bun.file(filepath)
-                .stat()
-                .catch(() => undefined)
+              const s = Filesystem.stat(filepath)
 
-              if (stat?.isDirectory()) {
+              if (s?.isDirectory()) {
                 part.mime = "application/x-directory"
               }
 
@@ -1206,9 +1214,8 @@ export namespace SessionPrompt {
                 }
                 const args = { filePath: filepath, offset, limit }
 
-                const pieces: MessageV2.Part[] = [
+                const pieces: Draft<MessageV2.Part>[] = [
                   {
-                    id: Identifier.ascending("part"),
                     messageID: info.id,
                     sessionID: input.sessionID,
                     type: "text",
@@ -1232,7 +1239,6 @@ export namespace SessionPrompt {
                     }
                     const result = await t.execute(args, readCtx)
                     pieces.push({
-                      id: Identifier.ascending("part"),
                       messageID: info.id,
                       sessionID: input.sessionID,
                       type: "text",
@@ -1252,7 +1258,6 @@ export namespace SessionPrompt {
                     } else {
                       pieces.push({
                         ...part,
-                        id: part.id ?? Identifier.ascending("part"),
                         messageID: info.id,
                         sessionID: input.sessionID,
                       })
@@ -1268,7 +1273,6 @@ export namespace SessionPrompt {
                       }).toObject(),
                     })
                     pieces.push({
-                      id: Identifier.ascending("part"),
                       messageID: info.id,
                       sessionID: input.sessionID,
                       type: "text",
@@ -1295,7 +1299,6 @@ export namespace SessionPrompt {
                 const result = await ReadTool.init().then((t) => t.execute(args, listCtx))
                 return [
                   {
-                    id: Identifier.ascending("part"),
                     messageID: info.id,
                     sessionID: input.sessionID,
                     type: "text",
@@ -1303,7 +1306,6 @@ export namespace SessionPrompt {
                     text: `Called the Read tool with the following input: ${JSON.stringify(args)}`,
                   },
                   {
-                    id: Identifier.ascending("part"),
                     messageID: info.id,
                     sessionID: input.sessionID,
                     type: "text",
@@ -1312,30 +1314,27 @@ export namespace SessionPrompt {
                   },
                   {
                     ...part,
-                    id: part.id ?? Identifier.ascending("part"),
                     messageID: info.id,
                     sessionID: input.sessionID,
                   },
                 ]
               }
 
-              const file = Bun.file(filepath)
               FileTime.read(input.sessionID, filepath)
               return [
                 {
-                  id: Identifier.ascending("part"),
                   messageID: info.id,
                   sessionID: input.sessionID,
                   type: "text",
-                  text: `Called the Read tool with the following input: {\"filePath\":\"${filepath}\"}`,
+                  text: `Called the Read tool with the following input: {"filePath":"${filepath}"}`,
                   synthetic: true,
                 },
                 {
-                  id: part.id ?? Identifier.ascending("part"),
+                  id: part.id,
                   messageID: info.id,
                   sessionID: input.sessionID,
                   type: "file",
-                  url: `data:${part.mime};base64,` + Buffer.from(await file.bytes()).toString("base64"),
+                  url: `data:${part.mime};base64,` + (await Filesystem.readBytes(filepath)).toString("base64"),
                   mime: part.mime,
                   filename: part.filename!,
                   source: part.source,
@@ -1350,13 +1349,11 @@ export namespace SessionPrompt {
           const hint = perm.action === "deny" ? " . Invoked by user; guaranteed to exist." : ""
           return [
             {
-              id: Identifier.ascending("part"),
               ...part,
               messageID: info.id,
               sessionID: input.sessionID,
             },
             {
-              id: Identifier.ascending("part"),
               messageID: info.id,
               sessionID: input.sessionID,
               type: "text",
@@ -1373,14 +1370,13 @@ export namespace SessionPrompt {
 
         return [
           {
-            id: Identifier.ascending("part"),
             ...part,
             messageID: info.id,
             sessionID: input.sessionID,
           },
         ]
       }),
-    ).then((x) => x.flat())
+    ).then((x) => x.flat().map(assign))
 
     await Plugin.trigger(
       "chat.message",
@@ -1444,7 +1440,7 @@ export namespace SessionPrompt {
     // Switching from plan mode to build mode
     if (input.agent.name !== "plan" && assistantMessage?.info.agent === "plan") {
       const plan = Session.plan(input.session)
-      const exists = await Bun.file(plan).exists()
+      const exists = await Filesystem.exists(plan)
       if (exists) {
         const part = await Session.updatePart({
           id: Identifier.ascending("part"),
@@ -1463,7 +1459,7 @@ export namespace SessionPrompt {
     // Entering plan mode
     if (input.agent.name === "plan" && assistantMessage?.info.agent !== "plan") {
       const plan = Session.plan(input.session)
-      const exists = await Bun.file(plan).exists()
+      const exists = await Filesystem.exists(plan)
       if (!exists) await fs.mkdir(path.dirname(plan), { recursive: true })
       const part = await Session.updatePart({
         id: Identifier.ascending("part"),
@@ -1708,7 +1704,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
     const args = matchingInvocation?.args
 
     const cwd = Instance.directory
-    const shellEnv = await Plugin.trigger("shell.env", { cwd }, { env: {} })
+    const shellEnv = await Plugin.trigger(
+      "shell.env",
+      { cwd, sessionID: input.sessionID, callID: part.callID },
+      { env: {} },
+    )
     const proc = spawn(shell, args, {
       cwd,
       detached: process.platform !== "win32",
@@ -2030,21 +2030,16 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       ],
     })
     const text = await result.text.catch((err) => log.error("failed to generate title", { error: err }))
-    if (text)
-      return Session.update(
-        input.session.id,
-        (draft) => {
-          const cleaned = text
-            .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
-            .split("\n")
-            .map((line) => line.trim())
-            .find((line) => line.length > 0)
-          if (!cleaned) return
+    if (text) {
+      const cleaned = text
+        .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
+        .split("\n")
+        .map((line) => line.trim())
+        .find((line) => line.length > 0)
+      if (!cleaned) return
 
-          const title = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
-          draft.title = title
-        },
-        { touch: false },
-      )
+      const title = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
+      return Session.setTitle({ sessionID: input.session.id, title })
+    }
   }
 }

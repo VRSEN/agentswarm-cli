@@ -28,5 +28,5 @@ target
 opencode-dev
 logs/
 *.bun-build
-
 /references/
+tsconfig.tsbuildinfo

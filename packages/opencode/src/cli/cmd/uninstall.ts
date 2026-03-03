@@ -7,6 +7,7 @@ import { $ } from "bun"
 import fs from "fs/promises"
 import path from "path"
 import os from "os"
+import { Filesystem } from "../../util/filesystem"
 
 interface UninstallArgs {
   keepConfig: boolean
@@ -267,9 +268,7 @@ async function getShellConfigFile(): Promise<string | null> {
       .catch(() => false)
     if (!exists) continue
 
-    const content = await Bun.file(file)
-      .text()
-      .catch(() => "")
+    const content = await Filesystem.readText(file).catch(() => "")
     if (
       content.includes("# agency-code") ||
       content.includes("# opencode") ||
@@ -284,7 +283,7 @@ async function getShellConfigFile(): Promise<string | null> {
 }
 
 async function cleanShellConfig(file: string) {
-  const content = await Bun.file(file).text()
+  const content = await Filesystem.readText(file)
   const lines = content.split("\n")
 
   const filtered: string[] = []
@@ -322,7 +321,7 @@ async function cleanShellConfig(file: string) {
   }
 
   const output = filtered.join("\n") + "\n"
-  await Bun.write(file, output)
+  await Filesystem.write(file, output)
 }
 
 async function getDirectorySize(dir: string): Promise<number> {
