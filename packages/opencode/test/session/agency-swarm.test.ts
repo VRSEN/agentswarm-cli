@@ -206,6 +206,24 @@ describe("session.agency-swarm", () => {
     expect(agency).toBe("builder")
   })
 
+  test("resolveAgency falls back to openapi agency ids when metadata discovery is empty", async () => {
+    AgencySwarmAdapter.discover = (async () => ({
+      agencies: [],
+      rawOpenAPI: {
+        paths: {
+          "/builder/get_metadata": {},
+        },
+      },
+    })) as typeof AgencySwarmAdapter.discover
+
+    const agency = await SessionAgencySwarm.resolveAgency({
+      baseURL: "http://127.0.0.1:8000",
+      discoveryTimeoutMs: 5000,
+    })
+
+    expect(agency).toBe("builder")
+  })
+
   test("normalizeCallerAgent converts string None to null", () => {
     expect(SessionAgencySwarm.normalizeCallerAgent("None")).toBeNull()
     expect(SessionAgencySwarm.normalizeCallerAgent("Main")).toBe("Main")

@@ -112,12 +112,14 @@ export namespace SessionAgencySwarm {
       token: options.token,
       timeoutMs: options.discoveryTimeoutMs,
     })
+    const fallbackAgencyIDs = AgencySwarmAdapter.parseAgencyIDsFromOpenAPI(discovered.rawOpenAPI)
+    const availableAgencies = discovered.agencies.length > 0 ? discovered.agencies.map((agency) => agency.id) : fallbackAgencyIDs
 
-    if (discovered.agencies.length === 1) {
-      return discovered.agencies[0].id
+    if (availableAgencies.length === 1) {
+      return availableAgencies[0]
     }
 
-    if (discovered.agencies.length === 0) {
+    if (availableAgencies.length === 0) {
       throw new Error(
         [
           "No agencies were discovered from Agency Swarm OpenAPI metadata.",
@@ -129,7 +131,7 @@ export namespace SessionAgencySwarm {
     throw new Error(
       [
         "Multiple agencies were discovered but no default agency is configured.",
-        `Available agencies: ${discovered.agencies.map((agency) => agency.id).join(", ")}.`,
+        `Available agencies: ${availableAgencies.join(", ")}.`,
         "Set provider.options.agency or run `agency agencii use <agency-id>`.",
       ].join(" "),
     )
