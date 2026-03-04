@@ -1,4 +1,4 @@
-import { createMemo, createResource, createSignal, onMount, Show } from "solid-js"
+import { createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { useSync } from "@tui/context/sync"
 import { map, pipe, sortBy } from "remeda"
 import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
@@ -215,6 +215,14 @@ function DialogAgencySwarmConnect() {
       initialValue: {},
     },
   )
+
+  onMount(() => {
+    void refetch()
+    const timer = setInterval(() => {
+      void refetch()
+    }, 2000)
+    onCleanup(() => clearInterval(timer))
+  })
 
   const options = createMemo(() => {
     const map = status()
