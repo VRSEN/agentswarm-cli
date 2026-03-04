@@ -82,7 +82,7 @@ export namespace SessionAgencySwarm {
       asBoolean(provider?.options?.["generateChatName"]) ?? asBoolean(provider?.options?.["generate_chat_name"])
     const rawClientConfig =
       asRecord(provider?.options?.["clientConfig"]) ?? asRecord(provider?.options?.["client_config"])
-    const rawToken = asString(provider?.options?.["token"])
+    const rawToken = asString(provider?.key) ?? asString(provider?.options?.["token"])
     const rawTimeout = provider?.options?.["discoveryTimeoutMs"]
 
     return {

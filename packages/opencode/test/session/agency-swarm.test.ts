@@ -176,6 +176,22 @@ describe("session.agency-swarm", () => {
     expect(options.discoveryTimeoutMs).toBe(12000)
   })
 
+  test("optionsFromProvider prefers auth key token over config token", () => {
+    const options = SessionAgencySwarm.optionsFromProvider({
+      id: "agency-swarm",
+      name: "Agency Swarm",
+      source: "config",
+      env: [],
+      models: {},
+      key: "auth-token",
+      options: {
+        token: "config-token",
+      },
+    })
+
+    expect(options.token).toBe("auth-token")
+  })
+
   test("resolveAgency uses single discovered agency", async () => {
     AgencySwarmAdapter.discover = (async () => ({
       agencies: [{ id: "builder", name: "Builder", agents: [], metadata: {} }],

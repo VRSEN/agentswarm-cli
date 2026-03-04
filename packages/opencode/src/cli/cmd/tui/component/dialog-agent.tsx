@@ -6,6 +6,7 @@ import { useDialog } from "@tui/ui/dialog"
 import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
 import { useToast } from "@tui/ui/toast"
 import { createMemo, createResource } from "solid-js"
+import { DialogProvider as DialogConnect } from "./dialog-provider"
 
 type AgentOptionValue =
   | {
@@ -21,6 +22,9 @@ type AgentOptionValue =
       agency: string
       recipientAgent: string
     }
+  | {
+      kind: "connect"
+    }
 
 export function DialogAgent() {
   const local = useLocal()
@@ -34,10 +38,12 @@ export function DialogAgent() {
 
   const providerOptions = createMemo(() => {
     const provider = sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID]
+    const connected = sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID)
     const options = provider?.options
     const baseURL =
       readString(options?.["baseURL"]) ?? readString(options?.["base_url"]) ?? AgencySwarmAdapter.DEFAULT_BASE_URL
-    const token = readString(options?.["token"])
+    const configToken = readString(options?.["token"])
+    const token = readString(connected?.key) ?? configToken
     const agency = readString(options?.["agency"])
     const recipientAgent = readString(options?.["recipientAgent"]) ?? readString(options?.["recipient_agent"])
     const discoveryTimeoutMs =
@@ -48,6 +54,7 @@ export function DialogAgent() {
     return {
       baseURL: AgencySwarmAdapter.normalizeBaseURL(baseURL),
       token,
+      configToken,
       agency,
       recipientAgent,
       discoveryTimeoutMs,
@@ -129,11 +136,20 @@ export function DialogAgent() {
         disabled: true,
         category: "Agency Swarm",
       })
+      result.push({
+        value: {
+          kind: "connect",
+        },
+        title: "Open /connect",
+        description: "Select a local server or update token",
+        category: "Agency Swarm",
+      })
       return result
     }
 
     const agencies = discovered?.agencies ?? []
     for (const agency of agencies) {
+      const category = `Agency: ${agency.id}`
       result.push({
         value: {
           kind: "agency",
@@ -141,11 +157,8 @@ export function DialogAgent() {
         },
         title: agency.id,
         description: agency.description || `Use ${agency.name}`,
-        category: "Agency Swarm Agencies",
+        category,
       })
-    }
-
-    for (const agency of agencies) {
       for (const recipient of agency.agents) {
         result.push({
           value: {
@@ -153,9 +166,9 @@ export function DialogAgent() {
             agency: agency.id,
             recipientAgent: recipient.id,
           },
-          title: `${recipient.name} (${agency.id})`,
+          title: `- ${recipient.name}`,
           description: recipient.description || (recipient.isEntryPoint ? "Entry point" : undefined),
-          category: "Agency Swarm Recipient Agents",
+          category,
         })
       }
     }
@@ -217,6 +230,11 @@ export function DialogAgent() {
           return
         }
 
+        if (option.value.kind === "connect") {
+          dialog.replace(() => <DialogConnect />)
+          return
+        }
+
         void setAgencySwarmTarget(option.value).catch((error) => {
           toast.show({
             variant: "error",
@@ -237,8 +255,8 @@ export function DialogAgent() {
       agency: value.agency,
       recipientAgent: value.kind === "recipient" ? value.recipientAgent : null,
     }
-    if (options.token) {
-      nextOptions["token"] = options.token
+    if (options.configToken) {
+      nextOptions["token"] = options.configToken
     }
 
     await sdk.client.global.config.update(

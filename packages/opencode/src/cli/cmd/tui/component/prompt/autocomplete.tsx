@@ -12,10 +12,12 @@ import { useTheme, selectedForeground } from "@tui/context/theme"
 import { SplitBorder } from "@tui/component/border"
 import { useCommandDialog } from "@tui/component/dialog-command"
 import { useToast } from "@tui/ui/toast"
+import { useDialog } from "@tui/ui/dialog"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Locale } from "@/util/locale"
 import type { PromptInfo } from "./history"
 import { useFrecency } from "./frecency"
+import { DialogProvider as DialogConnect } from "../dialog-provider"
 
 function removeLineRange(input: string) {
   const hashIndex = input.lastIndexOf("#")
@@ -95,6 +97,7 @@ export function Autocomplete(props: {
   const local = useLocal()
   const sync = useSync()
   const command = useCommandDialog()
+  const dialog = useDialog()
   const toast = useToast()
   const { theme } = useTheme()
   const dimensions = useTerminalDimensions()
@@ -102,11 +105,12 @@ export function Autocomplete(props: {
 
   const providerOptions = createMemo(() => {
     const provider = sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID]
+    const connected = sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID)
     const options = provider?.options
     const baseURL =
       readString(options?.["baseURL"]) ?? readString(options?.["base_url"]) ?? AgencySwarmAdapter.DEFAULT_BASE_URL
     const agency = readString(options?.["agency"])
-    const token = readString(options?.["token"])
+    const token = readString(connected?.key) ?? readString(options?.["token"])
     const discoveryTimeoutMs =
       readPositiveNumber(options?.["discoveryTimeoutMs"]) ??
       readPositiveNumber(options?.["discovery_timeout_ms"]) ??
@@ -156,6 +160,7 @@ export function Autocomplete(props: {
   )
 
   const [lastAgencyDiscoveryErrorKey, setLastAgencyDiscoveryErrorKey] = createSignal<string | undefined>(undefined)
+  const [lastAgencyConnectPromptKey, setLastAgencyConnectPromptKey] = createSignal<string | undefined>(undefined)
 
   createEffect(() => {
     if (!agencySwarmEnabled()) return
@@ -165,11 +170,18 @@ export function Autocomplete(props: {
     const key = `${providerOptions().baseURL}|${message}`
     if (lastAgencyDiscoveryErrorKey() === key) return
     setLastAgencyDiscoveryErrorKey(key)
+    const serverUnavailable = /cannot reach Agency Swarm backend/i.test(message)
     toast.show({
       variant: "error",
-      message,
+      message: serverUnavailable
+        ? `Agency server unavailable at ${providerOptions().baseURL}. Use /connect to select another local server.`
+        : message,
       duration: 8000,
     })
+    if (!serverUnavailable) return
+    if (lastAgencyConnectPromptKey() === key) return
+    setLastAgencyConnectPromptKey(key)
+    dialog.replace(() => <DialogConnect />)
   })
 
   const [store, setStore] = createStore({
