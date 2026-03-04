@@ -41,6 +41,16 @@ export namespace AgencySwarmAdapter {
     servers: ServerDescriptor[]
   }
 
+  export type ProbeServerDescriptor = {
+    baseURL: string
+    agencies: string[]
+  }
+
+  export type ProbeServersResult = {
+    servers: ProbeServerDescriptor[]
+    timedOut: boolean
+  }
+
   export type StreamRunInput = {
     baseURL: string
     agency: string
@@ -246,6 +256,95 @@ export namespace AgencySwarmAdapter {
       })
 
     return { servers }
+  }
+
+  export async function probeLocalServers(input: {
+    baseURL?: string
+    token?: string | null
+    timeoutMs?: number
+    deadlineMs?: number
+    ports?: number[]
+  }): Promise<ProbeServersResult> {
+    const timeoutMs = input.timeoutMs ?? 150
+    const deadlineMs = input.deadlineMs ?? 2000
+    let timedOut = false
+    const abort = new AbortController()
+    const timer = setTimeout(() => {
+      timedOut = true
+      abort.abort()
+    }, deadlineMs)
+    try {
+      const configuredBaseURL = normalizeBaseURL(input.baseURL ?? DEFAULT_BASE_URL)
+      const configuredURL = parseURL(configuredBaseURL)
+      const configuredIsLocal = configuredURL ? isLocalHost(configuredURL.hostname) : false
+      const configuredPort = configuredIsLocal ? readURLPort(configuredBaseURL) : undefined
+      const scanPorts = input.ports ?? (await readLocalPortsProbe(Math.min(timeoutMs, 150)))
+      const ports = prioritizePorts(
+        normalizePorts([
+          configuredPort,
+          8000,
+          ...scanPorts,
+        ]),
+        configuredPort,
+      ).slice(0, input.ports ? Number.MAX_SAFE_INTEGER : 24)
+      const candidates = Array.from(
+        new Set([
+          ...(configuredIsLocal ? [configuredBaseURL] : []),
+          ...ports
+            .filter((port) => !(configuredIsLocal && configuredPort && port === configuredPort))
+            .map((port) => normalizeBaseURL(`http://127.0.0.1:${port}`)),
+        ]),
+      )
+
+      const servers: ProbeServerDescriptor[] = []
+      let next = 0
+      const workers = Array.from({ length: Math.min(16, candidates.length) }, () => async () => {
+        while (true) {
+          if (abort.signal.aborted) return
+          const baseURL = candidates[next]
+          next += 1
+          if (!baseURL) return
+          try {
+            const response = await fetchWithTimeout(
+              joinURL(baseURL, "openapi.json"),
+              {
+                method: "GET",
+                headers: authHeaders(input.token),
+                signal: abort.signal,
+              },
+              timeoutMs,
+              "probe local Agency Swarm servers",
+            )
+
+            if (!response.ok) continue
+            const rawOpenAPI = (await response.json()) as Record<string, unknown>
+            const agencies = parseAgencyIDsFromOpenAPI(rawOpenAPI)
+            if (agencies.length === 0) continue
+            servers.push({
+              baseURL: normalizeBaseURL(baseURL),
+              agencies,
+            })
+          } catch (error) {
+            if (timedOut && isAbortError(error)) return
+          }
+        }
+      })
+
+      await Promise.all(workers.map((worker) => worker()))
+
+      const sorted = servers.sort((a, b) => {
+        if (configuredIsLocal && a.baseURL === configuredBaseURL && b.baseURL !== configuredBaseURL) return -1
+        if (configuredIsLocal && b.baseURL === configuredBaseURL && a.baseURL !== configuredBaseURL) return 1
+        return a.baseURL.localeCompare(b.baseURL)
+      })
+
+      return {
+        servers: sorted,
+        timedOut,
+      }
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   export async function getMetadata(input: {
@@ -675,14 +774,33 @@ export namespace AgencySwarmAdapter {
     return normalizePorts(ports.flatMap((item) => parsePorts(item)))
   }
 
-  async function readCommand(cmd: string): Promise<string | undefined> {
+  async function readLocalPortsProbe(timeoutMs: number): Promise<number[]> {
+    if (process.platform === "win32") {
+      return parsePorts(await readCommand("netstat -ano -p tcp | findstr LISTENING", timeoutMs))
+    }
+    return parsePorts(await readCommand("lsof -nP -iTCP -sTCP:LISTEN", timeoutMs))
+  }
+
+  async function readCommand(cmd: string, timeoutMs?: number): Promise<string | undefined> {
     try {
       const proc = Bun.spawn({
         cmd: process.platform === "win32" ? ["cmd", "/c", cmd] : ["sh", "-lc", cmd],
         stdout: "pipe",
         stderr: "ignore",
       })
-      const [exitCode, output] = await Promise.all([proc.exited, new Response(proc.stdout).text()])
+      const done = Promise.all([proc.exited, new Response(proc.stdout).text()] as const)
+      const result =
+        timeoutMs && timeoutMs > 0
+          ? await Promise.race([
+              done,
+              new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), timeoutMs)),
+            ])
+          : await done
+      if (result === "timeout") {
+        proc.kill()
+        return undefined
+      }
+      const [exitCode, output] = result
       if (exitCode !== 0) return undefined
       const trimmed = output.trim()
       return trimmed ? trimmed : undefined

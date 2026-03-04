@@ -3,11 +3,13 @@ import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 
 describe("agency-swarm.adapter", () => {
   const originalFetch = globalThis.fetch
+  const originalSpawn = Bun.spawn
   const asFetch = (value: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): typeof fetch =>
     value as unknown as typeof fetch
 
   afterEach(() => {
     globalThis.fetch = originalFetch
+    Bun.spawn = originalSpawn
   })
 
   test("joinURL preserves reverse-proxy path prefixes", () => {
@@ -276,6 +278,174 @@ describe("agency-swarm.adapter", () => {
     })
 
     expect(result.servers.map((server) => server.baseURL)).toEqual(["http://127.0.0.1:7003", "http://127.0.0.1:7001"])
+  })
+
+  test("probeLocalServers reads openapi only and skips metadata fetches", async () => {
+    const calls: string[] = []
+
+    globalThis.fetch = asFetch(async (input: RequestInfo | URL) => {
+      const url = input.toString()
+      calls.push(url)
+
+      if (url.endsWith(":7001/openapi.json")) {
+        return new Response(
+          JSON.stringify({
+            paths: {
+              "/alpha/get_metadata": {},
+            },
+          }),
+          { status: 200 },
+        )
+      }
+
+      if (url.includes("/get_metadata")) {
+        return new Response("metadata should not be called", { status: 500 })
+      }
+
+      return new Response("not found", { status: 404 })
+    })
+
+    const result = await AgencySwarmAdapter.probeLocalServers({
+      baseURL: "http://127.0.0.1:8000",
+      ports: [7001],
+      timeoutMs: 150,
+      deadlineMs: 1000,
+    })
+
+    expect(result.timedOut).toBeFalse()
+    expect(result.servers).toEqual([
+      {
+        baseURL: "http://127.0.0.1:7001",
+        agencies: ["alpha"],
+      },
+    ])
+    expect(calls.some((url) => url.includes("/get_metadata"))).toBeFalse()
+  })
+
+  test("probeLocalServers keeps startup probe local-only", async () => {
+    const calls: string[] = []
+
+    globalThis.fetch = asFetch(async (input: RequestInfo | URL) => {
+      const url = input.toString()
+      calls.push(url)
+
+      if (url.endsWith(":7001/openapi.json")) {
+        return new Response(
+          JSON.stringify({
+            paths: {
+              "/alpha/get_metadata": {},
+            },
+          }),
+          { status: 200 },
+        )
+      }
+
+      return new Response("not found", { status: 404 })
+    })
+
+    const result = await AgencySwarmAdapter.probeLocalServers({
+      baseURL: "https://api.example.com:9000",
+      ports: [7001],
+      timeoutMs: 150,
+      deadlineMs: 1000,
+    })
+
+    expect(result.servers).toEqual([
+      {
+        baseURL: "http://127.0.0.1:7001",
+        agencies: ["alpha"],
+      },
+    ])
+    expect(calls.some((url) => url.includes("api.example.com"))).toBeFalse()
+  })
+
+  test("probeLocalServers enforces global deadline and returns partial results", async () => {
+    globalThis.fetch = asFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString()
+
+      if (url.endsWith(":7002/openapi.json")) {
+        return new Response(
+          JSON.stringify({
+            paths: {
+              "/beta/get_metadata": {},
+            },
+          }),
+          { status: 200 },
+        )
+      }
+
+      if (url.endsWith(":7001/openapi.json")) {
+        return await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              reject(new DOMException("aborted", "AbortError"))
+            },
+            { once: true },
+          )
+        })
+      }
+
+      return new Response("not found", { status: 404 })
+    })
+
+    const result = await AgencySwarmAdapter.probeLocalServers({
+      baseURL: "http://127.0.0.1:8000",
+      ports: [7001, 7002],
+      timeoutMs: 1000,
+      deadlineMs: 50,
+    })
+
+    expect(result.timedOut).toBeTrue()
+    expect(result.servers.some((server) => server.baseURL === "http://127.0.0.1:7002")).toBeTrue()
+  })
+
+  test("probeLocalServers port-scan timeout still checks fallback local ports", async () => {
+    Bun.spawn = ((() => {
+      const stream = new ReadableStream<Uint8Array>({})
+      return {
+        exited: new Promise<number>(() => {}),
+        stdout: stream,
+        kill: () => {},
+      }
+    }) as unknown) as typeof Bun.spawn
+
+    const calls: string[] = []
+    globalThis.fetch = asFetch(async (input: RequestInfo | URL) => {
+      const url = input.toString()
+      calls.push(url)
+
+      if (url.endsWith(":8000/openapi.json")) {
+        return new Response(
+          JSON.stringify({
+            paths: {
+              "/gamma/get_metadata": {},
+            },
+          }),
+          { status: 200 },
+        )
+      }
+
+      return new Response("not found", { status: 404 })
+    })
+
+    const start = Date.now()
+    const result = await AgencySwarmAdapter.probeLocalServers({
+      baseURL: "http://127.0.0.1:8000",
+      timeoutMs: 100,
+      deadlineMs: 1000,
+    })
+    const elapsed = Date.now() - start
+
+    expect(elapsed).toBeLessThan(400)
+    expect(result.timedOut).toBeFalse()
+    expect(result.servers).toEqual([
+      {
+        baseURL: "http://127.0.0.1:8000",
+        agencies: ["gamma"],
+      },
+    ])
+    expect(calls.some((url) => url.endsWith(":8000/openapi.json"))).toBeTrue()
   })
 
   test("streamRun parses meta data messages and end frames", async () => {

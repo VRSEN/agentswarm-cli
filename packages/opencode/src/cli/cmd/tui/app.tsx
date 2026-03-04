@@ -396,23 +396,64 @@ function App() {
       readPositiveNumber(rawOptions["discoveryTimeoutMs"]) ??
       readPositiveNumber(rawOptions["discovery_timeout_ms"]) ??
       AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS
-    const startupDiscoveryTimeoutMs = Math.min(discoveryTimeoutMs, 400)
+    const fallback = () => {
+      const providers = sync.data.provider.filter((item) => item.id !== AgencySwarmAdapter.PROVIDER_ID)
+      const preferred = providers.flatMap((item) => {
+        const modelID = sync.data.provider_default[item.id]
+        if (!modelID) return []
+        if (!item.models[modelID]) return []
+        return [{ providerID: item.id, modelID }]
+      })[0]
+      if (preferred) return preferred
+      return providers.flatMap((item) => {
+        const model = Object.values(item.models)[0]
+        if (!model) return []
+        return [{ providerID: item.id, modelID: model.id }]
+      })[0]
+    }
+    const switchToDefault = (message: string, detail?: string) => {
+      const next = fallback()
+      if (!next) {
+        destination.ready()
+        toast.show({
+          variant: "error",
+          message: detail
+            ? `Agency server discovery failed and no non-agency provider is available (${detail}).`
+            : "Agency server discovery failed and no non-agency provider is available.",
+          duration: 6000,
+        })
+        return
+      }
+      local.model.set(next, { recent: true })
+      destination.ready()
+      toast.show({
+        variant: "warning",
+        message,
+        duration: 6000,
+      })
+    }
 
-    void AgencySwarmAdapter.discoverLocalServers({
+    void AgencySwarmAdapter.probeLocalServers({
       baseURL,
       token,
-      timeoutMs: startupDiscoveryTimeoutMs,
+      timeoutMs: 150,
+      deadlineMs: 2000,
     })
       .then(async (discovered) => {
+        if (discovered.timedOut) {
+          switchToDefault("Agency server discovery timed out (>2s). Switched to default provider.")
+          return
+        }
+
         if (discovered.servers.length === 0) {
           destination.ready()
           return
         }
 
-        const applyServer = async (server: AgencySwarmAdapter.ServerDescriptor, notify: boolean) => {
+        const applyServer = async (server: AgencySwarmAdapter.ProbeServerDescriptor, notify: boolean) => {
           if (server.baseURL === baseURL && !notify) return
 
-          const keepAgency = configuredAgency && server.agencies.some((agency) => agency.id === configuredAgency)
+          const keepAgency = configuredAgency && server.agencies.some((agency) => agency === configuredAgency)
           const nextOptions: Record<string, unknown> = {
             ...rawOptions,
             baseURL: server.baseURL,
@@ -461,7 +502,7 @@ function App() {
 
         destination.selecting()
         const options: DialogSelectOption<AgencyServerOption>[] = discovered.servers.map((server) => {
-          const list = server.agencies.map((agency) => agency.id)
+          const list = server.agencies
           const summary = list.slice(0, 3).join(", ")
           const tail = list.length > 3 ? ` +${list.length - 3} more` : ""
           const noun = server.agencies.length === 1 ? "agency" : "agencies"
@@ -522,12 +563,10 @@ function App() {
         showSelector()
       })
       .catch((error) => {
-        destination.ready()
-        toast.show({
-          variant: "warning",
-          message: `Agency Swarm server discovery failed: ${error instanceof Error ? error.message : String(error)}`,
-          duration: 5000,
-        })
+        switchToDefault(
+          "Agency server discovery failed. Switched to default provider.",
+          error instanceof Error ? error.message : String(error),
+        )
       })
   })
 
