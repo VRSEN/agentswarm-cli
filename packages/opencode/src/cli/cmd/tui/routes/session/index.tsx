@@ -81,7 +81,6 @@ import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { formatTranscript } from "../../util/transcript"
 import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
-import { useAgencyDestination } from "../../context/agency-destination"
 
 addDefaultParsers(parsers.parsers)
 
@@ -118,7 +117,6 @@ export function Session() {
   const route = useRouteData("session")
   const { navigate } = useRoute()
   const sync = useSync()
-  const destination = useAgencyDestination()
   const tuiConfig = useTuiConfig()
   const kv = useKV()
   const { theme } = useTheme()
@@ -1169,7 +1167,7 @@ export function Session() {
                     r.set(route.initialPrompt)
                   }
                 }}
-                disabled={permissions().length > 0 || questions().length > 0 || destination.pending()}
+                disabled={permissions().length > 0 || questions().length > 0}
                 onSubmit={() => {
                   toBottom()
                 }}
