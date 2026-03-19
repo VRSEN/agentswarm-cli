@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Agent } from "../../src/agent/agent"
-import { Identifier } from "../../src/id/id"
 import { Instance } from "../../src/project/instance"
 import { Provider } from "../../src/provider/provider"
 import { Session } from "../../src/session"
@@ -8,6 +7,7 @@ import { MessageV2 } from "../../src/session/message-v2"
 import { SessionCompaction } from "../../src/session/compaction"
 import { SessionProcessor } from "../../src/session/processor"
 import { SessionPrompt } from "../../src/session/prompt"
+import { MessageID } from "../../src/session/schema"
 import { SessionSummary } from "../../src/session/summary"
 import { tmpdir } from "../fixture/fixture"
 
@@ -62,7 +62,7 @@ describe("session.processor custom stream", () => {
         if (!agent) throw new Error("Expected agent")
 
         const assistantMessage = (await Session.updateMessage({
-          id: Identifier.ascending("message"),
+          id: MessageID.ascending(),
           parentID: user.id,
           role: "assistant",
           mode: agent.name,
@@ -170,7 +170,7 @@ describe("session.processor custom stream", () => {
         if (!agent) throw new Error("Expected agent")
 
         const assistantMessage = (await Session.updateMessage({
-          id: Identifier.ascending("message"),
+          id: MessageID.ascending(),
           parentID: user.id,
           role: "assistant",
           mode: agent.name,

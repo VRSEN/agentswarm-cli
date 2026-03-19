@@ -10,7 +10,7 @@
 <p align="center">The open source AI coding agent.</p>
 
 > [!NOTE]
-> This repository is the private `agency-code` fork used to ship Agency Swarm integration on top of the OpenCode TUI.
+> This repository is the private `agentswarm-cli` fork used to ship Agency Swarm integration on top of the OpenCode TUI.
 > Keep OpenCode client/server contracts intact while extending the runtime under `packages/opencode/src/agency-swarm/`.
 
 ## Agency Swarm Integration Notes
@@ -27,7 +27,7 @@
 
 <p align="center">
   <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/agentswarm-cli"><img alt="npm" src="https://img.shields.io/npm/v/agentswarm-cli?style=flat-square" /></a>
   <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
 </p>
 
@@ -66,7 +66,10 @@
 curl -fsSL https://opencode.ai/install | bash
 
 # Package managers
-npm i -g opencode-ai@latest        # or bun/pnpm/yarn
+npm i -g agentswarm-cli
+
+# Command
+agentswarm
 scoop install opencode             # Windows
 choco install opencode             # Windows
 brew install anomalyco/tap/opencode # macOS and Linux (recommended, always up to date)

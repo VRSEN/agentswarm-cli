@@ -3,6 +3,8 @@
 - The default branch in this repo is `dev`.
 - Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
 - Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
+- When validation or tooling needs credentials, inspect the repo root `.env` before treating them as missing or escalating.
+- Hard-cut policy: prefer one canonical current-state path. Do not add compatibility bridges, legacy aliases, fallbacks, dual behavior, or migration glue unless the user explicitly requests them. If a temporary exception is unavoidable, state why, why the main path is insufficient, and the deletion trigger in the same diff.
 
 ## Fork Context
 
@@ -34,6 +36,17 @@
 ### Naming
 
 Prefer single word names for variables and functions. Only use multiple words if necessary.
+
+### Naming Enforcement (Read This)
+
+THIS RULE IS MANDATORY FOR AGENT WRITTEN CODE.
+
+- Use single word names by default for new locals, params, and helper functions.
+- Multi-word names are allowed only when a single word would be unclear or ambiguous.
+- Do not introduce new camelCase compounds when a short single-word alternative is clear.
+- Before finishing edits, review touched lines and shorten newly introduced identifiers where possible.
+- Good short names to prefer: `pid`, `cfg`, `err`, `opts`, `dir`, `root`, `child`, `state`, `timeout`.
+- Examples to avoid unless truly required: `inputPID`, `existingClient`, `connectTimeout`, `workerPath`.
 
 ```ts
 // Good
@@ -126,3 +139,7 @@ const table = sqliteTable("session", {
 - Avoid mocks as much as possible
 - Test actual implementation, do not duplicate logic into tests
 - Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/opencode`.
+
+## Type Checking
+
+- Always run `bun typecheck` from package directories (e.g., `packages/opencode`), never `tsc` directly.

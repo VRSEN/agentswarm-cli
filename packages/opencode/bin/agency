@@ -51,7 +51,7 @@ let arch = archMap[os.arch()]
 if (!arch) {
   arch = os.arch()
 }
-const base = "agency-code-" + platform + "-" + arch
+const base = "agent-swarm-cli-" + platform + "-" + arch
 const binary = platform === "windows" ? "agency.exe" : "agency"
 
 function supportsAvx2() {
@@ -170,7 +170,7 @@ function findBinary(startDir) {
 const resolved = findBinary(scriptDir)
 if (!resolved) {
   console.error(
-    "It seems that your package manager failed to install the right version of the agency-code CLI for your platform. You can try manually installing " +
+    "It seems that your package manager failed to install the right version of the agentswarm-cli package for your platform. You can try manually installing " +
       names.map((n) => `\"${n}\"`).join(" or ") +
       " package",
   )

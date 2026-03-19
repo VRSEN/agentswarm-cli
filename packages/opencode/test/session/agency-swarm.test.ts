@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
+import { ProviderID } from "../../src/provider/schema"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
 import { SessionAgencySwarm } from "../../src/session/agency-swarm"
 
@@ -143,7 +144,7 @@ describe("session.agency-swarm", () => {
 
   test("optionsFromProvider maps supported FastAPI request options", () => {
     const options = SessionAgencySwarm.optionsFromProvider({
-      id: "agency-swarm",
+      id: ProviderID.make("agency-swarm"),
       name: "Agency Swarm",
       source: "config",
       env: [],
@@ -178,7 +179,7 @@ describe("session.agency-swarm", () => {
 
   test("optionsFromProvider prefers auth key token over config token", () => {
     const options = SessionAgencySwarm.optionsFromProvider({
-      id: "agency-swarm",
+      id: ProviderID.make("agency-swarm"),
       name: "Agency Swarm",
       source: "config",
       env: [],

@@ -1,15 +1,30 @@
-# js
+# Agent Swarm CLI
 
-To install dependencies:
+Agent Swarm CLI is the terminal client for Agent Swarm.
 
-```bash
-bun install
-```
-
-To run:
+## Install
 
 ```bash
-bun run index.ts
+npm i -g agentswarm-cli
 ```
 
-This project was created using `bun init` in bun v1.2.12. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+## Command
+
+```bash
+agentswarm
+```
+
+## What it does
+
+- runs the Agent Swarm terminal UI
+- supports local and remote model providers
+- powers `agency-swarm` `terminal_demo()`
+
+## Platform packages
+
+This package installs a platform-specific binary package behind the scenes. That is the same pattern used by OpenCode's npm release.
+
+## Source
+
+- Framework: [VRSEN/agency-swarm](https://github.com/VRSEN/agency-swarm)
+- CLI fork: private OpenCode-based Agent Swarm fork

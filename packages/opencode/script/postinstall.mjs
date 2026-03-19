@@ -49,7 +49,7 @@ function detectPlatformAndArch() {
 
 function findBinary() {
   const { platform, arch } = detectPlatformAndArch()
-  const packageName = `agency-code-${platform}-${arch}`
+  const packageName = `agent-swarm-cli-${platform}-${arch}`
   const binaryName = platform === "windows" ? "agency.exe" : "agency"
 
   try {
@@ -89,7 +89,7 @@ function symlinkBinary(sourcePath, binaryName) {
   const { targetPath } = prepareBinDirectory(binaryName)
 
   fs.symlinkSync(sourcePath, targetPath)
-  console.log(`agency binary symlinked: ${targetPath} -> ${sourcePath}`)
+  console.log(`agentswarm binary symlinked: ${targetPath} -> ${sourcePath}`)
 
   // Verify the file exists after operation
   if (!fs.existsSync(targetPath)) {
@@ -118,7 +118,7 @@ async function main() {
     }
     fs.chmodSync(target, 0o755)
   } catch (error) {
-    console.error("Failed to setup agency binary:", error.message)
+    console.error("Failed to setup agentswarm binary:", error.message)
     process.exit(1)
   }
 }

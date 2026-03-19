@@ -777,9 +777,10 @@ export namespace Provider {
   }
 
   function createAgencySwarmProvider(): Info {
-    const modelID = AgencySwarmAdapter.DEFAULT_MODEL_ID
+    const modelID = ModelID.make(AgencySwarmAdapter.DEFAULT_MODEL_ID)
+    const providerID = ProviderID.make(AgencySwarmAdapter.PROVIDER_ID)
     return {
-      id: AgencySwarmAdapter.PROVIDER_ID,
+      id: providerID,
       name: "Agency Swarm",
       source: "config",
       env: [],
@@ -790,7 +791,7 @@ export namespace Provider {
       models: {
         [modelID]: {
           id: modelID,
-          providerID: AgencySwarmAdapter.PROVIDER_ID,
+          providerID,
           name: "Agency Swarm Default",
           family: "agency-swarm",
           api: {

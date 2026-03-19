@@ -3,11 +3,11 @@ import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { Installation } from "../../installation"
 import { Global } from "../../global"
-import { $ } from "bun"
 import fs from "fs/promises"
 import path from "path"
 import os from "os"
 import { Filesystem } from "../../util/filesystem"
+import { Process } from "../../util/process"
 
 interface UninstallArgs {
   keepConfig: boolean
@@ -20,11 +20,12 @@ interface RemovalTargets {
   directories: Array<{ path: string; label: string; keep: boolean }>
   shellConfig: string | null
   binary: string | null
+  package: string
 }
 
 export const UninstallCommand = {
   command: "uninstall",
-  describe: "uninstall agency and remove all related files",
+  describe: "uninstall Agent Swarm CLI and remove related files",
   builder: (yargs: Argv) =>
     yargs
       .option("keep-config", {
@@ -55,7 +56,7 @@ export const UninstallCommand = {
     UI.empty()
     UI.println(UI.logo("  "))
     UI.empty()
-    prompts.intro("Uninstall Agency Code")
+    prompts.intro("Uninstall Agent Swarm CLI")
 
     const method = await Installation.method()
     prompts.log.info(`Installation method: ${method}`)
@@ -98,7 +99,7 @@ async function collectRemovalTargets(args: UninstallArgs, method: Installation.M
   const shellConfig = method === "curl" ? await getShellConfigFile() : null
   const binary = method === "curl" ? process.execPath : null
 
-  return { directories, shellConfig, binary }
+  return { directories, shellConfig, binary, package: await getPackage(method) }
 }
 
 async function showRemovalSummary(targets: RemovalTargets, method: Installation.Method) {
@@ -129,13 +130,13 @@ async function showRemovalSummary(targets: RemovalTargets, method: Installation.
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string> = {
-      npm: "npm uninstall -g agency-code",
-      pnpm: "pnpm uninstall -g agency-code",
-      bun: "bun remove -g agency-code",
-      yarn: "yarn global remove agency-code",
-      brew: "brew uninstall agency-code",
-      choco: "choco uninstall agency-code",
-      scoop: "scoop uninstall agency-code",
+      npm: `npm uninstall -g ${targets.package}`,
+      pnpm: `pnpm uninstall -g ${targets.package}`,
+      bun: `bun remove -g ${targets.package}`,
+      yarn: `yarn global remove ${targets.package}`,
+      brew: "brew uninstall opencode",
+      choco: "choco uninstall opencode",
+      scoop: "scoop uninstall opencode",
     }
     prompts.log.info(`  ✓ Package: ${cmds[method] || method}`)
   }
@@ -180,28 +181,25 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string[]> = {
-      npm: ["npm", "uninstall", "-g", "agency-code"],
-      pnpm: ["pnpm", "uninstall", "-g", "agency-code"],
-      bun: ["bun", "remove", "-g", "agency-code"],
-      yarn: ["yarn", "global", "remove", "agency-code"],
-      brew: ["brew", "uninstall", "agency-code"],
-      choco: ["choco", "uninstall", "agency-code"],
-      scoop: ["scoop", "uninstall", "agency-code"],
+      npm: ["npm", "uninstall", "-g", targets.package],
+      pnpm: ["pnpm", "uninstall", "-g", targets.package],
+      bun: ["bun", "remove", "-g", targets.package],
+      yarn: ["yarn", "global", "remove", targets.package],
+      brew: ["brew", "uninstall", "opencode"],
+      choco: ["choco", "uninstall", "opencode"],
+      scoop: ["scoop", "uninstall", "opencode"],
     }
 
     const cmd = cmds[method]
     if (cmd) {
       spinner.start(`Running ${cmd.join(" ")}...`)
-      const result =
-        method === "choco"
-          ? await $`echo Y | choco uninstall agency-code -y -r`.quiet().nothrow()
-          : await $`${cmd}`.quiet().nothrow()
-      if (result.exitCode !== 0) {
-        spinner.stop(`Package manager uninstall failed: exit code ${result.exitCode}`, 1)
-        if (
-          method === "choco" &&
-          result.stdout.toString("utf8").includes("not running from an elevated command shell")
-        ) {
+      const result = await Process.run(method === "choco" ? ["choco", "uninstall", "opencode", "-y", "-r"] : cmd, {
+        nothrow: true,
+      })
+      if (result.code !== 0) {
+        spinner.stop(`Package manager uninstall failed: exit code ${result.code}`, 1)
+        const text = `${result.stdout.toString("utf8")}\n${result.stderr.toString("utf8")}`
+        if (method === "choco" && text.includes("not running from an elevated command shell")) {
           prompts.log.warn(`You may need to run '${cmd.join(" ")}' from an elevated command shell`)
         } else {
           prompts.log.warn(`You may need to run manually: ${cmd.join(" ")}`)
@@ -218,7 +216,7 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
     prompts.log.info(`  rm "${targets.binary}"`)
 
     const binDir = path.dirname(targets.binary)
-    if (binDir.includes(".agency-code") || binDir.includes(".opencode")) {
+    if (binDir.includes(".opencode")) {
       prompts.log.info(`  rmdir "${binDir}" 2>/dev/null`)
     }
   }
@@ -232,7 +230,23 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
   }
 
   UI.empty()
-  prompts.log.success("Thank you for using Agency Code!")
+  prompts.log.success("Thank you for using Agent Swarm CLI!")
+}
+
+async function getPackage(method: Installation.Method) {
+  if (method === "brew" || method === "choco" || method === "scoop" || method === "curl" || method === "unknown") {
+    return "agentswarm-cli"
+  }
+  const cmd =
+    method === "npm"
+      ? ["npm", "list", "-g", "--depth=0"]
+      : method === "yarn"
+        ? ["yarn", "global", "list"]
+        : method === "pnpm"
+          ? ["pnpm", "list", "-g", "--depth=0"]
+          : ["bun", "pm", "ls", "-g"]
+  const out = await Process.text(cmd, { nothrow: true }).then((x) => x.text)
+  return out.includes("agentswarm-cli") ? "agentswarm-cli" : "agentswarm-cli"
 }
 
 async function getShellConfigFile(): Promise<string | null> {
@@ -269,12 +283,7 @@ async function getShellConfigFile(): Promise<string | null> {
     if (!exists) continue
 
     const content = await Filesystem.readText(file).catch(() => "")
-    if (
-      content.includes("# agency-code") ||
-      content.includes("# opencode") ||
-      content.includes(".agency-code/bin") ||
-      content.includes(".opencode/bin")
-    ) {
+    if (content.includes("# opencode") || content.includes(".opencode/bin")) {
       return file
     }
   }
@@ -292,23 +301,21 @@ async function cleanShellConfig(file: string) {
   for (const line of lines) {
     const trimmed = line.trim()
 
-    if (trimmed === "# agency-code" || trimmed === "# opencode") {
+    if (trimmed === "# opencode") {
       skip = true
       continue
     }
 
     if (skip) {
       skip = false
-      if (trimmed.includes(".agency-code/bin") || trimmed.includes(".opencode/bin") || trimmed.includes("fish_add_path")) {
+      if (trimmed.includes(".opencode/bin") || trimmed.includes("fish_add_path")) {
         continue
       }
     }
 
     if (
-      (trimmed.startsWith("export PATH=") &&
-        (trimmed.includes(".agency-code/bin") || trimmed.includes(".opencode/bin"))) ||
-      (trimmed.startsWith("fish_add_path") &&
-        (trimmed.includes(".agency-code") || trimmed.includes(".opencode")))
+      (trimmed.startsWith("export PATH=") && trimmed.includes(".opencode/bin")) ||
+      (trimmed.startsWith("fish_add_path") && trimmed.includes(".opencode"))
     ) {
       continue
     }

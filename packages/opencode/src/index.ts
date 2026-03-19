@@ -49,7 +49,7 @@ process.on("uncaughtException", (e) => {
 
 let cli = yargs(hideBin(process.argv))
   .parserConfiguration({ "populate--": true })
-  .scriptName("agency")
+  .scriptName("agentswarm")
   .wrap(100)
   .help("help", "show help")
   .alias("help", "h")
@@ -80,7 +80,7 @@ let cli = yargs(hideBin(process.argv))
     process.env.AGENCY_CODE = "1"
     process.env.OPENCODE_PID = String(process.pid)
 
-    Log.Default.info("agency-code", {
+    Log.Default.info("agentswarm-cli", {
       version: Installation.VERSION,
       args: process.argv.slice(2),
     })

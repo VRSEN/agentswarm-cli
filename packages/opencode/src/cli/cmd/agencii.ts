@@ -90,7 +90,7 @@ const AgenciiAgenciesCommand = cmd({
       })
 
       if (discovered.agencies.length === 0) {
-        UI.println("No agencies discovered. Try `agency agencii use <agency-id> --url ...`.")
+        UI.println("No agencies discovered. Try `agentswarm agencii use <agency-id> --url ...`.")
         return
       }
 

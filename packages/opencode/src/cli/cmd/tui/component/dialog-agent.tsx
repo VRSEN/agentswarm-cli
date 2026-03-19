@@ -180,7 +180,7 @@ export function DialogAgent() {
           agency: "__empty__",
         },
         title: "No agencies discovered",
-        description: `Check ${providerOptions().baseURL} and run \`agency agencii agencies\``,
+        description: `Check ${providerOptions().baseURL} and run \`agentswarm agencii agencies\``,
         disabled: true,
         category: "Agency Swarm",
       })

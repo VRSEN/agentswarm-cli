@@ -123,7 +123,7 @@ export namespace SessionAgencySwarm {
       throw new Error(
         [
           "No agencies were discovered from Agency Swarm OpenAPI metadata.",
-          "Configure provider.options.agency in your config, or run `agency agencii use <agency-id>`.",
+          "Configure provider.options.agency in your config, or run `agentswarm agencii use <agency-id>`.",
         ].join(" "),
       )
     }
@@ -132,7 +132,7 @@ export namespace SessionAgencySwarm {
       [
         "Multiple agencies were discovered but no default agency is configured.",
         `Available agencies: ${availableAgencies.join(", ")}.`,
-        "Set provider.options.agency or run `agency agencii use <agency-id>`.",
+        "Set provider.options.agency or run `agentswarm agencii use <agency-id>`.",
       ].join(" "),
     )
   }

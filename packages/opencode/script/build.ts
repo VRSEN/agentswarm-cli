@@ -15,6 +15,8 @@ process.chdir(dir)
 import { Script } from "@opencode-ai/script"
 import pkg from "../package.json"
 
+const platform = "agent-swarm-cli"
+
 const modelsUrl = process.env.OPENCODE_MODELS_URL || "https://models.dev"
 // Fetch and generate models.dev snapshot
 const modelsData = process.env.MODELS_DEV_API_JSON
@@ -149,7 +151,7 @@ if (!skipInstall) {
 }
 for (const item of targets) {
   const name = [
-    pkg.name,
+    platform,
     // changing to win32 flags npm for some reason
     item.os === "win32" ? "windows" : item.os,
     item.arch,
@@ -178,9 +180,9 @@ for (const item of targets) {
       autoloadDotenv: false,
       autoloadTsconfig: true,
       autoloadPackageJson: true,
-      target: name.replace(pkg.name, "bun") as any,
+      target: name.replace(platform, "bun") as any,
       outfile: `dist/${name}/bin/agency`,
-      execArgv: [`--user-agent=agency-code/${Script.version}`, "--use-system-ca", "--"],
+      execArgv: [`--user-agent=agentswarm-cli/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
     entrypoints: ["./src/index.ts", parserWorker, workerPath],
