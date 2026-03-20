@@ -248,7 +248,7 @@ export function Session() {
         `${logo[3] ?? ""}`,
         ``,
         `  ${weak("Session")}${UI.Style.TEXT_NORMAL_BOLD}${title}${UI.Style.TEXT_NORMAL}`,
-        `  ${weak("Continue")}${UI.Style.TEXT_NORMAL_BOLD}agency -s ${session()?.id}${UI.Style.TEXT_NORMAL}`,
+        `  ${weak("Continue")}${UI.Style.TEXT_NORMAL_BOLD}agentswarm -s ${session()?.id}${UI.Style.TEXT_NORMAL}`,
         ``,
       ].join("\n"),
     )
@@ -449,19 +449,16 @@ export function Session() {
         aliases: ["summarize"],
       },
       onSelect: (dialog) => {
-        const selectedModel = local.model.current()
-        if (!selectedModel) {
+        if (!local.model.current()) {
           toast.show({
             variant: "warning",
-            message: "Connect a provider to summarize this session",
+            message: "Connect to an agency-swarm server to summarize this session",
             duration: 3000,
           })
           return
         }
         sdk.client.session.summarize({
           sessionID: route.sessionID,
-          modelID: selectedModel.modelID,
-          providerID: selectedModel.providerID,
         })
         dialog.clear()
       },
@@ -1994,11 +1991,14 @@ function FileSearch(props: ToolProps<any>) {
   })
 
   return (
-    <InlineTool icon="⌕" pending="Searching files..." complete={props.part.state.status !== "pending"} part={props.part}>
+    <InlineTool
+      icon="⌕"
+      pending="Searching files..."
+      complete={props.part.state.status !== "pending"}
+      part={props.part}
+    >
       File Search
-      <Show when={query()}>
-        {(value) => <> "{value()}"</>}
-      </Show>
+      <Show when={query()}>{(value) => <> "{value()}"</>}</Show>
     </InlineTool>
   )
 }
@@ -2013,9 +2013,7 @@ function WebSearchSpecial(props: ToolProps<any>) {
   return (
     <InlineTool icon="◈" pending="Searching web..." complete={props.part.state.status !== "pending"} part={props.part}>
       Web Search
-      <Show when={query()}>
-        {(value) => <> "{value()}"</>}
-      </Show>
+      <Show when={query()}>{(value) => <> "{value()}"</>}</Show>
     </InlineTool>
   )
 }
@@ -2171,7 +2169,11 @@ function readSearchQueries(input: Record<string, unknown>) {
 }
 
 function resolveSpecialTool(tool: string): SpecialTool | undefined {
-  const cleaned = tool.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+  const cleaned = tool
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
   if (!cleaned) return undefined
   const withoutTool = cleaned.endsWith("_tool")
     ? cleaned.slice(0, -5)

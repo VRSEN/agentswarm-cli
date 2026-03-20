@@ -113,7 +113,8 @@ export namespace SessionAgencySwarm {
       timeoutMs: options.discoveryTimeoutMs,
     })
     const fallbackAgencyIDs = AgencySwarmAdapter.parseAgencyIDsFromOpenAPI(discovered.rawOpenAPI)
-    const availableAgencies = discovered.agencies.length > 0 ? discovered.agencies.map((agency) => agency.id) : fallbackAgencyIDs
+    const availableAgencies =
+      discovered.agencies.length > 0 ? discovered.agencies.map((agency) => agency.id) : fallbackAgencyIDs
 
     if (availableAgencies.length === 1) {
       return availableAgencies[0]
@@ -122,7 +123,7 @@ export namespace SessionAgencySwarm {
     if (availableAgencies.length === 0) {
       throw new Error(
         [
-          "No agencies were discovered from Agency Swarm OpenAPI metadata.",
+          "No agencies were discovered from agency-swarm OpenAPI metadata.",
           "Configure provider.options.agency in your config, or run `agentswarm agencii use <agency-id>`.",
         ].join(" "),
       )
@@ -212,8 +213,12 @@ export namespace SessionAgencySwarm {
       const rawTotal = asNumber(value["total_tokens"] ?? value["totalTokens"])
       const details = asRecord(value["output_tokens_details"] ?? value["outputTokensDetails"])
       const inputDetails = asRecord(value["input_tokens_details"] ?? value["inputTokensDetails"])
-      const rawReasoning = asNumber(details?.["reasoning_tokens"] ?? value["reasoning_tokens"] ?? value["reasoningTokens"])
-      const rawCacheRead = asNumber(inputDetails?.["cached_tokens"] ?? value["cached_tokens"] ?? value["cachedInputTokens"])
+      const rawReasoning = asNumber(
+        details?.["reasoning_tokens"] ?? value["reasoning_tokens"] ?? value["reasoningTokens"],
+      )
+      const rawCacheRead = asNumber(
+        inputDetails?.["cached_tokens"] ?? value["cached_tokens"] ?? value["cachedInputTokens"],
+      )
       const rawCacheWrite = asNumber(value["cache_write_input_tokens"] ?? value["cacheWriteInputTokens"])
       const rawCost = asNumber(value["total_cost"] ?? value["totalCost"] ?? value["cost"])
 
@@ -265,7 +270,9 @@ export namespace SessionAgencySwarm {
       if (itemType === "function_call") return asRawString(item["arguments"]) || ""
       if (itemType === "mcp_call") return asRawString(item["arguments"]) || stringifyToolOutput(item["arguments"])
       if (itemType === "code_interpreter_call") {
-        return asRawString(item["code"]) || stringifyToolOutput(asRecord(item["input"]) ?? asRecord(item["action"]) ?? {})
+        return (
+          asRawString(item["code"]) || stringifyToolOutput(asRecord(item["input"]) ?? asRecord(item["action"]) ?? {})
+        )
       }
       if (itemType === "file_search_call") {
         return stringifyToolOutput({
@@ -330,11 +337,7 @@ export namespace SessionAgencySwarm {
       return undefined
     }
 
-    const closeText = (
-      key: string,
-      meta: AgencySwarmEventMeta,
-      extra?: Record<string, unknown>,
-    ) => {
+    const closeText = (key: string, meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
       if (!textOpen.has(key)) return []
       textOpen.delete(key)
       if (lastTextItemID) {
@@ -351,16 +354,11 @@ export namespace SessionAgencySwarm {
       ]
     }
 
-    const ensureText = (
-      itemID: string,
-      index: number,
-      meta: AgencySwarmEventMeta,
-      extra?: Record<string, unknown>,
-    ) => {
+    const ensureText = (itemID: string, index: number, meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
       const parts: any[] = []
       const key = textKey(itemID, index)
       const activeItemID = lastTextItemID
-      const activeIndex = activeItemID ? textIndex.get(activeItemID) ?? 0 : undefined
+      const activeIndex = activeItemID ? (textIndex.get(activeItemID) ?? 0) : undefined
       const activeKey = activeItemID !== undefined ? textKey(activeItemID, activeIndex) : undefined
       if (activeKey && activeKey !== key) {
         parts.push(
@@ -429,13 +427,7 @@ export namespace SessionAgencySwarm {
         return closeText(key, meta, extra)
       }
       const parts = isOpen ? [] : ensureText(itemID, index, meta, extra)
-      const suffix = final
-        ? final.startsWith(current)
-          ? final.slice(current.length)
-          : current
-            ? ""
-            : final
-        : ""
+      const suffix = final ? (final.startsWith(current) ? final.slice(current.length) : current ? "" : final) : ""
       if (suffix) {
         parts.push(...textDelta(itemID, index, suffix, meta, extra))
       }
@@ -517,13 +509,7 @@ export namespace SessionAgencySwarm {
         return []
       }
       const parts = isOpen ? [] : ensureReasoning(itemID, index, meta, extra)
-      const suffix = text
-        ? text.startsWith(current)
-          ? text.slice(current.length)
-          : current
-            ? ""
-            : text
-        : ""
+      const suffix = text ? (text.startsWith(current) ? text.slice(current.length) : current ? "" : text) : ""
       if (suffix) {
         parts.push(...reasoningDelta(itemID, index, suffix, meta, extra))
       }
@@ -634,12 +620,7 @@ export namespace SessionAgencySwarm {
       return parts
     }
 
-    const runTool = (
-      callID: string,
-      toolName: string,
-      meta: AgencySwarmEventMeta,
-      extra?: Record<string, unknown>,
-    ) => {
+    const runTool = (callID: string, toolName: string, meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
       const parts = ensureToolInput(callID, toolName, "", meta, extra)
       const tool = ensureTool(callID, toolName)
       if (tool.running || tool.done) {
@@ -897,16 +878,7 @@ export namespace SessionAgencySwarm {
         if (itemType === "function_call") {
           return parts
         }
-        return [
-          ...parts,
-          ...completeTool(
-            callID,
-            toolName,
-            toolOutput(itemType, item),
-            eventMeta,
-            metadata,
-          ),
-        ]
+        return [...parts, ...completeTool(callID, toolName, toolOutput(itemType, item), eventMeta, metadata)]
       }
 
       return []
@@ -1151,7 +1123,12 @@ export namespace SessionAgencySwarm {
               const partType = asString(part?.["type"]) || ""
               if (partType === "output_text" || partType === "refusal") {
                 const contentIndex = asNumber(nested["content_index"]) ?? 0
-                yield* ensureText(itemID, contentIndex, eventMeta, outputMeta(outputIndex, { content_index: contentIndex, content_type: partType }))
+                yield* ensureText(
+                  itemID,
+                  contentIndex,
+                  eventMeta,
+                  outputMeta(outputIndex, { content_index: contentIndex, content_type: partType }),
+                )
               }
               continue
             }
@@ -1178,7 +1155,13 @@ export namespace SessionAgencySwarm {
                 asRawString(part?.["text"]) ??
                 asRawString(part?.["refusal"]) ??
                 asRawString(nested["delta"])
-              yield* finishText(itemID, contentIndex, final, eventMeta, outputMeta(outputIndex, { content_index: contentIndex }))
+              yield* finishText(
+                itemID,
+                contentIndex,
+                final,
+                eventMeta,
+                outputMeta(outputIndex, { content_index: contentIndex }),
+              )
               continue
             }
 
@@ -1190,7 +1173,10 @@ export namespace SessionAgencySwarm {
               continue
             }
 
-            if (responseType === "response.reasoning_summary_text.delta" || responseType === "response.reasoning_text.delta") {
+            if (
+              responseType === "response.reasoning_summary_text.delta" ||
+              responseType === "response.reasoning_text.delta"
+            ) {
               const itemID = reasoningItemID(nested)
               if (!itemID) continue
               const summaryIndex = asNumber(nested["summary_index"] ?? nested["content_index"]) ?? 0
@@ -1245,7 +1231,8 @@ export namespace SessionAgencySwarm {
                 responseType === "response.code_interpreter_call_code.done"
                   ? "code_interpreter"
                   : asString(nested["name"]) || toolNameFor(callID)
-              const raw = asRawString(nested["arguments"]) ?? asRawString(nested["code"]) ?? tools.get(callID)?.raw ?? ""
+              const raw =
+                asRawString(nested["arguments"]) ?? asRawString(nested["code"]) ?? tools.get(callID)?.raw ?? ""
               yield* finalizeToolInput(callID, toolName, raw, eventMeta, {
                 item_id: asString(nested["item_id"]),
                 output_index: outputIndex,
@@ -1253,7 +1240,9 @@ export namespace SessionAgencySwarm {
               continue
             }
 
-            const callMatch = /^response\.([a-z_]+_call)\.(in_progress|searching|running|completed|failed)$/.exec(responseType)
+            const callMatch = /^response\.([a-z_]+_call)\.(in_progress|searching|running|completed|failed)$/.exec(
+              responseType,
+            )
             if (callMatch) {
               const itemType = callMatch[1]
               const phase = callMatch[2]

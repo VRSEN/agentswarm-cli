@@ -1,116 +1,17 @@
-import { createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createMemo, createResource, onCleanup, onMount } from "solid-js"
 import { useSync } from "@tui/context/sync"
-import { map, pipe, sortBy } from "remeda"
 import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
 import { useDialog } from "@tui/ui/dialog"
 import { useSDK } from "../context/sdk"
 import { DialogPrompt } from "../ui/dialog-prompt"
-import { Link } from "../ui/link"
-import { useTheme } from "../context/theme"
-import { TextAttributes } from "@opentui/core"
-import type { ProviderAuthAuthorization } from "@opencode-ai/sdk/v2"
-import { DialogModel } from "./dialog-model"
-import { useKeyboard } from "@opentui/solid"
-import { Clipboard } from "@tui/util/clipboard"
 import { useToast } from "../ui/toast"
-import { useLocal } from "../context/local"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 
-const PROVIDER_PRIORITY: Record<string, number> = {
-  opencode: 0,
-  "opencode-go": 1,
-  openai: 2,
-  "github-copilot": 3,
-  anthropic: 4,
-  google: 5,
-}
-
-export function createDialogProviderOptions() {
-  const sync = useSync()
-  const dialog = useDialog()
-  const sdk = useSDK()
-  const options = createMemo(() => {
-    return pipe(
-      sync.data.provider_next.all,
-      sortBy((x) => PROVIDER_PRIORITY[x.id] ?? 99),
-      map((provider) => ({
-        title: provider.name,
-        value: provider.id,
-        description: {
-          opencode: "(Recommended)",
-          anthropic: "(Claude Max or API key)",
-          openai: "(ChatGPT Plus/Pro or API key)",
-          "opencode-go": "Low cost subscription for everyone",
-        }[provider.id],
-        category: provider.id in PROVIDER_PRIORITY ? "Popular" : "Other",
-        async onSelect() {
-          if (provider.id === AgencySwarmAdapter.PROVIDER_ID) {
-            dialog.replace(() => <DialogAgencySwarmConnect />)
-            return
-          }
-
-          const methods = sync.data.provider_auth[provider.id] ?? [
-            {
-              type: "api",
-              label: "API key",
-            },
-          ]
-          let index: number | null = 0
-          if (methods.length > 1) {
-            index = await new Promise<number | null>((resolve) => {
-              dialog.replace(
-                () => (
-                  <DialogSelect
-                    title="Select auth method"
-                    options={methods.map((x, index) => ({
-                      title: x.label,
-                      value: index,
-                    }))}
-                    onSelect={(option) => resolve(option.value)}
-                  />
-                ),
-                () => resolve(null),
-              )
-            })
-          }
-          if (index == null) return
-          const method = methods[index]
-          if (method.type === "oauth") {
-            const result = await sdk.client.provider.oauth.authorize({
-              providerID: provider.id,
-              method: index,
-            })
-            if (result.data?.method === "code") {
-              dialog.replace(() => (
-                <CodeMethod providerID={provider.id} title={method.label} index={index} authorization={result.data!} />
-              ))
-            }
-            if (result.data?.method === "auto") {
-              dialog.replace(() => (
-                <AutoMethod providerID={provider.id} title={method.label} index={index} authorization={result.data!} />
-              ))
-            }
-          }
-          if (method.type === "api") {
-            return dialog.replace(() => <ApiMethod providerID={provider.id} title={method.label} />)
-          }
-        },
-      })),
-    )
-  })
-  return options
-}
-
 export function DialogProvider() {
-  const local = useLocal()
-  const options = createDialogProviderOptions()
-  if (local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID) {
-    return <DialogAgencySwarmConnect />
-  }
-  return <DialogSelect title="Connect a provider" options={options()} />
+  return <DialogAgencySwarmConnect />
 }
 
-type AgencyConnectOption =
+type Option =
   | {
       kind: "server"
       baseURL: string
@@ -134,7 +35,7 @@ function DialogAgencySwarmConnect() {
   const sync = useSync()
   const toast = useToast()
 
-  const providerConfig = createMemo(() => {
+  const cfg = createMemo(() => {
     const configured = sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID]
     const connected = sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID)
     const options =
@@ -161,23 +62,18 @@ function DialogAgencySwarmConnect() {
       localServers,
       discoveryTimeoutMs,
       configToken,
-      authToken,
       token: authToken ?? configToken,
     }
   })
 
   const servers = createMemo(() =>
-    normalizeLocalServers([
-      "http://127.0.0.1:8000",
-      "http://127.0.0.1:8080",
-      ...providerConfig().localServers,
-    ]),
+    normalizeLocalServers(["http://127.0.0.1:8000", "http://127.0.0.1:8080", ...cfg().localServers]),
   )
 
   const [status, { refetch }] = createResource(
     () => ({
       servers: servers(),
-      token: providerConfig().token,
+      token: cfg().token,
     }),
     async (input): Promise<Record<string, { available: boolean; agencies: string[]; error?: string }>> => {
       const checks = await Promise.all(
@@ -226,9 +122,9 @@ function DialogAgencySwarmConnect() {
 
   const options = createMemo(() => {
     const map = status()
-    const result: DialogSelectOption<AgencyConnectOption>[] = servers().map((baseURL) => {
+    const result: DialogSelectOption<Option>[] = servers().map((baseURL) => {
       const info = map[baseURL]
-      const current = providerConfig().baseURL === baseURL
+      const current = cfg().baseURL === baseURL
       const availability = !info
         ? "Checking..."
         : info.available
@@ -238,7 +134,7 @@ function DialogAgencySwarmConnect() {
         value: {
           kind: "server",
           baseURL,
-        } as AgencyConnectOption,
+        } satisfies Option,
         title: baseURL,
         description: current ? `${availability} - current` : availability,
         category: "Local servers",
@@ -247,13 +143,13 @@ function DialogAgencySwarmConnect() {
 
     if (
       !status.loading &&
-      !result.some((item) => item.value.kind === "server" && status()?.[item.value.baseURL]?.available === true)
+      !result.some((item) => item.value.kind === "server" && status()?.[item.value.baseURL]?.available)
     ) {
       result.push({
         value: {
           kind: "status",
         },
-        title: "No local Agency servers are available",
+        title: "No local agency-swarm servers are available",
         description: "Start a local server or add another local port",
         disabled: true,
         category: "Status",
@@ -272,17 +168,17 @@ function DialogAgencySwarmConnect() {
       value: {
         kind: "token",
       },
-      title: providerConfig().token ? "Update token" : "Set token",
-      description: "For authenticated Agency servers",
+      title: cfg().token ? "Update token" : "Set token",
+      description: "For authenticated agency-swarm servers",
       category: "Authentication",
     })
-    if (providerConfig().token) {
+    if (cfg().token) {
       result.push({
         value: {
           kind: "clear_token",
         },
         title: "Clear token",
-        description: "Remove stored Agency token",
+        description: "Remove stored agency-swarm token",
         category: "Authentication",
       })
     }
@@ -290,8 +186,8 @@ function DialogAgencySwarmConnect() {
     return result
   })
 
-  const onServerSelect = async (baseURL: string) => {
-    const current = providerConfig()
+  const onServer = async (baseURL: string) => {
+    const current = cfg()
     const info = status()?.[baseURL]
     if (info && !info.available) {
       toast.show({
@@ -310,13 +206,11 @@ function DialogAgencySwarmConnect() {
       localServers: remembered,
       local_servers: remembered,
       discoveryTimeoutMs: current.discoveryTimeoutMs,
-      agency: sameServer ? readString(current.options["agency"]) ?? null : null,
-      recipientAgent: sameServer ? readString(current.options["recipientAgent"]) ?? null : null,
-      recipient_agent: sameServer ? readString(current.options["recipient_agent"]) ?? null : null,
+      agency: sameServer ? (readString(current.options["agency"]) ?? null) : null,
+      recipientAgent: sameServer ? (readString(current.options["recipientAgent"]) ?? null) : null,
+      recipient_agent: sameServer ? (readString(current.options["recipient_agent"]) ?? null) : null,
     }
-    if (!current.configToken) {
-      nextOptions["token"] = null
-    }
+    if (!current.configToken) nextOptions["token"] = null
 
     await sdk.client.global.config.update(
       {
@@ -324,7 +218,7 @@ function DialogAgencySwarmConnect() {
           model: `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
           provider: {
             [AgencySwarmAdapter.PROVIDER_ID]: {
-              name: current.configured?.name ?? "Agency Swarm",
+              name: current.configured?.name ?? "agency-swarm",
               options: nextOptions,
             },
           },
@@ -343,18 +237,17 @@ function DialogAgencySwarmConnect() {
   }
 
   const clearConfigToken = async () => {
-    const current = providerConfig()
-    const nextOptions: Record<string, unknown> = {
-      ...current.options,
-      token: null,
-    }
+    const current = cfg()
     await sdk.client.global.config.update(
       {
         config: {
           provider: {
             [AgencySwarmAdapter.PROVIDER_ID]: {
-              name: current.configured?.name ?? "Agency Swarm",
-              options: nextOptions,
+              name: current.configured?.name ?? "agency-swarm",
+              options: {
+                ...current.options,
+                token: null,
+              },
             },
           },
         },
@@ -430,23 +323,23 @@ function DialogAgencySwarmConnect() {
             })
             return
           }
-          void onServerSelect(baseURL).catch((error) => toast.error(error))
+          void onServer(baseURL).catch((error) => toast.error(error))
         }}
       />
     ))
   }
 
   return (
-    <DialogSelect<AgencyConnectOption>
-      title="Connect to local Agency server"
+    <DialogSelect<Option>
+      title="Connect to local agency-swarm server"
       current={{
         kind: "server",
-        baseURL: providerConfig().baseURL,
+        baseURL: cfg().baseURL,
       }}
       options={options()}
       onSelect={(option) => {
         if (option.value.kind === "server") {
-          void onServerSelect(option.value.baseURL).catch((error) => toast.error(error))
+          void onServer(option.value.baseURL).catch((error) => toast.error(error))
           return
         }
         if (option.value.kind === "custom") {
@@ -460,165 +353,6 @@ function DialogAgencySwarmConnect() {
         if (option.value.kind === "clear_token") {
           onClearToken()
         }
-      }}
-    />
-  )
-}
-
-interface AutoMethodProps {
-  index: number
-  providerID: string
-  title: string
-  authorization: ProviderAuthAuthorization
-}
-function AutoMethod(props: AutoMethodProps) {
-  const { theme } = useTheme()
-  const sdk = useSDK()
-  const dialog = useDialog()
-  const sync = useSync()
-  const toast = useToast()
-
-  useKeyboard((evt) => {
-    if (evt.name === "c" && !evt.ctrl && !evt.meta) {
-      const code = props.authorization.instructions.match(/[A-Z0-9]{4}-[A-Z0-9]{4,5}/)?.[0] ?? props.authorization.url
-      Clipboard.copy(code)
-        .then(() => toast.show({ message: "Copied to clipboard", variant: "info" }))
-        .catch(toast.error)
-    }
-  })
-
-  onMount(async () => {
-    const result = await sdk.client.provider.oauth.callback({
-      providerID: props.providerID,
-      method: props.index,
-    })
-    if (result.error) {
-      dialog.clear()
-      return
-    }
-    await sdk.client.instance.dispose()
-    await sync.bootstrap()
-    dialog.replace(() => <DialogModel providerID={props.providerID} />)
-  })
-
-  return (
-    <box paddingLeft={2} paddingRight={2} gap={1} paddingBottom={1}>
-      <box flexDirection="row" justifyContent="space-between">
-        <text attributes={TextAttributes.BOLD} fg={theme.text}>
-          {props.title}
-        </text>
-        <text fg={theme.textMuted} onMouseUp={() => dialog.clear()}>
-          esc
-        </text>
-      </box>
-      <box gap={1}>
-        <Link href={props.authorization.url} fg={theme.primary} />
-        <text fg={theme.textMuted}>{props.authorization.instructions}</text>
-      </box>
-      <text fg={theme.textMuted}>Waiting for authorization...</text>
-      <text fg={theme.text}>
-        c <span style={{ fg: theme.textMuted }}>copy</span>
-      </text>
-    </box>
-  )
-}
-
-interface CodeMethodProps {
-  index: number
-  title: string
-  providerID: string
-  authorization: ProviderAuthAuthorization
-}
-function CodeMethod(props: CodeMethodProps) {
-  const { theme } = useTheme()
-  const sdk = useSDK()
-  const sync = useSync()
-  const dialog = useDialog()
-  const [error, setError] = createSignal(false)
-
-  return (
-    <DialogPrompt
-      title={props.title}
-      placeholder="Authorization code"
-      onConfirm={async (value) => {
-        const { error } = await sdk.client.provider.oauth.callback({
-          providerID: props.providerID,
-          method: props.index,
-          code: value,
-        })
-        if (!error) {
-          await sdk.client.instance.dispose()
-          await sync.bootstrap()
-          dialog.replace(() => <DialogModel providerID={props.providerID} />)
-          return
-        }
-        setError(true)
-      }}
-      description={() => (
-        <box gap={1}>
-          <text fg={theme.textMuted}>{props.authorization.instructions}</text>
-          <Link href={props.authorization.url} fg={theme.primary} />
-          <Show when={error()}>
-            <text fg={theme.error}>Invalid code</text>
-          </Show>
-        </box>
-      )}
-    />
-  )
-}
-
-interface ApiMethodProps {
-  providerID: string
-  title: string
-}
-function ApiMethod(props: ApiMethodProps) {
-  const dialog = useDialog()
-  const sdk = useSDK()
-  const sync = useSync()
-  const { theme } = useTheme()
-
-  return (
-    <DialogPrompt
-      title={props.title}
-      placeholder="API key"
-      description={
-        {
-          opencode: (
-            <box gap={1}>
-              <text fg={theme.textMuted}>
-                OpenCode Zen gives you access to all the best coding models at the cheapest prices with a single API
-                key.
-              </text>
-              <text fg={theme.text}>
-                Go to <span style={{ fg: theme.primary }}>https://opencode.ai/zen</span> to get a key
-              </text>
-            </box>
-          ),
-          "opencode-go": (
-            <box gap={1}>
-              <text fg={theme.textMuted}>
-                OpenCode Go is a $10 per month subscription that provides reliable access to popular open coding models
-                with generous usage limits.
-              </text>
-              <text fg={theme.text}>
-                Go to <span style={{ fg: theme.primary }}>https://opencode.ai/zen</span> and enable OpenCode Go
-              </text>
-            </box>
-          ),
-        }[props.providerID] ?? undefined
-      }
-      onConfirm={async (value) => {
-        if (!value) return
-        await sdk.client.auth.set({
-          providerID: props.providerID,
-          auth: {
-            type: "api",
-            key: value,
-          },
-        })
-        await sdk.client.instance.dispose()
-        await sync.bootstrap()
-        dialog.replace(() => <DialogModel providerID={props.providerID} />)
       }}
     />
   )
@@ -670,8 +404,8 @@ function normalizeLocalServerInput(value: string): string | undefined {
 
   try {
     const url = new URL(raw)
-    const localHost = url.hostname.toLowerCase()
-    if (localHost !== "127.0.0.1" && localHost !== "localhost" && localHost !== "0.0.0.0") return undefined
+    const host = url.hostname.toLowerCase()
+    if (host !== "127.0.0.1" && host !== "localhost" && host !== "0.0.0.0") return undefined
     if (url.protocol !== "http:" && url.protocol !== "https:") return undefined
     return AgencySwarmAdapter.normalizeBaseURL(url.toString())
   } catch {

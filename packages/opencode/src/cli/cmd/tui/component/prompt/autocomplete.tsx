@@ -170,11 +170,11 @@ export function Autocomplete(props: {
     const key = `${providerOptions().baseURL}|${message}`
     if (lastAgencyDiscoveryErrorKey() === key) return
     setLastAgencyDiscoveryErrorKey(key)
-    const serverUnavailable = /cannot reach Agency Swarm backend/i.test(message)
+    const serverUnavailable = /cannot reach agency-swarm backend/i.test(message)
     toast.show({
       variant: "error",
       message: serverUnavailable
-        ? `Agency server unavailable at ${providerOptions().baseURL}. Use /connect to select another local server.`
+        ? `agency-swarm server unavailable at ${providerOptions().baseURL}. Use /connect to select another local server.`
         : message,
       duration: 8000,
     })

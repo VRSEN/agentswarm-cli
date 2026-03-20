@@ -118,9 +118,9 @@ export function DialogAgent() {
           kind: "agency",
           agency: "__loading__",
         },
-        title: "Discovering Agency Swarm agents...",
+        title: "Discovering agency-swarm agents...",
         disabled: true,
-        category: "Agency Swarm",
+        category: "agency-swarm",
       })
       return result
     }
@@ -134,7 +134,7 @@ export function DialogAgent() {
         title: "Agency discovery failed",
         description: error,
         disabled: true,
-        category: "Agency Swarm",
+        category: "agency-swarm",
       })
       result.push({
         value: {
@@ -142,7 +142,7 @@ export function DialogAgent() {
         },
         title: "Open /connect",
         description: "Select a local server or update token",
-        category: "Agency Swarm",
+        category: "agency-swarm",
       })
       return result
     }
@@ -182,7 +182,7 @@ export function DialogAgent() {
         title: "No agencies discovered",
         description: `Check ${providerOptions().baseURL} and run \`agentswarm agencii agencies\``,
         disabled: true,
-        category: "Agency Swarm",
+        category: "agency-swarm",
       })
     }
 
@@ -220,7 +220,7 @@ export function DialogAgent() {
 
   return (
     <DialogSelect
-      title={agencySwarmEnabled() ? "Select Agency Swarm target" : "Select agent"}
+      title={agencySwarmEnabled() ? "Select agency-swarm target" : "Select agent"}
       current={current()}
       options={options()}
       onSelect={(option) => {
@@ -265,7 +265,7 @@ export function DialogAgent() {
           model: `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
           provider: {
             [AgencySwarmAdapter.PROVIDER_ID]: {
-              name: "Agency Swarm",
+              name: "agency-swarm",
               options: nextOptions,
             },
           },

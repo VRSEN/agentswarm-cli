@@ -273,7 +273,7 @@ export namespace AgencySwarmAdapter {
           if (!payload) {
             yield {
               type: "error",
-              error: "Received malformed messages payload from Agency Swarm stream",
+              error: "Received malformed messages payload from agency-swarm stream",
             }
             continue
           }
@@ -290,7 +290,7 @@ export namespace AgencySwarmAdapter {
         if (!payload) {
           yield {
             type: "error",
-            error: "Received malformed stream payload from Agency Swarm",
+            error: "Received malformed stream payload from agency-swarm",
           }
           continue
         }
@@ -580,17 +580,12 @@ export namespace AgencySwarmAdapter {
     return String(error)
   }
 
-  function normalizeConnectionError(input: {
-    action: string
-    url: string
-    error: unknown
-    timeoutMs?: number
-  }): Error {
+  function normalizeConnectionError(input: { action: string; url: string; error: unknown; timeoutMs?: number }): Error {
     const detail = toErrorMessage(input.error)
     const timeoutHint =
       input.timeoutMs && input.timeoutMs > 0 && /timeout/i.test(detail) ? ` after ${input.timeoutMs}ms` : ""
     const message =
-      `Failed to ${input.action}: cannot reach Agency Swarm backend at ${input.url}${timeoutHint}. ` +
+      `Failed to ${input.action}: cannot reach agency-swarm backend at ${input.url}${timeoutHint}. ` +
       `Start the FastAPI server and verify provider.options.baseURL.` +
       (detail ? ` (${detail})` : "")
     return new Error(message, { cause: input.error })
