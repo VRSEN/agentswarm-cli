@@ -146,7 +146,6 @@ let cli = yargs(hideBin(process.argv))
   .command(SessionCommand)
   .command(AgenciiCommand)
   .command(DbCommand)
-  .command(AgenciiCommand)
 
 if (Installation.isLocal()) {
   cli = cli.command(WorkspaceServeCommand)
