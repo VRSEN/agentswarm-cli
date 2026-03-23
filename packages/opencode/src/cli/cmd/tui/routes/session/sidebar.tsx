@@ -2,15 +2,12 @@ import { useSync } from "@tui/context/sync"
 import { createMemo, For, Show, Switch, Match } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useTheme } from "../../context/theme"
-import { Locale } from "@/util/locale"
-import path from "path"
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
-import { Global } from "@/global"
 import { Installation } from "@/installation"
-import { useKeybind } from "../../context/keybind"
 import { useDirectory } from "../../context/directory"
 import { useKV } from "../../context/kv"
 import { TodoItem } from "../../component/todo-item"
+import { useConnected } from "../../component/dialog-model"
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const sync = useSync()
@@ -62,10 +59,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
 
   const directory = useDirectory()
   const kv = useKV()
-
-  const hasProviders = createMemo(() =>
-    sync.data.provider.some((x) => x.id !== "opencode" || Object.values(x.models).some((y) => y.cost?.input !== 0)),
-  )
+  const connected = useConnected()
   const gettingStartedDismissed = createMemo(() => kv.get("dismissed_getting_started", false))
 
   return (
@@ -270,7 +264,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
         </scrollbox>
 
         <box flexShrink={0} gap={1} paddingTop={1}>
-          <Show when={!hasProviders() && !gettingStartedDismissed()}>
+          <Show when={!connected() && !gettingStartedDismissed()}>
             <box
               backgroundColor={theme.backgroundElement}
               paddingTop={1}
@@ -292,12 +286,10 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
                     ✕
                   </text>
                 </box>
-                <text fg={theme.textMuted}>Agency Code includes free models so you can start immediately.</text>
-                <text fg={theme.textMuted}>
-                  Connect from 75+ providers to use other models, including Claude, GPT, Gemini etc
-                </text>
+                <text fg={theme.textMuted}>Connect to a local agency-swarm server before sending prompts.</text>
+                <text fg={theme.textMuted}>Use /connect to choose the server, store a token, and refresh status.</text>
                 <box flexDirection="row" gap={1} justifyContent="space-between">
-                  <text fg={theme.text}>Connect provider</text>
+                  <text fg={theme.text}>Connect to agency-swarm</text>
                   <text fg={theme.textMuted}>/connect</text>
                 </box>
               </box>
@@ -308,11 +300,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
             <span style={{ fg: theme.text }}>{directory().split("/").at(-1)}</span>
           </text>
           <text fg={theme.textMuted}>
-            <span style={{ fg: theme.success }}>•</span> <b>Agency</b>
-            <span style={{ fg: theme.text }}>
-              <b>Code</b>
-            </span>{" "}
-            <span>{Installation.VERSION}</span>
+            <span style={{ fg: theme.success }}>•</span> <b>agent-swarm-cli</b> <span>{Installation.VERSION}</span>
           </text>
         </box>
       </box>

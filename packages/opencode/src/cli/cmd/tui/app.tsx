@@ -3,7 +3,7 @@ import { Clipboard } from "@tui/util/clipboard"
 import { Selection } from "@tui/util/selection"
 import { MouseButton, TextAttributes } from "@opentui/core"
 import { RouteProvider, useRoute } from "@tui/context/route"
-import { Switch, Match, createEffect, untrack, ErrorBoundary, createSignal, onMount, batch, Show, on } from "solid-js"
+import { Switch, Match, createEffect, ErrorBoundary, createSignal, onMount, batch, Show, on } from "solid-js"
 import { win32DisableProcessedInput, win32FlushInputBuffer, win32InstallCtrlCGuard } from "./win32"
 import { Installation } from "@/installation"
 import { Flag } from "@/flag/flag"
@@ -12,7 +12,7 @@ import { DialogProvider as DialogProviderList } from "@tui/component/dialog-prov
 import { SDKProvider, useSDK } from "@tui/context/sdk"
 import { SyncProvider, useSync } from "@tui/context/sync"
 import { LocalProvider, useLocal } from "@tui/context/local"
-import { DialogModel, useConnected } from "@tui/component/dialog-model"
+import { useConnected } from "@tui/component/dialog-model"
 import { DialogMcp } from "@tui/component/dialog-mcp"
 import { DialogStatus } from "@tui/component/dialog-status"
 import { DialogThemeList } from "@tui/component/dialog-theme-list"
@@ -27,7 +27,6 @@ import { Session } from "@tui/routes/session"
 import { PromptHistoryProvider } from "./component/prompt/history"
 import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
-import { DialogAlert } from "./ui/dialog-alert"
 import { ToastProvider, useToast } from "./ui/toast"
 import { ExitProvider, useExit } from "./context/exit"
 import { Session as SessionApi } from "@/session"
@@ -266,20 +265,20 @@ function App() {
     if (!terminalTitleEnabled() || Flag.OPENCODE_DISABLE_TERMINAL_TITLE) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("Agency Code")
+      renderer.setTerminalTitle("agent-swarm-cli")
       return
     }
 
     if (route.data.type === "session") {
       const session = sync.session.get(route.data.sessionID)
       if (!session || SessionApi.isDefaultTitle(session.title)) {
-        renderer.setTerminalTitle("Agency Code")
+        renderer.setTerminalTitle("agent-swarm-cli")
         return
       }
 
       // Truncate title to 40 chars max
       const title = session.title.length > 40 ? session.title.slice(0, 37) + "..." : session.title
-      renderer.setTerminalTitle(`Agency | ${title}`)
+      renderer.setTerminalTitle(`agent-swarm-cli | ${title}`)
     }
   })
 
@@ -348,10 +347,9 @@ function App() {
 
   createEffect(
     on(
-      () => sync.status === "complete" && sync.data.provider.length === 0,
-      (isEmpty, wasEmpty) => {
-        // only trigger when we transition into an empty-provider state
-        if (!isEmpty || wasEmpty) return
+      () => sync.status === "complete" && !connected(),
+      (disconnected, wasDisconnected) => {
+        if (!disconnected || wasDisconnected) return
         dialog.replace(() => <DialogProviderList />)
       },
     ),
@@ -395,59 +393,6 @@ function App() {
       },
     },
     {
-      title: "Switch model",
-      value: "model.list",
-      keybind: "model_list",
-      suggested: true,
-      category: "Agent",
-      slash: {
-        name: "models",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogModel />)
-      },
-    },
-    {
-      title: "Model cycle",
-      value: "model.cycle_recent",
-      keybind: "model_cycle_recent",
-      category: "Agent",
-      hidden: true,
-      onSelect: () => {
-        local.model.cycle(1)
-      },
-    },
-    {
-      title: "Model cycle reverse",
-      value: "model.cycle_recent_reverse",
-      keybind: "model_cycle_recent_reverse",
-      category: "Agent",
-      hidden: true,
-      onSelect: () => {
-        local.model.cycle(-1)
-      },
-    },
-    {
-      title: "Favorite cycle",
-      value: "model.cycle_favorite",
-      keybind: "model_cycle_favorite",
-      category: "Agent",
-      hidden: true,
-      onSelect: () => {
-        local.model.cycleFavorite(1)
-      },
-    },
-    {
-      title: "Favorite cycle reverse",
-      value: "model.cycle_favorite_reverse",
-      keybind: "model_cycle_favorite_reverse",
-      category: "Agent",
-      hidden: true,
-      onSelect: () => {
-        local.model.cycleFavorite(-1)
-      },
-    },
-    {
       title: "Switch agent",
       value: "agent.list",
       keybind: "agent_list",
@@ -481,16 +426,6 @@ function App() {
       },
     },
     {
-      title: "Variant cycle",
-      value: "variant.cycle",
-      keybind: "variant_cycle",
-      category: "Agent",
-      hidden: true,
-      onSelect: () => {
-        local.model.variant.cycle()
-      },
-    },
-    {
       title: "Agent cycle reverse",
       value: "agent.cycle.reverse",
       keybind: "agent_cycle_reverse",
@@ -501,7 +436,7 @@ function App() {
       },
     },
     {
-      title: "Connect provider",
+      title: "Connect to agency-swarm",
       value: "provider.connect",
       suggested: !connected(),
       slash: {
@@ -510,7 +445,7 @@ function App() {
       onSelect: () => {
         dialog.replace(() => <DialogProviderList />)
       },
-      category: "Provider",
+      category: "Agency",
     },
     {
       title: "View status",
@@ -560,7 +495,7 @@ function App() {
       title: "Open docs",
       value: "docs.open",
       onSelect: () => {
-        open("https://github.com/agency-ai-solutions/agency-code").catch(() => {})
+        open("https://agency-swarm.ai/core-framework/agencies/agent-swarm-cli").catch(() => {})
         dialog.clear()
       },
       category: "System",
@@ -659,20 +594,6 @@ function App() {
     },
   ])
 
-  createEffect(() => {
-    const currentModel = local.model.current()
-    if (!currentModel) return
-    if (currentModel.providerID === "openrouter" && !kv.get("openrouter_warning", false)) {
-      untrack(() => {
-        DialogAlert.show(
-          dialog,
-          "Warning",
-          "While openrouter is a convenient way to access LLMs your request will often be routed to subpar providers that do not work well in our testing.\n\nFor reliable access to models use dedicated provider keys instead of pooled routing.",
-        ).then(() => kv.set("openrouter_warning", true))
-      })
-    }
-  })
-
   sdk.event.on(TuiEvent.CommandExecute.type, (evt) => {
     command.trigger(evt.properties.command)
   })
@@ -729,7 +650,7 @@ function App() {
     toast.show({
       variant: "info",
       title: "Update Available",
-      message: `Agency Code v${evt.properties.version} is available. Run 'agency upgrade' to update manually.`,
+      message: `agent-swarm-cli v${evt.properties.version} is available. Run 'agentswarm upgrade' to update manually.`,
       duration: 10000,
     })
   })
@@ -784,7 +705,7 @@ function ErrorComponent(props: {
   })
   const [copied, setCopied] = createSignal(false)
 
-  const issueURL = new URL("https://github.com/agency-ai-solutions/agency-code/issues/new?template=bug-report.yml")
+  const issueURL = new URL("https://github.com/agency-ai-solutions/agent-swarm-cli/issues/new?template=bug-report.yml")
 
   // Choose safe fallback colors per mode since theme context may not be available
   const isLight = props.mode === "light"
@@ -806,7 +727,7 @@ function ErrorComponent(props: {
     )
   }
 
-  issueURL.searchParams.set("agency-code-version", Installation.VERSION)
+  issueURL.searchParams.set("agent-swarm-cli-version", Installation.VERSION)
 
   const copyIssueURL = () => {
     Clipboard.copy(issueURL.toString()).then(() => {

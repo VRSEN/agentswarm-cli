@@ -510,8 +510,8 @@ export const SessionRoutes = lazy(() =>
       validator(
         "json",
         z.object({
-          providerID: z.string(),
-          modelID: z.string(),
+          providerID: z.string().optional(),
+          modelID: z.string().optional(),
           auto: z.boolean().optional().default(false),
         }),
       ),
@@ -522,20 +522,23 @@ export const SessionRoutes = lazy(() =>
         await SessionRevert.cleanup(session)
         const msgs = await Session.messages({ sessionID })
         let currentAgent = await Agent.defaultAgent()
+        let currentModel: { providerID: string; modelID: string } | undefined
         for (let i = msgs.length - 1; i >= 0; i--) {
           const info = msgs[i].info
           if (info.role === "user") {
             currentAgent = info.agent || (await Agent.defaultAgent())
+            currentModel = info.model
             break
           }
         }
+        const model =
+          currentModel ??
+          (body.providerID && body.modelID ? { providerID: body.providerID, modelID: body.modelID } : undefined)
+        if (!model) throw new Error("No compaction model could be resolved for this session.")
         await SessionCompaction.create({
           sessionID,
           agent: currentAgent,
-          model: {
-            providerID: body.providerID,
-            modelID: body.modelID,
-          },
+          model,
           auto: body.auto,
         })
         await SessionPrompt.loop({ sessionID })
