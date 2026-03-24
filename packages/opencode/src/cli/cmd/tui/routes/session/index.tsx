@@ -58,6 +58,7 @@ import { TodoItem } from "../../component/todo-item"
 import { DialogMessage } from "./dialog-message"
 import type { PromptInfo } from "../../component/prompt/history"
 import { DialogConfirm } from "@tui/ui/dialog-confirm"
+import { queries, rows } from "@/agency-swarm/tui"
 import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
@@ -1978,6 +1979,7 @@ function WebSearch(props: ToolProps<any>) {
 }
 
 function FileSearch(props: ToolProps<any>) {
+  const { theme } = useTheme()
   const query = createMemo(() => {
     const input = props.input as Record<string, unknown>
     const firstQuery = input["queries"]
@@ -1989,23 +1991,57 @@ function FileSearch(props: ToolProps<any>) {
     if (typeof query === "string" && query.trim()) return query.trim()
     return undefined
   })
+  const list = createMemo(() => rows(props.output))
+  const title = createMemo(() => {
+    if (!query()) return "File Search"
+    return `File Search "${query()}"`
+  })
 
   return (
-    <InlineTool
-      icon="⌕"
-      pending="Searching files..."
-      complete={props.part.state.status !== "pending"}
-      part={props.part}
-    >
-      File Search
-      <Show when={query()}>{(value) => <> "{value()}"</>}</Show>
-    </InlineTool>
+    <Switch>
+      <Match when={props.part.state.status === "completed"}>
+        <BlockTool title={title()} part={props.part}>
+          <box gap={1}>
+            <Show
+              when={list().length}
+              fallback={
+                <text fg={theme.textMuted}>
+                  No results found
+                  <Show when={query()}>{(value) => <> for "{value()}"</>}</Show>
+                </text>
+              }
+            >
+              <For each={list().slice(0, 3)}>
+                {(row) => (
+                  <box flexDirection="column">
+                    <text fg={theme.text}>• {row.title}</text>
+                    <Show when={row.text}>
+                      <text fg={theme.textMuted}>{row.text}</text>
+                    </Show>
+                  </box>
+                )}
+              </For>
+            </Show>
+          </box>
+        </BlockTool>
+      </Match>
+      <Match when={true}>
+        <InlineTool
+          icon="⌕"
+          pending="Searching files..."
+          complete={props.part.state.status !== "pending"}
+          part={props.part}
+        >
+          {title()}
+        </InlineTool>
+      </Match>
+    </Switch>
   )
 }
 
 function WebSearchSpecial(props: ToolProps<any>) {
   const query = createMemo(() => {
-    const values = readSearchQueries(props.input as Record<string, unknown>)
+    const values = queries(props.input as Record<string, unknown>)
     if (values.length === 0) return
     return values.map((value) => `"${value}"`).join(", ")
   })
@@ -2013,7 +2049,7 @@ function WebSearchSpecial(props: ToolProps<any>) {
   return (
     <InlineTool icon="◈" pending="Searching web..." complete={props.part.state.status !== "pending"} part={props.part}>
       Web Search
-      <Show when={query()}>{(value) => <> "{value()}"</>}</Show>
+      <Show when={query()}>{(value) => <> {value()}</>}</Show>
     </InlineTool>
   )
 }
@@ -2134,38 +2170,6 @@ function readFirstString(input: Record<string, unknown>, keys: string[]) {
     const value = input[key]
     if (typeof value === "string" && value.trim()) return value.trim()
   }
-}
-
-function readSearchQueries(input: Record<string, unknown>) {
-  const values = new Set<string>()
-  const add = (value: unknown) => {
-    if (typeof value !== "string") return
-    const text = value.trim()
-    if (!text) return
-    const lower = text.toLowerCase()
-    if (lower === "none" || lower === "null" || lower === "undefined") return
-    values.add(text)
-  }
-  const addMany = (value: unknown) => {
-    if (!Array.isArray(value)) return
-    value.forEach(add)
-  }
-  addMany(input["queries"])
-  add(input["query"])
-  add(input["search_query"])
-  add(input["search_prompt"])
-  const action = input["action"]
-  if (typeof action === "object" && action !== null) {
-    const actionInput = action as Record<string, unknown>
-    addMany(actionInput["queries"])
-    add(actionInput["query"])
-    add(actionInput["search_query"])
-    add(actionInput["search_prompt"])
-  }
-  if (typeof action === "string") {
-    add(action)
-  }
-  return [...values]
 }
 
 function resolveSpecialTool(tool: string): SpecialTool | undefined {
