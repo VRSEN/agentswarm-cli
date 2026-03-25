@@ -10,10 +10,10 @@ import { Log } from "../util/log"
 import { NamedError } from "@opencode-ai/util/error"
 import z from "zod"
 import path from "path"
-import { readFileSync, readdirSync, existsSync } from "fs"
 import * as schema from "./schema"
+import { read } from "./migration"
 
-declare const OPENCODE_MIGRATIONS: { sql: string; timestamp: number }[] | undefined
+declare const OPENCODE_MIGRATIONS: { sql: string; timestamp: number; name: string }[] | undefined
 
 export const NotFoundError = NamedError.create(
   "NotFoundError",
@@ -31,42 +31,8 @@ export namespace Database {
 
   type Client = SQLiteBunDatabase<Schema>
 
-  type Journal = { sql: string; timestamp: number }[]
-
   const state = {
     sqlite: undefined as BunDatabase | undefined,
-  }
-
-  function time(tag: string) {
-    const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(tag)
-    if (!match) return 0
-    return Date.UTC(
-      Number(match[1]),
-      Number(match[2]) - 1,
-      Number(match[3]),
-      Number(match[4]),
-      Number(match[5]),
-      Number(match[6]),
-    )
-  }
-
-  function migrations(dir: string): Journal {
-    const dirs = readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-
-    const sql = dirs
-      .map((name) => {
-        const file = path.join(dir, name, "migration.sql")
-        if (!existsSync(file)) return
-        return {
-          sql: readFileSync(file, "utf-8"),
-          timestamp: time(name),
-        }
-      })
-      .filter(Boolean) as Journal
-
-    return sql.sort((a, b) => a.timestamp - b.timestamp)
   }
 
   export const Client = lazy(() => {
@@ -88,7 +54,7 @@ export namespace Database {
     const entries =
       typeof OPENCODE_MIGRATIONS !== "undefined"
         ? OPENCODE_MIGRATIONS
-        : migrations(path.join(import.meta.dirname, "../../migration"))
+        : read(path.join(import.meta.dirname, "../../migration"))
     if (entries.length > 0) {
       log.info("applying migrations", {
         count: entries.length,

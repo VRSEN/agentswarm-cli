@@ -2,6 +2,8 @@
 
 Agent Swarm CLI is the terminal client for Agent Swarm.
 
+If you use the Python framework, `agency.terminal_demo()` provisions this binary automatically. You do not need a separate npm install for that path.
+
 ## Install
 
 ```bash
@@ -27,4 +29,4 @@ This package installs a platform-specific binary package behind the scenes. That
 ## Source
 
 - Framework: [VRSEN/agency-swarm](https://github.com/VRSEN/agency-swarm)
-- CLI fork: private OpenCode-based Agent Swarm fork
+- CLI: [VRSEN/agentswarm-cli](https://github.com/VRSEN/agentswarm-cli)

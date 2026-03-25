@@ -777,8 +777,8 @@ export namespace Provider {
   }
 
   function createAgencySwarmProvider(): Info {
-    const modelID = ModelID.make(AgencySwarmAdapter.DEFAULT_MODEL_ID)
-    const providerID = ProviderID.make(AgencySwarmAdapter.PROVIDER_ID)
+    const modelID = AgencySwarmAdapter.DEFAULT_MODEL_ID
+    const providerID = AgencySwarmAdapter.PROVIDER_ID
     return {
       id: providerID,
       name: "Agency Swarm",

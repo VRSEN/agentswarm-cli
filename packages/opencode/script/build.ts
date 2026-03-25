@@ -5,6 +5,7 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import solidPlugin from "@opentui/solid/bun-plugin"
+import { read } from "../src/storage/migration"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -28,34 +29,7 @@ await Bun.write(
 )
 console.log("Generated models-snapshot.ts")
 
-// Load migrations from migration directories
-const migrationDirs = (
-  await fs.promises.readdir(path.join(dir, "migration"), {
-    withFileTypes: true,
-  })
-)
-  .filter((entry) => entry.isDirectory() && /^\d{4}\d{2}\d{2}\d{2}\d{2}\d{2}/.test(entry.name))
-  .map((entry) => entry.name)
-  .sort()
-
-const migrations = await Promise.all(
-  migrationDirs.map(async (name) => {
-    const file = path.join(dir, "migration", name, "migration.sql")
-    const sql = await Bun.file(file).text()
-    const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(name)
-    const timestamp = match
-      ? Date.UTC(
-          Number(match[1]),
-          Number(match[2]) - 1,
-          Number(match[3]),
-          Number(match[4]),
-          Number(match[5]),
-          Number(match[6]),
-        )
-      : 0
-    return { sql, timestamp }
-  }),
-)
+const migrations = read(path.join(dir, "migration"))
 console.log(`Loaded ${migrations.length} migrations`)
 
 const singleFlag = process.argv.includes("--single")
