@@ -3173,8 +3173,8 @@ export type SessionDiffResponse = SessionDiffResponses[keyof SessionDiffResponse
 
 export type SessionSummarizeData = {
   body?: {
-    providerID: string
-    modelID: string
+    providerID?: string
+    modelID?: string
     auto?: boolean
   }
   path: {
