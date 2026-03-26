@@ -2,6 +2,10 @@ import { dlopen, ptr } from "bun:ffi"
 
 const STD_INPUT_HANDLE = -10
 const ENABLE_PROCESSED_INPUT = 0x0001
+const ENABLE_MOUSE_INPUT = 0x0010
+const ENABLE_QUICK_EDIT_MODE = 0x0040
+const ENABLE_EXTENDED_FLAGS = 0x0080
+const ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200
 
 const kernel = () =>
   dlopen("kernel32.dll", {
@@ -23,8 +27,18 @@ function load() {
   }
 }
 
+export function win32SanitizeInputMode(mode: number) {
+  return (
+    (mode | ENABLE_EXTENDED_FLAGS) &
+    ~ENABLE_PROCESSED_INPUT &
+    ~ENABLE_MOUSE_INPUT &
+    ~ENABLE_QUICK_EDIT_MODE &
+    ~ENABLE_VIRTUAL_TERMINAL_INPUT
+  )
+}
+
 /**
- * Clear ENABLE_PROCESSED_INPUT on the console stdin handle.
+ * Disable Windows console input features that interfere with the TUI.
  */
 export function win32DisableProcessedInput() {
   if (process.platform !== "win32") return
@@ -36,8 +50,9 @@ export function win32DisableProcessedInput() {
   if (k32!.symbols.GetConsoleMode(handle, ptr(buf)) === 0) return
 
   const mode = buf[0]!
-  if ((mode & ENABLE_PROCESSED_INPUT) === 0) return
-  k32!.symbols.SetConsoleMode(handle, mode & ~ENABLE_PROCESSED_INPUT)
+  const next = win32SanitizeInputMode(mode)
+  if (mode === next) return
+  k32!.symbols.SetConsoleMode(handle, next)
 }
 
 /**
@@ -55,7 +70,7 @@ export function win32FlushInputBuffer() {
 let unhook: (() => void) | undefined
 
 /**
- * Keep ENABLE_PROCESSED_INPUT disabled.
+ * Keep the console input mode sanitized for the TUI.
  *
  * On Windows, Ctrl+C becomes a CTRL_C_EVENT (instead of stdin input) when
  * ENABLE_PROCESSED_INPUT is set. Various runtimes can re-apply console modes
@@ -83,8 +98,9 @@ export function win32InstallCtrlCGuard() {
   const enforce = () => {
     if (k32!.symbols.GetConsoleMode(handle, ptr(buf)) === 0) return
     const mode = buf[0]!
-    if ((mode & ENABLE_PROCESSED_INPUT) === 0) return
-    k32!.symbols.SetConsoleMode(handle, mode & ~ENABLE_PROCESSED_INPUT)
+    const next = win32SanitizeInputMode(mode)
+    if (mode === next) return
+    k32!.symbols.SetConsoleMode(handle, next)
   }
 
   // Some runtimes can re-apply console modes on the next tick; enforce twice.
