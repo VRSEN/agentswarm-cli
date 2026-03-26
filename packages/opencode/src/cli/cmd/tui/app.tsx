@@ -116,12 +116,14 @@ export function tui(input: {
   return new Promise<void>(async (resolve) => {
     const unguard = win32InstallCtrlCGuard()
     win32DisableProcessedInput()
+    win32FlushInputBuffer()
 
     const mode = await getTerminalBackgroundColor()
 
     // Re-clear after getTerminalBackgroundColor() — setRawMode(false) restores
     // the original console mode which re-enables ENABLE_PROCESSED_INPUT.
     win32DisableProcessedInput()
+    win32FlushInputBuffer()
 
     const onExit = async () => {
       unguard?.()

@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
-import { ProviderID } from "../../src/provider/schema"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
+import { Identifier } from "../../src/id/id"
+import { Instance } from "../../src/project/instance"
+import { Session } from "../../src/session"
 import { SessionAgencySwarm } from "../../src/session/agency-swarm"
+import { tmpdir } from "../fixture/fixture"
 
 describe("session.agency-swarm", () => {
   const originalDiscover = AgencySwarmAdapter.discover
@@ -144,7 +147,7 @@ describe("session.agency-swarm", () => {
 
   test("optionsFromProvider maps supported FastAPI request options", () => {
     const options = SessionAgencySwarm.optionsFromProvider({
-      id: ProviderID.make("agency-swarm"),
+      id: "agency-swarm" as any,
       name: "Agency Swarm",
       source: "config",
       env: [],
@@ -179,7 +182,7 @@ describe("session.agency-swarm", () => {
 
   test("optionsFromProvider prefers auth key token over config token", () => {
     const options = SessionAgencySwarm.optionsFromProvider({
-      id: ProviderID.make("agency-swarm"),
+      id: "agency-swarm" as any,
       name: "Agency Swarm",
       source: "config",
       env: [],
@@ -263,7 +266,7 @@ describe("session.agency-swarm", () => {
 
   test("stream maps responses text, reasoning, and tool lifecycle into processor stream parts", async () => {
     const { appended, runs } = mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* () {
+    AgencySwarmAdapter.streamRun = async function* () {
       yield { type: "meta", runID: "run_1" }
       yield {
         type: "data",
@@ -349,7 +352,7 @@ describe("session.agency-swarm", () => {
               id: "fc_1",
               call_id: "call_1",
               name: "lookup",
-              arguments: "{\"query\":\"test\"}",
+              arguments: '{"query":"test"}',
             },
           },
         },
@@ -366,7 +369,7 @@ describe("session.agency-swarm", () => {
               id: "fc_1",
               call_id: "call_1",
               name: "lookup",
-              arguments: "{\"query\":\"test\"}",
+              arguments: '{"query":"test"}',
             },
           },
         },
@@ -385,7 +388,7 @@ describe("session.agency-swarm", () => {
         },
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -424,7 +427,7 @@ describe("session.agency-swarm", () => {
 
   test("stream maps non-function responses tool calls from response.*_call.* events", async () => {
     mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* () {
+    AgencySwarmAdapter.streamRun = async function* () {
       yield {
         type: "data",
         payload: {
@@ -481,7 +484,7 @@ describe("session.agency-swarm", () => {
         },
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -506,10 +509,10 @@ describe("session.agency-swarm", () => {
         agents: ["UserSupportAgent", "MathAgent"],
       },
     })) as typeof AgencySwarmAdapter.getMetadata
-    AgencySwarmAdapter.streamRun = (async function* (args) {
+    AgencySwarmAdapter.streamRun = async function* (args) {
       sentRecipient = args.recipientAgent ?? undefined
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     input.options.recipientAgent = "ExampleAgent2"
@@ -540,10 +543,10 @@ describe("session.agency-swarm", () => {
         },
       ],
     })) as typeof AgencySwarmAdapter.getMetadata
-    AgencySwarmAdapter.streamRun = (async function* (args) {
+    AgencySwarmAdapter.streamRun = async function* (args) {
       sentRecipient = args.recipientAgent ?? undefined
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     input.options.recipientAgent = "UserSupportAgent"
@@ -571,10 +574,10 @@ describe("session.agency-swarm", () => {
         },
       ],
     })) as typeof AgencySwarmAdapter.getMetadata
-    AgencySwarmAdapter.streamRun = (async function* (args) {
+    AgencySwarmAdapter.streamRun = async function* (args) {
       sentRecipient = args.recipientAgent ?? undefined
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     input.options.recipientAgent = "MathAgent"
@@ -597,10 +600,10 @@ describe("session.agency-swarm", () => {
         agents: ["MathAgent"],
       },
     })) as typeof AgencySwarmAdapter.getMetadata
-    AgencySwarmAdapter.streamRun = (async function* (args) {
+    AgencySwarmAdapter.streamRun = async function* (args) {
       sentRecipient = args.recipientAgent ?? undefined
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     input.options.recipientAgent = "MathAgent"
@@ -615,9 +618,206 @@ describe("session.agency-swarm", () => {
     expect(sentRecipient).toBe("MathAgent")
   })
 
+  test("stream persists handed off recipient from session history", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        enabled_providers: ["agency-swarm"],
+        provider: {
+          "agency-swarm": {},
+        },
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        mockHistory()
+        let sentRecipient: string | undefined
+        AgencySwarmAdapter.getMetadata = (async () => ({
+          metadata: {
+            agents: ["support_agent", "MathAgent"],
+          },
+          nodes: [
+            {
+              id: "support_agent",
+              type: "agent",
+              data: {
+                label: "UserSupportAgent",
+              },
+            },
+          ],
+        })) as typeof AgencySwarmAdapter.getMetadata
+        AgencySwarmAdapter.streamRun = async function* (args) {
+          sentRecipient = args.recipientAgent ?? undefined
+          yield { type: "end" }
+        } as typeof AgencySwarmAdapter.streamRun
+
+        const session = await Session.create({ title: "handoff recipient" })
+        const user = await Session.updateMessage({
+          id: Identifier.ascending("message"),
+          role: "user",
+          sessionID: session.id,
+          agent: "build",
+          model: {
+            providerID: "agency-swarm",
+            modelID: "default",
+          },
+          time: {
+            created: Date.now(),
+          },
+        })
+        await Session.updatePart({
+          id: Identifier.ascending("part"),
+          messageID: user.id,
+          sessionID: session.id,
+          type: "text",
+          text: "hello",
+        })
+        await Session.updateMessage({
+          id: Identifier.ascending("message"),
+          role: "assistant",
+          sessionID: session.id,
+          parentID: user.id,
+          modelID: "default",
+          providerID: "agency-swarm",
+          mode: "UserSupportAgent",
+          agent: "UserSupportAgent",
+          path: {
+            cwd: "/",
+            root: "/",
+          },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: {
+            created: Date.now(),
+            completed: Date.now(),
+          },
+        } as any)
+
+        const { input } = helper()
+        input.sessionID = session.id
+        input.assistantMessage.sessionID = session.id
+        input.userMessage.info.id = Identifier.ascending("message")
+        input.userMessage.parts = [{ type: "text", text: "follow up", ignored: false }] as any
+        const stream = await SessionAgencySwarm.stream(input)
+        for await (const _ of stream.fullStream) {
+        }
+
+        expect(sentRecipient).toBe("support_agent")
+      },
+    })
+  })
+
+  test("stream prefers explicit mention over persisted handed off recipient", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        enabled_providers: ["agency-swarm"],
+        provider: {
+          "agency-swarm": {},
+        },
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        mockHistory()
+        let sentRecipient: string | undefined
+        AgencySwarmAdapter.getMetadata = (async () => ({
+          metadata: {
+            agents: ["support_agent", "MathAgent"],
+          },
+          nodes: [
+            {
+              id: "support_agent",
+              type: "agent",
+              data: {
+                label: "UserSupportAgent",
+              },
+            },
+          ],
+        })) as typeof AgencySwarmAdapter.getMetadata
+        AgencySwarmAdapter.streamRun = async function* (args) {
+          sentRecipient = args.recipientAgent ?? undefined
+          yield { type: "end" }
+        } as typeof AgencySwarmAdapter.streamRun
+
+        const session = await Session.create({ title: "handoff mention override" })
+        const user = await Session.updateMessage({
+          id: Identifier.ascending("message"),
+          role: "user",
+          sessionID: session.id,
+          agent: "build",
+          model: {
+            providerID: "agency-swarm",
+            modelID: "default",
+          },
+          time: {
+            created: Date.now(),
+          },
+        })
+        await Session.updatePart({
+          id: Identifier.ascending("part"),
+          messageID: user.id,
+          sessionID: session.id,
+          type: "text",
+          text: "hello",
+        })
+        await Session.updateMessage({
+          id: Identifier.ascending("message"),
+          role: "assistant",
+          sessionID: session.id,
+          parentID: user.id,
+          modelID: "default",
+          providerID: "agency-swarm",
+          mode: "UserSupportAgent",
+          agent: "UserSupportAgent",
+          path: {
+            cwd: "/",
+            root: "/",
+          },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: {
+            created: Date.now(),
+            completed: Date.now(),
+          },
+        } as any)
+
+        const { input } = helper()
+        input.sessionID = session.id
+        input.assistantMessage.sessionID = session.id
+        input.userMessage.info.id = Identifier.ascending("message")
+        input.userMessage.parts = [
+          { type: "text", text: "follow up", ignored: false },
+          { type: "agent", name: "MathAgent" },
+        ] as any
+        const stream = await SessionAgencySwarm.stream(input)
+        for await (const _ of stream.fullStream) {
+        }
+
+        expect(sentRecipient).toBe("MathAgent")
+      },
+    })
+  })
+
   test("stream reconciles non-function tool input from response.output_item.done", async () => {
     mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* () {
+    AgencySwarmAdapter.streamRun = async function* () {
       yield {
         type: "data",
         payload: {
@@ -652,7 +852,7 @@ describe("session.agency-swarm", () => {
         },
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -668,7 +868,7 @@ describe("session.agency-swarm", () => {
 
   test("stream reconciles web search input from response.output_item.done", async () => {
     mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* () {
+    AgencySwarmAdapter.streamRun = async function* () {
       yield {
         type: "data",
         payload: {
@@ -707,7 +907,7 @@ describe("session.agency-swarm", () => {
         },
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -739,13 +939,13 @@ describe("session.agency-swarm", () => {
         notFound: false,
       }
     }) as typeof AgencySwarmAdapter.cancel
-    AgencySwarmAdapter.streamRun = (async function* (args) {
+    AgencySwarmAdapter.streamRun = async function* (args) {
       yield { type: "meta", runID: "run_current" }
       if (args.abort?.aborted) {
         throw new DOMException("Aborted", "AbortError")
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input, triggerCancel } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -762,7 +962,7 @@ describe("session.agency-swarm", () => {
 
   test("stream marks unfinished tool calls as error instead of tool-calls", async () => {
     mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* () {
+    AgencySwarmAdapter.streamRun = async function* () {
       yield {
         type: "data",
         payload: {
@@ -775,7 +975,7 @@ describe("session.agency-swarm", () => {
               id: "fc_unfinished",
               call_id: "call_unfinished",
               name: "lookup",
-              arguments: "{\"query\":\"test\"}",
+              arguments: '{"query":"test"}',
             },
           },
         },
@@ -792,13 +992,13 @@ describe("session.agency-swarm", () => {
               id: "fc_unfinished",
               call_id: "call_unfinished",
               name: "lookup",
-              arguments: "{\"query\":\"test\"}",
+              arguments: '{"query":"test"}',
             },
           },
         },
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -825,13 +1025,13 @@ describe("session.agency-swarm", () => {
         notFound: false,
       }
     }) as typeof AgencySwarmAdapter.cancel
-    AgencySwarmAdapter.streamRun = (async function* (args) {
+    AgencySwarmAdapter.streamRun = async function* (args) {
       yield { type: "meta", runID: "run_cancel" }
       if (args.abort?.aborted) {
         throw new DOMException("Aborted", "AbortError")
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input, triggerCancel } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -848,7 +1048,7 @@ describe("session.agency-swarm", () => {
 
   test("stream treats external abort as cancelled without error event", async () => {
     mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* (args) {
+    AgencySwarmAdapter.streamRun = async function* (args) {
       await new Promise<void>((resolve, reject) => {
         if (args.abort?.aborted) {
           reject(new DOMException("Aborted", "AbortError"))
@@ -864,7 +1064,7 @@ describe("session.agency-swarm", () => {
         setTimeout(resolve, 20)
       })
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input, triggerAbort } = helper()
     triggerAbort()
@@ -881,7 +1081,7 @@ describe("session.agency-swarm", () => {
 
   test("stream does not duplicate text when message_output_created follows output_text events", async () => {
     mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* () {
+    AgencySwarmAdapter.streamRun = async function* () {
       yield {
         type: "data",
         payload: {
@@ -932,7 +1132,7 @@ describe("session.agency-swarm", () => {
         },
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -948,7 +1148,7 @@ describe("session.agency-swarm", () => {
 
   test("stream does not duplicate reasoning when reasoning_item_created follows summary events", async () => {
     mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* () {
+    AgencySwarmAdapter.streamRun = async function* () {
       yield {
         type: "data",
         payload: {
@@ -1001,7 +1201,7 @@ describe("session.agency-swarm", () => {
         },
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -1015,7 +1215,7 @@ describe("session.agency-swarm", () => {
 
   test("stream closes prior text part before switching content_index", async () => {
     mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* () {
+    AgencySwarmAdapter.streamRun = async function* () {
       yield {
         type: "data",
         payload: {
@@ -1091,7 +1291,7 @@ describe("session.agency-swarm", () => {
         },
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -1116,7 +1316,7 @@ describe("session.agency-swarm", () => {
 
   test("stream preserves teardown before surfacing adapter error", async () => {
     mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* () {
+    AgencySwarmAdapter.streamRun = async function* () {
       yield {
         type: "data",
         payload: {
@@ -1145,7 +1345,7 @@ describe("session.agency-swarm", () => {
         error: "stream failed",
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -1154,14 +1354,21 @@ describe("session.agency-swarm", () => {
       events.push(event)
     }
 
-    expect(events.map((event) => event.type)).toEqual(["start", "start-step", "text-start", "text-delta", "text-end", "error"])
+    expect(events.map((event) => event.type)).toEqual([
+      "start",
+      "start-step",
+      "text-start",
+      "text-delta",
+      "text-end",
+      "error",
+    ])
     expect(events.some((event) => event.type === "finish-step")).toBeFalse()
     expect(events.some((event) => event.type === "finish")).toBeFalse()
   })
 
   test("stream preserves teardown when raw_response_event emits type=error", async () => {
     mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* () {
+    AgencySwarmAdapter.streamRun = async function* () {
       yield {
         type: "data",
         payload: {
@@ -1196,7 +1403,7 @@ describe("session.agency-swarm", () => {
         },
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -1205,14 +1412,21 @@ describe("session.agency-swarm", () => {
       events.push(event)
     }
 
-    expect(events.map((event) => event.type)).toEqual(["start", "start-step", "text-start", "text-delta", "text-end", "error"])
+    expect(events.map((event) => event.type)).toEqual([
+      "start",
+      "start-step",
+      "text-start",
+      "text-delta",
+      "text-end",
+      "error",
+    ])
     expect(events.some((event) => event.type === "finish-step")).toBeFalse()
     expect(events.some((event) => event.type === "finish")).toBeFalse()
   })
 
   test("stream does not complete function_call on response.function_call.completed before output", async () => {
     mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* () {
+    AgencySwarmAdapter.streamRun = async function* () {
       yield {
         type: "data",
         payload: {
@@ -1225,7 +1439,7 @@ describe("session.agency-swarm", () => {
               id: "fc_done",
               call_id: "call_done",
               name: "lookup",
-              arguments: "{\"query\":\"test\"}",
+              arguments: '{"query":"test"}',
             },
           },
         },
@@ -1258,7 +1472,7 @@ describe("session.agency-swarm", () => {
         },
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -1274,7 +1488,7 @@ describe("session.agency-swarm", () => {
 
   test("stream uses final function_call arguments from response.output_item.done before tool-call", async () => {
     mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* () {
+    AgencySwarmAdapter.streamRun = async function* () {
       yield {
         type: "data",
         payload: {
@@ -1304,7 +1518,7 @@ describe("session.agency-swarm", () => {
               id: "fc_args",
               call_id: "call_args",
               name: "lookup",
-              arguments: "{\"query\":\"from_done\"}",
+              arguments: '{"query":"from_done"}',
             },
           },
         },
@@ -1326,7 +1540,7 @@ describe("session.agency-swarm", () => {
         },
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
@@ -1341,7 +1555,7 @@ describe("session.agency-swarm", () => {
 
   test("stream does not reopen reasoning parts on output_item.done after summary done", async () => {
     mockHistory()
-    AgencySwarmAdapter.streamRun = (async function* () {
+    AgencySwarmAdapter.streamRun = async function* () {
       yield {
         type: "data",
         payload: {
@@ -1391,7 +1605,7 @@ describe("session.agency-swarm", () => {
         },
       }
       yield { type: "end" }
-    }) as typeof AgencySwarmAdapter.streamRun
+    } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)

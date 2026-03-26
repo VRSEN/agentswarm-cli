@@ -1,7 +1,7 @@
 import { cmd } from "../cmd"
 import { UI } from "@/cli/ui"
 import { tui } from "./app"
-import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
+import { win32DisableProcessedInput, win32FlushInputBuffer, win32InstallCtrlCGuard } from "./win32"
 import { TuiConfig } from "@/config/tui"
 import { Instance } from "@/project/instance"
 import { existsSync } from "fs"
@@ -43,6 +43,7 @@ export const AttachCommand = cmd({
     const unguard = win32InstallCtrlCGuard()
     try {
       win32DisableProcessedInput()
+      win32FlushInputBuffer()
 
       if (args.fork && !args.continue && !args.session) {
         UI.error("--fork requires --continue or --session")

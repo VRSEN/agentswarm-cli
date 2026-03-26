@@ -1384,7 +1384,8 @@ export namespace SessionAgencySwarm {
     mentionedRecipient?: string
     configuredRecipient?: string
   }): Promise<string | undefined> {
-    const candidates = [input.mentionedRecipient, input.configuredRecipient].filter(
+    const sessionRecipient = await resolveSessionRecipient(input.sessionID)
+    const candidates = [input.mentionedRecipient, sessionRecipient, input.configuredRecipient].filter(
       (value, index, array): value is string => !!value && array.indexOf(value) === index,
     )
     if (candidates.length === 0) {
@@ -1423,16 +1424,39 @@ export namespace SessionAgencySwarm {
     for (const candidate of candidates) {
       const resolved = recipientMap.get(candidate)
       if (resolved) return resolved
+      const source =
+        candidate === input.mentionedRecipient ? "message" : candidate === sessionRecipient ? "session" : "config"
       log.warn("ignoring stale recipient agent candidate", {
         sessionID: input.sessionID,
         agency: input.agency,
         candidate,
-        source: candidate === input.mentionedRecipient ? "message" : "config",
+        source,
         availableAgents,
       })
     }
 
     return undefined
+  }
+
+  async function resolveSessionRecipient(sessionID: string) {
+    try {
+      const messages = await Session.messages({ sessionID })
+      const last = messages.findLast((item) => {
+        if (item.info.role !== "assistant") return false
+        if (item.info.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
+        if (item.info.summary) return false
+        return !!item.info.agent
+      })
+      if (!last) return
+      if (last.info.role !== "assistant") return
+      return last.info.agent
+    } catch (error) {
+      log.warn("unable to load session recipient; skipping recipient override", {
+        sessionID,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return undefined
+    }
   }
 
   function extractRecipientMap(metadata: AgencySwarmAdapter.AgencyMetadata): Map<string, string> {
