@@ -90,6 +90,33 @@ For the current product workflow, use the `agency-swarm` docs:
 - [Running an Agency](https://agency-swarm.ai/core-framework/agencies/running-agency)
 - [API Reference](https://agency-swarm.ai/references/api)
 
+### Local Development
+
+Run the TUI fork locally:
+
+```bash
+bun install
+bun dev .
+```
+
+For the normal product path, develop against `agency-swarm` and let Python own the launch flow:
+
+```bash
+cd ../agency-swarm
+uv sync
+uv run python examples/interactive/terminal_demo.py
+```
+
+To work on the TUI against a manually started backend:
+
+```bash
+cd ../agency-swarm
+uv sync
+uv run python examples/fastapi_integration/server.py
+```
+
+Then start this repo with `bun dev .` and use `/connect` to attach to `http://127.0.0.1:8080`.
+
 ### Contributing
 
 If you're contributing to this fork, keep Agency Swarm-specific behavior under `packages/opencode/src/agency-swarm/` where possible and keep shared OpenCode contracts syncable with upstream.
