@@ -18,7 +18,7 @@ function run(target) {
   process.exit(code)
 }
 
-const envPath = process.env.AGENCY_BIN_PATH || process.env.OPENCODE_BIN_PATH
+const envPath = process.env.AGENCY_BIN_PATH
 if (envPath) {
   run(envPath)
 }
@@ -27,7 +27,7 @@ const scriptPath = fs.realpathSync(fileURLToPath(import.meta.url))
 const scriptDir = path.dirname(scriptPath)
 
 //
-const cached = path.join(scriptDir, ".opencode")
+const cached = path.join(scriptDir, ".agentswarm")
 if (fs.existsSync(cached)) {
   run(cached)
 }
