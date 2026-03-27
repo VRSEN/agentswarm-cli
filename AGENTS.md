@@ -3,6 +3,7 @@
 - The default branch in this repo is `dev`.
 - Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
 - Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
+- Agents must never merge pull requests. Only the user decides when a PR is merged. Agents may open, update, and validate PRs, but must stop short of merging unless the user explicitly changes this rule.
 - When validation or tooling needs credentials, inspect the repo root `.env` before treating them as missing or escalating.
 - Hard-cut policy: prefer one canonical current-state path. Do not add compatibility bridges, legacy aliases, fallbacks, dual behavior, or migration glue unless the user explicitly requests them. If a temporary exception is unavoidable, state why, why the main path is insufficient, and the deletion trigger in the same diff.
 
