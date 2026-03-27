@@ -34,6 +34,7 @@ import path from "path"
 import { Global } from "./global"
 import { JsonMigration } from "./storage/json-migration"
 import { Database } from "./storage/db"
+import { AgencyProduct } from "./agency-swarm/product"
 
 process.on("unhandledRejection", (e) => {
   Log.Default.error("rejection", {
@@ -49,7 +50,7 @@ process.on("uncaughtException", (e) => {
 
 let cli = yargs(hideBin(process.argv))
   .parserConfiguration({ "populate--": true })
-  .scriptName("agentswarm")
+  .scriptName(AgencyProduct.cmd)
   .wrap(100)
   .help("help", "show help")
   .alias("help", "h")
@@ -80,7 +81,7 @@ let cli = yargs(hideBin(process.argv))
     process.env.AGENCY_CODE = "1"
     process.env.OPENCODE_PID = String(process.pid)
 
-    Log.Default.info("agentswarm-cli", {
+    Log.Default.info(AgencyProduct.name, {
       version: Installation.VERSION,
       args: process.argv.slice(2),
     })
