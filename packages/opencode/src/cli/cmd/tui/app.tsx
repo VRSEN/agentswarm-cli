@@ -39,6 +39,7 @@ import { writeHeapSnapshot } from "v8"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { TuiConfigProvider } from "./context/tui-config"
 import { TuiConfig } from "@/config/tui"
+import { AgencyProduct } from "@/agency-swarm/product"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -267,20 +268,20 @@ function App() {
     if (!terminalTitleEnabled() || Flag.OPENCODE_DISABLE_TERMINAL_TITLE) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("agent-swarm-cli")
+      renderer.setTerminalTitle(AgencyProduct.name)
       return
     }
 
     if (route.data.type === "session") {
       const session = sync.session.get(route.data.sessionID)
       if (!session || SessionApi.isDefaultTitle(session.title)) {
-        renderer.setTerminalTitle("agent-swarm-cli")
+        renderer.setTerminalTitle(AgencyProduct.name)
         return
       }
 
       // Truncate title to 40 chars max
       const title = session.title.length > 40 ? session.title.slice(0, 37) + "..." : session.title
-      renderer.setTerminalTitle(`agent-swarm-cli | ${title}`)
+      renderer.setTerminalTitle(`${AgencyProduct.name} | ${title}`)
     }
   })
 
@@ -438,7 +439,7 @@ function App() {
       },
     },
     {
-      title: "Connect to agency-swarm",
+      title: AgencyProduct.connect,
       value: "provider.connect",
       suggested: !connected(),
       slash: {
@@ -497,7 +498,7 @@ function App() {
       title: "Open docs",
       value: "docs.open",
       onSelect: () => {
-        open("https://agency-swarm.ai/core-framework/agencies/agent-swarm-cli").catch(() => {})
+        open(AgencyProduct.docs).catch(() => {})
         dialog.clear()
       },
       category: "System",
@@ -652,7 +653,7 @@ function App() {
     toast.show({
       variant: "info",
       title: "Update Available",
-      message: `agent-swarm-cli v${evt.properties.version} is available. Run 'agentswarm upgrade' to update manually.`,
+      message: `${AgencyProduct.name} v${evt.properties.version} is available. Run '${AgencyProduct.cmd} upgrade' to update manually.`,
       duration: 10000,
     })
   })
@@ -707,7 +708,7 @@ function ErrorComponent(props: {
   })
   const [copied, setCopied] = createSignal(false)
 
-  const issueURL = new URL("https://github.com/agency-ai-solutions/agent-swarm-cli/issues/new?template=bug-report.yml")
+  const issueURL = new URL(AgencyProduct.issue)
 
   // Choose safe fallback colors per mode since theme context may not be available
   const isLight = props.mode === "light"
@@ -729,7 +730,7 @@ function ErrorComponent(props: {
     )
   }
 
-  issueURL.searchParams.set("agent-swarm-cli-version", Installation.VERSION)
+  issueURL.searchParams.set(`${AgencyProduct.name}-version`, Installation.VERSION)
 
   const copyIssueURL = () => {
     Clipboard.copy(issueURL.toString()).then(() => {

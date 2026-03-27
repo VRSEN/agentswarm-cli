@@ -3,6 +3,7 @@ import { createMemo, For, Show, Switch, Match } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useTheme } from "../../context/theme"
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
+import { AgencyProduct } from "@/agency-swarm/product"
 import { Installation } from "@/installation"
 import { useDirectory } from "../../context/directory"
 import { useKV } from "../../context/kv"
@@ -286,10 +287,10 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
                     ✕
                   </text>
                 </box>
-                <text fg={theme.textMuted}>Connect to a local agency-swarm server before sending prompts.</text>
-                <text fg={theme.textMuted}>Use /connect to choose the server, store a token, and refresh status.</text>
+                <text fg={theme.textMuted}>{AgencyProduct.start[0]}</text>
+                <text fg={theme.textMuted}>{AgencyProduct.start[1]}</text>
                 <box flexDirection="row" gap={1} justifyContent="space-between">
-                  <text fg={theme.text}>Connect to agency-swarm</text>
+                  <text fg={theme.text}>{AgencyProduct.connect}</text>
                   <text fg={theme.textMuted}>/connect</text>
                 </box>
               </box>
@@ -300,7 +301,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
             <span style={{ fg: theme.text }}>{directory().split("/").at(-1)}</span>
           </text>
           <text fg={theme.textMuted}>
-            <span style={{ fg: theme.success }}>•</span> <b>agent-swarm-cli</b> <span>{Installation.VERSION}</span>
+            <span style={{ fg: theme.success }}>•</span> <b>{AgencyProduct.name}</b> <span>{Installation.VERSION}</span>
           </text>
         </box>
       </box>
