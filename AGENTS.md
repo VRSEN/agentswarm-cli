@@ -5,6 +5,8 @@
 - Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
 - When validation or tooling needs credentials, inspect the repo root `.env` before treating them as missing or escalating.
 - Hard-cut policy: prefer one canonical current-state path. Do not add compatibility bridges, legacy aliases, fallbacks, dual behavior, or migration glue unless the user explicitly requests them. If a temporary exception is unavoidable, state why, why the main path is insufficient, and the deletion trigger in the same diff.
+- Visual QA: for UI, image, screenshot, and logo work, use [$vision-review](/Users/nick/.codex/skills/vision-review/SKILL.md), inspect original-resolution cropped evidence, and keep iterating until no visible defect remains or you can name the exact blocker.
+- OpenAI image detail: when using the OpenAI API for visual review, set `detail: "high"`; official docs currently expose only `high`, `low`, and `auto`.
 
 ## Fork Context
 
