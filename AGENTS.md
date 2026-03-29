@@ -8,7 +8,8 @@
 
 ## Fork Context
 
-- This is `agency-code`, a private fork of OpenCode focused on Agency Swarm integration.
+- This is `agentswarm-cli`, a minimal OpenCode fork for Agency Swarm.
+- Treat `origin/dev` as the upstream baseline and keep the fork delta limited to Agency Swarm integration, required fork packaging/release work, and approved product branding.
 - Primary runtime integration lives in `packages/opencode/src/agency-swarm/` and hooks through session/provider code.
 - Preserve OpenCode session/event/storage contracts when adding Agency Swarm behavior so upstream sync stays feasible.
 - Keep upstream syncability high: prefer placing new logic in `packages/opencode/src/agency-swarm/` and Agency-focused tests, and touch shared OpenCode files only when needed for integration hooks or contract correctness.

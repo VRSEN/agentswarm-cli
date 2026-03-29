@@ -14,6 +14,7 @@ import { useSDK } from "./sdk"
 import { RGBA } from "@opentui/core"
 import { Filesystem } from "@/util/filesystem"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { Flag } from "@/flag/flag"
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
@@ -23,7 +24,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const toast = useToast()
 
     function isModelValid(model: { providerID: string; modelID: string }) {
-      if (model.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
+      if (!Flag.OPENCODE_SOURCE_DEV && model.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
       const provider = sync.data.provider.find((x) => x.id === model.providerID)
       return !!provider?.models[model.modelID]
     }
@@ -180,7 +181,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           }
         }
 
-        const provider = sync.data.provider.find((x) => x.id === AgencySwarmAdapter.PROVIDER_ID)
+        const provider = Flag.OPENCODE_SOURCE_DEV
+          ? sync.data.provider.find((x) => x.id !== AgencySwarmAdapter.PROVIDER_ID)
+          : sync.data.provider.find((x) => x.id === AgencySwarmAdapter.PROVIDER_ID)
         if (!provider) return undefined
         const defaultModel = sync.data.provider_default[provider.id]
         const firstModel = Object.values(provider.models)[0]
@@ -218,8 +221,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           const value = currentModel()
           if (!value) {
             return {
-              provider: "Connect to Agency Swarm",
-              model: "No server selected",
+              provider: Flag.OPENCODE_SOURCE_DEV ? "Connect a provider" : "Connect to Agency Swarm",
+              model: Flag.OPENCODE_SOURCE_DEV ? "No provider selected" : "No server selected",
               reasoning: false,
             }
           }
