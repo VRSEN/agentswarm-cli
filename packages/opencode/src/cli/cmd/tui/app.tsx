@@ -12,7 +12,7 @@ import { DialogProvider as DialogProviderList } from "@tui/component/dialog-prov
 import { SDKProvider, useSDK } from "@tui/context/sdk"
 import { SyncProvider, useSync } from "@tui/context/sync"
 import { LocalProvider, useLocal } from "@tui/context/local"
-import { useConnected } from "@tui/component/dialog-model"
+import { DialogModel, useConnected } from "@tui/component/dialog-model"
 import { DialogMcp } from "@tui/component/dialog-mcp"
 import { DialogStatus } from "@tui/component/dialog-status"
 import { DialogThemeList } from "@tui/component/dialog-theme-list"
@@ -396,6 +396,59 @@ function App() {
       },
     },
     {
+      title: "Switch model",
+      value: "model.list",
+      keybind: "model_list",
+      suggested: Flag.OPENCODE_SOURCE_DEV,
+      category: "Agent",
+      slash: {
+        name: "models",
+      },
+      onSelect: () => {
+        dialog.replace(() => <DialogModel />)
+      },
+    },
+    {
+      title: "Model cycle",
+      value: "model.cycle_recent",
+      keybind: "model_cycle_recent",
+      category: "Agent",
+      hidden: !Flag.OPENCODE_SOURCE_DEV,
+      onSelect: () => {
+        local.model.cycle(1)
+      },
+    },
+    {
+      title: "Model cycle reverse",
+      value: "model.cycle_recent_reverse",
+      keybind: "model_cycle_recent_reverse",
+      category: "Agent",
+      hidden: !Flag.OPENCODE_SOURCE_DEV,
+      onSelect: () => {
+        local.model.cycle(-1)
+      },
+    },
+    {
+      title: "Favorite cycle",
+      value: "model.cycle_favorite",
+      keybind: "model_cycle_favorite",
+      category: "Agent",
+      hidden: !Flag.OPENCODE_SOURCE_DEV,
+      onSelect: () => {
+        local.model.cycleFavorite(1)
+      },
+    },
+    {
+      title: "Favorite cycle reverse",
+      value: "model.cycle_favorite_reverse",
+      keybind: "model_cycle_favorite_reverse",
+      category: "Agent",
+      hidden: !Flag.OPENCODE_SOURCE_DEV,
+      onSelect: () => {
+        local.model.cycleFavorite(-1)
+      },
+    },
+    {
       title: "Switch agent",
       value: "agent.list",
       keybind: "agent_list",
@@ -439,16 +492,16 @@ function App() {
       },
     },
     {
-      title: AgencyProduct.connect,
+      title: Flag.OPENCODE_SOURCE_DEV ? "Connect provider" : AgencyProduct.connect,
       value: "provider.connect",
       suggested: !connected(),
       slash: {
-        name: "connect",
+        name: Flag.OPENCODE_SOURCE_DEV ? "provider" : "connect",
       },
       onSelect: () => {
         dialog.replace(() => <DialogProviderList />)
       },
-      category: "Agency",
+      category: Flag.OPENCODE_SOURCE_DEV ? "Provider" : "Agency",
     },
     {
       title: "View status",
