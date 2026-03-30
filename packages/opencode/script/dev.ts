@@ -14,7 +14,6 @@ export function createDevProcess(argv: string[], env: Record<string, string | un
     cwd: Bun.fileURLToPath(root),
     env: {
       ...env,
-      OPENCODE_SOURCE_DEV: env.OPENCODE_SOURCE_DEV ?? "1",
       OPENCODE_DISABLE_AUTOUPDATE: env.OPENCODE_DISABLE_AUTOUPDATE ?? "1",
     },
   }
