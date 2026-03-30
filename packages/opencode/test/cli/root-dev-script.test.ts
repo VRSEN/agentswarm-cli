@@ -26,13 +26,13 @@ test("dev wrapper watches source and disables autoupdate by default", () => {
     ".",
     "--help",
   ])
-  expect(processSpec.cwd).toBe(path.resolve(import.meta.dir, "..", "..", "..", ".."))
+  expect(path.resolve(processSpec.cwd)).toBe(path.resolve(import.meta.dir, "..", "..", "..", ".."))
   expect(processSpec.env.OPENCODE_SOURCE_DEV).toBe("1")
   expect(processSpec.env.OPENCODE_DISABLE_AUTOUPDATE).toBe("1")
-  expect(processSpec.env.XDG_CONFIG_HOME).toBe(path.join(processSpec.cwd, "opencode-dev"))
-  expect(processSpec.env.XDG_DATA_HOME).toBe(path.join(processSpec.cwd, "opencode-dev"))
-  expect(processSpec.env.XDG_STATE_HOME).toBe(path.join(processSpec.cwd, "opencode-dev"))
-  expect(processSpec.env.XDG_CACHE_HOME).toBe(path.join(processSpec.cwd, "opencode-dev"))
+  expect(processSpec.env.XDG_CONFIG_HOME).toBeUndefined()
+  expect(processSpec.env.XDG_DATA_HOME).toBeUndefined()
+  expect(processSpec.env.XDG_STATE_HOME).toBeUndefined()
+  expect(processSpec.env.XDG_CACHE_HOME).toBeUndefined()
 })
 
 test("dev wrapper preserves explicit autoupdate override", () => {
