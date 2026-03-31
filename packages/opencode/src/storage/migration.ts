@@ -21,7 +21,7 @@ export function read(dir: string): Journal {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
 
-  return dirs
+  const sql = dirs
     .map((name) => {
       const file = path.join(dir, name, "migration.sql")
       if (!existsSync(file)) return
@@ -31,6 +31,7 @@ export function read(dir: string): Journal {
         name,
       }
     })
-    .filter(Boolean)
-    .sort((a, b) => a.timestamp - b.timestamp) as Journal
+    .filter((entry): entry is Journal[number] => Boolean(entry))
+
+  return sql.sort((a, b) => a.timestamp - b.timestamp)
 }

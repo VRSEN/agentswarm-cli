@@ -234,19 +234,7 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
 }
 
 async function getPackage(method: Installation.Method) {
-  if (method === "brew" || method === "choco" || method === "scoop" || method === "curl" || method === "unknown") {
-    return "agentswarm-cli"
-  }
-  const cmd =
-    method === "npm"
-      ? ["npm", "list", "-g", "--depth=0"]
-      : method === "yarn"
-        ? ["yarn", "global", "list"]
-        : method === "pnpm"
-          ? ["pnpm", "list", "-g", "--depth=0"]
-          : ["bun", "pm", "ls", "-g"]
-  const out = await Process.text(cmd, { nothrow: true }).then((x) => x.text)
-  return out.includes("agentswarm-cli") ? "agentswarm-cli" : "agentswarm-cli"
+  return "agentswarm-cli"
 }
 
 async function getShellConfigFile(): Promise<string | null> {

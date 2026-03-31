@@ -385,6 +385,7 @@ export namespace SessionProcessor {
                 continue
               }
               input.assistantMessage.error = error
+              input.assistantMessage.finish = "error"
               Bus.publish(Session.Event.Error, {
                 sessionID: input.assistantMessage.sessionID,
                 error: input.assistantMessage.error,

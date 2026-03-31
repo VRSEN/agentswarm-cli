@@ -25,6 +25,10 @@ export namespace Process {
     stderr: Buffer
   }
 
+  export interface TextResult extends Result {
+    text: string
+  }
+
   export class RunFailedError extends Error {
     readonly cmd: string[]
     readonly code: number
@@ -122,5 +126,17 @@ export namespace Process {
     }
     if (out.code === 0 || opts.nothrow) return out
     throw new RunFailedError(cmd, out.code, out.stdout, out.stderr)
+  }
+
+  export async function text(cmd: string[], opts: RunOptions = {}): Promise<TextResult> {
+    const out = await run(cmd, opts)
+    return {
+      ...out,
+      text: out.stdout.toString(),
+    }
+  }
+
+  export async function lines(cmd: string[], opts: RunOptions = {}): Promise<string[]> {
+    return (await text(cmd, opts)).text.split(/\r?\n/).filter(Boolean)
   }
 }

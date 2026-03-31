@@ -7,8 +7,8 @@ import { MessageV2 } from "../../src/session/message-v2"
 import { SessionCompaction } from "../../src/session/compaction"
 import { SessionProcessor } from "../../src/session/processor"
 import { SessionPrompt } from "../../src/session/prompt"
-import { MessageID } from "../../src/session/schema"
 import { SessionSummary } from "../../src/session/summary"
+import { Identifier } from "../../src/id/id"
 import { tmpdir } from "../fixture/fixture"
 
 describe("session.processor custom stream", () => {
@@ -62,7 +62,7 @@ describe("session.processor custom stream", () => {
         if (!agent) throw new Error("Expected agent")
 
         const assistantMessage = (await Session.updateMessage({
-          id: MessageID.ascending(),
+          id: Identifier.ascending("message"),
           parentID: user.id,
           role: "assistant",
           mode: agent.name,
@@ -170,7 +170,7 @@ describe("session.processor custom stream", () => {
         if (!agent) throw new Error("Expected agent")
 
         const assistantMessage = (await Session.updateMessage({
-          id: MessageID.ascending(),
+          id: Identifier.ascending("message"),
           parentID: user.id,
           role: "assistant",
           mode: agent.name,

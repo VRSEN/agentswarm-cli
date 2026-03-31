@@ -923,7 +923,7 @@ describe("session.message-v2.fromError", () => {
   })
 
   test("serializes Error instances using message without duplicate prefix", () => {
-    const result = MessageV2.fromError(new Error("Unable to connect"), { providerID: ProviderID.make("test") })
+    const result = MessageV2.fromError(new Error("Unable to connect"), { providerID: "test" })
 
     expect(result).toStrictEqual({
       name: "UnknownError",

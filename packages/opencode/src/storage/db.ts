@@ -103,7 +103,9 @@ export namespace Database {
     }
   }
 
-  export function transaction<T>(callback: (tx: TxOrDb) => T): T {
+  type NotPromise<T> = T extends Promise<any> ? never : T
+
+  export function transaction<T>(callback: (tx: TxOrDb) => NotPromise<T>): NotPromise<T> {
     try {
       return callback(ctx.use().tx)
     } catch (err) {
@@ -113,7 +115,7 @@ export namespace Database {
           return ctx.provide({ tx, effects }, () => callback(tx))
         })
         for (const effect of effects) effect()
-        return result
+        return result as NotPromise<T>
       }
       throw err
     }
