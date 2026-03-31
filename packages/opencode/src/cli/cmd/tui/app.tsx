@@ -40,6 +40,7 @@ import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { TuiConfigProvider } from "./context/tui-config"
 import { TuiConfig } from "@/config/tui"
 import { AgencyProduct } from "@/agency-swarm/product"
+import { shouldOpenAgencyConnectDialog } from "./session-error"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -684,12 +685,17 @@ function App() {
       }
       return String(error)
     })()
+    const providerID = local.model.current()?.providerID
 
     toast.show({
       variant: "error",
       message,
       duration: 5000,
     })
+
+    if (shouldOpenAgencyConnectDialog({ providerID, message })) {
+      dialog.replace(() => <DialogProviderList />)
+    }
   })
 
   sdk.event.on(Installation.Event.UpdateAvailable.type, (evt) => {
