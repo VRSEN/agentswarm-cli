@@ -12,12 +12,11 @@ import { useTheme, selectedForeground } from "@tui/context/theme"
 import { SplitBorder } from "@tui/component/border"
 import { useCommandDialog } from "@tui/component/dialog-command"
 import { useToast } from "@tui/ui/toast"
-import { useDialog } from "@tui/ui/dialog"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Locale } from "@/util/locale"
 import type { PromptInfo } from "./history"
 import { useFrecency } from "./frecency"
-import { DialogProvider as DialogConnect } from "../dialog-provider"
+import { isAgencyAutocompleteActive } from "./autocomplete-state"
 
 function removeLineRange(input: string) {
   const hashIndex = input.lastIndexOf("#")
@@ -97,7 +96,6 @@ export function Autocomplete(props: {
   const local = useLocal()
   const sync = useSync()
   const command = useCommandDialog()
-  const dialog = useDialog()
   const toast = useToast()
   const { theme } = useTheme()
   const dimensions = useTerminalDimensions()
@@ -124,10 +122,23 @@ export function Autocomplete(props: {
     }
   })
 
+  const [store, setStore] = createStore({
+    index: 0,
+    selected: 0,
+    visible: false as AutocompleteRef["visible"],
+    input: "keyboard" as "keyboard" | "mouse",
+  })
+
   const agencySwarmEnabled = createMemo(() => local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID)
+  const agencyAutocompleteActive = createMemo(() =>
+    isAgencyAutocompleteActive({
+      agencySwarmEnabled: !!agencySwarmEnabled(),
+      visible: store.visible,
+    }),
+  )
 
   const discoveryInput = createMemo(() => {
-    if (!agencySwarmEnabled()) return undefined
+    if (!agencyAutocompleteActive()) return undefined
     const options = providerOptions()
     return {
       baseURL: options.baseURL,
@@ -160,10 +171,9 @@ export function Autocomplete(props: {
   )
 
   const [lastAgencyDiscoveryErrorKey, setLastAgencyDiscoveryErrorKey] = createSignal<string | undefined>(undefined)
-  const [lastAgencyConnectPromptKey, setLastAgencyConnectPromptKey] = createSignal<string | undefined>(undefined)
 
   createEffect(() => {
-    if (!agencySwarmEnabled()) return
+    if (!agencyAutocompleteActive()) return
     const discovered = agencyDiscovery()
     const message = discovered?.error
     if (!message) return
@@ -178,24 +188,12 @@ export function Autocomplete(props: {
         : message,
       duration: 8000,
     })
-    if (!serverUnavailable) return
-    if (lastAgencyConnectPromptKey() === key) return
-    setLastAgencyConnectPromptKey(key)
-    dialog.replace(() => <DialogConnect />)
-  })
-
-  const [store, setStore] = createStore({
-    index: 0,
-    selected: 0,
-    visible: false as AutocompleteRef["visible"],
-    input: "keyboard" as "keyboard" | "mouse",
   })
 
   const [positionTick, setPositionTick] = createSignal(0)
 
   createEffect(() => {
-    if (!agencySwarmEnabled()) return
-    if (store.visible !== "@") return
+    if (!agencyAutocompleteActive()) return
     void refetchAgencyDiscovery()
     const timer = setInterval(() => {
       void refetchAgencyDiscovery()

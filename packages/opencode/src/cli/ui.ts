@@ -5,22 +5,28 @@ import { logo as glyphs } from "./logo"
 
 export namespace UI {
   export const CancelledError = NamedError.create("UICancelledError", z.void())
+  const blue = "\x1b[38;2;90;112;180m"
+  const blueBold = "\x1b[38;2;90;112;180m\x1b[1m"
+  const gold = "\x1b[38;2;252;213;59m"
+  const goldBold = "\x1b[38;2;252;213;59m\x1b[1m"
+  const dim = "\x1b[38;2;123;125;141m"
+  const dimBold = "\x1b[38;2;123;125;141m\x1b[1m"
 
   export const Style = {
-    TEXT_HIGHLIGHT: "\x1b[96m",
-    TEXT_HIGHLIGHT_BOLD: "\x1b[96m\x1b[1m",
-    TEXT_DIM: "\x1b[90m",
-    TEXT_DIM_BOLD: "\x1b[90m\x1b[1m",
+    TEXT_HIGHLIGHT: gold,
+    TEXT_HIGHLIGHT_BOLD: goldBold,
+    TEXT_DIM: dim,
+    TEXT_DIM_BOLD: dimBold,
     TEXT_NORMAL: "\x1b[0m",
     TEXT_NORMAL_BOLD: "\x1b[1m",
-    TEXT_WARNING: "\x1b[93m",
-    TEXT_WARNING_BOLD: "\x1b[93m\x1b[1m",
+    TEXT_WARNING: gold,
+    TEXT_WARNING_BOLD: goldBold,
     TEXT_DANGER: "\x1b[91m",
     TEXT_DANGER_BOLD: "\x1b[91m\x1b[1m",
     TEXT_SUCCESS: "\x1b[92m",
     TEXT_SUCCESS_BOLD: "\x1b[92m\x1b[1m",
-    TEXT_INFO: "\x1b[94m",
-    TEXT_INFO_BOLD: "\x1b[94m\x1b[1m",
+    TEXT_INFO: blue,
+    TEXT_INFO_BOLD: blueBold,
   }
 
   export function println(...message: string[]) {
@@ -44,14 +50,14 @@ export namespace UI {
     const result: string[] = []
     const reset = "\x1b[0m"
     const left = {
-      fg: Bun.color("gray", "ansi") ?? "",
-      shadow: "\x1b[38;5;235m",
-      bg: "\x1b[48;5;235m",
+      fg: blue,
+      shadow: "\x1b[38;2;35;39;64m",
+      bg: "\x1b[48;2;35;39;64m",
     }
     const right = {
-      fg: reset,
-      shadow: "\x1b[38;5;238m",
-      bg: "\x1b[48;5;238m",
+      fg: goldBold,
+      shadow: "\x1b[38;2;212;153;52m",
+      bg: "\x1b[48;2;212;153;52m",
     }
     const gap = " "
     const draw = (line: string, fg: string, shadow: string, bg: string) => {

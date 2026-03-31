@@ -14,6 +14,7 @@ test("root dev script uses the dedicated dev wrapper", () => {
 
 test("dev wrapper watches source and disables autoupdate by default", () => {
   const processSpec = createDevProcess([".", "--help"], {})
+  const env = processSpec.env as Record<string, string | undefined>
 
   expect(processSpec.cmd).toEqual([
     process.execPath,
@@ -27,12 +28,12 @@ test("dev wrapper watches source and disables autoupdate by default", () => {
     "--help",
   ])
   expect(path.resolve(processSpec.cwd)).toBe(path.resolve(import.meta.dir, "..", "..", "..", ".."))
-  expect(processSpec.env.OPENCODE_SOURCE_DEV).toBeUndefined()
-  expect(processSpec.env.OPENCODE_DISABLE_AUTOUPDATE).toBe("1")
-  expect(processSpec.env.XDG_CONFIG_HOME).toBeUndefined()
-  expect(processSpec.env.XDG_DATA_HOME).toBeUndefined()
-  expect(processSpec.env.XDG_STATE_HOME).toBeUndefined()
-  expect(processSpec.env.XDG_CACHE_HOME).toBeUndefined()
+  expect(env.OPENCODE_SOURCE_DEV).toBeUndefined()
+  expect(env.OPENCODE_DISABLE_AUTOUPDATE).toBe("1")
+  expect(env.XDG_CONFIG_HOME).toBeUndefined()
+  expect(env.XDG_DATA_HOME).toBeUndefined()
+  expect(env.XDG_STATE_HOME).toBeUndefined()
+  expect(env.XDG_CACHE_HOME).toBeUndefined()
 })
 
 test("dev wrapper preserves explicit env overrides", () => {
@@ -40,7 +41,8 @@ test("dev wrapper preserves explicit env overrides", () => {
     OPENCODE_DISABLE_AUTOUPDATE: "0",
     OPENCODE_SOURCE_DEV: "1",
   })
+  const env = processSpec.env as Record<string, string | undefined>
 
-  expect(processSpec.env.OPENCODE_DISABLE_AUTOUPDATE).toBe("0")
-  expect(processSpec.env.OPENCODE_SOURCE_DEV).toBe("1")
+  expect(env.OPENCODE_DISABLE_AUTOUPDATE).toBe("0")
+  expect(env.OPENCODE_SOURCE_DEV).toBe("1")
 })

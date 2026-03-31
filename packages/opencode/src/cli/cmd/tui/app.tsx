@@ -348,16 +348,6 @@ function App() {
     })
   })
 
-  createEffect(
-    on(
-      () => sync.status === "complete" && !connected(),
-      (disconnected, wasDisconnected) => {
-        if (!disconnected || wasDisconnected) return
-        dialog.replace(() => <DialogProviderList />)
-      },
-    ),
-  )
-
   const connected = useConnected()
   command.register(() => [
     {

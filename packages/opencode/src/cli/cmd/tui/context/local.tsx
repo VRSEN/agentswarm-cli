@@ -25,6 +25,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     function isModelValid(model: { providerID: string; modelID: string }) {
       if (!Flag.OPENCODE_SOURCE_DEV && model.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
+      if (
+        !Flag.OPENCODE_SOURCE_DEV &&
+        model.providerID === AgencySwarmAdapter.PROVIDER_ID &&
+        model.modelID === AgencySwarmAdapter.DEFAULT_MODEL_ID
+      ) {
+        return true
+      }
       const provider = sync.data.provider.find((x) => x.id === model.providerID)
       return !!provider?.models[model.modelID]
     }
