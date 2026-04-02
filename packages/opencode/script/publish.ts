@@ -60,14 +60,16 @@ for (const root of roots) {
   )
 }
 
-for (const name of Object.keys(bins)) {
-  if (process.platform !== "win32") {
-    await $`chmod -R 755 .`.cwd(`./dist/${name}`)
-  }
-  await clean(`./dist/${name}`)
-  await $`bun pm pack`.cwd(`./dist/${name}`)
-  await $`npm publish *.tgz --access public --tag ${Script.channel}`.cwd(`./dist/${name}`)
-}
+await Promise.all(
+  Object.keys(bins).map(async (name) => {
+    if (process.platform !== "win32") {
+      await $`chmod -R 755 .`.cwd(`./dist/${name}`)
+    }
+    await clean(`./dist/${name}`)
+    await $`bun pm pack`.cwd(`./dist/${name}`)
+    await $`npm publish *.tgz --access public --tag ${Script.channel}`.cwd(`./dist/${name}`)
+  }),
+)
 
 for (const root of roots) {
   if (process.platform !== "win32") {

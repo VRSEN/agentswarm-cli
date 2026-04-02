@@ -183,6 +183,7 @@ export function DialogAgencySwarmConnect() {
     () => ({
       servers: servers(),
       token: cfg().token,
+      timeoutMs: cfg().discoveryTimeoutMs,
     }),
     async (input): Promise<Record<string, { available: boolean; agencies: string[]; error?: string }>> => {
       const checks = await Promise.all(
@@ -191,7 +192,7 @@ export function DialogAgencySwarmConnect() {
             const response = await fetch(AgencySwarmAdapter.joinURL(baseURL, "openapi.json"), {
               method: "GET",
               headers: input.token ? { Authorization: `Bearer ${input.token}` } : undefined,
-              signal: AbortSignal.timeout(300),
+              signal: AbortSignal.timeout(input.timeoutMs),
             })
             if (!response.ok) {
               return [baseURL, { available: false, agencies: [], error: `HTTP ${response.status}` }] as const
@@ -313,11 +314,10 @@ export function DialogAgencySwarmConnect() {
       ...current.options,
       baseURL,
       localServers: remembered,
-      local_servers: remembered,
       discoveryTimeoutMs: current.discoveryTimeoutMs,
       agency: sameServer ? (readString(current.options["agency"]) ?? null) : null,
-      recipientAgent: sameServer ? (readString(current.options["recipientAgent"]) ?? null) : null,
-      recipient_agent: sameServer ? (readString(current.options["recipient_agent"]) ?? null) : null,
+      recipientAgent:
+        sameServer ? (readString(current.options["recipientAgent"]) ?? readString(current.options["recipient_agent"]) ?? null) : null,
     }
     if (!current.configToken) nextOptions["token"] = null
 
