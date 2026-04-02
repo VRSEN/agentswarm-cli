@@ -50,6 +50,7 @@ import { Process } from "@/util/process"
 import { Cause, Effect, Exit, Layer, Option, Scope, ServiceMap } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
+import { SessionAgencySwarm } from "./agency-swarm"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1456,6 +1457,45 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               Effect.gen(function* () {
                 const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
                 const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
+                if (step === 1) SessionSummary.summarize({ sessionID, messageID: lastUser.id })
+
+                if (model.providerID === SessionAgencySwarm.PROVIDER_ID) {
+                  const cfg = yield* provider.getProvider(model.providerID)
+                  const user = msgs.findLast(
+                    (item): item is MessageV2.WithParts => item.info.role === "user" && item.info.id === lastUser.id,
+                  )
+                  if (!user) {
+                    throw new Error("Failed to resolve current user message for Agency Swarm turn.")
+                  }
+                  const result = yield* handle.process({
+                    user: lastUser,
+                    agent,
+                    permission: session.permission,
+                    sessionID,
+                    system: [],
+                    messages: [],
+                    tools: {},
+                    model,
+                    createStream: (abort) =>
+                      SessionAgencySwarm.stream({
+                        sessionID,
+                        assistantMessage: msg,
+                        userMessage: user,
+                        options: SessionAgencySwarm.optionsFromProvider(cfg),
+                        abort,
+                      }),
+                  })
+                  if (result === "stop") return "break" as const
+                  if (result === "compact") {
+                    yield* compaction.create({
+                      sessionID,
+                      agent: lastUser.agent,
+                      model: lastUser.model,
+                      auto: true,
+                    })
+                  }
+                  return "continue" as const
+                }
 
                 const tools = yield* resolveTools({
                   agent,
@@ -1475,8 +1515,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                     },
                   })
                 }
-
-                if (step === 1) SessionSummary.summarize({ sessionID, messageID: lastUser.id })
 
                 if (step > 1 && lastFinished) {
                   for (const m of msgs) {

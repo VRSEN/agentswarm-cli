@@ -45,6 +45,7 @@ import { createTogetherAI } from "@ai-sdk/togetherai"
 import { createPerplexity } from "@ai-sdk/perplexity"
 import { createVercel } from "@ai-sdk/vercel"
 import { createVenice } from "venice-ai-sdk-provider"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import {
   createGitLab,
   VERSION as GITLAB_PROVIDER_VERSION,
@@ -972,6 +973,72 @@ export namespace Provider {
     }
   }
 
+  function createAgencySwarmProvider(): Info {
+    const modelID = ModelID.make(AgencySwarmAdapter.DEFAULT_MODEL_ID)
+    const providerID = ProviderID.make(AgencySwarmAdapter.PROVIDER_ID)
+    return {
+      id: providerID,
+      name: "Agency Swarm",
+      source: "config",
+      env: [],
+      options: {
+        baseURL: AgencySwarmAdapter.DEFAULT_BASE_URL,
+        discoveryTimeoutMs: AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS,
+      },
+      models: {
+        [modelID]: {
+          id: modelID,
+          providerID,
+          name: "Agency Swarm Default",
+          family: "agency-swarm",
+          api: {
+            id: modelID,
+            url: AgencySwarmAdapter.DEFAULT_BASE_URL,
+            npm: "@ai-sdk/openai-compatible",
+          },
+          status: "active",
+          headers: {},
+          options: {},
+          cost: {
+            input: 0,
+            output: 0,
+            cache: {
+              read: 0,
+              write: 0,
+            },
+          },
+          limit: {
+            context: 0,
+            output: 0,
+          },
+          capabilities: {
+            temperature: false,
+            reasoning: false,
+            attachment: true,
+            toolcall: true,
+            input: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: true,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+            interleaved: false,
+          },
+          release_date: "",
+          variants: {},
+        },
+      },
+    }
+  }
+
   const layer: Layer.Layer<Service, never, Config.Service | Auth.Service | Plugin.Service> = Layer.effect(
     Service,
     Effect.gen(function* () {
@@ -985,6 +1052,7 @@ export namespace Provider {
           const cfg = yield* config.get()
           const modelsDev = yield* Effect.promise(() => ModelsDev.get())
           const database = mapValues(modelsDev, fromModelsDevProvider)
+          database[AgencySwarmAdapter.PROVIDER_ID] = createAgencySwarmProvider()
 
           const providers: Record<ProviderID, Info> = {} as Record<ProviderID, Info>
           const languages = new Map<string, LanguageModelV3>()
