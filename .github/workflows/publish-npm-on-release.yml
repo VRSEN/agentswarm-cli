@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   publish:
-    if: github.repository == 'agency-ai-solutions/agent-swarm-cli'
+    if: github.repository == 'VRSEN/agentswarm-cli'
     runs-on: ubuntu-latest
     env:
       OPENCODE_VERSION: ${{ github.event.release.tag_name }}
