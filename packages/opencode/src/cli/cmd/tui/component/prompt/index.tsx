@@ -29,7 +29,7 @@ import { Locale } from "@/util/locale"
 import { formatDuration } from "@/util/format"
 import { createColors, createFrames } from "../../ui/spinner.ts"
 import { useDialog } from "@tui/ui/dialog"
-import { DialogProvider as DialogProviderConnect } from "../dialog-provider"
+import { DialogAgencySwarmConnect, DialogProvider as DialogProviderConnect } from "../dialog-provider"
 import { DialogAlert } from "../../ui/dialog-alert"
 import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
@@ -104,7 +104,7 @@ export function Prompt(props: PromptProps) {
       duration: 3000,
     })
     if (agency || sync.data.provider.length === 0) {
-      dialog.replace(() => <DialogProviderConnect />)
+      dialog.replace(() => (agency ? <DialogAgencySwarmConnect /> : <DialogProviderConnect />))
     }
   }
 

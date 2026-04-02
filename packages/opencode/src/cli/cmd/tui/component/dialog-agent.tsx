@@ -6,7 +6,7 @@ import { useDialog } from "@tui/ui/dialog"
 import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
 import { useToast } from "@tui/ui/toast"
 import { createMemo, createResource } from "solid-js"
-import { DialogProvider as DialogConnect } from "./dialog-provider"
+import { DialogAgencySwarmConnect } from "./dialog-provider"
 
 type AgentOptionValue =
   | {
@@ -231,7 +231,7 @@ export function DialogAgent() {
         }
 
         if (option.value.kind === "connect") {
-          dialog.replace(() => <DialogConnect />)
+          dialog.replace(() => <DialogAgencySwarmConnect />)
           return
         }
 
