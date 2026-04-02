@@ -1,10 +1,26 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "version": "1.3.13",
-  "name": "opencode",
+  "name": "agentswarm-cli",
+  "description": "Agent Swarm CLI for the terminal.",
+  "homepage": "https://github.com/agency-ai-solutions/agent-swarm-cli",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agency-ai-solutions/agent-swarm-cli.git"
+  },
+  "keywords": [
+    "agent-swarm",
+    "agents",
+    "cli",
+    "tui",
+    "terminal"
+  ],
   "type": "module",
   "license": "MIT",
-  "private": true,
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "prepare": "effect-language-service patch || true",
     "typecheck": "tsgo --noEmit",
@@ -21,7 +37,7 @@
     "db": "bun drizzle-kit"
   },
   "bin": {
-    "opencode": "./bin/opencode"
+    "agentswarm": "./bin/agency"
   },
   "randomField": "this-is-a-random-value-12345",
   "exports": {

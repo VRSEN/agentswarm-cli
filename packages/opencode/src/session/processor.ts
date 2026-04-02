@@ -31,7 +31,7 @@ export namespace SessionProcessor {
     readonly message: MessageV2.Assistant
     readonly partFromToolCall: (toolCallID: string) => MessageV2.ToolPart | undefined
     readonly abort: () => Effect.Effect<void>
-    readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result>
+    readonly process: (streamInput: StreamInput) => Effect.Effect<Result>
   }
 
   type Input = {
@@ -55,6 +55,11 @@ export namespace SessionProcessor {
   }
 
   type StreamEvent = Event
+  type StreamInput = LLM.StreamInput & {
+    createStream?: (abort: AbortSignal) => Promise<{
+      fullStream: AsyncIterable<Event>
+    }>
+  }
 
   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/SessionProcessor") {}
 
@@ -442,16 +447,23 @@ export namespace SessionProcessor {
           }),
         )
 
-        const process = Effect.fn("SessionProcessor.process")(function* (streamInput: LLM.StreamInput) {
+        const process = Effect.fn("SessionProcessor.process")(function* (streamInput: StreamInput) {
           log.info("process")
           ctx.needsCompaction = false
           ctx.shouldBreak = (yield* config.get()).experimental?.continue_loop_on_deny !== true
 
           return yield* Effect.gen(function* () {
+            const ctrl = new AbortController()
+
             yield* Effect.gen(function* () {
               ctx.currentText = undefined
               ctx.reasoningMap = {}
-              const stream = llm.stream(streamInput)
+              const stream = streamInput.createStream
+                ? Stream.fromAsyncIterable(
+                    (yield* Effect.promise(() => streamInput.createStream!(ctrl.signal))).fullStream,
+                    (err) => (err instanceof Error ? err : new Error(String(err))),
+                  )
+                : llm.stream(streamInput)
 
               yield* stream.pipe(
                 Stream.tap((event) => handleEvent(event)),
@@ -459,7 +471,12 @@ export namespace SessionProcessor {
                 Stream.runDrain,
               )
             }).pipe(
-              Effect.onInterrupt(() => Effect.sync(() => void (aborted = true))),
+              Effect.onInterrupt(
+                () => Effect.sync(() => {
+                  aborted = true
+                  ctrl.abort()
+                }),
+              ),
               Effect.catchCauseIf(
                 (cause) => !Cause.hasInterruptsOnly(cause),
                 (cause) => Effect.fail(Cause.squash(cause)),
@@ -477,6 +494,7 @@ export namespace SessionProcessor {
                 }),
               ),
               Effect.catch(halt),
+              Effect.ensuring(Effect.sync(() => ctrl.abort())),
               Effect.ensuring(cleanup()),
             )
 

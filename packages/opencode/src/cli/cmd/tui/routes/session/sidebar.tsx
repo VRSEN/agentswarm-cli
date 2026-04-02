@@ -4,6 +4,7 @@ import { useTheme } from "../../context/theme"
 import { useTuiConfig } from "../../context/tui-config"
 import { Installation } from "@/installation"
 import { TuiPluginRuntime } from "../../plugin"
+import { AgencyProduct } from "@/agency-swarm/product"
 
 import { getScrollAcceleration } from "../../util/scroll"
 
@@ -60,10 +61,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
         <box flexShrink={0} gap={1} paddingTop={1}>
           <TuiPluginRuntime.Slot name="sidebar_footer" mode="single_winner" session_id={props.sessionID}>
             <text fg={theme.textMuted}>
-              <span style={{ fg: theme.success }}>•</span> <b>Open</b>
-              <span style={{ fg: theme.text }}>
-                <b>Code</b>
-              </span>{" "}
+              <span style={{ fg: theme.success }}>•</span> <b>{AgencyProduct.name}</b>{" "}
               <span>{Installation.VERSION}</span>
             </text>
           </TuiPluginRuntime.Slot>

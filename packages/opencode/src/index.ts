@@ -35,6 +35,8 @@ import { JsonMigration } from "./storage/json-migration"
 import { Database } from "./storage/db"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
+import { AgenciiCommand } from "./cli/cmd/agencii"
+import { AgencyProduct } from "./agency-swarm/product"
 
 process.on("unhandledRejection", (e) => {
   Log.Default.error("rejection", {
@@ -50,7 +52,7 @@ process.on("uncaughtException", (e) => {
 
 const cli = yargs(hideBin(process.argv))
   .parserConfiguration({ "populate--": true })
-  .scriptName("opencode")
+  .scriptName(AgencyProduct.cmd)
   .wrap(100)
   .help("help", "show help")
   .alias("help", "h")
@@ -86,9 +88,10 @@ const cli = yargs(hideBin(process.argv))
 
     process.env.AGENT = "1"
     process.env.OPENCODE = "1"
+    process.env.AGENCY_CODE = "1"
     process.env.OPENCODE_PID = String(process.pid)
 
-    Log.Default.info("opencode", {
+    Log.Default.info(AgencyProduct.name, {
       version: Installation.VERSION,
       args: process.argv.slice(2),
     })
@@ -153,6 +156,7 @@ const cli = yargs(hideBin(process.argv))
   .command(GithubCommand)
   .command(PrCommand)
   .command(SessionCommand)
+  .command(AgenciiCommand)
   .command(PluginCommand)
   .command(DbCommand)
   .fail((msg, err) => {
