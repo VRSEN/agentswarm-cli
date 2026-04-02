@@ -20,7 +20,7 @@ import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { Flag } from "@/flag/flag"
 import semver from "semver"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
-import { DialogProvider as DialogProviderList } from "@tui/component/dialog-provider"
+import { DialogAgencySwarmConnect, DialogProvider as DialogProviderList } from "@tui/component/dialog-provider"
 import { ErrorComponent } from "@tui/component/error-component"
 import { PluginRouteMissing } from "@tui/component/plugin-route-missing"
 import { SDKProvider, useSDK } from "@tui/context/sdk"
@@ -841,7 +841,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     if (error && typeof error === "object" && error.name === "MessageAbortedError") return
     const message = errorMessage(error)
     if (shouldOpenAgencyConnectDialog({ providerID: local.model.current()?.providerID, message })) {
-      dialog.replace(() => <DialogProviderList />)
+      dialog.replace(() => <DialogAgencySwarmConnect />)
     }
 
     toast.show({

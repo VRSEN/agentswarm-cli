@@ -141,7 +141,8 @@ export function createDialogProviderOptions() {
 }
 
 export function DialogProvider() {
-  return <DialogAgencySwarmConnect />
+  const options = createDialogProviderOptions()
+  return <DialogSelect title="Connect a provider" options={options()} />
 }
 
 type Option =
@@ -162,7 +163,7 @@ type Option =
       kind: "status"
     }
 
-function DialogAgencySwarmConnect() {
+export function DialogAgencySwarmConnect() {
   const dialog = useDialog()
   const sdk = useSDK()
   const sync = useSync()
