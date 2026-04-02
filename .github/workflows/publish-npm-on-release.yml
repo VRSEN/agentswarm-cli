@@ -51,4 +51,4 @@ jobs:
         run: ./packages/opencode/script/build.ts
 
       - name: Publish npm packages
-        run: ./packages/opencode/script/publish.ts
+        run: bun ./packages/opencode/script/publish.ts
