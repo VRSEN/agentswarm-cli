@@ -38,11 +38,7 @@ const AgenciiConnectCommand = cmd({
   async handler(args) {
     await bootstrap(process.cwd(), async () => {
       const baseURL = AgencySwarmAdapter.normalizeBaseURL(String(args.url))
-
-      const options: Record<string, unknown> = {
-        baseURL,
-        discoveryTimeoutMs: AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS,
-      }
+      const options = connectOptions(baseURL)
       const token = typeof args.token === "string" && args.token.trim() ? args.token.trim() : undefined
       if (token) {
         await Auth.set(AgencySwarmAdapter.PROVIDER_ID, {
@@ -273,16 +269,33 @@ async function resolveRuntimeOptions(args: Record<string, unknown>) {
   const config = await Config.get()
   const provider = config.provider?.[AgencySwarmAdapter.PROVIDER_ID]
   const auth = await Auth.get(AgencySwarmAdapter.PROVIDER_ID)
+  return runtimeOptions(args, provider?.options, auth)
+}
 
+export function connectOptions(baseURL: string) {
+  return {
+    baseURL,
+    discoveryTimeoutMs: AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS,
+    agency: null,
+    recipientAgent: null,
+    recipient_agent: null,
+  } satisfies Record<string, unknown>
+}
+
+export function runtimeOptions(
+  args: Record<string, unknown>,
+  options: Record<string, unknown> | undefined,
+  auth: Awaited<ReturnType<typeof Auth.get>>,
+) {
   const fromConfigBaseURL =
-    typeof provider?.options?.baseURL === "string" ? provider.options.baseURL : AgencySwarmAdapter.DEFAULT_BASE_URL
-  const fromConfigToken = typeof provider?.options?.token === "string" ? provider.options.token : undefined
+    readString(options?.["baseURL"]) ?? readString(options?.["base_url"]) ?? AgencySwarmAdapter.DEFAULT_BASE_URL
+  const fromConfigToken = readString(options?.["token"])
   const fromAuthToken =
     auth?.type === "api" ? auth.key : auth?.type === "wellknown" ? auth.token : undefined
   const fromConfigTimeout =
-    typeof provider?.options?.discoveryTimeoutMs === "number"
-      ? provider.options.discoveryTimeoutMs
-      : AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS
+    readPositiveNumber(options?.["discoveryTimeoutMs"]) ??
+    readPositiveNumber(options?.["discovery_timeout_ms"]) ??
+    AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS
 
   const baseURL = AgencySwarmAdapter.normalizeBaseURL(
     typeof args.url === "string" && args.url.trim() ? args.url.trim() : fromConfigBaseURL,
@@ -296,6 +309,19 @@ async function resolveRuntimeOptions(args: Record<string, unknown>) {
     token,
     timeout,
   }
+}
+
+function readString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function readPositiveNumber(value: unknown): number | undefined {
+  if (typeof value !== "number") return undefined
+  if (!Number.isFinite(value)) return undefined
+  if (value <= 0) return undefined
+  return value
 }
 
 function extractGeneratedPath(stdout: string): string | undefined {
