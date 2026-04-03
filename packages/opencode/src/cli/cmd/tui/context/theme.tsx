@@ -66,13 +66,14 @@ type State = {
 const pluginThemes: Record<string, ThemeJson> = {}
 let customThemes: Record<string, ThemeJson> = {}
 let systemTheme: ThemeJson | undefined
+const fixed = "opencode"
 
 function listThemes() {
   // Priority: defaults < plugin installs < custom files < generated system.
   const themes = {
-    ...DEFAULT_THEMES,
     ...pluginThemes,
     ...customThemes,
+    ...DEFAULT_THEMES,
   }
   if (!systemTheme) return themes
   return {
@@ -112,6 +113,7 @@ export function addTheme(name: string, theme: unknown) {
   if (!name) return false
   if (!isTheme(theme)) return false
   if (hasTheme(name)) return false
+  if (name === fixed) return false
   pluginThemes[name] = theme
   syncThemes()
   return true
@@ -120,6 +122,7 @@ export function addTheme(name: string, theme: unknown) {
 export function upsertTheme(name: string, theme: unknown) {
   if (!name) return false
   if (!isTheme(theme)) return false
+  if (name === fixed) return false
   if (customThemes[name] !== undefined) {
     customThemes[name] = theme
   } else {

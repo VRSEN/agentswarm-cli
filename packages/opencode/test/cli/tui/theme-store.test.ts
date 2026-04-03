@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 
-const { DEFAULT_THEMES, allThemes, addTheme, hasTheme, resolveTheme } = await import(
+const { DEFAULT_THEMES, allThemes, addTheme, hasTheme, resolveTheme, upsertTheme } = await import(
   "../../../src/cli/cmd/tui/context/theme"
 )
 
@@ -54,6 +54,14 @@ test("resolveTheme always uses the dark variant", () => {
   expect(color.r).toBeCloseTo(1 / 255, 6)
   expect(color.g).toBeCloseTo(2 / 255, 6)
   expect(color.b).toBeCloseTo(3 / 255, 6)
+})
+
+test("upsertTheme cannot replace the built-in opencode theme", () => {
+  const item = structuredClone(DEFAULT_THEMES.opencode)
+  item.theme.primary = "#010203"
+
+  expect(upsertTheme("opencode", item)).toBe(false)
+  expect(resolveTheme(allThemes().opencode).primary.toString()).toBe(resolveTheme(DEFAULT_THEMES.opencode).primary.toString())
 })
 
 test("resolveTheme rejects circular color refs", () => {
