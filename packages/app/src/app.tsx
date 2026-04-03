@@ -298,8 +298,8 @@ export function AppInterface(props: {
               >
                 <Route path="/" component={HomeRoute} />
                 <Route path="/:dir" component={DirectoryLayout}>
-                  <Route path="/" component={SessionIndexRoute} />
-                  <Route path="/session/:id?" component={SessionRoute} />
+                  <Route path="" component={SessionIndexRoute} />
+                  <Route path="session/:id?" component={SessionRoute} />
                 </Route>
               </Dynamic>
             </GlobalSyncProvider>
