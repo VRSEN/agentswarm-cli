@@ -131,11 +131,18 @@ describe("session.agency-swarm-utils", () => {
             mime: "text/plain",
             url: "not-a-url",
           }),
+          file("part-4", {
+            type: "file",
+            mime: "image/png",
+            url: "data:image/png;base64,AAA=",
+            filename: "inline.png",
+          }),
         ]),
       ),
     ).toEqual({
       "spec.md": "/tmp/spec.md",
       "plan.pdf": "https://example.com/plan.pdf",
+      "inline.png": "data:image/png;base64,AAA=",
     })
   })
 

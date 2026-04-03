@@ -3,10 +3,10 @@
   "version": "1.3.13",
   "name": "agentswarm-cli",
   "description": "Agent Swarm CLI for the terminal.",
-  "homepage": "https://github.com/agency-ai-solutions/agent-swarm-cli",
+  "homepage": "https://github.com/VRSEN/agentswarm-cli",
   "repository": {
     "type": "git",
-    "url": "https://github.com/agency-ai-solutions/agent-swarm-cli.git"
+    "url": "https://github.com/VRSEN/agentswarm-cli.git"
   },
   "keywords": [
     "agent-swarm",

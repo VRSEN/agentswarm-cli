@@ -1011,8 +1011,8 @@ export namespace Provider {
             },
           },
           limit: {
-            context: 0,
-            output: 0,
+            context: Number.MAX_SAFE_INTEGER,
+            output: Number.MAX_SAFE_INTEGER,
           },
           capabilities: {
             temperature: false,

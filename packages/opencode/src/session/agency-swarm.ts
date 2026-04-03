@@ -155,6 +155,15 @@ export namespace SessionAgencySwarm {
 
     const history = await AgencySwarmHistory.load(scope)
     const outgoingMessage = buildOutgoingMessage(input.userMessage)
+    const chatHistory = await Session.messages({ sessionID: input.sessionID })
+      .then((msgs) => compactHistory({ msgs, currentID: input.userMessage.info.id }) ?? history.chat_history)
+      .catch((error) => {
+        log.warn("unable to rebuild compacted agency history; falling back to stored history", {
+          sessionID: input.sessionID,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return history.chat_history
+      })
     const recipientAgent = await resolveRecipientAgent({
       sessionID: input.sessionID,
       baseURL: input.options.baseURL,
@@ -226,8 +235,7 @@ export namespace SessionAgencySwarm {
       const reasoningTokens = rawReasoning ?? usage?.reasoningTokens ?? 0
       const cachedInputTokens = rawCacheRead ?? usage?.cachedInputTokens ?? 0
       const cacheWriteInputTokens = rawCacheWrite ?? usage?.cacheWriteInputTokens ?? 0
-      const totalTokens =
-        rawTotal ?? inputTokens + outputTokens + reasoningTokens + cachedInputTokens + cacheWriteInputTokens
+      const totalTokens = rawTotal ?? inputTokens + outputTokens
 
       usage = {
         inputTokens,
@@ -1038,7 +1046,7 @@ export namespace SessionAgencySwarm {
           baseURL: input.options.baseURL,
           agency,
           message: outgoingMessage,
-          chatHistory: history.chat_history,
+          chatHistory,
           recipientAgent,
           additionalInstructions: input.options.additionalInstructions,
           userContext: input.options.userContext,
@@ -1463,6 +1471,60 @@ export namespace SessionAgencySwarm {
       })
       return undefined
     }
+  }
+
+  export function compactHistory(input: { msgs: MessageV2.WithParts[]; currentID: string }) {
+    let start = -1
+    for (let i = input.msgs.length - 1; i >= 0; i--) {
+      const msg = input.msgs[i]
+      if (msg.info.role !== "assistant") continue
+      if (!msg.info.summary || !msg.info.finish || msg.info.error) continue
+      const parentID = msg.info.parentID
+      const parent = input.msgs.find((item) => item.info.id === parentID)
+      if (!parent || parent.info.role !== "user") continue
+      if (!parent.parts.some((part) => part.type === "compaction")) continue
+      start = i
+      break
+    }
+
+    if (start < 0) return
+
+    return input.msgs.slice(start).flatMap((msg) => {
+      if (msg.info.id === input.currentID) return []
+
+      if (msg.info.role === "user") {
+        const text = buildOutgoingMessage(msg)
+        if (!text) return []
+        return [
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text }],
+            agent: msg.info.agent,
+            callerAgent: null,
+            timestamp: msg.info.time.created,
+          },
+        ]
+      }
+
+      const text = msg.parts
+        .filter((part): part is MessageV2.TextPart => part.type === "text")
+        .filter((part) => !part.ignored)
+        .map((part) => part.text.trim())
+        .filter(Boolean)
+        .join("\n\n")
+      if (!text) return []
+      return [
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text }],
+          agent: msg.info.agent,
+          callerAgent: null,
+          timestamp: msg.info.time.created,
+        },
+      ]
+    })
   }
 
   function extractRecipientMap(metadata: AgencySwarmAdapter.AgencyMetadata): Map<string, string> {

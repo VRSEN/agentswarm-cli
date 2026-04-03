@@ -143,5 +143,9 @@ function normalizeFileURL(url: string): string | undefined {
     return url
   }
 
+  if (url.startsWith("data:")) {
+    return url
+  }
+
   return undefined
 }

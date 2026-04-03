@@ -29,8 +29,8 @@ async function clean(dir: string) {
 
 for (const root of roots) {
   await $`rm -rf ./dist/${root}`
-  await $`mkdir -p ./dist/${root}`
-  await $`cp -r ./bin ./dist/${root}/bin`
+  await $`mkdir -p ./dist/${root}/bin`
+  await $`cp ./bin/${binary} ./dist/${root}/bin/${binary}`
   await $`cp ./script/postinstall.mjs ./dist/${root}/postinstall.mjs`
   await Bun.file(`./dist/${root}/LICENSE`).write(await Bun.file("../../LICENSE").text())
   await Bun.file(`./dist/${root}/README.md`).write(await Bun.file("./README.md").text())
