@@ -333,7 +333,6 @@ export default {
     await TuiPluginRuntime.init(
       createTuiPluginApi({
         tuiConfig: {
-          theme: "smoke",
           diff_style: "stacked",
           scroll_speed: 1.5,
           scroll_acceleration: { enabled: true },
@@ -365,6 +364,9 @@ export default {
         theme: {
           has(name) {
             return allThemes()[name] !== undefined
+          },
+          set(name) {
+            return name === "opencode"
           },
         },
       }),
@@ -608,7 +610,7 @@ describe("tui.plugin.loader", () => {
     expect(data.local.depth_after).toBe(1)
     expect(data.local.open_after).toBe(true)
     expect(data.local.open_clear).toBe(false)
-    expect(data.local.cfg_theme).toBe("smoke")
+    expect(data.local.cfg_theme).toBeUndefined()
     expect(data.local.cfg_diff).toBe("stacked")
     expect(data.local.cfg_speed).toBe(1.5)
     expect(data.local.cfg_accel).toBe(true)
@@ -619,13 +621,13 @@ describe("tui.plugin.loader", () => {
     expect(data.local.before).toBe(false)
     expect(data.local.set_missing).toBe(false)
     expect(data.local.after).toBe(true)
-    expect(data.local.set_installed).toBe(true)
-    expect(data.local.selected).toBe(data.local_theme)
+    expect(data.local.set_installed).toBe(false)
+    expect(data.local.selected).toBe("opencode")
     expect(data.local.same).toBe(true)
 
     expect(data.global.has).toBe(true)
-    expect(data.global.set_installed).toBe(true)
-    expect(data.global.selected).toBe(data.global_theme)
+    expect(data.global.set_installed).toBe(false)
+    expect(data.global.selected).toBe("opencode")
 
     expect(data.invalid.before).toBe(false)
     expect(data.invalid.set_missing).toBe(false)

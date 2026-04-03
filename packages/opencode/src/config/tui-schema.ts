@@ -27,7 +27,6 @@ export const TuiOptions = z.object({
 export const TuiInfo = z
   .object({
     $schema: z.string().optional(),
-    theme: z.string().optional(),
     keybinds: KeybindOverride.optional(),
     plugin: Config.PluginSpec.array().optional(),
     plugin_enabled: z.record(z.string(), z.boolean()).optional(),

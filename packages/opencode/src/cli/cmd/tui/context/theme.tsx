@@ -1,47 +1,13 @@
-import { CliRenderEvents, SyntaxStyle, RGBA, type TerminalColors } from "@opentui/core"
+import { SyntaxStyle, RGBA, type TerminalColors } from "@opentui/core"
 import path from "path"
-import { createEffect, createMemo, onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, onMount } from "solid-js"
 import { createSimpleContext } from "./helper"
 import { Glob } from "../../../../util/glob"
-import aura from "./theme/aura.json" with { type: "json" }
-import ayu from "./theme/ayu.json" with { type: "json" }
-import catppuccin from "./theme/catppuccin.json" with { type: "json" }
-import catppuccinFrappe from "./theme/catppuccin-frappe.json" with { type: "json" }
-import catppuccinMacchiato from "./theme/catppuccin-macchiato.json" with { type: "json" }
-import cobalt2 from "./theme/cobalt2.json" with { type: "json" }
-import cursor from "./theme/cursor.json" with { type: "json" }
-import dracula from "./theme/dracula.json" with { type: "json" }
-import everforest from "./theme/everforest.json" with { type: "json" }
-import flexoki from "./theme/flexoki.json" with { type: "json" }
-import github from "./theme/github.json" with { type: "json" }
-import gruvbox from "./theme/gruvbox.json" with { type: "json" }
-import kanagawa from "./theme/kanagawa.json" with { type: "json" }
-import material from "./theme/material.json" with { type: "json" }
-import matrix from "./theme/matrix.json" with { type: "json" }
-import mercury from "./theme/mercury.json" with { type: "json" }
-import monokai from "./theme/monokai.json" with { type: "json" }
-import nightowl from "./theme/nightowl.json" with { type: "json" }
-import nord from "./theme/nord.json" with { type: "json" }
-import osakaJade from "./theme/osaka-jade.json" with { type: "json" }
-import onedark from "./theme/one-dark.json" with { type: "json" }
 import opencode from "./theme/opencode.json" with { type: "json" }
-import orng from "./theme/orng.json" with { type: "json" }
-import lucentOrng from "./theme/lucent-orng.json" with { type: "json" }
-import palenight from "./theme/palenight.json" with { type: "json" }
-import rosepine from "./theme/rosepine.json" with { type: "json" }
-import solarized from "./theme/solarized.json" with { type: "json" }
-import synthwave84 from "./theme/synthwave84.json" with { type: "json" }
-import tokyonight from "./theme/tokyonight.json" with { type: "json" }
-import vercel from "./theme/vercel.json" with { type: "json" }
-import vesper from "./theme/vesper.json" with { type: "json" }
-import zenburn from "./theme/zenburn.json" with { type: "json" }
-import carbonfox from "./theme/carbonfox.json" with { type: "json" }
-import { useKV } from "./kv"
 import { useRenderer } from "@opentui/solid"
 import { createStore, produce } from "solid-js/store"
 import { Global } from "@/global"
 import { Filesystem } from "@/util/filesystem"
-import { useTuiConfig } from "./tui-config"
 import { isRecord } from "@/util/record"
 import type { TuiThemeCurrent } from "@opencode-ai/plugin/tui"
 
@@ -86,39 +52,7 @@ export type ThemeJson = {
 }
 
 export const DEFAULT_THEMES: Record<string, ThemeJson> = {
-  aura,
-  ayu,
-  catppuccin,
-  ["catppuccin-frappe"]: catppuccinFrappe,
-  ["catppuccin-macchiato"]: catppuccinMacchiato,
-  cobalt2,
-  cursor,
-  dracula,
-  everforest,
-  flexoki,
-  github,
-  gruvbox,
-  kanagawa,
-  material,
-  matrix,
-  mercury,
-  monokai,
-  nightowl,
-  nord,
-  ["one-dark"]: onedark,
-  ["osaka-jade"]: osakaJade,
   opencode,
-  orng,
-  ["lucent-orng"]: lucentOrng,
-  palenight,
-  rosepine,
-  solarized,
-  synthwave84,
-  tokyonight,
-  vesper,
-  vercel,
-  zenburn,
-  carbonfox,
 }
 
 type State = {
@@ -195,7 +129,7 @@ export function upsertTheme(name: string, theme: unknown) {
   return true
 }
 
-export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
+export function resolveTheme(theme: ThemeJson, _mode: "dark" | "light" = "dark") {
   const defs = theme.defs ?? {}
   function resolveColor(c: ColorValue, chain: string[] = []): RGBA {
     if (c instanceof RGBA) return c
@@ -217,7 +151,7 @@ export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
     if (typeof c === "number") {
       return ansiToRgba(c)
     }
-    return resolveColor(c[mode], chain)
+    return resolveColor(c.dark, chain)
   }
 
   const resolved = Object.fromEntries(
@@ -302,35 +236,21 @@ function ansiToRgba(code: number): RGBA {
 
 export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
   name: "Theme",
-  init: (props: { mode: "dark" | "light" }) => {
+  init: (_props: { mode: "dark" | "light" }) => {
     const renderer = useRenderer()
-    const config = useTuiConfig()
-    const kv = useKV()
-    const pick = (value: unknown) => {
-      if (value === "dark" || value === "light") return value
-      return
-    }
 
     setStore(
       produce((draft) => {
-        const lock = pick(kv.get("theme_mode_lock"))
-        const mode = pick(kv.get("theme_mode", props.mode))
-        draft.mode = lock ?? mode ?? props.mode
-        draft.lock = lock
-        const active = config.theme ?? kv.get("theme", "opencode")
-        draft.active = typeof active === "string" ? active : "opencode"
+        draft.mode = "dark"
+        draft.lock = "dark"
+        draft.active = "opencode"
         draft.ready = false
       }),
     )
 
-    createEffect(() => {
-      const theme = config.theme
-      if (theme) setStore("active", theme)
-    })
-
     function init() {
       Promise.allSettled([
-        resolveSystemTheme(store.mode),
+        resolveSystemTheme("dark"),
         getCustomThemes()
           .then((custom) => {
             customThemes = custom
@@ -372,55 +292,8 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         })
     }
 
-    function apply(mode: "dark" | "light") {
-      kv.set("theme_mode", mode)
-      if (store.mode === mode) return
-      setStore("mode", mode)
-      renderer.clearPaletteCache()
-      resolveSystemTheme(mode)
-    }
-
-    function pin(mode: "dark" | "light" = store.mode) {
-      setStore("lock", mode)
-      kv.set("theme_mode_lock", mode)
-      apply(mode)
-    }
-
-    function free() {
-      setStore("lock", undefined)
-      kv.set("theme_mode_lock", undefined)
-      const mode = renderer.themeMode
-      if (mode) apply(mode)
-    }
-
-    const handle = (mode: "dark" | "light") => {
-      if (store.lock) return
-      apply(mode)
-    }
-    renderer.on(CliRenderEvents.THEME_MODE, handle)
-
-    const refresh = () => {
-      renderer.clearPaletteCache()
-      init()
-    }
-    process.on("SIGUSR2", refresh)
-
-    onCleanup(() => {
-      renderer.off(CliRenderEvents.THEME_MODE, handle)
-      process.off("SIGUSR2", refresh)
-    })
-
     const values = createMemo(() => {
-      const active = store.themes[store.active]
-      if (active) return resolveTheme(active, store.mode)
-
-      const saved = kv.get("theme")
-      if (typeof saved === "string") {
-        const theme = store.themes[saved]
-        if (theme) return resolveTheme(theme, store.mode)
-      }
-
-      return resolveTheme(store.themes.opencode, store.mode)
+      return resolveTheme(store.themes.opencode)
     })
 
     createEffect(() => {
@@ -449,25 +322,22 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       syntax,
       subtleSyntax,
       mode() {
-        return store.mode
+        return "dark"
       },
       locked() {
-        return store.lock !== undefined
+        return true
       },
       lock() {
-        pin(store.mode)
+        return
       },
       unlock() {
-        free()
+        return
       },
-      setMode(mode: "dark" | "light") {
-        pin(mode)
+      setMode(_mode: "dark" | "light") {
+        return
       },
       set(theme: string) {
-        if (!hasTheme(theme)) return false
-        setStore("active", theme)
-        kv.set("theme", theme)
-        return true
+        return theme === "opencode"
       },
       get ready() {
         return store.ready

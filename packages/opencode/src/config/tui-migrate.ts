@@ -3,7 +3,7 @@ import { type ParseError as JsoncParseError, applyEdits, modify, parse as parseJ
 import { unique } from "remeda"
 import z from "zod"
 import { ConfigPaths } from "./paths"
-import { TuiInfo, TuiOptions } from "./tui-schema"
+import { TuiOptions } from "./tui-schema"
 import { Instance } from "@/project/instance"
 import { Flag } from "@/flag/flag"
 import { Log } from "@/util/log"
@@ -14,7 +14,6 @@ const log = Log.create({ service: "tui.migrate" })
 
 const TUI_SCHEMA_URL = "https://opencode.ai/tui.json"
 
-const LegacyTheme = TuiInfo.shape.theme.optional()
 const LegacyRecord = z.record(z.string(), z.unknown()).optional()
 
 const TuiLegacy = z
@@ -25,18 +24,18 @@ const TuiLegacy = z
   })
   .strip()
 
-interface MigrateInput {
+type Input = {
   directories: string[]
   custom?: string
   managed: string
 }
 
 /**
- * Migrates tui-specific keys (theme, keybinds, tui) from opencode.json files
- * into dedicated tui.json files. Migration is performed per-directory and
- * skips only locations where a tui.json already exists.
+ * Migrates tui-specific keys from opencode.json files into dedicated tui.json
+ * files. Legacy theme keys are stripped because the TUI now enforces a single
+ * built-in dark theme.
  */
-export async function migrateTuiConfig(input: MigrateInput) {
+export async function migrateTuiConfig(input: Input) {
   const opencode = await opencodeFiles(input)
   for (const file of opencode) {
     const source = await Filesystem.readText(file).catch((error) => {
@@ -48,11 +47,10 @@ export async function migrateTuiConfig(input: MigrateInput) {
     const data = parseJsonc(source, errors, { allowTrailingComma: true })
     if (errors.length || !data || typeof data !== "object" || Array.isArray(data)) continue
 
-    const theme = LegacyTheme.safeParse("theme" in data ? data.theme : undefined)
     const keybinds = LegacyRecord.safeParse("keybinds" in data ? data.keybinds : undefined)
     const legacyTui = LegacyRecord.safeParse("tui" in data ? data.tui : undefined)
     const extracted = {
-      theme: theme.success ? theme.data : undefined,
+      theme: "theme" in data ? data.theme : undefined,
       keybinds: keybinds.success ? keybinds.data : undefined,
       tui: legacyTui.success ? legacyTui.data : undefined,
     }
@@ -61,13 +59,26 @@ export async function migrateTuiConfig(input: MigrateInput) {
 
     const target = path.join(path.dirname(file), "tui.json")
     const targetExists = await Filesystem.exists(target)
-    if (targetExists) continue
+    if (targetExists) {
+      if (extracted.theme !== undefined && extracted.keybinds === undefined && !tui) {
+        await backupAndStripLegacy(file, source)
+      }
+      continue
+    }
+
+    if (extracted.keybinds === undefined && !tui) {
+      await backupAndStripLegacy(file, source)
+      continue
+    }
 
     const payload: Record<string, unknown> = {
       $schema: TUI_SCHEMA_URL,
     }
-    if (extracted.theme !== undefined) payload.theme = extracted.theme
-    if (extracted.keybinds !== undefined) payload.keybinds = extracted.keybinds
+    if (extracted.keybinds !== undefined) {
+      const keybinds = { ...extracted.keybinds }
+      delete keybinds.theme_list
+      if (Object.keys(keybinds).length) payload.keybinds = keybinds
+    }
     if (tui) Object.assign(payload, tui)
 
     const wrote = await Filesystem.write(target, JSON.stringify(payload, null, 2))

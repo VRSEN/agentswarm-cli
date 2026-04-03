@@ -38,6 +38,24 @@ test("hasTheme checks theme presence", () => {
   expect(hasTheme(name)).toBe(true)
 })
 
+test("resolveTheme always uses the dark variant", () => {
+  const item = structuredClone(DEFAULT_THEMES.opencode)
+  item.defs = {
+    ...(item.defs ?? {}),
+    darkOnly: "#010203",
+    lightOnly: "#fafafa",
+  }
+  item.theme.primary = {
+    dark: "darkOnly",
+    light: "lightOnly",
+  }
+
+  const color = resolveTheme(item, "light").primary
+  expect(color.r).toBeCloseTo(1 / 255, 6)
+  expect(color.g).toBeCloseTo(2 / 255, 6)
+  expect(color.b).toBeCloseTo(3 / 255, 6)
+})
+
 test("resolveTheme rejects circular color refs", () => {
   const item = structuredClone(DEFAULT_THEMES.opencode)
   item.defs = {

@@ -35,19 +35,27 @@ export namespace TuiConfig {
   }
 
   function normalize(raw: Record<string, unknown>) {
-    const data = { ...raw }
-    if (!("tui" in data)) return data
-    if (!isRecord(data.tui)) {
-      delete data.tui
-      return data
+    let data = { ...raw }
+    if ("tui" in data) {
+      if (!isRecord(data.tui)) {
+        delete data.tui
+      } else {
+        const tui = data.tui
+        delete data.tui
+        data = {
+          ...tui,
+          ...data,
+        }
+      }
     }
 
-    const tui = data.tui
-    delete data.tui
-    return {
-      ...tui,
-      ...data,
+    delete data.theme
+    if (isRecord(data.keybinds)) {
+      const keybinds = { ...data.keybinds }
+      delete keybinds.theme_list
+      data.keybinds = keybinds
     }
+    return data
   }
 
   function installDeps(dir: string): Promise<void> {

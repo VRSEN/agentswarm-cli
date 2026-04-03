@@ -99,12 +99,12 @@ test("keeps server and tui plugin merge semantics aligned", async () => {
 test("loads tui config with the same precedence order as server config paths", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await Bun.write(path.join(Global.Path.config, "tui.json"), JSON.stringify({ theme: "global" }, null, 2))
-      await Bun.write(path.join(dir, "tui.json"), JSON.stringify({ theme: "project" }, null, 2))
+      await Bun.write(path.join(Global.Path.config, "tui.json"), JSON.stringify({ diff_style: "auto" }, null, 2))
+      await Bun.write(path.join(dir, "tui.json"), JSON.stringify({ scroll_speed: 2 }, null, 2))
       await fs.mkdir(path.join(dir, ".opencode"), { recursive: true })
       await Bun.write(
         path.join(dir, ".opencode", "tui.json"),
-        JSON.stringify({ theme: "local", diff_style: "stacked" }, null, 2),
+        JSON.stringify({ diff_style: "stacked" }, null, 2),
       )
     },
   })
@@ -113,7 +113,7 @@ test("loads tui config with the same precedence order as server config paths", a
     directory: tmp.path,
     fn: async () => {
       const config = await TuiConfig.get()
-      expect(config.theme).toBe("local")
+      expect(config.scroll_speed).toBe(2)
       expect(config.diff_style).toBe("stacked")
     },
   })
@@ -141,12 +141,11 @@ test("migrates tui-specific keys from opencode.json when tui.json does not exist
     directory: tmp.path,
     fn: async () => {
       const config = await TuiConfig.get()
-      expect(config.theme).toBe("migrated-theme")
+      expect("theme" in config).toBe(false)
       expect(config.scroll_speed).toBe(5)
       expect(config.keybinds?.app_exit).toBe("ctrl+q")
       const text = await Filesystem.readText(path.join(tmp.path, "tui.json"))
       expect(JSON.parse(text)).toMatchObject({
-        theme: "migrated-theme",
         scroll_speed: 5,
       })
       const server = JSON.parse(await Filesystem.readText(path.join(tmp.path, "opencode.json")))
@@ -162,7 +161,7 @@ test("migrates tui-specific keys from opencode.json when tui.json does not exist
 test("migrates project legacy tui keys even when global tui.json already exists", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await Bun.write(path.join(Global.Path.config, "tui.json"), JSON.stringify({ theme: "global" }, null, 2))
+      await Bun.write(path.join(Global.Path.config, "tui.json"), JSON.stringify({ diff_style: "auto" }, null, 2))
       await Bun.write(
         path.join(dir, "opencode.json"),
         JSON.stringify(
@@ -181,7 +180,7 @@ test("migrates project legacy tui keys even when global tui.json already exists"
     directory: tmp.path,
     fn: async () => {
       const config = await TuiConfig.get()
-      expect(config.theme).toBe("project-migrated")
+      expect("theme" in config).toBe(false)
       expect(config.scroll_speed).toBe(2)
       expect(await Filesystem.exists(path.join(tmp.path, "tui.json"))).toBe(true)
 
@@ -213,7 +212,7 @@ test("drops unknown legacy tui keys during migration", async () => {
     directory: tmp.path,
     fn: async () => {
       const config = await TuiConfig.get()
-      expect(config.theme).toBe("migrated-theme")
+      expect("theme" in config).toBe(false)
       expect(config.scroll_speed).toBe(2)
 
       const text = await Filesystem.readText(path.join(tmp.path, "tui.json"))
@@ -242,7 +241,7 @@ test("skips migration when opencode.jsonc is syntactically invalid", async () =>
     directory: tmp.path,
     fn: async () => {
       const config = await TuiConfig.get()
-      expect(config.theme).toBeUndefined()
+      expect("theme" in config).toBe(false)
       expect(config.scroll_speed).toBeUndefined()
       expect(await Filesystem.exists(path.join(tmp.path, "tui.json"))).toBe(false)
       expect(await Filesystem.exists(path.join(tmp.path, "opencode.jsonc.tui-migration.bak"))).toBe(false)
@@ -266,11 +265,11 @@ test("skips migration when tui.json already exists", async () => {
     fn: async () => {
       const config = await TuiConfig.get()
       expect(config.diff_style).toBe("stacked")
-      expect(config.theme).toBeUndefined()
+      expect("theme" in config).toBe(false)
 
       const server = JSON.parse(await Filesystem.readText(path.join(tmp.path, "opencode.json")))
-      expect(server.theme).toBe("legacy")
-      expect(await Filesystem.exists(path.join(tmp.path, "opencode.json.tui-migration.bak"))).toBe(false)
+      expect(server.theme).toBeUndefined()
+      expect(await Filesystem.exists(path.join(tmp.path, "opencode.json.tui-migration.bak"))).toBe(true)
     },
   })
 })
@@ -290,8 +289,8 @@ test("continues loading tui config when legacy source cannot be stripped", async
       directory: tmp.path,
       fn: async () => {
         const config = await TuiConfig.get()
-        expect(config.theme).toBe("readonly-theme")
-        expect(await Filesystem.exists(path.join(tmp.path, "tui.json"))).toBe(true)
+        expect("theme" in config).toBe(false)
+        expect(await Filesystem.exists(path.join(tmp.path, "tui.json"))).toBe(false)
 
         const server = JSON.parse(await Filesystem.readText(source))
         expect(server.theme).toBe("readonly-theme")
@@ -346,9 +345,9 @@ test("migrates legacy tui keys across multiple opencode.json levels", async () =
     directory: path.join(tmp.path, "apps", "client"),
     fn: async () => {
       const config = await TuiConfig.get()
-      expect(config.theme).toBe("nested-theme")
-      expect(await Filesystem.exists(path.join(tmp.path, "tui.json"))).toBe(true)
-      expect(await Filesystem.exists(path.join(tmp.path, "apps", "client", "tui.json"))).toBe(true)
+      expect("theme" in config).toBe(false)
+      expect(await Filesystem.exists(path.join(tmp.path, "tui.json"))).toBe(false)
+      expect(await Filesystem.exists(path.join(tmp.path, "apps", "client", "tui.json"))).toBe(false)
     },
   })
 })
@@ -372,8 +371,7 @@ test("flattens nested tui key inside tui.json", async () => {
       const config = await TuiConfig.get()
       expect(config.scroll_speed).toBe(3)
       expect(config.diff_style).toBe("stacked")
-      // top-level keys take precedence over nested tui keys
-      expect(config.theme).toBe("outer")
+      expect("theme" in config).toBe(false)
     },
   })
 })
@@ -404,9 +402,9 @@ test("top-level keys in tui.json take precedence over nested tui key", async () 
 test("project config takes precedence over OPENCODE_TUI_CONFIG (matches OPENCODE_CONFIG)", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await Bun.write(path.join(dir, "tui.json"), JSON.stringify({ theme: "project", diff_style: "auto" }))
+      await Bun.write(path.join(dir, "tui.json"), JSON.stringify({ diff_style: "auto" }))
       const custom = path.join(dir, "custom-tui.json")
-      await Bun.write(custom, JSON.stringify({ theme: "custom", diff_style: "stacked" }))
+      await Bun.write(custom, JSON.stringify({ diff_style: "stacked" }))
       process.env.OPENCODE_TUI_CONFIG = custom
     },
   })
@@ -415,19 +413,16 @@ test("project config takes precedence over OPENCODE_TUI_CONFIG (matches OPENCODE
     directory: tmp.path,
     fn: async () => {
       const config = await TuiConfig.get()
-      // project tui.json overrides the custom path, same as server config precedence
-      expect(config.theme).toBe("project")
-      // project also set diff_style, so that wins
       expect(config.diff_style).toBe("auto")
     },
   })
 })
 
-test("merges keybind overrides across precedence layers", async () => {
+test("drops removed theme keybinds while preserving valid overrides", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Bun.write(path.join(Global.Path.config, "tui.json"), JSON.stringify({ keybinds: { app_exit: "ctrl+q" } }))
-      await Bun.write(path.join(dir, "tui.json"), JSON.stringify({ keybinds: { theme_list: "ctrl+k" } }))
+      await Bun.write(path.join(dir, "tui.json"), JSON.stringify({ keybinds: { theme_list: "ctrl+k", status_view: "ctrl+k" } }))
     },
   })
 
@@ -436,7 +431,8 @@ test("merges keybind overrides across precedence layers", async () => {
     fn: async () => {
       const config = await TuiConfig.get()
       expect(config.keybinds?.app_exit).toBe("ctrl+q")
-      expect(config.keybinds?.theme_list).toBe("ctrl+k")
+      expect(config.keybinds?.status_view).toBe("ctrl+k")
+      expect("theme_list" in (config.keybinds ?? {})).toBe(false)
     },
   })
 })
@@ -445,7 +441,7 @@ test("OPENCODE_TUI_CONFIG provides settings when no project config exists", asyn
   await using tmp = await tmpdir({
     init: async (dir) => {
       const custom = path.join(dir, "custom-tui.json")
-      await Bun.write(custom, JSON.stringify({ theme: "from-env", diff_style: "stacked" }))
+      await Bun.write(custom, JSON.stringify({ diff_style: "stacked" }))
       process.env.OPENCODE_TUI_CONFIG = custom
     },
   })
@@ -454,7 +450,6 @@ test("OPENCODE_TUI_CONFIG provides settings when no project config exists", asyn
     directory: tmp.path,
     fn: async () => {
       const config = await TuiConfig.get()
-      expect(config.theme).toBe("from-env")
       expect(config.diff_style).toBe("stacked")
     },
   })
@@ -475,14 +470,14 @@ test("does not derive tui path from OPENCODE_CONFIG", async () => {
     directory: tmp.path,
     fn: async () => {
       const config = await TuiConfig.get()
-      expect(config.theme).toBeUndefined()
+      expect("theme" in config).toBe(false)
     },
   })
 })
 
 test("applies env and file substitutions in tui.json", async () => {
-  const original = process.env.TUI_THEME_TEST
-  process.env.TUI_THEME_TEST = "env-theme"
+  const original = process.env.TUI_DIFF_TEST
+  process.env.TUI_DIFF_TEST = "stacked"
   try {
     await using tmp = await tmpdir({
       init: async (dir) => {
@@ -490,7 +485,7 @@ test("applies env and file substitutions in tui.json", async () => {
         await Bun.write(
           path.join(dir, "tui.json"),
           JSON.stringify({
-            theme: "{env:TUI_THEME_TEST}",
+            diff_style: "{env:TUI_DIFF_TEST}",
             keybinds: { app_exit: "{file:keybind.txt}" },
           }),
         )
@@ -501,25 +496,25 @@ test("applies env and file substitutions in tui.json", async () => {
       directory: tmp.path,
       fn: async () => {
         const config = await TuiConfig.get()
-        expect(config.theme).toBe("env-theme")
+        expect(config.diff_style).toBe("stacked")
         expect(config.keybinds?.app_exit).toBe("ctrl+q")
       },
     })
   } finally {
-    if (original === undefined) delete process.env.TUI_THEME_TEST
-    else process.env.TUI_THEME_TEST = original
+    if (original === undefined) delete process.env.TUI_DIFF_TEST
+    else process.env.TUI_DIFF_TEST = original
   }
 })
 
 test("applies file substitutions when first identical token is in a commented line", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await Bun.write(path.join(dir, "theme.txt"), "resolved-theme")
+      await Bun.write(path.join(dir, "diff.txt"), "stacked")
       await Bun.write(
         path.join(dir, "tui.jsonc"),
         `{
-  // "theme": "{file:theme.txt}",
-  "theme": "{file:theme.txt}"
+  // "diff_style": "{file:diff.txt}",
+  "diff_style": "{file:diff.txt}"
 }`,
       )
     },
@@ -529,7 +524,7 @@ test("applies file substitutions when first identical token is in a commented li
     directory: tmp.path,
     fn: async () => {
       const config = await TuiConfig.get()
-      expect(config.theme).toBe("resolved-theme")
+      expect(config.diff_style).toBe("stacked")
     },
   })
 })
@@ -539,12 +534,12 @@ test("loads managed tui config and gives it highest precedence", async () => {
     init: async (dir) => {
       await Bun.write(
         path.join(dir, "tui.json"),
-        JSON.stringify({ theme: "project-theme", plugin: ["shared-plugin@1.0.0"] }, null, 2),
+        JSON.stringify({ plugin: ["shared-plugin@1.0.0"] }, null, 2),
       )
       await fs.mkdir(managedConfigDir, { recursive: true })
       await Bun.write(
         path.join(managedConfigDir, "tui.json"),
-        JSON.stringify({ theme: "managed-theme", plugin: ["shared-plugin@2.0.0"] }, null, 2),
+        JSON.stringify({ plugin: ["shared-plugin@2.0.0"] }, null, 2),
       )
     },
   })
@@ -553,7 +548,6 @@ test("loads managed tui config and gives it highest precedence", async () => {
     directory: tmp.path,
     fn: async () => {
       const config = await TuiConfig.get()
-      expect(config.theme).toBe("managed-theme")
       expect(config.plugin).toEqual(["shared-plugin@2.0.0"])
       expect(config.plugin_origins).toEqual([
         {
@@ -588,7 +582,7 @@ test("gracefully falls back when tui.json has invalid JSON", async () => {
     init: async (dir) => {
       await Bun.write(path.join(dir, "tui.json"), "{ invalid json }")
       await fs.mkdir(managedConfigDir, { recursive: true })
-      await Bun.write(path.join(managedConfigDir, "tui.json"), JSON.stringify({ theme: "managed-fallback" }, null, 2))
+      await Bun.write(path.join(managedConfigDir, "tui.json"), JSON.stringify({ diff_style: "stacked" }, null, 2))
     },
   })
 
@@ -596,7 +590,7 @@ test("gracefully falls back when tui.json has invalid JSON", async () => {
     directory: tmp.path,
     fn: async () => {
       const config = await TuiConfig.get()
-      expect(config.theme).toBe("managed-fallback")
+      expect(config.diff_style).toBe("stacked")
       expect(config.keybinds).toBeDefined()
     },
   })
