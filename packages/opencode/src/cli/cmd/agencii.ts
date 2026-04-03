@@ -3,6 +3,7 @@ import { cmd } from "./cmd"
 import { bootstrap } from "../bootstrap"
 import { UI } from "../ui"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { Auth } from "@/auth"
 import { Config } from "@/config/config"
 import path from "path"
 
@@ -42,8 +43,12 @@ const AgenciiConnectCommand = cmd({
         baseURL,
         discoveryTimeoutMs: AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS,
       }
-      if (typeof args.token === "string" && args.token.trim()) {
-        options.token = args.token.trim()
+      const token = typeof args.token === "string" && args.token.trim() ? args.token.trim() : undefined
+      if (token) {
+        await Auth.set(AgencySwarmAdapter.PROVIDER_ID, {
+          type: "api",
+          key: token,
+        })
       }
 
       await Config.updateGlobal({
@@ -142,7 +147,12 @@ const AgenciiUseCommand = cmd({
         agency,
         discoveryTimeoutMs: runtime.timeout,
       }
-      if (runtime.token) options.token = runtime.token
+      if (runtime.token) {
+        await Auth.set(AgencySwarmAdapter.PROVIDER_ID, {
+          type: "api",
+          key: runtime.token,
+        })
+      }
 
       await Config.updateGlobal({
         model: `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
@@ -262,10 +272,13 @@ const AgenciiAgentNewCommand = cmd({
 async function resolveRuntimeOptions(args: Record<string, unknown>) {
   const config = await Config.get()
   const provider = config.provider?.[AgencySwarmAdapter.PROVIDER_ID]
+  const auth = await Auth.get(AgencySwarmAdapter.PROVIDER_ID)
 
   const fromConfigBaseURL =
     typeof provider?.options?.baseURL === "string" ? provider.options.baseURL : AgencySwarmAdapter.DEFAULT_BASE_URL
   const fromConfigToken = typeof provider?.options?.token === "string" ? provider.options.token : undefined
+  const fromAuthToken =
+    auth?.type === "api" ? auth.key : auth?.type === "wellknown" ? auth.token : undefined
   const fromConfigTimeout =
     typeof provider?.options?.discoveryTimeoutMs === "number"
       ? provider.options.discoveryTimeoutMs
@@ -274,7 +287,7 @@ async function resolveRuntimeOptions(args: Record<string, unknown>) {
   const baseURL = AgencySwarmAdapter.normalizeBaseURL(
     typeof args.url === "string" && args.url.trim() ? args.url.trim() : fromConfigBaseURL,
   )
-  const token = typeof args.token === "string" && args.token.trim() ? args.token.trim() : fromConfigToken
+  const token = typeof args.token === "string" && args.token.trim() ? args.token.trim() : fromAuthToken ?? fromConfigToken
   const timeout =
     typeof args.timeout === "number" && Number.isFinite(args.timeout) && args.timeout > 0 ? args.timeout : fromConfigTimeout
 
