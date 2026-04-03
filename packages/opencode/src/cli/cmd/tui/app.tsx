@@ -844,6 +844,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     const message = errorMessage(error)
     if (shouldOpenAgencyConnectDialog({ providerID: local.model.current()?.providerID, message })) {
       dialog.replace(() => <DialogAgencySwarmConnect />)
+      return
     }
 
     toast.show({

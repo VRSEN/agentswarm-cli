@@ -520,6 +520,116 @@ describe("session.agency-swarm", () => {
     expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("stop")
   })
 
+  test("compactHistory rebuilds request history from the compacted session slice", () => {
+    const msgs = [
+      {
+        info: {
+          id: "compact_user",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "compaction", auto: true, overflow: true }],
+      },
+      {
+        info: {
+          id: "summary",
+          role: "assistant",
+          parentID: "compact_user",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Planner",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          summary: true,
+          finish: "end_turn",
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "summary body" }],
+      },
+      {
+        info: {
+          id: "user_2",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [{ type: "text", text: "next question", ignored: false }],
+      },
+      {
+        info: {
+          id: "assistant_2",
+          role: "assistant",
+          parentID: "user_2",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Reviewer",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 4 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "next answer" }],
+      },
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 5 },
+        },
+        parts: [{ type: "text", text: "current prompt", ignored: false }],
+      },
+    ] as any
+
+    expect(SessionAgencySwarm.compactHistory({ msgs, currentID: "current" })).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "summary body" }],
+        agent: "Planner",
+        callerAgent: null,
+        timestamp: 2,
+      },
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "next question" }],
+        agent: "build",
+        callerAgent: null,
+        timestamp: 3,
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "next answer" }],
+        agent: "Reviewer",
+        callerAgent: null,
+        timestamp: 4,
+      },
+    ])
+  })
+
   test("stream resolves configured recipient alias to live agent id from metadata", async () => {
     mockHistory()
     let sentRecipient: string | undefined

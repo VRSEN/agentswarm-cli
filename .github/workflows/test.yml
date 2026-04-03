@@ -132,7 +132,7 @@ jobs:
         run: bun --cwd packages/app test:e2e:local
         env:
           CI: true
-          PLAYWRIGHT_WORKERS: ${{ runner.os == 'Windows' && '1' || '5' }}
+          PLAYWRIGHT_WORKERS: ${{ runner.os == 'Windows' && '1' || '2' }}
           PLAYWRIGHT_JUNIT_OUTPUT: e2e/junit-${{ matrix.settings.name }}.xml
         timeout-minutes: 30
 
