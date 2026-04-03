@@ -1,6 +1,7 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { createMemo, Show } from "solid-js"
 import { Global } from "@/global"
+import { AgencyProduct } from "@/agency-swarm/product"
 
 const id = "internal:sidebar-footer"
 
@@ -48,12 +49,10 @@ function View(props: { api: TuiPluginApi }) {
                 ✕
               </text>
             </box>
-            <text fg={theme().textMuted}>OpenCode includes free models so you can start immediately.</text>
-            <text fg={theme().textMuted}>
-              Connect from 75+ providers to use other models, including Claude, GPT, Gemini etc
-            </text>
+            <text fg={theme().textMuted}>{AgencyProduct.start[0]}</text>
+            <text fg={theme().textMuted}>{AgencyProduct.start[1]}</text>
             <box flexDirection="row" gap={1} justifyContent="space-between">
-              <text fg={theme().text}>Connect provider</text>
+              <text fg={theme().text}>{AgencyProduct.connect}</text>
               <text fg={theme().textMuted}>/connect</text>
             </box>
           </box>
@@ -64,11 +63,7 @@ function View(props: { api: TuiPluginApi }) {
         <span style={{ fg: theme().text }}>{path().name}</span>
       </text>
       <text fg={theme().textMuted}>
-        <span style={{ fg: theme().success }}>•</span> <b>Open</b>
-        <span style={{ fg: theme().text }}>
-          <b>Code</b>
-        </span>{" "}
-        <span>{props.api.app.version}</span>
+        <span style={{ fg: theme().success }}>•</span> <b>{AgencyProduct.name}</b> <span>{props.api.app.version}</span>
       </text>
     </box>
   )

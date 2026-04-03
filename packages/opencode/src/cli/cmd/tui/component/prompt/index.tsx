@@ -29,12 +29,13 @@ import { Locale } from "@/util/locale"
 import { formatDuration } from "@/util/format"
 import { createColors, createFrames } from "../../ui/spinner.ts"
 import { useDialog } from "@tui/ui/dialog"
-import { DialogProvider as DialogProviderConnect } from "../dialog-provider"
+import { DialogAgencySwarmConnect, DialogProvider as DialogProviderConnect } from "../dialog-provider"
 import { DialogAlert } from "../../ui/dialog-alert"
 import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
 import { useTextareaKeybindings } from "../textarea-keybindings"
 import { DialogSkill } from "../dialog-skill"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 
 export type PromptProps = {
   sessionID?: string
@@ -96,13 +97,14 @@ export function Prompt(props: PromptProps) {
   const [auto, setAuto] = createSignal<AutocompleteRef>()
 
   function promptModelWarning() {
+    const agency = local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID
     toast.show({
       variant: "warning",
-      message: "Connect a provider to send prompts",
+      message: agency ? "Connect to an agency-swarm server to send prompts" : "Connect a provider to send prompts",
       duration: 3000,
     })
-    if (sync.data.provider.length === 0) {
-      dialog.replace(() => <DialogProviderConnect />)
+    if (agency || sync.data.provider.length === 0) {
+      dialog.replace(() => (agency ? <DialogAgencySwarmConnect /> : <DialogProviderConnect />))
     }
   }
 

@@ -5,10 +5,11 @@ import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { TuiConfig } from "@/config/tui"
 import { Instance } from "@/project/instance"
 import { existsSync } from "fs"
+import { AgencyProduct } from "@/agency-swarm/product"
 
 export const AttachCommand = cmd({
   command: "attach <url>",
-  describe: "attach to a running opencode server",
+  describe: `attach to a running ${AgencyProduct.cmd} server`,
   builder: (yargs) =>
     yargs
       .positional("url", {

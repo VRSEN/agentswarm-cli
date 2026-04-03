@@ -3,6 +3,7 @@
 import fs from "fs"
 import path from "path"
 import os from "os"
+import childProcess from "child_process"
 import { fileURLToPath } from "url"
 import { createRequire } from "module"
 
@@ -49,51 +50,108 @@ function detectPlatformAndArch() {
 
 function findBinary() {
   const { platform, arch } = detectPlatformAndArch()
-  const packageName = `opencode-${platform}-${arch}`
-  const binaryName = platform === "windows" ? "opencode.exe" : "opencode"
+  const binaryName = platform === "windows" ? "agency.exe" : "agency"
+  const base = `agentswarm-cli-${platform}-${arch}`
+  const baseline = arch === "x64" && !supportsAvx2(platform, arch)
+  const names = packageNames(platform, arch, base, baseline)
+
+  for (const name of names) {
+    try {
+      const packageJsonPath = require.resolve(`${name}/package.json`)
+      const packageDir = path.dirname(packageJsonPath)
+      const binaryPath = path.join(packageDir, "bin", binaryName)
+      if (!fs.existsSync(binaryPath)) continue
+      return { binaryPath, binaryName }
+    } catch {
+      continue
+    }
+  }
+
+  throw new Error(`Could not find package ${names.join(", ")}`)
+}
+
+function supportsAvx2(platform, arch) {
+  if (arch !== "x64") return false
+
+  if (platform === "linux") {
+    try {
+      return /(^|\s)avx2(\s|$)/i.test(fs.readFileSync("/proc/cpuinfo", "utf8"))
+    } catch {
+      return false
+    }
+  }
+
+  if (platform === "darwin") {
+    try {
+      const result = childProcess.spawnSync("sysctl", ["-n", "hw.optional.avx2_0"], {
+        encoding: "utf8",
+        timeout: 1500,
+      })
+      if (result.status !== 0) return false
+      return (result.stdout || "").trim() === "1"
+    } catch {
+      return false
+    }
+  }
+
+  if (platform === "windows") {
+    const cmd =
+      '(Add-Type -MemberDefinition "[DllImport(""kernel32.dll"")] public static extern bool IsProcessorFeaturePresent(int ProcessorFeature);" -Name Kernel32 -Namespace Win32 -PassThru)::IsProcessorFeaturePresent(40)'
+
+    for (const exe of ["powershell.exe", "pwsh.exe", "pwsh", "powershell"]) {
+      try {
+        const result = childProcess.spawnSync(exe, ["-NoProfile", "-NonInteractive", "-Command", cmd], {
+          encoding: "utf8",
+          timeout: 3000,
+          windowsHide: true,
+        })
+        if (result.status !== 0) continue
+        const out = (result.stdout || "").trim().toLowerCase()
+        if (out === "true" || out === "1") return true
+        if (out === "false" || out === "0") return false
+      } catch {
+        continue
+      }
+    }
+  }
+
+  return false
+}
+
+function packageNames(platform, arch, base, baseline) {
+  if (platform === "linux") {
+    const musl = isMusl()
+    if (arch === "x64") {
+      if (musl) {
+        if (baseline) return [`${base}-baseline-musl`, `${base}-musl`, `${base}-baseline`, base]
+        return [`${base}-musl`, `${base}-baseline-musl`, base, `${base}-baseline`]
+      }
+      if (baseline) return [`${base}-baseline`, base, `${base}-baseline-musl`, `${base}-musl`]
+      return [base, `${base}-baseline`, `${base}-musl`, `${base}-baseline-musl`]
+    }
+    if (musl) return [`${base}-musl`, base]
+    return [base, `${base}-musl`]
+  }
+
+  if (arch === "x64") {
+    if (baseline) return [`${base}-baseline`, base]
+    return [base, `${base}-baseline`]
+  }
+
+  return [base]
+}
+
+function isMusl() {
+  try {
+    if (fs.existsSync("/etc/alpine-release")) return true
+  } catch {}
 
   try {
-    // Use require.resolve to find the package
-    const packageJsonPath = require.resolve(`${packageName}/package.json`)
-    const packageDir = path.dirname(packageJsonPath)
-    const binaryPath = path.join(packageDir, "bin", binaryName)
-
-    if (!fs.existsSync(binaryPath)) {
-      throw new Error(`Binary not found at ${binaryPath}`)
-    }
-
-    return { binaryPath, binaryName }
-  } catch (error) {
-    throw new Error(`Could not find package ${packageName}: ${error.message}`)
-  }
-}
-
-function prepareBinDirectory(binaryName) {
-  const binDir = path.join(__dirname, "bin")
-  const targetPath = path.join(binDir, binaryName)
-
-  // Ensure bin directory exists
-  if (!fs.existsSync(binDir)) {
-    fs.mkdirSync(binDir, { recursive: true })
-  }
-
-  // Remove existing binary/symlink if it exists
-  if (fs.existsSync(targetPath)) {
-    fs.unlinkSync(targetPath)
-  }
-
-  return { binDir, targetPath }
-}
-
-function symlinkBinary(sourcePath, binaryName) {
-  const { targetPath } = prepareBinDirectory(binaryName)
-
-  fs.symlinkSync(sourcePath, targetPath)
-  console.log(`opencode binary symlinked: ${targetPath} -> ${sourcePath}`)
-
-  // Verify the file exists after operation
-  if (!fs.existsSync(targetPath)) {
-    throw new Error(`Failed to symlink binary to ${targetPath}`)
+    const result = childProcess.spawnSync("ldd", ["--version"], { encoding: "utf8" })
+    const text = ((result.stdout || "") + (result.stderr || "")).toLowerCase()
+    return text.includes("musl")
+  } catch {
+    return false
   }
 }
 
@@ -109,7 +167,7 @@ async function main() {
     // On non-Windows platforms, just verify the binary package exists
     // Don't replace the wrapper script - it handles binary execution
     const { binaryPath } = findBinary()
-    const target = path.join(__dirname, "bin", ".opencode")
+    const target = path.join(__dirname, "bin", ".agentswarm")
     if (fs.existsSync(target)) fs.unlinkSync(target)
     try {
       fs.linkSync(binaryPath, target)
@@ -118,7 +176,7 @@ async function main() {
     }
     fs.chmodSync(target, 0o755)
   } catch (error) {
-    console.error("Failed to setup opencode binary:", error.message)
+    console.error("Failed to setup agentswarm binary:", error.message)
     process.exit(1)
   }
 }

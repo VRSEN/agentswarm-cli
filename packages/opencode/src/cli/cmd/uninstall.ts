@@ -8,6 +8,7 @@ import path from "path"
 import os from "os"
 import { Filesystem } from "../../util/filesystem"
 import { Process } from "../../util/process"
+import { AgencyProduct } from "@/agency-swarm/product"
 
 interface UninstallArgs {
   keepConfig: boolean
@@ -24,7 +25,7 @@ interface RemovalTargets {
 
 export const UninstallCommand = {
   command: "uninstall",
-  describe: "uninstall opencode and remove all related files",
+  describe: `uninstall ${AgencyProduct.cmd} and remove all related files`,
   builder: (yargs: Argv) =>
     yargs
       .option("keep-config", {
@@ -129,10 +130,10 @@ async function showRemovalSummary(targets: RemovalTargets, method: Installation.
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string> = {
-      npm: "npm uninstall -g opencode-ai",
-      pnpm: "pnpm uninstall -g opencode-ai",
-      bun: "bun remove -g opencode-ai",
-      yarn: "yarn global remove opencode-ai",
+      npm: "npm uninstall -g agentswarm-cli",
+      pnpm: "pnpm uninstall -g agentswarm-cli",
+      bun: "bun remove -g agentswarm-cli",
+      yarn: "yarn global remove agentswarm-cli",
       brew: "brew uninstall opencode",
       choco: "choco uninstall opencode",
       scoop: "scoop uninstall opencode",
@@ -180,10 +181,10 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string[]> = {
-      npm: ["npm", "uninstall", "-g", "opencode-ai"],
-      pnpm: ["pnpm", "uninstall", "-g", "opencode-ai"],
-      bun: ["bun", "remove", "-g", "opencode-ai"],
-      yarn: ["yarn", "global", "remove", "opencode-ai"],
+      npm: ["npm", "uninstall", "-g", "agentswarm-cli"],
+      pnpm: ["pnpm", "uninstall", "-g", "agentswarm-cli"],
+      bun: ["bun", "remove", "-g", "agentswarm-cli"],
+      yarn: ["yarn", "global", "remove", "agentswarm-cli"],
       brew: ["brew", "uninstall", "opencode"],
       choco: ["choco", "uninstall", "opencode"],
       scoop: ["scoop", "uninstall", "opencode"],

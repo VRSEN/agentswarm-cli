@@ -16,6 +16,7 @@ import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { TuiConfig } from "@/config/tui"
 import { Instance } from "@/project/instance"
 import { writeHeapSnapshot } from "v8"
+import { AgencyProduct } from "@/agency-swarm/product"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -66,12 +67,12 @@ async function input(value?: string) {
 
 export const TuiThreadCommand = cmd({
   command: "$0 [project]",
-  describe: "start opencode tui",
+  describe: `start ${AgencyProduct.cmd} tui`,
   builder: (yargs) =>
     withNetworkOptions(yargs)
       .positional("project", {
         type: "string",
-        describe: "path to start opencode in",
+        describe: `path to start ${AgencyProduct.cmd} in`,
       })
       .option("model", {
         type: "string",

@@ -24,9 +24,9 @@ jobs:
       matrix:
         settings:
           - name: linux
-            host: blacksmith-4vcpu-ubuntu-2404
+            host: ubuntu-latest
           - name: windows
-            host: blacksmith-4vcpu-windows-2025
+            host: windows-latest
     runs-on: ${{ matrix.settings.host }}
     defaults:
       run:
@@ -60,9 +60,9 @@ jobs:
       matrix:
         settings:
           - name: linux
-            host: blacksmith-4vcpu-ubuntu-2404
+            host: ubuntu-latest
           - name: windows
-            host: blacksmith-4vcpu-windows-2025
+            host: windows-latest
     runs-on: ${{ matrix.settings.host }}
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
@@ -105,6 +105,7 @@ jobs:
         run: bun --cwd packages/app test:e2e:local
         env:
           CI: true
+          PLAYWRIGHT_WORKERS: ${{ runner.os == 'Windows' && '1' || '2' }}
           PLAYWRIGHT_JUNIT_OUTPUT: e2e/junit-${{ matrix.settings.name }}.xml
         timeout-minutes: 30
 

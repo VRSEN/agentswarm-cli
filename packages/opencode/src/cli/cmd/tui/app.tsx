@@ -20,7 +20,7 @@ import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { Flag } from "@/flag/flag"
 import semver from "semver"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
-import { DialogProvider as DialogProviderList } from "@tui/component/dialog-provider"
+import { DialogAgencySwarmConnect, DialogProvider as DialogProviderList } from "@tui/component/dialog-provider"
 import { ErrorComponent } from "@tui/component/error-component"
 import { PluginRouteMissing } from "@tui/component/plugin-route-missing"
 import { SDKProvider, useSDK } from "@tui/context/sdk"
@@ -38,6 +38,7 @@ import { DialogSessionList } from "@tui/component/dialog-session-list"
 import { DialogWorkspaceList } from "@tui/component/dialog-workspace-list"
 import { KeybindProvider, useKeybind } from "@tui/context/keybind"
 import { ThemeProvider, useTheme } from "@tui/context/theme"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { Home } from "@tui/routes/home"
 import { Session } from "@tui/routes/session"
 import { PromptHistoryProvider } from "./component/prompt/history"
@@ -59,6 +60,8 @@ import { TuiConfigProvider, useTuiConfig } from "./context/tui-config"
 import { TuiConfig } from "@/config/tui"
 import { createTuiApi, TuiPluginRuntime, type RouteMap } from "./plugin"
 import { FormatError, FormatUnknownError } from "@/cli/error"
+import { AgencyProduct } from "@/agency-swarm/product"
+import { shouldOpenAgencyConnectDialog } from "./session-error"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -349,24 +352,24 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     if (!terminalTitleEnabled() || Flag.OPENCODE_DISABLE_TERMINAL_TITLE) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("OpenCode")
+      renderer.setTerminalTitle(AgencyProduct.name)
       return
     }
 
     if (route.data.type === "session") {
       const session = sync.session.get(route.data.sessionID)
       if (!session || SessionApi.isDefaultTitle(session.title)) {
-        renderer.setTerminalTitle("OpenCode")
+        renderer.setTerminalTitle(AgencyProduct.name)
         return
       }
 
       const title = session.title.length > 40 ? session.title.slice(0, 37) + "..." : session.title
-      renderer.setTerminalTitle(`OC | ${title}`)
+      renderer.setTerminalTitle(`${AgencyProduct.name} | ${title}`)
       return
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`OC | ${route.data.id}`)
+      renderer.setTerminalTitle(`${AgencyProduct.name} | ${route.data.id}`)
     }
   })
 
@@ -618,14 +621,15 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
     },
     {
-      title: "Connect provider",
+      title: AgencyProduct.connect,
       value: "provider.connect",
       suggested: !connected(),
       slash: {
         name: "connect",
       },
       onSelect: () => {
-        dialog.replace(() => <DialogProviderList />)
+        const agency = local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID
+        dialog.replace(() => (agency ? <DialogAgencySwarmConnect /> : <DialogProviderList />))
       },
       category: "Provider",
     },
@@ -687,7 +691,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       title: "Open docs",
       value: "docs.open",
       onSelect: () => {
-        open("https://opencode.ai/docs").catch(() => {})
+        open(AgencyProduct.docs).catch(() => {})
         dialog.clear()
       },
       category: "System",
@@ -820,6 +824,10 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     const error = evt.properties.error
     if (error && typeof error === "object" && error.name === "MessageAbortedError") return
     const message = errorMessage(error)
+    if (shouldOpenAgencyConnectDialog({ providerID: local.model.current()?.providerID, message })) {
+      dialog.replace(() => <DialogAgencySwarmConnect />)
+      return
+    }
 
     toast.show({
       variant: "error",

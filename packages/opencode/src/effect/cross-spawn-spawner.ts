@@ -24,6 +24,7 @@ import {
 import * as NodeChildProcess from "node:child_process"
 import { PassThrough } from "node:stream"
 import launch from "cross-spawn"
+import { lazy } from "@/util/lazy"
 
 const toError = (err: unknown): Error => (err instanceof globalThis.Error ? err : new globalThis.Error(String(err)))
 
@@ -488,8 +489,6 @@ export const layer: Layer.Layer<ChildProcessSpawner, never, FileSystem.FileSyste
 )
 
 export const defaultLayer = layer.pipe(Layer.provide(NodeFileSystem.layer), Layer.provide(NodePath.layer))
-
-import { lazy } from "@/util/lazy"
 
 const rt = lazy(async () => {
   // Dynamic import to avoid circular dep: cross-spawn-spawner → run-service → Instance → project → cross-spawn-spawner
