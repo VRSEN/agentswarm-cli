@@ -38,6 +38,7 @@ import { DialogSessionList } from "@tui/component/dialog-session-list"
 import { DialogWorkspaceList } from "@tui/component/dialog-workspace-list"
 import { KeybindProvider, useKeybind } from "@tui/context/keybind"
 import { ThemeProvider, useTheme } from "@tui/context/theme"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { Home } from "@tui/routes/home"
 import { Session } from "@tui/routes/session"
 import { PromptHistoryProvider } from "./component/prompt/history"
@@ -627,7 +628,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         name: "connect",
       },
       onSelect: () => {
-        dialog.replace(() => <DialogProviderList />)
+        const agency = local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID
+        dialog.replace(() => (agency ? <DialogAgencySwarmConnect /> : <DialogProviderList />))
       },
       category: "Provider",
     },

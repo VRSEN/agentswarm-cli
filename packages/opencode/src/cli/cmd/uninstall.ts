@@ -8,6 +8,7 @@ import path from "path"
 import os from "os"
 import { Filesystem } from "../../util/filesystem"
 import { Process } from "../../util/process"
+import { AgencyProduct } from "@/agency-swarm/product"
 
 interface UninstallArgs {
   keepConfig: boolean
@@ -24,7 +25,7 @@ interface RemovalTargets {
 
 export const UninstallCommand = {
   command: "uninstall",
-  describe: "uninstall opencode and remove all related files",
+  describe: `uninstall ${AgencyProduct.cmd} and remove all related files`,
   builder: (yargs: Argv) =>
     yargs
       .option("keep-config", {
