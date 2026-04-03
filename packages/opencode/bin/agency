@@ -49,7 +49,7 @@ let arch = archMap[os.arch()]
 if (!arch) {
   arch = os.arch()
 }
-const base = "agentswarm-cli-" + platform + "-" + arch
+const base = "agent-swarm-cli-" + platform + "-" + arch
 const binary = platform === "windows" ? "agency.exe" : "agency"
 
 function supportsAvx2() {

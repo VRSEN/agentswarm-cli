@@ -16,6 +16,19 @@ import { Script } from "@opencode-ai/script"
 import pkg from "../package.json"
 
 const binary = "agency"
+const platform = "agent-swarm-cli"
+
+function target(item: (typeof allTargets)[number]) {
+  return [
+    "bun",
+    item.os === "win32" ? "windows" : item.os,
+    item.arch,
+    item.avx2 === false ? "baseline" : undefined,
+    item.abi === undefined ? undefined : item.abi,
+  ]
+    .filter(Boolean)
+    .join("-")
+}
 
 const modelsUrl = process.env.OPENCODE_MODELS_URL || "https://models.dev"
 // Fetch and generate models.dev snapshot
@@ -186,7 +199,7 @@ if (!skipInstall) {
 }
 for (const item of targets) {
   const name = [
-    pkg.name,
+    platform,
     // changing to win32 flags npm for some reason
     item.os === "win32" ? "windows" : item.os,
     item.arch,
@@ -216,7 +229,7 @@ for (const item of targets) {
       autoloadDotenv: false,
       autoloadTsconfig: true,
       autoloadPackageJson: true,
-      target: name.replace(pkg.name, "bun") as any,
+      target: target(item) as any,
       outfile: `dist/${name}/bin/${binary}`,
       execArgv: [`--user-agent=agentswarm-cli/${Script.version}`, "--use-system-ca", "--"],
       windows: {},

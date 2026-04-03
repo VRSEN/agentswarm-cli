@@ -51,7 +51,7 @@ function detectPlatformAndArch() {
 function findBinary() {
   const { platform, arch } = detectPlatformAndArch()
   const binaryName = platform === "windows" ? "agency.exe" : "agency"
-  const base = `agentswarm-cli-${platform}-${arch}`
+  const base = `agent-swarm-cli-${platform}-${arch}`
   const baseline = arch === "x64" && !supportsAvx2(platform, arch)
   const names = packageNames(platform, arch, base, baseline)
 

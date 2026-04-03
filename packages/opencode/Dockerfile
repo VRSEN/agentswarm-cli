@@ -7,10 +7,10 @@ ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=${BUN_RUNTIME_TRANSPILER_CACHE_PATH}
 RUN apk add libgcc libstdc++ ripgrep
 
 FROM base AS build-amd64
-COPY dist/agentswarm-cli-linux-x64-baseline-musl/bin/agency /usr/local/bin/agency
+COPY dist/agent-swarm-cli-linux-x64-baseline-musl/bin/agency /usr/local/bin/agency
 
 FROM base AS build-arm64
-COPY dist/agentswarm-cli-linux-arm64-musl/bin/agency /usr/local/bin/agency
+COPY dist/agent-swarm-cli-linux-arm64-musl/bin/agency /usr/local/bin/agency
 
 ARG TARGETARCH
 FROM build-${TARGETARCH}
