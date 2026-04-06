@@ -2,11 +2,12 @@ import { UI } from "../ui"
 import { cmd } from "./cmd"
 import { Git } from "@/git"
 import { Instance } from "@/project/instance"
+import { AgencyProduct } from "@/agency-swarm/product"
 import { Process } from "@/util/process"
 
 export const PrCommand = cmd({
   command: "pr <number>",
-  describe: "fetch and checkout a GitHub PR branch, then run agentswarm",
+  describe: `fetch and checkout a GitHub PR branch, then run ${AgencyProduct.cmd}`,
   builder: (yargs) =>
     yargs.positional("number", {
       type: "number",
@@ -90,7 +91,7 @@ export const PrCommand = cmd({
                 UI.println(`Found opencode session: ${sessionUrl}`)
                 UI.println(`Importing session...`)
 
-                const importResult = await Process.text(["agentswarm", "import", sessionUrl], {
+                const importResult = await Process.text([AgencyProduct.cmd, "import", sessionUrl], {
                   nothrow: true,
                 })
                 if (importResult.code === 0) {
@@ -109,18 +110,18 @@ export const PrCommand = cmd({
 
         UI.println(`Successfully checked out PR #${prNumber} as branch '${localBranchName}'`)
         UI.println()
-        UI.println("Starting agentswarm...")
+        UI.println(`Starting ${AgencyProduct.cmd}...`)
         UI.println()
 
         const runArgs = sessionId ? ["-s", sessionId] : []
-        const proc = Process.spawn(["agentswarm", ...runArgs], {
+        const proc = Process.spawn([AgencyProduct.cmd, ...runArgs], {
           stdin: "inherit",
           stdout: "inherit",
           stderr: "inherit",
           cwd: process.cwd(),
         })
         const code = await proc.exited
-        if (code !== 0) throw new Error(`agentswarm exited with code ${code}`)
+        if (code !== 0) throw new Error(`${AgencyProduct.cmd} exited with code ${code}`)
       },
     })
   },

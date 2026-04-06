@@ -181,9 +181,7 @@ async function main() {
   }
 }
 
-try {
-  main()
-} catch (error) {
+await main().catch((error) => {
   console.error("Postinstall script error:", error.message)
   process.exit(0)
-}
+})

@@ -76,9 +76,6 @@ export namespace Installation {
   const GitHubRelease = Schema.Struct({ tag_name: Schema.String })
   const NpmPackage = Schema.Struct({ version: Schema.String })
   const BrewFormula = Schema.Struct({ versions: Schema.Struct({ stable: Schema.String }) })
-  const BrewInfoV2 = Schema.Struct({
-    formulae: Schema.Array(Schema.Struct({ versions: Schema.Struct({ stable: Schema.String }) })),
-  })
   const ChocoPackage = Schema.Struct({
     d: Schema.Struct({ results: Schema.Array(Schema.Struct({ Version: Schema.String })) }),
   })
@@ -136,17 +133,16 @@ export namespace Installation {
           Effect.catch(() => Effect.succeed({ code: ChildProcessSpawner.ExitCode(1), stdout: "", stderr: "" })),
         )
 
+        const repo = "VRSEN/agentswarm-cli"
+        const install = `https://raw.githubusercontent.com/${repo}/dev/install`
+
         const getBrewFormula = Effect.fnUntraced(function* () {
-          const tapFormula = yield* text(["brew", "list", "--formula", "anomalyco/tap/opencode"])
-          if (tapFormula.includes("opencode")) return "anomalyco/tap/opencode"
-          const coreFormula = yield* text(["brew", "list", "--formula", "opencode"])
-          if (coreFormula.includes("opencode")) return "opencode"
           return "opencode"
         })
 
         const upgradeCurl = Effect.fnUntraced(
           function* (target: string) {
-            const response = yield* httpOk.execute(HttpClientRequest.get("https://opencode.ai/install"))
+            const response = yield* httpOk.execute(HttpClientRequest.get(install))
             const body = yield* response.text
             const bodyBytes = new TextEncoder().encode(body)
             const proc = ChildProcess.make("bash", [], {
@@ -206,13 +202,8 @@ export namespace Installation {
 
           if (detectedMethod === "brew") {
             const formula = yield* getBrewFormula()
-            if (formula.includes("/")) {
-              const infoJson = yield* text(["brew", "info", "--json=v2", formula])
-              const info = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(BrewInfoV2))(infoJson)
-              return info.formulae[0].versions.stable
-            }
             const response = yield* httpOk.execute(
-              HttpClientRequest.get("https://formulae.brew.sh/api/formula/opencode.json").pipe(
+              HttpClientRequest.get(`https://formulae.brew.sh/api/formula/${formula}.json`).pipe(
                 HttpClientRequest.acceptJson,
               ),
             )
@@ -220,7 +211,7 @@ export namespace Installation {
             return data.versions.stable
           }
 
-          if (detectedMethod === "npm" || detectedMethod === "bun" || detectedMethod === "pnpm") {
+          if (detectedMethod === "npm" || detectedMethod === "bun" || detectedMethod === "pnpm" || detectedMethod === "yarn") {
             const r = (yield* text(["npm", "config", "get", "registry"])).trim()
             const reg = r || "https://registry.npmjs.org"
             const registry = reg.endsWith("/") ? reg.slice(0, -1) : reg
@@ -253,7 +244,7 @@ export namespace Installation {
           }
 
           const response = yield* httpOk.execute(
-            HttpClientRequest.get("https://api.github.com/repos/anomalyco/opencode/releases/latest").pipe(
+            HttpClientRequest.get(`https://api.github.com/repos/${repo}/releases/latest`).pipe(
               HttpClientRequest.acceptJson,
             ),
           )
@@ -270,6 +261,9 @@ export namespace Installation {
             case "npm":
               result = yield* run(["npm", "install", "-g", `agentswarm-cli@${target}`])
               break
+            case "yarn":
+              result = yield* run(["yarn", "global", "add", `agentswarm-cli@${target}`])
+              break
             case "pnpm":
               result = yield* run(["pnpm", "install", "-g", `agentswarm-cli@${target}`])
               break
@@ -279,22 +273,6 @@ export namespace Installation {
             case "brew": {
               const formula = yield* getBrewFormula()
               const env = { HOMEBREW_NO_AUTO_UPDATE: "1" }
-              if (formula.includes("/")) {
-                const tap = yield* run(["brew", "tap", "anomalyco/tap"], { env })
-                if (tap.code !== 0) {
-                  result = tap
-                  break
-                }
-                const repo = yield* text(["brew", "--repo", "anomalyco/tap"])
-                const dir = repo.trim()
-                if (dir) {
-                  const pull = yield* run(["git", "pull", "--ff-only"], { cwd: dir, env })
-                  if (pull.code !== 0) {
-                    result = pull
-                    break
-                  }
-                }
-              }
               result = yield* run(["brew", "upgrade", formula], { env })
               break
             }
@@ -302,13 +280,13 @@ export namespace Installation {
               result = yield* run(["choco", "upgrade", "opencode", `--version=${target}`, "-y"])
               break
             case "scoop":
-              result = yield* run(["scoop", "install", `opencode@${target}`])
+              result = yield* run(["scoop", "update", "opencode"])
               break
             default:
               return yield* new UpgradeFailedError({ stderr: `Unknown method: ${m}` })
           }
           if (!result || result.code !== 0) {
-            const stderr = m === "choco" ? "not running from an elevated command shell" : result?.stderr || ""
+            const stderr = result?.stderr || ""
             return yield* new UpgradeFailedError({ stderr })
           }
           log.info("upgraded", {

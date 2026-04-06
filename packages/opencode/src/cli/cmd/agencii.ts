@@ -3,6 +3,7 @@ import { cmd } from "./cmd"
 import { bootstrap } from "../bootstrap"
 import { UI } from "../ui"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { AgencyProduct } from "@/agency-swarm/product"
 import { Auth } from "@/auth"
 import { Config } from "@/config/config"
 import path from "path"
@@ -91,7 +92,7 @@ const AgenciiAgenciesCommand = cmd({
       })
 
       if (discovered.agencies.length === 0) {
-        UI.println("No agencies discovered. Try `agentswarm agencii use <agency-id> --url ...`.")
+        UI.println(`No agencies discovered. Try \`${AgencyProduct.cmd} agencii use <agency-id> --url ...\`.`)
         return
       }
 

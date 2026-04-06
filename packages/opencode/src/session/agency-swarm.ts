@@ -425,8 +425,12 @@ export namespace SessionAgencySwarm {
       extra?: Record<string, unknown>,
     ) => {
       const key = textKey(itemID, index)
-      const current = textBuffer.get(key) || ""
       const isOpen = textOpen.has(key)
+      const raw = textBuffer.get(key) || ""
+      if (!isOpen && final !== undefined && raw && !final.startsWith(raw)) {
+        textBuffer.delete(key)
+      }
+      const current = textBuffer.get(key) || ""
       if (!isOpen && (final === undefined || final === current)) {
         return []
       }
@@ -438,7 +442,7 @@ export namespace SessionAgencySwarm {
       if (suffix) {
         parts.push(...textDelta(itemID, index, suffix, meta, extra))
       }
-      if (!suffix && final !== undefined && current && !final.startsWith(current) && !isOpen) {
+      if (!suffix && final !== undefined && current && !final.startsWith(current) && !textOpen.has(key)) {
         return []
       }
       parts.push(...closeText(key, meta, extra))
@@ -510,8 +514,12 @@ export namespace SessionAgencySwarm {
       extra?: Record<string, unknown>,
     ) => {
       const key = reasoningKey(itemID, index)
-      const current = reasoningBuffer.get(key) || ""
       const isOpen = reasoningOpen.has(key)
+      const raw = reasoningBuffer.get(key) || ""
+      if (!isOpen && text !== undefined && raw && !text.startsWith(raw)) {
+        reasoningBuffer.delete(key)
+      }
+      const current = reasoningBuffer.get(key) || ""
       if (!isOpen && (text === undefined || text === current)) {
         return []
       }
@@ -737,6 +745,10 @@ export namespace SessionAgencySwarm {
       const runFromMessages = asString(payload["run_id"])
       if (runFromMessages) {
         runID = runFromMessages
+        if (cancelBeforeMetaTimer) {
+          clearTimeout(cancelBeforeMetaTimer)
+          cancelBeforeMetaTimer = undefined
+        }
         await AgencySwarmHistory.setLastRunID(scope, runID)
         if (cancelRequested) {
           await sendCancel()
@@ -1059,6 +1071,10 @@ export namespace SessionAgencySwarm {
         })) {
           if (frame.type === "meta") {
             runID = frame.runID
+            if (cancelBeforeMetaTimer) {
+              clearTimeout(cancelBeforeMetaTimer)
+              cancelBeforeMetaTimer = undefined
+            }
             await AgencySwarmHistory.setLastRunID(scope, runID)
             if (cancelRequested) {
               await sendCancel()
@@ -1218,6 +1234,7 @@ export namespace SessionAgencySwarm {
 
             if (
               responseType === "response.function_call_arguments.delta" ||
+              responseType === "response.mcp_call_arguments.delta" ||
               responseType === "response.code_interpreter_call_code.delta"
             ) {
               const callID = findCallID(nested, item)
@@ -1348,10 +1365,11 @@ export namespace SessionAgencySwarm {
         cachedInputTokens: 0,
         cacheWriteInputTokens: 0,
       }
+      const cost = finalUsage.cost ?? 0
 
       yield {
         type: "finish-step",
-        finishReason: cancelRequested || streamAborted ? "cancelled" : streamError ? "error" : "stop",
+        finishReason: cancelRequested || streamAborted ? "cancelled" : "stop",
         usage: {
           inputTokens: finalUsage.inputTokens,
           outputTokens: finalUsage.outputTokens,
@@ -1362,7 +1380,7 @@ export namespace SessionAgencySwarm {
         providerMetadata: {
           agency_swarm: {
             cacheWriteInputTokens: finalUsage.cacheWriteInputTokens,
-            totalCost: finalUsage.cost,
+            totalCost: cost,
           },
         },
       }

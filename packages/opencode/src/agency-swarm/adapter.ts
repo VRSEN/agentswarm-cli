@@ -257,6 +257,7 @@ export namespace AgencySwarmAdapter {
       return
     }
 
+    let end = false
     try {
       for await (const event of parseSSE(response)) {
         if (event.event === "meta") {
@@ -282,6 +283,7 @@ export namespace AgencySwarmAdapter {
         }
 
         if (event.event === "end") {
+          end = true
           yield { type: "end" }
           break
         }
@@ -322,6 +324,11 @@ export namespace AgencySwarmAdapter {
         type: "error",
         error: toErrorMessage(error),
       }
+      yield { type: "end" }
+      end = true
+    }
+
+    if (!end) {
       yield { type: "end" }
     }
   }

@@ -26,7 +26,7 @@ export const UpgradeCommand = {
     UI.empty()
     prompts.intro("Upgrade")
     const detectedMethod = await Installation.method()
-    const method = (args.method as Installation.Method) ?? detectedMethod
+    let method = (args.method as Installation.Method) ?? detectedMethod
     if (method === "unknown") {
       prompts.log.error(`${AgencyProduct.cmd} is installed to ${process.execPath} and may be managed by a package manager`)
       const install = await prompts.select({
@@ -41,6 +41,7 @@ export const UpgradeCommand = {
         prompts.outro("Done")
         return
       }
+      method = "curl"
     }
     prompts.log.info("Using method: " + method)
     const target = args.target ? args.target.replace(/^v/, "") : await Installation.latest()
