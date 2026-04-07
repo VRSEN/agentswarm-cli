@@ -1,22 +1,22 @@
 # Fork Changelog: `origin/dev` -> `vrsen/dev`
 
-This document records the full fork delta from upstream OpenCode to the current `agentswarm-cli` fork tip.
+This document records the fork delta from upstream OpenCode.
 
 ## Baseline
 
 - Upstream baseline: `origin/dev` at `7afb517a1a22`
-- Fork tip: `vrsen/dev` at `6e485fdd918d`
+- Functional fork anchor: `vrsen/dev` at `847ce4d21aa2` (`docs: codify clean-fork branch policy`)
 - Remote parity: `vrsen/dev` == `private/dev`
-- Divergence: `git rev-list --left-right --count origin/dev...vrsen/dev` => `0 16`
+- Current divergence can be rechecked with: `git rev-list --left-right --count origin/dev...vrsen/dev`
 
 ## Scope Summary
 
-- Commit delta: 16 commits
-- File delta: 64 files changed
-- Diff size: 7,135 insertions / 657 deletions
-- Name-status mix: 19 added, 45 modified
+- Functional delta (`origin/dev..847ce4d21`): 15 commits
+- Functional file delta: 63 files changed
+- Functional diff size: 6,946 insertions / 657 deletions
+- Functional name-status mix: 18 added, 45 modified
 
-## Fork-Only Commits (Oldest -> Newest)
+## Functional Fork Commits (Oldest -> Newest)
 
 ```text
 fd2f678ba Rebuild agentswarm-cli on upstream dev
@@ -34,7 +34,6 @@ d2070ec31 tui: enforce dark-only theme
 5962ebc46 release: cut 1.3.16
 556a1c9e3 merge: sync fork dev with upstream dev
 847ce4d21 docs: codify clean-fork branch policy
-6e485fdd9 docs: add upstream fork changelog
 ```
 
 ## Functional Change Areas
@@ -111,13 +110,12 @@ d2070ec31 tui: enforce dark-only theme
   - upstream sync uses merge-based flow
   - rewrite exceptions require backup refs + `range-diff` proof
 
-## Full File Inventory (`origin/dev..vrsen/dev`)
+## Full Functional File Inventory (`origin/dev..847ce4d21`)
 
 ```text
 A	.github/workflows/publish-npm-on-release.yml
 M	.github/workflows/test.yml
 M	AGENTS.md
-A	FORK_CHANGELOG.md
 M	bun.lock
 M	install
 M	packages/app/src/app.tsx
@@ -184,8 +182,13 @@ M	packages/web/src/pages/s/[id].astro
 
 ```bash
 git fetch --all --prune
+# current fork snapshot
 git rev-list --left-right --count origin/dev...vrsen/dev
 git log --oneline --reverse origin/dev..vrsen/dev
 git diff --stat origin/dev..vrsen/dev
 git diff --name-status origin/dev..vrsen/dev
+# stable functional anchor used in this document
+git log --oneline --reverse origin/dev..847ce4d21
+git diff --stat origin/dev..847ce4d21
+git diff --name-status origin/dev..847ce4d21
 ```
