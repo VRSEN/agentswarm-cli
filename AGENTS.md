@@ -10,10 +10,17 @@
 - Treat `origin/dev` as the upstream baseline and keep the fork delta limited to Agency Swarm integration, required fork packaging/release work, and approved product branding.
 - Remote model:
   - `origin` = upstream OpenCode
-  - `vrsen` and `private` = fork remotes that must stay on the same commit SHA
+  - `vrsen` = canonical fork remote for `dev` pushes
+  - `private` = compatibility mirror/redirect for verification fetches; keep SHA-aligned with `vrsen`
 - `dev` on fork remotes is append-only. Do not force-push, rebase, or rewrite published `dev` history.
 - Upstream sync policy for fork `dev`: merge `origin/dev` into fork `dev` (or merge fork `dev` into a branch from `origin/dev`), then fast-forward push. Avoid restacking published commit series.
 - Commit preservation is mandatory. If a rewrite is explicitly approved as an emergency exception, create immutable backup tags/refs first and record a `range-diff` proof before and after.
+- Default sub-agent policy: use `gpt-5.4-mini` for delegated tasks unless the user explicitly approves a higher-cost model.
+- Sync workflow:
+  - run `git fetch --all --prune`
+  - verify `origin/dev...vrsen/dev` and `vrsen/dev...private/dev` counts
+  - push `dev` to `vrsen` first
+  - fetch `private` and verify SHA parity (do not force parity with branch rewrites)
 
 ## Style Guide
 
