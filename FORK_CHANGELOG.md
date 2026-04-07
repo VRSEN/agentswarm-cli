@@ -5,16 +5,16 @@ This document records the full fork delta from upstream OpenCode to the current 
 ## Baseline
 
 - Upstream baseline: `origin/dev` at `7afb517a1a22`
-- Fork tip: `vrsen/dev` at `847ce4d21aa2`
+- Fork tip: `vrsen/dev` at `6e485fdd918d`
 - Remote parity: `vrsen/dev` == `private/dev`
-- Divergence: `git rev-list --left-right --count origin/dev...vrsen/dev` => `0 15`
+- Divergence: `git rev-list --left-right --count origin/dev...vrsen/dev` => `0 16`
 
 ## Scope Summary
 
-- Commit delta: 15 commits
-- File delta: 63 files changed
-- Diff size: 6,946 insertions / 657 deletions
-- Name-status mix: 18 added, 45 modified
+- Commit delta: 16 commits
+- File delta: 64 files changed
+- Diff size: 7,135 insertions / 657 deletions
+- Name-status mix: 19 added, 45 modified
 
 ## Fork-Only Commits (Oldest -> Newest)
 
@@ -34,6 +34,7 @@ d2070ec31 tui: enforce dark-only theme
 5962ebc46 release: cut 1.3.16
 556a1c9e3 merge: sync fork dev with upstream dev
 847ce4d21 docs: codify clean-fork branch policy
+6e485fdd9 docs: add upstream fork changelog
 ```
 
 ## Functional Change Areas
@@ -116,6 +117,7 @@ d2070ec31 tui: enforce dark-only theme
 A	.github/workflows/publish-npm-on-release.yml
 M	.github/workflows/test.yml
 M	AGENTS.md
+A	FORK_CHANGELOG.md
 M	bun.lock
 M	install
 M	packages/app/src/app.tsx
