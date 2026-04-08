@@ -15,7 +15,7 @@
 - `dev` on fork remotes is append-only. Do not force-push, rebase, or rewrite published `dev` history.
 - Upstream sync policy for fork `dev`: merge `origin/dev` into fork `dev` (or merge fork `dev` into a branch from `origin/dev`), then fast-forward push. Avoid restacking published commit series.
 - Commit preservation is mandatory. If a rewrite is explicitly approved as an emergency exception, create immutable backup tags/refs first and record a `range-diff` proof before and after.
-- Default sub-agent policy: use `gpt-5.4-mini` for delegated tasks unless the user explicitly approves a higher-cost model.
+- Default delegated-review model policy: use Codex CLI with `gpt-5.3-codex` at high reasoning unless the user explicitly approves a different model.
 - Sync workflow:
   - run `git fetch --all --prune`
   - verify `origin/dev...vrsen/dev` and `vrsen/dev...private/dev` counts
