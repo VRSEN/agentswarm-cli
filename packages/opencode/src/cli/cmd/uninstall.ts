@@ -269,7 +269,6 @@ async function getShellConfigFile(): Promise<string | null> {
 
     const content = await Filesystem.readText(file).catch(() => "")
     if (
-      content.includes("# opencode") ||
       content.includes(`# ${AgencyBrand.cmd}`) ||
       content.includes(`${AgencyBrand.workspace}/bin`)
     ) {
@@ -290,7 +289,7 @@ async function cleanShellConfig(file: string) {
   for (const line of lines) {
     const trimmed = line.trim()
 
-    if (trimmed === "# opencode" || trimmed === `# ${AgencyBrand.cmd}`) {
+    if (trimmed === `# ${AgencyBrand.cmd}`) {
       skip = true
       continue
     }
