@@ -41,6 +41,7 @@ import { Duration, Effect, Layer, Option, ServiceMap } from "effect"
 import { Flock } from "@/util/flock"
 import { isPathPluginSpec, parsePluginSpecifier, resolvePathPluginTarget } from "@/plugin/shared"
 import { Npm } from "@/npm"
+import { AgencyBrand } from "@/agency-swarm/brand"
 
 export namespace Config {
   const ModelId = z.string().meta({ $ref: "https://models.dev/model-schema.json#/$defs/Model" })
@@ -63,11 +64,11 @@ export namespace Config {
   function systemManagedConfigDir(): string {
     switch (process.platform) {
       case "darwin":
-        return "/Library/Application Support/opencode"
+        return `/Library/Application Support/${AgencyBrand.config}`
       case "win32":
-        return path.join(process.env.ProgramData || "C:\\ProgramData", "opencode")
+        return path.join(process.env.ProgramData || "C:\\ProgramData", AgencyBrand.config)
       default:
-        return "/etc/opencode"
+        return `/etc/${AgencyBrand.config}`
     }
   }
 
@@ -77,7 +78,7 @@ export namespace Config {
 
   const managedDir = managedConfigDir()
 
-  const MANAGED_PLIST_DOMAIN = "ai.opencode.managed"
+  const MANAGED_PLIST_DOMAIN = `ai.${AgencyBrand.config}.managed`
 
   // Keys injected by macOS/MDM into the managed plist that are not OpenCode config
   const PLIST_META = new Set([
@@ -222,7 +223,12 @@ export namespace Config {
       })
       if (!md) continue
 
-      const patterns = ["/.opencode/command/", "/.opencode/commands/", "/command/", "/commands/"]
+      const patterns = [
+        `/${AgencyBrand.workspace}/command/`,
+        `/${AgencyBrand.workspace}/commands/`,
+        "/command/",
+        "/commands/",
+      ]
       const file = rel(item, patterns) ?? path.basename(item)
       const name = trim(file)
 
@@ -261,7 +267,7 @@ export namespace Config {
       })
       if (!md) continue
 
-      const patterns = ["/.opencode/agent/", "/.opencode/agents/", "/agent/", "/agents/"]
+      const patterns = [`/${AgencyBrand.workspace}/agent/`, `/${AgencyBrand.workspace}/agents/`, "/agent/", "/agents/"]
       const file = rel(item, patterns) ?? path.basename(item)
       const agentName = trim(file)
 
@@ -1068,9 +1074,7 @@ export namespace Config {
   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Config") {}
 
   function globalConfigFile() {
-    const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) =>
-      path.join(Global.Path.config, file),
-    )
+    const candidates = [...AgencyBrand.configFiles, "config.json"].map((file) => path.join(Global.Path.config, file))
     for (const file of candidates) {
       if (existsSync(file)) return file
     }
@@ -1219,12 +1223,10 @@ export namespace Config {
         })
 
         const loadGlobal = Effect.fnUntraced(function* () {
-          let result: Info = pipe(
-            {},
-            mergeDeep(yield* loadFile(path.join(Global.Path.config, "config.json"))),
-            mergeDeep(yield* loadFile(path.join(Global.Path.config, "opencode.json"))),
-            mergeDeep(yield* loadFile(path.join(Global.Path.config, "opencode.jsonc"))),
-          )
+          let result: Info = pipe({}, mergeDeep(yield* loadFile(path.join(Global.Path.config, "config.json"))))
+          for (const file of AgencyBrand.configFiles) {
+            result = mergeDeep(result, yield* loadFile(path.join(Global.Path.config, file)))
+          }
 
           const legacy = path.join(Global.Path.config, "config")
           if (existsSync(legacy)) {
@@ -1321,7 +1323,7 @@ export namespace Config {
 
           if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
             for (const file of yield* Effect.promise(() =>
-              ConfigPaths.projectFiles("opencode", ctx.directory, ctx.worktree),
+              ConfigPaths.projectFiles(AgencyBrand.config, ctx.directory, ctx.worktree),
             )) {
               merge(file, yield* loadFile(file), "local")
             }
@@ -1340,8 +1342,8 @@ export namespace Config {
           const deps: Promise<void>[] = []
 
           for (const dir of unique(directories)) {
-            if (dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR) {
-              for (const file of ["opencode.json", "opencode.jsonc"]) {
+            if (dir.endsWith(AgencyBrand.workspace) || dir === Flag.OPENCODE_CONFIG_DIR) {
+              for (const file of AgencyBrand.configFiles) {
                 const source = path.join(dir, file)
                 log.debug(`loading config from ${source}`)
                 merge(source, yield* loadFile(source))
@@ -1414,7 +1416,7 @@ export namespace Config {
           }
 
           if (existsSync(managedDir)) {
-            for (const file of ["opencode.json", "opencode.jsonc"]) {
+            for (const file of AgencyBrand.configFiles) {
               const source = path.join(managedDir, file)
               merge(source, yield* loadFile(source), "global")
             }

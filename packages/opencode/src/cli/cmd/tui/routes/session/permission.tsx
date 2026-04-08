@@ -402,7 +402,7 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
             }
 
             return {
-              icon: "⚙",
+              icon: "⚙ ",
               title: `Call tool ${permission}`,
               body: (
                 <box paddingLeft={1}>

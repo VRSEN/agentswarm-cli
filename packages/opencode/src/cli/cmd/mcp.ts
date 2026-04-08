@@ -8,6 +8,7 @@ import { MCP } from "../../mcp"
 import { McpAuth } from "../../mcp/auth"
 import { McpOAuthProvider } from "../../mcp/oauth-provider"
 import { Config } from "../../config/config"
+import { ConfigPaths } from "../../config/paths"
 import { Instance } from "../../project/instance"
 import { Installation } from "../../installation"
 import path from "path"
@@ -15,6 +16,7 @@ import { Global } from "../../global"
 import { modify, applyEdits } from "jsonc-parser"
 import { Filesystem } from "../../util/filesystem"
 import { Bus } from "../../bus"
+import { AgencyBrand } from "@/agency-swarm/brand"
 
 function getAuthStatusIcon(status: MCP.AuthStatus): string {
   switch (status) {
@@ -162,7 +164,9 @@ export const McpAuthCommand = cmd({
 
         if (oauthServers.length === 0) {
           prompts.log.warn("No OAuth-capable MCP servers configured")
-          prompts.log.info("Remote MCP servers support OAuth by default. Add a remote server in opencode.json:")
+          prompts.log.info(
+            `Remote MCP servers support OAuth by default. Add a remote server in ${AgencyBrand.config}.json:`,
+          )
           prompts.log.info(`
   "mcp": {
     "my-server": {
@@ -381,11 +385,11 @@ export const McpLogoutCommand = cmd({
 })
 
 async function resolveConfigPath(baseDir: string, global = false) {
-  // Check for existing config files (prefer .jsonc over .json, check .opencode/ subdirectory too)
-  const candidates = [path.join(baseDir, "opencode.json"), path.join(baseDir, "opencode.jsonc")]
+  // Check for existing config files (prefer .jsonc over .json, check branded workspace subdirectory too)
+  const candidates = ConfigPaths.fileInDirectory(baseDir, AgencyBrand.config)
 
   if (!global) {
-    candidates.push(path.join(baseDir, ".opencode", "opencode.json"), path.join(baseDir, ".opencode", "opencode.jsonc"))
+    candidates.push(...ConfigPaths.fileInDirectory(path.join(baseDir, AgencyBrand.workspace), AgencyBrand.config))
   }
 
   for (const candidate of candidates) {
@@ -394,7 +398,7 @@ async function resolveConfigPath(baseDir: string, global = false) {
     }
   }
 
-  // Default to opencode.json if none exist
+  // Default to branded server config if none exist
   return candidates[0]
 }
 
