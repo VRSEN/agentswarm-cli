@@ -18,6 +18,7 @@ import { parsePluginSpecifier, readPackageThemes, readPluginPackage, resolvePlug
 
 type Mode = "noop" | "add" | "replace"
 type Kind = "server" | "tui"
+export type PatchConfigName = typeof AgencyBrand.config | "tui"
 
 export type Target = {
   kind: Kind
@@ -32,7 +33,7 @@ export type PatchDeps = {
   readText: (file: string) => Promise<string>
   write: (file: string, text: string) => Promise<void>
   exists: (file: string) => Promise<boolean>
-  files: (dir: string, name: string) => string[]
+  files: (dir: string, name: PatchConfigName) => string[]
 }
 
 export type PatchInput = {
@@ -338,7 +339,7 @@ function patchDir(input: PatchInput) {
   return path.join(root, AgencyBrand.workspace)
 }
 
-function patchName(kind: Kind): string {
+function patchName(kind: Kind): PatchConfigName {
   if (kind === "server") return AgencyBrand.config
   return "tui"
 }
