@@ -1074,7 +1074,9 @@ export namespace Config {
   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Config") {}
 
   function globalConfigFile() {
-    const candidates = [...AgencyBrand.configFiles, "config.json"].map((file) => path.join(Global.Path.config, file))
+    const candidates = [...AgencyBrand.configFilesPreferred, "config.json"].map((file) =>
+      path.join(Global.Path.config, file),
+    )
     for (const file of candidates) {
       if (existsSync(file)) return file
     }

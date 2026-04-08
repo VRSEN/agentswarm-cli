@@ -5,5 +5,6 @@ export namespace AgencyBrand {
   export const cmd = AgencyProduct.cmd
   export const workspace = `.${id}`
   export const config = id
-  export const configFiles = [`${config}.jsonc`, `${config}.json`] as const
+  export const configFiles = [`${config}.json`, `${config}.jsonc`] as const
+  export const configFilesPreferred = [...configFiles].reverse() as readonly string[]
 }
