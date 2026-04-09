@@ -10,6 +10,7 @@ import { Flag } from "@/flag/flag"
 import { Log } from "@/util/log"
 import { isRecord } from "@/util/record"
 import { Global } from "@/global"
+import { AgencyBrand } from "@/agency-swarm/brand"
 
 export namespace TuiConfig {
   const log = Log.create({ service: "tui.config" })
@@ -107,7 +108,7 @@ export namespace TuiConfig {
     }
 
     for (const dir of unique(directories)) {
-      if (!dir.endsWith(".opencode") && dir !== Flag.OPENCODE_CONFIG_DIR) continue
+      if (!dir.endsWith(AgencyBrand.workspace) && dir !== Flag.OPENCODE_CONFIG_DIR) continue
       for (const file of ConfigPaths.fileInDirectory(dir, "tui")) {
         await mergeFile(acc, file)
       }
@@ -132,7 +133,7 @@ export namespace TuiConfig {
     const deps: Promise<void>[] = []
     if (acc.result.plugin?.length) {
       for (const dir of unique(directories)) {
-        if (!dir.endsWith(".opencode") && dir !== Flag.OPENCODE_CONFIG_DIR) continue
+        if (!dir.endsWith(AgencyBrand.workspace) && dir !== Flag.OPENCODE_CONFIG_DIR) continue
         deps.push(installDeps(dir))
       }
     }
@@ -166,7 +167,7 @@ export namespace TuiConfig {
     if (!isRecord(raw)) return {}
 
     // Flatten a nested "tui" key so users who wrote `{ "tui": { ... } }` inside tui.json
-    // (mirroring the old opencode.json shape) still get their settings applied.
+    // (mirroring older server config shape) still get their settings applied.
     const normalized = normalize(raw)
 
     const parsed = Info.safeParse(normalized)

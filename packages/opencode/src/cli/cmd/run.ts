@@ -70,7 +70,7 @@ function fallback(part: ToolPart) {
     ("title" in state && state.title ? state.title : undefined) ||
     (input && typeof input === "object" && Object.keys(input).length > 0 ? JSON.stringify(input) : "Unknown")
   inline({
-    icon: "⚙",
+    icon: "⚙ ",
     title: `${part.tool} ${title}`,
   })
 }
@@ -516,7 +516,7 @@ export const RunCommand = cmd({
               if (emit("reasoning", { part })) continue
               const text = part.text.trim()
               if (!text) continue
-              const line = `Thinking: ${text}`
+              const line = text
               if (process.stdout.isTTY) {
                 UI.empty()
                 UI.println(`${UI.Style.TEXT_DIM}\u001b[3m${line}\u001b[0m${UI.Style.TEXT_NORMAL}`)

@@ -12,11 +12,13 @@ import { Global } from "@/global"
 import { Filesystem } from "@/util/filesystem"
 import { Flock } from "@/util/flock"
 import { isRecord } from "@/util/record"
+import { AgencyBrand } from "@/agency-swarm/brand"
 
 import { parsePluginSpecifier, readPackageThemes, readPluginPackage, resolvePluginTarget } from "./shared"
 
 type Mode = "noop" | "add" | "replace"
 type Kind = "server" | "tui"
+export type PatchConfigName = typeof AgencyBrand.config | "tui"
 
 export type Target = {
   kind: Kind
@@ -31,7 +33,7 @@ export type PatchDeps = {
   readText: (file: string) => Promise<string>
   write: (file: string, text: string) => Promise<void>
   exists: (file: string) => Promise<boolean>
-  files: (dir: string, name: "opencode" | "tui") => string[]
+  files: (dir: string, name: PatchConfigName) => string[]
 }
 
 export type PatchInput = {
@@ -334,11 +336,11 @@ function patchDir(input: PatchInput) {
   if (input.global) return input.config ?? Global.Path.config
   const git = input.vcs === "git" && input.worktree !== "/"
   const root = git ? input.worktree : input.directory
-  return path.join(root, ".opencode")
+  return path.join(root, AgencyBrand.workspace)
 }
 
-function patchName(kind: Kind): "opencode" | "tui" {
-  if (kind === "server") return "opencode"
+function patchName(kind: Kind): PatchConfigName {
+  if (kind === "server") return AgencyBrand.config
   return "tui"
 }
 

@@ -9,6 +9,7 @@ import { Flag } from "@/flag/flag"
 import { Log } from "@/util/log"
 import { Filesystem } from "@/util/filesystem"
 import { Global } from "@/global"
+import { AgencyBrand } from "@/agency-swarm/brand"
 
 const log = Log.create({ service: "tui.migrate" })
 
@@ -31,13 +32,13 @@ type Input = {
 }
 
 /**
- * Migrates tui-specific keys from opencode.json files into dedicated tui.json
+ * Migrates tui-specific keys from server config files into dedicated tui.json
  * files. Legacy theme keys are stripped because the TUI now enforces a single
  * built-in dark theme.
  */
 export async function migrateTuiConfig(input: Input) {
-  const opencode = await opencodeFiles(input)
-  for (const file of opencode) {
+  const configs = await serverConfigFiles(input)
+  for (const file of configs) {
     const source = await Filesystem.readText(file).catch((error) => {
       log.warn("failed to read config for tui migration", { path: file, error })
       return undefined
@@ -145,16 +146,16 @@ async function backupAndStripLegacy(file: string, source: string) {
     })
 }
 
-async function opencodeFiles(input: { directories: string[]; managed: string }) {
+async function serverConfigFiles(input: { directories: string[]; managed: string }) {
   const project = Flag.OPENCODE_DISABLE_PROJECT_CONFIG
     ? []
-    : await ConfigPaths.projectFiles("opencode", Instance.directory, Instance.worktree)
-  const files = [...project, ...ConfigPaths.fileInDirectory(Global.Path.config, "opencode")]
+    : await ConfigPaths.projectFiles(AgencyBrand.config, Instance.directory, Instance.worktree)
+  const files = [...project, ...ConfigPaths.fileInDirectory(Global.Path.config, AgencyBrand.config)]
   for (const dir of unique(input.directories)) {
-    files.push(...ConfigPaths.fileInDirectory(dir, "opencode"))
+    files.push(...ConfigPaths.fileInDirectory(dir, AgencyBrand.config))
   }
   if (Flag.OPENCODE_CONFIG) files.push(Flag.OPENCODE_CONFIG)
-  files.push(...ConfigPaths.fileInDirectory(input.managed, "opencode"))
+  files.push(...ConfigPaths.fileInDirectory(input.managed, AgencyBrand.config))
 
   const existing = await Promise.all(
     unique(files).map(async (file) => {

@@ -32,6 +32,7 @@ import type { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { Permission } from "@/permission"
 import { Global } from "@/global"
+import { AgencyBrand } from "@/agency-swarm/brand"
 import type { LanguageModelV2Usage } from "@ai-sdk/provider"
 import { Effect, Layer, Scope, ServiceMap } from "effect"
 import { makeRuntime } from "@/effect/run-service"
@@ -237,7 +238,7 @@ export namespace Session {
 
   export function plan(input: { slug: string; time: { created: number } }) {
     const base = Instance.project.vcs
-      ? path.join(Instance.worktree, ".opencode", "plans")
+      ? path.join(Instance.worktree, AgencyBrand.workspace, "plans")
       : path.join(Global.Path.data, "plans")
     return path.join(base, [input.time.created, input.slug].join("-") + ".md")
   }

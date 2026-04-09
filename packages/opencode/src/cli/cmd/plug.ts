@@ -3,7 +3,7 @@ import type { Argv } from "yargs"
 
 import { ConfigPaths } from "../../config/paths"
 import { Global } from "../../global"
-import { installPlugin, patchPluginConfig, readPluginManifest } from "../../plugin/install"
+import { installPlugin, patchPluginConfig, readPluginManifest, type PatchConfigName } from "../../plugin/install"
 import { resolvePluginTarget } from "../../plugin/shared"
 import { Instance } from "../../project/instance"
 import { errorMessage } from "../../util/error"
@@ -28,7 +28,7 @@ export type PlugDeps = {
   readText: (file: string) => Promise<string>
   write: (file: string, text: string) => Promise<void>
   exists: (file: string) => Promise<boolean>
-  files: (dir: string, name: "opencode" | "tui") => string[]
+  files: (dir: string, name: PatchConfigName) => string[]
   global: string
 }
 

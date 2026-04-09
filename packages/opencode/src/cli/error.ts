@@ -5,6 +5,7 @@ import { Config } from "../config/config"
 import { MCP } from "../mcp"
 import { Provider } from "../provider/provider"
 import { UI } from "./ui"
+import { AgencyBrand } from "@/agency-swarm/brand"
 
 export function FormatError(input: unknown) {
   if (MCP.Failed.isInstance(input))
@@ -17,8 +18,8 @@ export function FormatError(input: unknown) {
     return [
       `Model not found: ${providerID}/${modelID}`,
       ...(Array.isArray(suggestions) && suggestions.length ? ["Did you mean: " + suggestions.join(", ")] : []),
-      `Try: \`opencode models\` to list available models`,
-      `Or check your config (opencode.json) provider/model names`,
+      `Try: \`${AgencyBrand.cmd} models\` to list available models`,
+      `Or check your config (${AgencyBrand.config}.json) provider/model names`,
     ].join("\n")
   }
   if (Provider.InitError.isInstance(input)) {

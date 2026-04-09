@@ -22,6 +22,7 @@ import { ProjectID } from "../../src/project/schema"
 import { Filesystem } from "../../src/util/filesystem"
 import * as Network from "../../src/util/network"
 import { Npm } from "../../src/npm"
+import { AgencyBrand } from "../../src/agency-swarm/brand"
 
 const emptyAccount = Layer.mock(Account.Service)({
   active: () => Effect.succeed(Option.none()),
@@ -201,6 +202,46 @@ test("jsonc overrides json in the same directory", async () => {
       expect(config.username).toBe("base")
     },
   })
+})
+
+test("jsonc overrides json for branded global config files", async () => {
+  await using globalTmp = await tmpdir()
+  await using projectTmp = await tmpdir()
+  const prev = Global.Path.config
+  ;(Global.Path as { config: string }).config = globalTmp.path
+  await Config.invalidate()
+  try {
+    await writeConfig(
+      globalTmp.path,
+      {
+        $schema: "https://opencode.ai/config.json",
+        model: "from-json",
+      },
+      `${AgencyBrand.config}.json`,
+    )
+    await writeConfig(
+      globalTmp.path,
+      {
+        $schema: "https://opencode.ai/config.json",
+        model: "from-jsonc",
+        username: "global-jsonc",
+      },
+      `${AgencyBrand.config}.jsonc`,
+    )
+
+    await Instance.provide({
+      directory: projectTmp.path,
+      fn: async () => {
+        const config = await Config.get()
+        expect(config.model).toBe("from-jsonc")
+        expect(config.username).toBe("global-jsonc")
+      },
+    })
+  } finally {
+    await Instance.disposeAll()
+    ;(Global.Path as { config: string }).config = prev
+    await Config.invalidate()
+  }
 })
 
 test("handles environment variable substitution", async () => {

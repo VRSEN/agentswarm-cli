@@ -11,6 +11,7 @@ import matter from "gray-matter"
 import { Instance } from "../../project/instance"
 import { EOL } from "os"
 import type { Argv } from "yargs"
+import { AgencyBrand } from "@/agency-swarm/brand"
 
 type AgentMode = "all" | "primary" | "subagent"
 
@@ -87,7 +88,7 @@ const AgentCreateCommand = cmd({
             scope = scopeResult
           }
           targetPath = path.join(
-            scope === "global" ? Global.Path.config : path.join(Instance.worktree, ".opencode"),
+            scope === "global" ? Global.Path.config : path.join(Instance.worktree, AgencyBrand.workspace),
             "agent",
           )
         }
