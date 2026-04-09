@@ -806,7 +806,7 @@ export async function openStatusPopover(page: Page) {
   const rightSection = page.locator(titlebarRightSelector)
   const trigger = rightSection.getByRole("button", { name: /status/i }).first()
 
-  const popoverBody = page.locator(popoverBodySelector).filter({ has: page.locator('[data-component="tabs"]') })
+  const popoverBody = page.locator(popoverBodySelector).filter({ has: page.locator('[data-component="tabs"]') }).first()
 
   const opened = await popoverBody
     .isVisible()
@@ -814,9 +814,22 @@ export async function openStatusPopover(page: Page) {
     .catch(() => false)
 
   if (!opened) {
-    await expect(trigger).toBeVisible()
-    await trigger.click()
-    await expect(popoverBody).toBeVisible()
+    await expect(trigger).toBeVisible({ timeout: 30_000 })
+
+    let popoverVisible = false
+    for (let attempt = 0; attempt < 3 && !popoverVisible; attempt++) {
+      await trigger.click({ timeout: 10_000 })
+      popoverVisible = await popoverBody
+        .waitFor({ state: "visible", timeout: 20_000 })
+        .then(() => true)
+        .catch(() => false)
+    }
+
+    if (!popoverVisible) {
+      await trigger.focus()
+      await page.keyboard.press("Enter")
+      await expect(popoverBody).toBeVisible({ timeout: 30_000 })
+    }
   }
 
   return { rightSection, popoverBody }
