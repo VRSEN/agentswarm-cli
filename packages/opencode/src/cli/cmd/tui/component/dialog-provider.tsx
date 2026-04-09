@@ -165,7 +165,7 @@ export function DialogProvider(props: DialogProviderProps = {}) {
 }
 
 export function DialogAuth() {
-  return <DialogProvider title="Authenticate provider" providerIDs={["openai"]} />
+  return <DialogProvider title="Authenticate provider" />
 }
 
 type Option =
