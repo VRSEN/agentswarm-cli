@@ -26,14 +26,25 @@ const PROVIDER_PRIORITY: Record<string, number> = {
 }
 
 export function createDialogProviderOptions() {
+  return createDialogProviderOptionsWithFilter()
+}
+
+type DialogProviderProps = {
+  providerIDs?: readonly string[]
+  title?: string
+}
+
+export function createDialogProviderOptionsWithFilter(props: DialogProviderProps = {}) {
   const sync = useSync()
   const dialog = useDialog()
   const sdk = useSDK()
   const toast = useToast()
   const { theme } = useTheme()
+  const allowed = createMemo(() => new Set(props.providerIDs ?? []))
   const options = createMemo(() => {
     return pipe(
       sync.data.provider_next.all,
+      (items) => (allowed().size ? items.filter((item) => allowed().has(item.id)) : items),
       sortBy((x) => PROVIDER_PRIORITY[x.id] ?? 99),
       map((provider) => {
         const consoleManaged = isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, provider.id)
@@ -148,9 +159,13 @@ export function createDialogProviderOptions() {
   return options
 }
 
-export function DialogProvider() {
-  const options = createDialogProviderOptions()
-  return <DialogSelect title="Connect a provider" options={options()} />
+export function DialogProvider(props: DialogProviderProps = {}) {
+  const options = createDialogProviderOptionsWithFilter(props)
+  return <DialogSelect title={props.title ?? "Connect a provider"} options={options()} />
+}
+
+export function DialogAuth() {
+  return <DialogProvider title="Authenticate provider" />
 }
 
 type Option =

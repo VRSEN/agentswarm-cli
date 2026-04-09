@@ -20,7 +20,7 @@ import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { Flag } from "@/flag/flag"
 import semver from "semver"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
-import { DialogAgencySwarmConnect, DialogProvider as DialogProviderList } from "@tui/component/dialog-provider"
+import { DialogAgencySwarmConnect, DialogAuth } from "@tui/component/dialog-provider"
 import { ErrorComponent } from "@tui/component/error-component"
 import { PluginRouteMissing } from "@tui/component/plugin-route-missing"
 import { SDKProvider, useSDK } from "@tui/context/sdk"
@@ -38,7 +38,6 @@ import { DialogWorkspaceList } from "@tui/component/dialog-workspace-list"
 import { DialogConsoleOrg } from "@tui/component/dialog-console-org"
 import { KeybindProvider, useKeybind } from "@tui/context/keybind"
 import { ThemeProvider, useTheme } from "@tui/context/theme"
-import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { Home } from "@tui/routes/home"
 import { Session } from "@tui/routes/session"
 import { PromptHistoryProvider } from "./component/prompt/history"
@@ -442,7 +441,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       (isEmpty, wasEmpty) => {
         // only trigger when we transition into an empty-provider state
         if (!isEmpty || wasEmpty) return
-        dialog.replace(() => <DialogProviderList />)
+        dialog.replace(() => <DialogAuth />)
       },
     ),
   )
@@ -622,6 +621,18 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
     },
     {
+      title: "Authenticate provider",
+      value: "provider.auth",
+      suggested: !connected(),
+      slash: {
+        name: "auth",
+      },
+      onSelect: () => {
+        dialog.replace(() => <DialogAuth />)
+      },
+      category: "Provider",
+    },
+    {
       title: AgencyProduct.connect,
       value: "provider.connect",
       suggested: !connected(),
@@ -629,8 +640,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         name: "connect",
       },
       onSelect: () => {
-        const agency = local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID
-        dialog.replace(() => (agency ? <DialogAgencySwarmConnect /> : <DialogProviderList />))
+        dialog.replace(() => <DialogAgencySwarmConnect />)
       },
       category: "Provider",
     },

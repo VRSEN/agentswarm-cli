@@ -56,7 +56,7 @@ export function Footer() {
         <Switch>
           <Match when={store.welcome}>
             <text fg={theme.text}>
-              Get started <span style={{ fg: theme.textMuted }}>/connect</span>
+              Get started <span style={{ fg: theme.textMuted }}>/auth</span>
             </text>
           </Match>
           <Match when={connected()}>
