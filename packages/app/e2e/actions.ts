@@ -825,11 +825,7 @@ export async function openStatusPopover(page: Page) {
         .catch(() => false)
     }
 
-    if (!popoverVisible) {
-      await trigger.focus()
-      await page.keyboard.press("Enter")
-      await expect(popoverBody).toBeVisible({ timeout: 30_000 })
-    }
+    await expect(popoverVisible, "status popover did not open after clicking the status button").toBe(true)
   }
 
   return { rightSection, popoverBody }
