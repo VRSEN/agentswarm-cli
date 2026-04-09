@@ -153,6 +153,12 @@ export function DialogProvider() {
   return <DialogSelect title="Connect a provider" options={options()} />
 }
 
+export function DialogProviderAuth() {
+  const options = createDialogProviderOptions()
+  const filtered = createMemo(() => options().filter((item) => item.value === "openai"))
+  return <DialogSelect title="Authenticate provider" options={filtered()} />
+}
+
 type Option =
   | {
       kind: "server"

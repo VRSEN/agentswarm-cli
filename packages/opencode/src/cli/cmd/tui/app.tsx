@@ -20,7 +20,11 @@ import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { Flag } from "@/flag/flag"
 import semver from "semver"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
-import { DialogAgencySwarmConnect, DialogProvider as DialogProviderList } from "@tui/component/dialog-provider"
+import {
+  DialogAgencySwarmConnect,
+  DialogProvider as DialogProviderList,
+  DialogProviderAuth,
+} from "@tui/component/dialog-provider"
 import { ErrorComponent } from "@tui/component/error-component"
 import { PluginRouteMissing } from "@tui/component/plugin-route-missing"
 import { SDKProvider, useSDK } from "@tui/context/sdk"
@@ -442,7 +446,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       (isEmpty, wasEmpty) => {
         // only trigger when we transition into an empty-provider state
         if (!isEmpty || wasEmpty) return
-        dialog.replace(() => <DialogProviderList />)
+        dialog.replace(() => <DialogProviderAuth />)
       },
     ),
   )
@@ -629,8 +633,18 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         name: "connect",
       },
       onSelect: () => {
-        const agency = local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID
-        dialog.replace(() => (agency ? <DialogAgencySwarmConnect /> : <DialogProviderList />))
+        dialog.replace(() => <DialogAgencySwarmConnect />)
+      },
+      category: "Provider",
+    },
+    {
+      title: "Authenticate provider",
+      value: "provider.auth",
+      slash: {
+        name: "auth",
+      },
+      onSelect: () => {
+        dialog.replace(() => <DialogProviderAuth />)
       },
       category: "Provider",
     },

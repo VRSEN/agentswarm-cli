@@ -7,6 +7,7 @@ export namespace AgencyProduct {
   export const start = [
     "Connect to a local agency-swarm server before sending prompts.",
     "Use /connect to choose the server, store a token, and refresh status.",
+    "Use /auth to add provider credentials (OpenAI first).",
   ]
 
   const skip = [
@@ -29,6 +30,7 @@ export namespace AgencyProduct {
 
   const add = [
     "Use {highlight}/connect{/highlight} to choose the local agency-swarm server you want to use",
+    "Use {highlight}/auth{/highlight} to manage provider credentials",
     "Use {highlight}/agents{/highlight} to pick the active agency and recipient agent from live metadata",
     "Set {highlight}provider.agency-swarm.options.baseURL{/highlight} in config to pin a default local server",
     "Use {highlight}/connect{/highlight} to configure local server ports and your Agency token",
@@ -57,7 +59,7 @@ export namespace AgencyProduct {
           next = next.replace("long sessions near context limits", "long agency-swarm sessions near context limits")
         }
         if (next.includes("{highlight}opencode auth list{/highlight}")) {
-          next = "Run {highlight}agentswarm auth list{/highlight} to see the stored agency-swarm token"
+          next = `Run {highlight}${cmd} auth list{/highlight} to see stored credentials`
         }
         return next
       })
