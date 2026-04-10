@@ -1,8 +1,24 @@
 - To regenerate the JavaScript SDK, run `./packages/sdk/js/script/build.ts`.
 - ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
-- The default branch in this repo is `dev`.
-- Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
-- Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
+- Re-read this file at the start of each new task.
+- Use fresh tool output before acting; do not rely on memory.
+- Keep this file short. Consolidate or tighten rules before adding new ones.
+- The operational branch for this repo is `dev`. Use `origin/dev` as the default baseline for diffs, review, and sync work.
+- If `origin/dev` is unavailable, escalate. Do not silently substitute another baseline.
+- Prefer automation for read, edit, and test work.
+- Before destructive commands, branch rewrites, force operations, releases, or process changes you did not start, get explicit user approval.
+
+## Review Policy
+
+- For non-trivial functional/code changes, run one Codex-based review path that is available (fresh subagent review or local Codex CLI review).
+- If Codex review tooling is unavailable, continue with manual review and state that limitation.
+
+## AGENTS.md Policy
+
+- `AGENTS.md` changes are user-reviewed manually and do not require Codex review.
+- Do not open PRs for `AGENTS.md`-only changes.
+- Commit and push `AGENTS.md`-only changes directly to the default branch (`dev` in this repo) after user approval.
+- Before shipping unshipped work, ask the user for explicit shipping approval in one clear sentence and wait for approval before proceeding.
 
 ## Fork Context
 
