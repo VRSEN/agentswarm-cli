@@ -17,12 +17,12 @@ import { CONSOLE_MANAGED_ICON, isConsoleManagedProvider } from "@tui/util/provid
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
-  opencode: 0,
-  "opencode-go": 1,
-  openai: 2,
-  "github-copilot": 3,
-  anthropic: 4,
-  google: 5,
+  openai: 0,
+  anthropic: 1,
+  "github-copilot": 2,
+  google: 3,
+  "opencode-go": 4,
+  opencode: 100,
 }
 
 export function createDialogProviderOptions() {
