@@ -2,6 +2,7 @@
 - ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
 - Re-read this file at the start of each new task.
 - Use fresh tool output before acting; do not rely on memory.
+- Protect the context window. Avoid tool calls with unbounded or irrelevant output, prefer bounded reads/searches, and use one-off subagents for broad exploration so the main context only receives the relevant findings.
 - Keep this file short. Consolidate or tighten rules before adding new ones.
 - The operational branch for this repo is `dev`. Use `origin/dev` as the default baseline for diffs, review, and sync work.
 - If `origin/dev` is unavailable, escalate. Do not silently substitute another baseline.
