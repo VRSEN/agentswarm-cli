@@ -37,7 +37,7 @@
 ## Escalation Gate
 
 - Escalate when there is no active mandate for the next step, the mandate boundary is unclear, or a required precondition for shipping is missing.
-- Escalate before creating a repo or fork, changing the target remote or visibility, merging, releasing, deploying, or running a destructive or history-rewriting operation unless the current mandate explicitly covers it.
+- Escalate before creating a repo or fork, changing the target remote or visibility, merging, releasing, or deploying unless the current mandate explicitly covers it.
 
 ## Fork Context
 
