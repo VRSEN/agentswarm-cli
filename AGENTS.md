@@ -20,6 +20,25 @@
 - Commit and push `AGENTS.md`-only changes directly to the default branch (`dev` in this repo) after user approval.
 - Before shipping unshipped work, ask the user for explicit shipping approval in one clear sentence and wait for approval before proceeding.
 
+## Execution Ledger
+
+- Use the plan/todo list as the live ledger for every user request, blocker, and dependency that is not fully shipped and approved.
+- Do not drop a task from that ledger until it is shipped, explicitly deferred, or explicitly removed by the user.
+- If you realize you forgot earlier task details that affect the current work, recover the relevant transcript or task history before proceeding.
+- If a critical-path step needs user approval or input, surface that blocker immediately and do not drift into unrelated work until it is resolved or explicitly deprioritized.
+
+## Mandate Boundary
+
+- Work only inside the active mandate for the task. The mandate must cover the action, the target repo/branch/artifact, and the visibility of the result.
+- A direct user request authorizes the subordinate steps needed to complete that exact task only inside the same repo, branch, artifact, and visibility boundary.
+- Mandate does not expand by implication. Permission to edit or review does not by itself authorize repo creation, forks, publication, merges, releases, deploys, destructive actions, or writes to a different target.
+- If the next step would cross that boundary, or the boundary is partial or unclear, stop and escalate before acting.
+
+## Escalation Gate
+
+- Escalate when there is no active mandate for the next step, the mandate boundary is unclear, or a required precondition for shipping is missing.
+- Escalate before creating a repo or fork, changing the target remote or visibility, merging, releasing, deploying, or running a destructive or history-rewriting operation unless the current mandate explicitly covers it.
+
 ## Fork Context
 
 - This is `agentswarm-cli`, a minimal OpenCode fork for Agency Swarm.
