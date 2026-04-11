@@ -10,13 +10,17 @@ process.chdir(dir)
 const binary = "agency"
 const commands = ["agentswarm"]
 const roots = [pkg.name]
-const bins: Record<string, string> = {}
+const bins: { dir: string; name: string; version: string }[] = []
 for (const file of new Bun.Glob("*/package.json").scanSync({ cwd: "./dist" })) {
   const item = await Bun.file(`./dist/${file}`).json()
-  bins[item.name] = item.version
+  bins.push({
+    dir: file.replace("/package.json", ""),
+    name: item.name,
+    version: item.version,
+  })
 }
 
-const version = Object.values(bins)[0]
+const version = bins[0]?.version
 if (!version) {
   throw new Error("No platform packages were found in packages/opencode/dist. Run the build first.")
 }
@@ -49,7 +53,8 @@ for (const root of roots) {
         scripts: {
           postinstall: "bun ./postinstall.mjs || node ./postinstall.mjs",
         },
-        optionalDependencies: bins,
+        optionalDependencies: Object.fromEntries(bins.map((item) => [item.name, item.version])),
+        platformScope: pkg.platformScope,
         publishConfig: {
           access: "public",
         },
@@ -61,13 +66,13 @@ for (const root of roots) {
 }
 
 await Promise.all(
-  Object.keys(bins).map(async (name) => {
+  bins.map(async (item) => {
     if (process.platform !== "win32") {
-      await $`chmod -R 755 .`.cwd(`./dist/${name}`)
+      await $`chmod -R 755 .`.cwd(`./dist/${item.dir}`)
     }
-    await clean(`./dist/${name}`)
-    await $`bun pm pack`.cwd(`./dist/${name}`)
-    await $`npm publish *.tgz --access public --tag ${Script.channel}`.cwd(`./dist/${name}`)
+    await clean(`./dist/${item.dir}`)
+    await $`bun pm pack`.cwd(`./dist/${item.dir}`)
+    await $`npm publish *.tgz --access public --tag ${Script.channel}`.cwd(`./dist/${item.dir}`)
   }),
 )
 

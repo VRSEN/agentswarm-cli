@@ -16,6 +16,7 @@ import { Script } from "@opencode-ai/script"
 import pkg from "../package.json"
 
 const binary = "agency"
+const scope = pkg.platformScope
 
 const modelsUrl = process.env.OPENCODE_MODELS_URL || "https://models.dev"
 // Fetch and generate models.dev snapshot
@@ -185,7 +186,7 @@ if (!skipInstall) {
   await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
 }
 for (const item of targets) {
-  const name = [
+  const target = [
     pkg.name,
     // changing to win32 flags npm for some reason
     item.os === "win32" ? "windows" : item.os,
@@ -195,8 +196,9 @@ for (const item of targets) {
   ]
     .filter(Boolean)
     .join("-")
-  console.log(`building ${name}`)
-  await $`mkdir -p dist/${name}/bin`
+  const name = scope ? `${scope}/${target}` : target
+  console.log(`building ${target}`)
+  await $`mkdir -p dist/${target}/bin`
 
   const localPath = path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
   const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js")
@@ -217,8 +219,8 @@ for (const item of targets) {
       autoloadDotenv: false,
       autoloadTsconfig: true,
       autoloadPackageJson: true,
-      target: name.replace(pkg.name, "bun") as any,
-      outfile: `dist/${name}/bin/${binary}`,
+      target: target.replace(pkg.name, "bun") as any,
+      outfile: `dist/${target}/bin/${binary}`,
       execArgv: [`--user-agent=agentswarm-cli/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
@@ -238,19 +240,19 @@ for (const item of targets) {
 
   // Smoke test: only run if binary is for current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
-    const binaryPath = `dist/${name}/bin/${binary}`
+    const binaryPath = `dist/${target}/bin/${binary}`
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
       const versionOutput = await $`${binaryPath} --version`.text()
       console.log(`Smoke test passed: ${versionOutput.trim()}`)
     } catch (e) {
-      console.error(`Smoke test failed for ${name}:`, e)
+      console.error(`Smoke test failed for ${target}:`, e)
       process.exit(1)
     }
   }
 
-  await $`rm -rf ./dist/${name}/bin/tui`
-  await Bun.file(`dist/${name}/package.json`).write(
+  await $`rm -rf ./dist/${target}/bin/tui`
+  await Bun.file(`dist/${target}/package.json`).write(
     JSON.stringify(
       {
         name,
@@ -262,7 +264,7 @@ for (const item of targets) {
       2,
     ),
   )
-  binaries[name] = Script.version
+  binaries[target] = Script.version
 }
 
 if (Script.release) {

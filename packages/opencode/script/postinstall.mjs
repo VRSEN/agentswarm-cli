@@ -9,6 +9,8 @@ import { createRequire } from "module"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8"))
+const scope = pkg.platformScope || ""
 
 function detectPlatformAndArch() {
   // Map platform names
@@ -119,26 +121,31 @@ function supportsAvx2(platform, arch) {
 }
 
 function packageNames(platform, arch, base, baseline) {
-  if (platform === "linux") {
-    const musl = isMusl()
-    if (arch === "x64") {
-      if (musl) {
-        if (baseline) return [`${base}-baseline-musl`, `${base}-musl`, `${base}-baseline`, base]
-        return [`${base}-musl`, `${base}-baseline-musl`, base, `${base}-baseline`]
+  const names = (() => {
+    if (platform === "linux") {
+      const musl = isMusl()
+      if (arch === "x64") {
+        if (musl) {
+          if (baseline) return [`${base}-baseline-musl`, `${base}-musl`, `${base}-baseline`, base]
+          return [`${base}-musl`, `${base}-baseline-musl`, base, `${base}-baseline`]
+        }
+        if (baseline) return [`${base}-baseline`, base, `${base}-baseline-musl`, `${base}-musl`]
+        return [base, `${base}-baseline`, `${base}-musl`, `${base}-baseline-musl`]
       }
-      if (baseline) return [`${base}-baseline`, base, `${base}-baseline-musl`, `${base}-musl`]
-      return [base, `${base}-baseline`, `${base}-musl`, `${base}-baseline-musl`]
+      if (musl) return [`${base}-musl`, base]
+      return [base, `${base}-musl`]
     }
-    if (musl) return [`${base}-musl`, base]
-    return [base, `${base}-musl`]
-  }
 
-  if (arch === "x64") {
-    if (baseline) return [`${base}-baseline`, base]
-    return [base, `${base}-baseline`]
-  }
+    if (arch === "x64") {
+      if (baseline) return [`${base}-baseline`, base]
+      return [base, `${base}-baseline`]
+    }
 
-  return [base]
+    return [base]
+  })()
+
+  if (!scope) return names
+  return names.map((name) => `${scope}/${name}`)
 }
 
 function isMusl() {
