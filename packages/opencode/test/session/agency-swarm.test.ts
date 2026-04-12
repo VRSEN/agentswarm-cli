@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { Auth } from "../../src/auth"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
 import { Instance } from "../../src/project/instance"
@@ -16,6 +17,7 @@ describe("session.agency-swarm", () => {
   const originalLoad = AgencySwarmHistory.load
   const originalAppendMessages = AgencySwarmHistory.appendMessages
   const originalSetLastRunID = AgencySwarmHistory.setLastRunID
+  const originalAuthAll = Auth.all
 
   afterEach(() => {
     AgencySwarmAdapter.discover = originalDiscover
@@ -25,6 +27,7 @@ describe("session.agency-swarm", () => {
     AgencySwarmHistory.load = originalLoad
     AgencySwarmHistory.appendMessages = originalAppendMessages
     AgencySwarmHistory.setLastRunID = originalSetLastRunID
+    Auth.all = originalAuthAll
   })
 
   const helper = () => {
@@ -188,6 +191,81 @@ describe("session.agency-swarm", () => {
     })
 
     expect(options.token).toBe("auth-token")
+  })
+
+  test("stream forwards stored API auth as request-scoped client_config", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      openai: { type: "api", key: "sk-openai" } as any,
+      anthropic: { type: "api", key: "sk-ant" } as any,
+      "google-vertex": { type: "api", key: "vertex-key" } as any,
+      "amazon-bedrock": { type: "api", key: "bedrock-key" } as any,
+      "agency-swarm": { type: "api", key: "server-token" } as any,
+      openrouter: { type: "api", key: "openrouter-key" } as any,
+      github: { type: "oauth", access: "oauth-token" } as any,
+    })) as typeof Auth.all
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.clientConfig = {
+      apiKey: "manual-openai",
+      base_url: "https://proxy.example.com/v1",
+      litellm_keys: {
+        anthropic: "manual-ant",
+        groq: "manual-groq",
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "manual-openai",
+      base_url: "https://proxy.example.com/v1",
+      litellm_keys: {
+        anthropic: "manual-ant",
+        bedrock: "bedrock-key",
+        groq: "manual-groq",
+        openrouter: "openrouter-key",
+        vertex_ai: "vertex-key",
+      },
+    })
+  })
+
+  test("stream does not forward stored API auth to remote agency-swarm servers", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      openai: { type: "api", key: "sk-openai" } as any,
+      anthropic: { type: "api", key: "sk-ant" } as any,
+    })) as typeof Auth.all
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.baseURL = "https://agency.example.com"
+    input.options.clientConfig = {
+      base_url: "https://proxy.example.com/v1",
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      base_url: "https://proxy.example.com/v1",
+    })
   })
 
   test("resolveAgency uses single discovered agency", async () => {

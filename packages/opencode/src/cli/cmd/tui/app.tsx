@@ -60,7 +60,7 @@ import { TuiConfig } from "@/config/tui"
 import { createTuiApi, TuiPluginRuntime, type RouteMap } from "./plugin"
 import { FormatError, FormatUnknownError } from "@/cli/error"
 import { AgencyProduct } from "@/agency-swarm/product"
-import { shouldOpenAgencyConnectDialog } from "./session-error"
+import { hasUsableProvider, shouldOpenAgencyConnectDialog } from "./session-error"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -437,10 +437,9 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
 
   createEffect(
     on(
-      () => sync.status === "complete" && sync.data.provider.length === 0,
-      (isEmpty, wasEmpty) => {
-        // only trigger when we transition into an empty-provider state
-        if (!isEmpty || wasEmpty) return
+      () => sync.status === "complete" && !hasUsableProvider(sync.data.provider),
+      (needsAuth, previouslyNeededAuth) => {
+        if (!needsAuth || previouslyNeededAuth) return
         dialog.replace(() => <DialogAuth />)
       },
     ),

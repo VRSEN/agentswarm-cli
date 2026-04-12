@@ -3,10 +3,10 @@ export namespace AgencyProduct {
   export const cmd = "agentswarm"
   export const docs = "https://agency-swarm.ai/core-framework/agencies/agent-swarm-cli"
   export const issue = "https://github.com/VRSEN/agentswarm-cli/issues/new?template=bug-report.yml"
-  export const connect = "Connect to agency-swarm"
+  export const connect = "Authenticate providers"
   export const start = [
-    "Connect to a local agency-swarm server before sending prompts.",
-    "Use /connect to choose the server, store a token, and refresh status.",
+    "Authenticate providers and connect to a local agency-swarm server before sending prompts.",
+    "Use /auth for provider credentials, then /connect to choose the server and store a token.",
   ]
 
   const skip = [
@@ -28,7 +28,7 @@ export namespace AgencyProduct {
   ]
 
   const add = [
-    "Use {highlight}/auth{/highlight} to sign in to OpenAI or add your OpenAI API key",
+    "Use {highlight}/auth{/highlight} to sign in to OpenAI or add API keys for supported providers",
     "Use {highlight}/connect{/highlight} to choose the local agency-swarm server you want to use",
     "Use {highlight}/agents{/highlight} to pick the active agency and recipient agent from live metadata",
     "Set {highlight}provider.agency-swarm.options.baseURL{/highlight} in config to pin a default local server",

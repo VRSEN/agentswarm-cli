@@ -7,14 +7,13 @@ import { useDialog } from "@tui/ui/dialog"
 import { createDialogProviderOptions, DialogProvider } from "./dialog-provider"
 import { DialogVariant } from "./dialog-variant"
 import { useKeybind } from "../context/keybind"
+import { hasUsableProvider } from "../session-error"
 import * as fuzzysort from "fuzzysort"
 import { consoleManagedProviderLabel } from "@tui/util/provider-origin"
 
 export function useConnected() {
   const sync = useSync()
-  return createMemo(() =>
-    sync.data.provider.some((x) => x.id !== "opencode" || Object.values(x.models).some((y) => y.cost?.input !== 0)),
-  )
+  return createMemo(() => hasUsableProvider(sync.data.provider))
 }
 
 export function DialogModel(props: { providerID?: string }) {

@@ -1,5 +1,7 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencySwarmHistory } from "@/agency-swarm/history"
+import { mapProviderIDToLiteLLMProvider } from "@/agency-swarm/litellm-provider"
+import { Auth } from "@/auth"
 import { Session } from "@/session"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionID } from "@/session/schema"
@@ -101,6 +103,81 @@ export namespace SessionAgencySwarm {
     }
   }
 
+  async function resolveClientConfig(
+    baseURL: string,
+    config: Record<string, unknown> | undefined,
+  ): Promise<Record<string, unknown> | undefined> {
+    const generated = isLoopbackBaseURL(baseURL) ? buildAuthClientConfig(await Auth.all()) : undefined
+    if (!config) return generated
+    if (!generated) return config
+
+    const explicit = asRecord(config)
+    if (!explicit) return generated
+
+    const merged: Record<string, unknown> = {
+      ...generated,
+      ...explicit,
+    }
+
+    const explicitBaseURL = asString(explicit["base_url"]) ?? asString(explicit["baseURL"])
+    if (explicitBaseURL) {
+      merged["base_url"] = explicitBaseURL
+    }
+    delete merged["baseURL"]
+
+    const explicitAPIKey = asString(explicit["api_key"]) ?? asString(explicit["apiKey"])
+    if (explicitAPIKey) {
+      merged["api_key"] = explicitAPIKey
+    }
+    delete merged["apiKey"]
+
+    const generatedLiteLLMKeys = asRecord(generated["litellm_keys"])
+    const explicitLiteLLMKeys = asRecord(explicit["litellm_keys"]) ?? asRecord(explicit["litellmKeys"])
+    if (generatedLiteLLMKeys || explicitLiteLLMKeys) {
+      merged["litellm_keys"] = {
+        ...(generatedLiteLLMKeys ?? {}),
+        ...(explicitLiteLLMKeys ?? {}),
+      }
+    }
+    delete merged["litellmKeys"]
+
+    return merged
+  }
+
+  function buildAuthClientConfig(auths: Record<string, Auth.Info>): Record<string, unknown> | undefined {
+    const litellmKeys: Record<string, string> = {}
+    const payload: Record<string, unknown> = {}
+
+    for (const [providerID, auth] of Object.entries(auths)) {
+      if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
+      if (auth.type !== "api") continue
+
+      if (providerID === "openai") {
+        payload["api_key"] = auth.key
+        continue
+      }
+
+      const litellmProvider = mapProviderIDToLiteLLMProvider(providerID)
+      if (!litellmProvider) continue
+      litellmKeys[litellmProvider] = auth.key
+    }
+
+    if (Object.keys(litellmKeys).length > 0) {
+      payload["litellm_keys"] = litellmKeys
+    }
+
+    return Object.keys(payload).length > 0 ? payload : undefined
+  }
+
+  function isLoopbackBaseURL(baseURL: string): boolean {
+    try {
+      const parsed = new URL(baseURL)
+      return parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost" || parsed.hostname === "::1"
+    } catch {
+      return false
+    }
+  }
+
   export async function resolveAgency(options: RuntimeOptions): Promise<string> {
     if (options.agency) {
       return options.agency
@@ -199,6 +276,7 @@ export namespace SessionAgencySwarm {
 
     const streamAbort = new AbortController()
     const streamSignal = AbortSignal.any([input.abort, streamAbort.signal])
+    const clientConfig = await resolveClientConfig(input.options.baseURL, input.options.clientConfig)
 
     const mergeMeta = (meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
       return {
@@ -1066,7 +1144,7 @@ export namespace SessionAgencySwarm {
           token: input.options.token,
           fileURLs,
           generateChatName: input.options.generateChatName,
-          clientConfig: input.options.clientConfig,
+          clientConfig,
           abort: streamSignal,
         })) {
           if (frame.type === "meta") {
