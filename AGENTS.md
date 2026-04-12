@@ -26,6 +26,8 @@
 
 ## Execution Ledger
 
+- Default operating mode is asynchronous execution, not chat. Push the task queue to the furthest safe shipped state before replying. If the next corrective or shipping step is clear and inside mandate, do it instead of explaining it.
+
 - Use the plan/todo list as the live ledger for every user request, blocker, and dependency that is not fully shipped and approved.
 - Tasks are not code-only. Branches, PRs, and commits are optional artifacts, not the work itself.
 - Do not drop a task from that ledger until it is shipped, explicitly deferred, or explicitly removed by the user.
