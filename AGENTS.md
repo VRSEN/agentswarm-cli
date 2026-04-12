@@ -3,6 +3,8 @@
 - Re-read this file at the start of each new task.
 - Use fresh tool output before acting; do not rely on memory.
 - Protect the context window. Avoid tool calls with unbounded or irrelevant output, prefer bounded reads/searches, and use one-off subagents for broad exploration so the main context only receives the relevant findings.
+- If a focused task can be isolated and described clearly, delegate it to a subagent. If it is too messy to describe cleanly, keep it local.
+- Do not over-specify delegated work. Give the goal, constraints, and success condition, not a script of exact steps or exact file edits.
 - Keep this file short. Consolidate or tighten rules before adding new ones.
 - The operational branch for this repo is `dev`. Use `origin/dev` as the default baseline for diffs, review, and sync work.
 - If `origin/dev` is unavailable, escalate. Do not silently substitute another baseline.
@@ -13,6 +15,7 @@
 
 - For non-trivial functional/code changes, run one Codex-based review path that is available (fresh subagent review or local Codex CLI review).
 - If Codex review tooling is unavailable, continue with manual review and state that limitation.
+- Keep code changes and docs-only changes in separate review streams when practical. Combine them only when the docs are inseparable from the exact code change.
 
 ## AGENTS.md Policy
 
@@ -24,7 +27,9 @@
 ## Execution Ledger
 
 - Use the plan/todo list as the live ledger for every user request, blocker, and dependency that is not fully shipped and approved.
+- Tasks are not code-only. Branches, PRs, and commits are optional artifacts, not the work itself.
 - Do not drop a task from that ledger until it is shipped, explicitly deferred, or explicitly removed by the user.
+- Track whether a surfaced item has been shared with the user, read by the user, or still needs a decision.
 - If you realize you forgot earlier task details that affect the current work, recover the relevant transcript or task history before proceeding.
 - If a critical-path step needs user approval or input, surface that blocker immediately and do not drift into unrelated work until it is resolved or explicitly deprioritized.
 
