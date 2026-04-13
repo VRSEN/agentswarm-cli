@@ -135,11 +135,17 @@ const LITELLM_PROVIDER_IDS = new Set([
 
 const PROVIDER_ALIASES: Record<string, string> = {
   "amazon-bedrock": "bedrock",
+  "github-models": "github",
   "cloudflare-ai-gateway": "cloudflare",
   "cloudflare-workers-ai": "cloudflare",
+  friendli: "friendliai",
   google: "gemini",
   "google-vertex": "vertex_ai",
+  lmstudio: "lm_studio",
+  nova: "amazon_nova",
   "sap-ai-core": "sap",
+  togetherai: "together_ai",
+  vercel: "vercel_ai_gateway",
 }
 
 export function mapProviderIDToLiteLLMProvider(providerID: string): string | undefined {

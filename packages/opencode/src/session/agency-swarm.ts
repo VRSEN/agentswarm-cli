@@ -172,7 +172,12 @@ export namespace SessionAgencySwarm {
   function isLoopbackBaseURL(baseURL: string): boolean {
     try {
       const parsed = new URL(baseURL)
-      return parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost" || parsed.hostname === "::1"
+      return (
+        parsed.hostname === "127.0.0.1" ||
+        parsed.hostname === "0.0.0.0" ||
+        parsed.hostname === "localhost" ||
+        parsed.hostname === "::1"
+      )
     } catch {
       return false
     }
