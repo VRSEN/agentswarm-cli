@@ -57,13 +57,19 @@
 - `dev` on fork remotes is append-only. Do not force-push, rebase, or rewrite published `dev` history.
 - Upstream sync policy for fork `dev`: merge `origin/dev` into fork `dev` (or merge fork `dev` into a branch from `origin/dev`), then fast-forward push. Avoid restacking published commit series.
 - Commit preservation is mandatory. If a rewrite is explicitly approved as an emergency exception, create immutable backup tags/refs first and record a `range-diff` proof before and after.
-- Default delegated-review model policy: use Codex CLI with `gpt-5.3-codex` at high reasoning unless the user explicitly approves a different model.
+- Default delegated-review model policy: use Codex CLI with `gpt-5.4` at `xhigh`.
 - Sync workflow:
   - run `git fetch --all --prune`
   - verify `origin/dev...vrsen/dev` counts
   - push `dev` to `vrsen`
 
 ## Style Guide
+
+## Release Gate
+
+- Regenerate and commit `bun.lock` on every release when package metadata, dependency metadata, or generated package outputs change.
+- Before any release, build the CLI from source, reinstall it from the fresh local build, and run end-to-end validation through the Agency Swarm terminal demo path.
+- Release validation must cover the real auth/onboarding flow, the exact functionality changed in the release, and focused regression checks for all touched areas.
 
 ### General Principles
 
