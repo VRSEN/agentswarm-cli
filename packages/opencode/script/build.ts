@@ -15,7 +15,7 @@ process.chdir(dir)
 import { Script } from "@opencode-ai/script"
 import pkg from "../package.json"
 
-const binary = "agency"
+const binary = "agentswarm"
 const scope = pkg.platformScope
 
 const modelsUrl = process.env.OPENCODE_MODELS_URL || "https://models.dev"

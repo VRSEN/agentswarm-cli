@@ -7,7 +7,7 @@ import { fileURLToPath } from "url"
 const dir = fileURLToPath(new URL("..", import.meta.url))
 process.chdir(dir)
 
-const binary = "agency"
+const binary = "agentswarm"
 const commands = ["agentswarm"]
 const roots = [pkg.name]
 const bins: { dir: string; name: string; version: string }[] = []

@@ -18,7 +18,7 @@ function run(target) {
   process.exit(code)
 }
 
-const envPath = process.env.AGENCY_BIN_PATH
+const envPath = process.env.AGENTSWARM_BIN_PATH
 if (envPath) {
   run(envPath)
 }
@@ -50,7 +50,7 @@ if (!arch) {
   arch = os.arch()
 }
 const base = "agentswarm-cli-" + platform + "-" + arch
-const binary = platform === "windows" ? "agency.exe" : "agency"
+const binary = platform === "windows" ? "agentswarm.exe" : "agentswarm"
 
 function supportsAvx2() {
   if (arch !== "x64") return false
