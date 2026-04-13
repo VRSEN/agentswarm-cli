@@ -299,9 +299,9 @@
     },
     "packages/opencode": {
       "name": "agentswarm-cli",
-      "version": "1.4.5",
+      "version": "1.4.6",
       "bin": {
-        "agentswarm": "./bin/agency",
+        "agentswarm": "./bin/agentswarm",
       },
       "dependencies": {
         "@actions/core": "1.11.1",
