@@ -31,8 +31,8 @@
 - Use the plan/todo list as the live ledger for every user request, blocker, and dependency that is not fully shipped and approved.
 - Tasks are not code-only. Branches, PRs, and commits are optional artifacts, not the work itself.
 - Do not drop a task from that ledger until it is shipped, explicitly deferred, or explicitly removed by the user.
-- Track whether a surfaced item has been shared with the user, read by the user, or still needs a decision.
-- If you realize you forgot earlier task details that affect the current work, recover the relevant transcript or task history before proceeding.
+- Track the escalation state of each surfaced item: not yet surfaced to the user, already surfaced and waiting on the user, or resolved and no longer needs a user decision.
+- If you realize you forgot earlier task details that affect the current work, recover the relevant transcript or task history before proceeding, including `.codex` session history when it is part of the source of truth.
 - If a critical-path step needs user approval or input, surface that blocker immediately and do not drift into unrelated work until it is resolved or explicitly deprioritized.
 
 ## Mandate Boundary
