@@ -164,8 +164,72 @@ export function DialogProvider(props: DialogProviderProps = {}) {
   return <DialogSelect title={props.title ?? "Connect a provider"} options={options()} />
 }
 
+function DialogRemoveCredential() {
+  const sync = useSync()
+  const dialog = useDialog()
+  const sdk = useSDK()
+  const toast = useToast()
+  const options = createMemo(() =>
+    pipe(
+      sync.data.provider_next.all,
+      (items) =>
+        items.filter((provider) => {
+          if (provider.id === AgencySwarmAdapter.PROVIDER_ID) return false
+          if (!sync.data.provider_next.connected.includes(provider.id)) return false
+          if (isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, provider.id)) return false
+          return true
+        }),
+      sortBy((provider) => PROVIDER_PRIORITY[provider.id] ?? 99),
+      map((provider) => ({
+        title: provider.name,
+        value: provider.id,
+        onSelect: async () => {
+          await sdk.client.auth.remove({
+            providerID: provider.id,
+          })
+          await sdk.client.instance.dispose()
+          await sync.bootstrap()
+          toast.show({
+            variant: "success",
+            message: `${provider.name} credential removed`,
+            duration: 3000,
+          })
+          dialog.replace(() => <DialogAuth />)
+        },
+      })),
+    ),
+  )
+  return <DialogSelect title="Remove credential" options={options()} />
+}
+
 export function DialogAuth() {
-  return <DialogProvider title="Authenticate provider" />
+  const dialog = useDialog()
+  const sync = useSync()
+  const providerOptions = createDialogProviderOptions()
+  const options = createMemo<DialogSelectOption<string>[]>(() => {
+    const removable = sync.data.provider_next.all.filter((provider) => {
+      if (provider.id === AgencySwarmAdapter.PROVIDER_ID) return false
+      if (!sync.data.provider_next.connected.includes(provider.id)) return false
+      if (isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, provider.id)) return false
+      return true
+    })
+    if (removable.length === 0) return providerOptions()
+
+    return [
+      {
+        title: "Remove credential",
+        value: "__remove__",
+        description: "Delete a stored provider credential",
+        category: "Manage",
+        onSelect: () => {
+          dialog.replace(() => <DialogRemoveCredential />)
+        },
+      },
+      ...providerOptions(),
+    ]
+  })
+
+  return <DialogSelect title="Manage provider auth" options={options()} />
 }
 
 type Option =

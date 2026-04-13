@@ -620,11 +620,12 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
     },
     {
-      title: "Authenticate provider",
+      title: "Manage provider auth",
       value: "provider.auth",
       suggested: !connected(),
       slash: {
         name: "auth",
+        aliases: ["logout"],
       },
       onSelect: () => {
         dialog.replace(() => <DialogAuth />)
