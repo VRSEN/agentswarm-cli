@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "name": "agentswarm-cli",
   "platformScope": "@vrsen",
   "description": "Agent Swarm CLI for the terminal.",
@@ -40,7 +40,7 @@
     "db": "bun drizzle-kit"
   },
   "bin": {
-    "agentswarm": "./bin/agency"
+    "agentswarm": "./bin/agentswarm"
   },
   "exports": {
     "./*": "./src/*.ts"
