@@ -63,13 +63,12 @@
   - verify `origin/dev...vrsen/dev` counts
   - push `dev` to `vrsen`
 
-## Style Guide
-
 ## Release Gate
 
-- Regenerate and commit `bun.lock` on every release when package metadata, dependency metadata, or generated package outputs change.
-- Before any release, build the CLI from source, reinstall it from the fresh local build, and run end-to-end validation through the Agency Swarm terminal demo path.
-- Release validation must cover the real auth/onboarding flow, the exact functionality changed in the release, and focused regression checks for all touched areas.
+- Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts change.
+- Before any release, build and reinstall the CLI from the fresh local build, then run the documented Agency Swarm terminal end-to-end flow to verify the real auth/onboarding path, the changed behavior, and focused regressions for each touched area.
+
+## Style Guide
 
 ### General Principles
 
