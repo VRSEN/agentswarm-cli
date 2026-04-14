@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { hasUsableProvider, shouldOpenAgencyConnectDialog } from "../../../src/cli/cmd/tui/session-error"
+import {
+  hasUsableProvider,
+  shouldOpenAgencyConnectDialog,
+  shouldOpenStartupAuthDialog,
+} from "../../../src/cli/cmd/tui/session-error"
 
 describe("agency session errors", () => {
   test("opens connect dialog for unreachable agency backend errors", () => {
@@ -102,6 +106,72 @@ describe("agency session errors", () => {
           },
         },
       ]),
+    ).toBe(false)
+  })
+
+  test("framework mode opens auth when only agency-swarm is configured", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
+  test("framework mode skips auth when explicit client_config exists", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {
+              clientConfig: {
+                api_key: "manual-openai",
+              },
+            },
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode skips auth when another provider is available", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "env",
+            env: ["OPENAI_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
     ).toBe(false)
   })
 })

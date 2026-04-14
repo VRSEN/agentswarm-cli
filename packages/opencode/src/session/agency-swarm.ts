@@ -2,11 +2,12 @@ import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencySwarmHistory } from "@/agency-swarm/history"
 import { mapProviderIDToLiteLLMProvider } from "@/agency-swarm/litellm-provider"
 import { Auth } from "@/auth"
+import { Env } from "@/env"
+import { Provider } from "@/provider/provider"
 import { Session } from "@/session"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionID } from "@/session/schema"
 import { Log } from "@/util/log"
-import type { Provider } from "@/provider/provider"
 import {
   asRecord,
   asRawString,
@@ -107,7 +108,9 @@ export namespace SessionAgencySwarm {
     baseURL: string,
     config: Record<string, unknown> | undefined,
   ): Promise<Record<string, unknown> | undefined> {
-    const generated = isLoopbackBaseURL(baseURL) ? buildAuthClientConfig(await Auth.all()) : undefined
+    const generated = isLoopbackBaseURL(baseURL)
+      ? buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), getEnvForClientConfig())
+      : undefined
     if (!config) return generated
     if (!generated) return config
 
@@ -144,13 +147,18 @@ export namespace SessionAgencySwarm {
     return merged
   }
 
-  function buildAuthClientConfig(auths: Record<string, Auth.Info>): Record<string, unknown> | undefined {
+  function buildAuthClientConfig(
+    auths: Record<string, Auth.Info>,
+    providers: Record<string, Provider.Info> | undefined,
+    env: Record<string, string | undefined>,
+  ): Record<string, unknown> | undefined {
     const litellmKeys: Record<string, string> = {}
     const payload: Record<string, unknown> = {}
 
     for (const [providerID, auth] of Object.entries(auths)) {
       if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
       if (auth.type !== "api") continue
+      if (hasEnvCredential(providerID, providers, env)) continue
 
       if (providerID === "openai") {
         payload["api_key"] = auth.key
@@ -167,6 +175,33 @@ export namespace SessionAgencySwarm {
     }
 
     return Object.keys(payload).length > 0 ? payload : undefined
+  }
+
+  function hasEnvCredential(
+    providerID: string,
+    providers: Record<string, Provider.Info> | undefined,
+    env: Record<string, string | undefined>,
+  ): boolean {
+    if (!providers) return false
+    const provider = providers[providerID]
+    if (!provider) return false
+    return provider.env.some((key) => Boolean(env[key]))
+  }
+
+  async function listProvidersForEnvCheck(): Promise<Record<string, Provider.Info> | undefined> {
+    try {
+      return await Provider.list()
+    } catch {
+      return undefined
+    }
+  }
+
+  function getEnvForClientConfig(): Record<string, string | undefined> {
+    try {
+      return Env.all()
+    } catch {
+      return { ...process.env }
+    }
   }
 
   function isLoopbackBaseURL(baseURL: string): boolean {

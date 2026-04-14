@@ -59,8 +59,9 @@ import { TuiConfigProvider, useTuiConfig } from "./context/tui-config"
 import { TuiConfig } from "@/config/tui"
 import { createTuiApi, TuiPluginRuntime, type RouteMap } from "./plugin"
 import { FormatError, FormatUnknownError } from "@/cli/error"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencyProduct } from "@/agency-swarm/product"
-import { hasUsableProvider, shouldOpenAgencyConnectDialog } from "./session-error"
+import { shouldOpenAgencyConnectDialog, shouldOpenStartupAuthDialog } from "./session-error"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -437,7 +438,16 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
 
   createEffect(
     on(
-      () => sync.status === "complete" && !hasUsableProvider(sync.data.provider),
+      () => {
+        const selected = args.model ? Provider.parseModel(args.model).providerID : undefined
+        return (
+          sync.status === "complete" &&
+          shouldOpenStartupAuthDialog({
+            providers: sync.data.provider,
+            frameworkMode: selected === AgencySwarmAdapter.PROVIDER_ID,
+          })
+        )
+      },
       (needsAuth, previouslyNeededAuth) => {
         if (!needsAuth || previouslyNeededAuth) return
         dialog.replace(() => <DialogAuth />)

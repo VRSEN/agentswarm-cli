@@ -2,7 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { Auth } from "../../src/auth"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
+import { Env } from "../../src/env"
 import { Instance } from "../../src/project/instance"
+import { Provider } from "../../src/provider/provider"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Session } from "../../src/session"
 import { SessionAgencySwarm } from "../../src/session/agency-swarm"
@@ -18,6 +20,8 @@ describe("session.agency-swarm", () => {
   const originalAppendMessages = AgencySwarmHistory.appendMessages
   const originalSetLastRunID = AgencySwarmHistory.setLastRunID
   const originalAuthAll = Auth.all
+  const originalEnvAll = Env.all
+  const originalProviderList = Provider.list
 
   afterEach(() => {
     AgencySwarmAdapter.discover = originalDiscover
@@ -28,6 +32,8 @@ describe("session.agency-swarm", () => {
     AgencySwarmHistory.appendMessages = originalAppendMessages
     AgencySwarmHistory.setLastRunID = originalSetLastRunID
     Auth.all = originalAuthAll
+    Env.all = originalEnvAll
+    Provider.list = originalProviderList
   })
 
   const helper = () => {
@@ -305,6 +311,61 @@ describe("session.agency-swarm", () => {
       api_key: "sk-openai",
       litellm_keys: {
         anthropic: "sk-ant",
+      },
+    })
+  })
+
+  test("stream does not forward stored auth for providers already covered by env", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      openai: { type: "api", key: "stored-openai" } as any,
+      anthropic: { type: "api", key: "stored-anthropic" } as any,
+    })) as typeof Auth.all
+    Env.all = (() => ({
+      OPENAI_API_KEY: "env-openai",
+    })) as typeof Env.all
+    Provider.list = (async () => ({
+      openai: {
+        id: "openai",
+        name: "OpenAI",
+        source: "api",
+        env: ["OPENAI_API_KEY"],
+        options: {},
+        models: {},
+      },
+      anthropic: {
+        id: "anthropic",
+        name: "Anthropic",
+        source: "api",
+        env: ["ANTHROPIC_API_KEY"],
+        options: {},
+        models: {},
+      },
+      "agency-swarm": {
+        id: "agency-swarm",
+        name: "Agency Swarm",
+        source: "config",
+        env: [],
+        options: {},
+        models: {},
+      },
+    })) as typeof Provider.list
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      litellm_keys: {
+        anthropic: "stored-anthropic",
       },
     })
   })

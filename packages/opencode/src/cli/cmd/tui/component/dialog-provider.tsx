@@ -14,6 +14,7 @@ import { useKeyboard } from "@opentui/solid"
 import { Clipboard } from "@tui/util/clipboard"
 import { useToast } from "../ui/toast"
 import { CONSOLE_MANAGED_ICON, isConsoleManagedProvider } from "@tui/util/provider-origin"
+import { hasStoredProviderCredential } from "@tui/util/provider-auth"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
@@ -175,7 +176,10 @@ function DialogRemoveCredential() {
       (items) =>
         items.filter((provider) => {
           if (provider.id === AgencySwarmAdapter.PROVIDER_ID) return false
-          if (!sync.data.provider_next.connected.includes(provider.id)) return false
+          if (
+            !hasStoredProviderCredential(sync.data.provider, sync.data.provider_auth, provider.id)
+          )
+            return false
           if (isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, provider.id)) return false
           return true
         }),
@@ -209,7 +213,7 @@ export function DialogAuth() {
   const options = createMemo<DialogSelectOption<string>[]>(() => {
     const removable = sync.data.provider_next.all.filter((provider) => {
       if (provider.id === AgencySwarmAdapter.PROVIDER_ID) return false
-      if (!sync.data.provider_next.connected.includes(provider.id)) return false
+      if (!hasStoredProviderCredential(sync.data.provider, sync.data.provider_auth, provider.id)) return false
       if (isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, provider.id)) return false
       return true
     })
