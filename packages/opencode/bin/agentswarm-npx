@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+
+import * as childProcess from "node:child_process"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+import * as fs from "node:fs"
+
+function resolveCliBinary(startDir) {
+  let current = startDir
+  for (;;) {
+    const candidate = path.join(current, "node_modules", "agentswarm-cli", "bin", "agentswarm")
+    if (fs.existsSync(candidate)) return candidate
+    const parent = path.dirname(current)
+    if (parent === current) return
+    current = parent
+  }
+}
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url))
+const binary = resolveCliBinary(scriptDir)
+
+if (!binary) {
+  console.error('Could not find the "agentswarm-cli" dependency for @vrsen/agentswarm.')
+  process.exit(1)
+}
+
+const result = childProcess.spawnSync(process.execPath, [binary, ...process.argv.slice(2)], {
+  stdio: "inherit",
+  env: {
+    ...process.env,
+    AGENTSWARM_NPX: "1",
+  },
+})
+
+if (result.error) {
+  console.error(result.error.message)
+  process.exit(1)
+}
+
+process.exit(typeof result.status === "number" ? result.status : 0)

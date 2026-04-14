@@ -9,7 +9,70 @@ process.chdir(dir)
 
 const binary = "agentswarm"
 const commands = ["agentswarm"]
-const roots = [pkg.name]
+type RootPackage =
+  | {
+      dir: string
+      name: string
+      binSource: string
+      description: string
+      scripts: Record<string, string>
+      optionalDependencies: true
+      platformScope: string
+    }
+  | {
+      dir: string
+      name: string
+      binSource: string
+      description: string
+      scripts: Record<string, string>
+      dependency: string
+    }
+
+const roots: RootPackage[] = [
+  {
+    dir: pkg.name,
+    name: pkg.name,
+    binSource: `./bin/${binary}`,
+    description: pkg.description,
+    scripts: {
+      postinstall: "bun ./postinstall.mjs || node ./postinstall.mjs",
+    },
+    optionalDependencies: true,
+    platformScope: pkg.platformScope,
+  },
+  {
+    dir: "agentswarm",
+    name: "@vrsen/agentswarm",
+    binSource: "./bin/agentswarm-npx",
+    description: "One-command Agent Swarm launcher.",
+    scripts: {},
+    dependency: pkg.name,
+  },
+]
+
+function getRootReadme(root: RootPackage) {
+  if (root.name === "@vrsen/agentswarm") {
+    return [
+      "# @vrsen/agentswarm",
+      "",
+      "Run Agent Swarm with a single command:",
+      "",
+      "```bash",
+      "npx @vrsen/agentswarm",
+      "```",
+      "",
+      "The launcher can reuse the current Agency Swarm project, create a starter project, or connect to an existing agency server.",
+      "",
+      "It prepares the local Python environment, starts the Agency Swarm server, and opens the terminal UI.",
+      "",
+      "If you want the standalone CLI package instead, use `agentswarm-cli`.",
+      "",
+    ].join("\n")
+  }
+
+  return Bun.file("./README.md").text()
+}
+
 const bins: { dir: string; name: string; version: string }[] = []
 for (const file of new Bun.Glob("*/package.json").scanSync({ cwd: "./dist" })) {
   const item = await Bun.file(`./dist/${file}`).json()
@@ -32,29 +95,37 @@ async function clean(dir: string) {
 }
 
 for (const root of roots) {
-  await $`rm -rf ./dist/${root}`
-  await $`mkdir -p ./dist/${root}/bin`
-  await $`cp ./bin/${binary} ./dist/${root}/bin/${binary}`
-  await $`cp ./script/postinstall.mjs ./dist/${root}/postinstall.mjs`
-  await Bun.file(`./dist/${root}/LICENSE`).write(await Bun.file("../../LICENSE").text())
-  await Bun.file(`./dist/${root}/README.md`).write(await Bun.file("./README.md").text())
-  await Bun.file(`./dist/${root}/package.json`).write(
+  await $`rm -rf ./dist/${root.dir}`
+  await $`mkdir -p ./dist/${root.dir}/bin`
+  await $`cp ${root.binSource} ./dist/${root.dir}/bin/${binary}`
+  if (root.name === pkg.name) {
+    await $`cp ./script/postinstall.mjs ./dist/${root.dir}/postinstall.mjs`
+  }
+  await Bun.file(`./dist/${root.dir}/LICENSE`).write(await Bun.file("../../LICENSE").text())
+  await Bun.file(`./dist/${root.dir}/README.md`).write(await getRootReadme(root))
+  await Bun.file(`./dist/${root.dir}/package.json`).write(
     JSON.stringify(
       {
-        name: root,
+        name: root.name,
         version,
         type: "module",
         license: pkg.license,
-        description: pkg.description,
+        description: root.description,
         homepage: pkg.homepage,
         repository: pkg.repository,
         keywords: pkg.keywords,
         bin: Object.fromEntries(commands.map((cmd) => [cmd, `./bin/${binary}`])),
-        scripts: {
-          postinstall: "bun ./postinstall.mjs || node ./postinstall.mjs",
-        },
-        optionalDependencies: Object.fromEntries(bins.map((item) => [item.name, item.version])),
-        platformScope: pkg.platformScope,
+        scripts: root.scripts,
+        ...("optionalDependencies" in root
+          ? {
+              optionalDependencies: Object.fromEntries(bins.map((item) => [item.name, item.version])),
+              platformScope: root.platformScope,
+            }
+          : {
+              dependencies: {
+                [root.dependency]: version,
+              },
+            }),
         publishConfig: {
           access: "public",
         },
@@ -78,9 +149,9 @@ await Promise.all(
 
 for (const root of roots) {
   if (process.platform !== "win32") {
-    await $`chmod -R 755 .`.cwd(`./dist/${root}`)
+    await $`chmod -R 755 .`.cwd(`./dist/${root.dir}`)
   }
-  await clean(`./dist/${root}`)
-  await $`bun pm pack`.cwd(`./dist/${root}`)
-  await $`npm publish *.tgz --access public --tag ${Script.channel}`.cwd(`./dist/${root}`)
+  await clean(`./dist/${root.dir}`)
+  await $`bun pm pack`.cwd(`./dist/${root.dir}`)
+  await $`npm publish *.tgz --access public --tag ${Script.channel}`.cwd(`./dist/${root.dir}`)
 }

@@ -17,6 +17,7 @@ import { TuiConfig } from "@/config/tui"
 import { Instance } from "@/project/instance"
 import { writeHeapSnapshot } from "v8"
 import { AgencyProduct } from "@/agency-swarm/product"
+import { prepareNpxLaunch, shouldRunNpxOnboarding } from "@/agency-swarm/npx"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -114,6 +115,7 @@ export const TuiThreadCommand = cmd({
     // Keep ENABLE_PROCESSED_INPUT cleared even if other code flips it.
     // (Important when running under `bun run` wrappers on Windows.)
     const unguard = win32InstallCtrlCGuard()
+    let cleanup: (() => Promise<void>) | undefined
     try {
       // Must be the very first thing — disables CTRL_C_EVENT before any Worker
       // spawn or async work so the OS cannot kill the process group.
@@ -128,9 +130,26 @@ export const TuiThreadCommand = cmd({
       // Resolve relative --project paths from PWD, then use the real cwd after
       // chdir so the thread and worker share the same directory key.
       const root = Filesystem.resolve(process.env.PWD ?? process.cwd())
-      const next = args.project
+      const selectedProject = args.project
         ? Filesystem.resolve(path.isAbsolute(args.project) ? args.project : path.join(root, args.project))
         : Filesystem.resolve(process.cwd())
+      const shouldBootstrap = shouldRunNpxOnboarding({
+        env: process.env,
+        model: args.model,
+        continue: args.continue,
+        session: args.session,
+        prompt: args.prompt,
+        agent: args.agent,
+      })
+      const prepared = shouldBootstrap ? await prepareNpxLaunch(selectedProject) : undefined
+      if (shouldBootstrap && !prepared) {
+        return
+      }
+      cleanup = prepared?.cleanup
+      if (prepared?.configContent) {
+        process.env.OPENCODE_CONFIG_CONTENT = prepared.configContent
+      }
+      const next = prepared?.directory ? Filesystem.resolve(prepared.directory) : selectedProject
       const file = await target()
       try {
         process.chdir(next)
@@ -233,6 +252,9 @@ export const TuiThreadCommand = cmd({
         })
       } finally {
         await stop()
+        if (cleanup) {
+          await cleanup()
+        }
       }
     } finally {
       unguard?.()
