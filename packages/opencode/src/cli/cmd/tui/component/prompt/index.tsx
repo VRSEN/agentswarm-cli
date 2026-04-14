@@ -11,6 +11,7 @@ import { useSDK } from "@tui/context/sdk"
 import { useRoute } from "@tui/context/route"
 import { useSync } from "@tui/context/sync"
 import { MessageID, PartID } from "@/session/schema"
+import { displayAgentName } from "@/agent/display"
 import { createStore, produce } from "solid-js/store"
 import { useKeybind } from "@tui/context/keybind"
 import { usePromptHistory, type PromptInfo } from "./history"
@@ -618,10 +619,8 @@ export function Prompt(props: PromptProps) {
       })
 
       if (res.error) {
-        console.log("Creating a session failed:", res.error)
-
         toast.show({
-          message: "Creating a session failed. Open console for more details.",
+          message: "Creating a session failed.",
           variant: "error",
         })
 
@@ -1102,7 +1101,7 @@ export function Prompt(props: PromptProps) {
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
               <box flexDirection="row" gap={1}>
                 <text fg={highlight()}>
-                  {store.mode === "shell" ? "Shell" : Locale.titlecase(local.agent.current().name)}{" "}
+                  {store.mode === "shell" ? "Shell" : displayAgentName(local.agent.current().name)}{" "}
                 </text>
                 <Show when={store.mode === "normal"}>
                   <box flexDirection="row" gap={1}>

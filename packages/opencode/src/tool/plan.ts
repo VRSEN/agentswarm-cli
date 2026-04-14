@@ -6,6 +6,7 @@ import { Session } from "../session"
 import { MessageV2 } from "../session/message-v2"
 import { Provider } from "../provider/provider"
 import { Instance } from "../project/instance"
+import { displayAgentName } from "@/agent/display"
 import { type SessionID, MessageID, PartID } from "../session/schema"
 import EXIT_DESCRIPTION from "./plan-exit.txt"
 
@@ -27,10 +28,10 @@ export const PlanExitTool = Tool.define("plan_exit", {
       questions: [
         {
           question: `Plan at ${plan} is complete. Would you like to switch to the build agent and start implementing?`,
-          header: "Build Agent",
+          header: displayAgentName("build"),
           custom: false,
           options: [
-            { label: "Yes", description: "Switch to build agent and start implementing the plan" },
+            { label: "Yes", description: `Switch to ${displayAgentName("build")} and start implementing the plan` },
             { label: "No", description: "Stay with plan agent to continue refining the plan" },
           ],
         },
@@ -64,8 +65,8 @@ export const PlanExitTool = Tool.define("plan_exit", {
     } satisfies MessageV2.TextPart)
 
     return {
-      title: "Switching to build agent",
-      output: "User approved switching to build agent. Wait for further instructions.",
+      title: `Switching to ${displayAgentName("build")}`,
+      output: `User approved switching to ${displayAgentName("build")}. Wait for further instructions.`,
       metadata: {},
     }
   },

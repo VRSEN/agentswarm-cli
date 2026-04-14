@@ -1497,6 +1497,81 @@ describe("session.agency-swarm", () => {
     expect(deltas).toEqual(["Find the right file first."])
   })
 
+  test("stream does not duplicate tool input when tool_called follows output_item.added", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: {
+              type: "function_call",
+              id: "call_item_1",
+              call_id: "call_1",
+              name: "search",
+              arguments: '{"query":"hello"}',
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "tool_called",
+          item: {
+            raw_item: {
+              type: "function_call",
+              id: "call_item_1",
+              call_id: "call_1",
+              name: "search",
+              arguments: '{"query":"hello"}',
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: {
+              type: "function_call",
+              id: "call_item_1",
+              call_id: "call_1",
+              name: "search",
+              arguments: '{"query":"hello"}',
+            },
+          },
+        },
+      }
+      yield {
+        type: "messages",
+        payload: {
+          new_messages: [{ type: "function_call_output", call_id: "call_1", output: "ok" }],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    const calls: any[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "tool-input-delta") deltas.push(event.delta)
+      if (event.type === "tool-call") calls.push(event)
+    }
+
+    expect(deltas).toEqual(['{"query":"hello"}'])
+    expect(calls).toHaveLength(1)
+  })
+
   test("stream closes prior text part before switching content_index", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {

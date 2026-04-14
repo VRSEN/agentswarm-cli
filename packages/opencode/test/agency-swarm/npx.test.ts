@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import {
   buildAgencyConfig,
   buildPythonEnv,
   detectAgencyProject,
   NPX_ENTRY_ENV,
+  prepareProjectLaunch,
   shouldRunNpxOnboarding,
 } from "../../src/agency-swarm/npx"
 import { tmpdir } from "../fixture/fixture"
@@ -85,5 +87,26 @@ describe("agency-swarm npx onboarding", () => {
     const project = await detectAgencyProject(dir.path)
 
     expect(project).toBeUndefined()
+  })
+
+  test("prepareProjectLaunch keeps project launches in local Agent Builder mode", async () => {
+    await using dir = await tmpdir()
+    const venvPython = path.join(
+      dir.path,
+      ".venv",
+      process.platform === "win32" ? "Scripts" : "bin",
+      process.platform === "win32" ? "python.exe" : "python",
+    )
+    await mkdir(path.dirname(venvPython), { recursive: true })
+    await Bun.write(venvPython, "")
+
+    const launch = await prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    })
+
+    expect(launch).toEqual({
+      directory: dir.path,
+    })
   })
 })

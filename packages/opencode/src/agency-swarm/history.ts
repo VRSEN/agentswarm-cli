@@ -1,4 +1,6 @@
 import { Storage } from "@/storage/storage"
+import { Global } from "@/global"
+import path from "path"
 import { AgencySwarmAdapter } from "./adapter"
 
 export namespace AgencySwarmHistory {
@@ -18,22 +20,19 @@ export namespace AgencySwarmHistory {
   export async function load(scope: Scope): Promise<Entry> {
     const key = storageKey(scope)
     const expectedScope = scopeKey(scope)
+    const current = normalize(
+      await Storage.read<Entry>(key).catch((error) => {
+        if (Storage.NotFoundError.isInstance(error)) return undefined
+        throw error
+      }),
+      expectedScope,
+    )
+    if (current) return current
 
-    const existing = await Storage.read<Entry>(key).catch((error) => {
-      if (Storage.NotFoundError.isInstance(error)) return undefined
-      throw error
-    })
-
-    if (!existing || existing.scope !== expectedScope) {
-      return empty(expectedScope)
-    }
-
-    return {
-      scope: existing.scope,
-      chat_history: asHistory(existing.chat_history),
-      last_run_id: typeof existing.last_run_id === "string" && existing.last_run_id ? existing.last_run_id : undefined,
-      updated_at: typeof existing.updated_at === "number" ? existing.updated_at : Date.now(),
-    }
+    const legacy = normalize(await loadLegacy(scope), expectedScope)
+    if (!legacy) return empty(expectedScope)
+    await save(scope, legacy)
+    return legacy
   }
 
   export async function appendMessages(scope: Scope, newMessages: unknown): Promise<Entry> {
@@ -84,5 +83,27 @@ export namespace AgencySwarmHistory {
   function asHistory(input: unknown): Array<Record<string, unknown>> {
     if (!Array.isArray(input)) return []
     return input.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item))
+  }
+
+  async function loadLegacy(scope: Scope): Promise<Entry | undefined> {
+    const file = legacyFile(scope)
+    const existing = await Bun.file(file)
+      .json()
+      .catch(() => undefined)
+    return existing as Entry | undefined
+  }
+
+  function legacyFile(scope: Scope) {
+    return path.join(path.dirname(Global.Path.data), "opencode", "storage", ...storageKey(scope)) + ".json"
+  }
+
+  function normalize(existing: Entry | undefined, expectedScope: string): Entry | undefined {
+    if (!existing || existing.scope !== expectedScope) return
+    return {
+      scope: existing.scope,
+      chat_history: asHistory(existing.chat_history),
+      last_run_id: typeof existing.last_run_id === "string" && existing.last_run_id ? existing.last_run_id : undefined,
+      updated_at: typeof existing.updated_at === "number" ? existing.updated_at : Date.now(),
+    }
   }
 }

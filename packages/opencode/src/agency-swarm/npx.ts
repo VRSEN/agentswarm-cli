@@ -20,7 +20,7 @@ export interface PreparedNpxLaunch {
   cleanup?: () => Promise<void>
 }
 
-interface AgencyProject {
+export interface AgencyProject {
   directory: string
   agencyFile: string
 }
@@ -345,19 +345,15 @@ async function createStarterProject(input: {
   }
 }
 
-async function prepareProjectLaunch(project: AgencyProject): Promise<PreparedNpxLaunch> {
-  prompts.log.info("3. Prepare Python and the local server.")
-  prompts.log.info("   The launcher will reuse a project `.venv` when it exists, otherwise it will create one.")
+export async function prepareProjectLaunch(project: AgencyProject): Promise<PreparedNpxLaunch> {
+  prompts.log.info("3. Prepare Python for Agent Builder.")
+  prompts.log.info(
+    "   The launcher will reuse a project `.venv` when it exists, otherwise it will create one before opening the local builder.",
+  )
 
-  const python = await ensureProjectPython(project.directory)
-  const server = await startProjectServer(project.directory, python)
+  await ensureProjectPython(project.directory)
   return {
     directory: project.directory,
-    configContent: buildAgencyConfig({
-      baseURL: server.baseURL,
-      agency: LOCAL_AGENCY_ID,
-    }),
-    cleanup: server.cleanup,
   }
 }
 

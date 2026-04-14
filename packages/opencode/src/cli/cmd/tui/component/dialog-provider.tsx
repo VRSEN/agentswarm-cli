@@ -7,6 +7,7 @@ import { useSDK } from "../context/sdk"
 import { DialogPrompt } from "../ui/dialog-prompt"
 import { Link } from "../ui/link"
 import { useTheme } from "../context/theme"
+import { useLocal } from "@tui/context/local"
 import { TextAttributes } from "@opentui/core"
 import type { ProviderAuthAuthorization, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 import { DialogModel } from "./dialog-model"
@@ -594,6 +595,7 @@ function AutoMethod(props: AutoMethodProps) {
   const sdk = useSDK()
   const dialog = useDialog()
   const sync = useSync()
+  const local = useLocal()
   const toast = useToast()
 
   useKeyboard((evt) => {
@@ -616,6 +618,10 @@ function AutoMethod(props: AutoMethodProps) {
     }
     await sdk.client.instance.dispose()
     await sync.bootstrap()
+    if (local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID) {
+      dialog.clear()
+      return
+    }
     dialog.replace(() => <DialogModel providerID={props.providerID} />)
   })
 
@@ -652,6 +658,7 @@ function CodeMethod(props: CodeMethodProps) {
   const sdk = useSDK()
   const sync = useSync()
   const dialog = useDialog()
+  const local = useLocal()
   const [error, setError] = createSignal(false)
 
   return (
@@ -667,6 +674,10 @@ function CodeMethod(props: CodeMethodProps) {
         if (!error) {
           await sdk.client.instance.dispose()
           await sync.bootstrap()
+          if (local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID) {
+            dialog.clear()
+            return
+          }
           dialog.replace(() => <DialogModel providerID={props.providerID} />)
           return
         }
@@ -694,6 +705,7 @@ function ApiMethod(props: ApiMethodProps) {
   const dialog = useDialog()
   const sdk = useSDK()
   const sync = useSync()
+  const local = useLocal()
   const { theme } = useTheme()
 
   return (
@@ -738,6 +750,10 @@ function ApiMethod(props: ApiMethodProps) {
         })
         await sdk.client.instance.dispose()
         await sync.bootstrap()
+        if (local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID) {
+          dialog.clear()
+          return
+        }
         dialog.replace(() => <DialogModel providerID={props.providerID} />)
       }}
     />
