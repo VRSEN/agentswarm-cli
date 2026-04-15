@@ -112,7 +112,7 @@ describe("agency-swarm npx onboarding", () => {
         directory: root,
         agencyFile: path.join(root, "agency.py"),
       }),
-    ).toBe(`Use this Agency Swarm project (${root})`)
+    ).toBe(`Use detected Agency Swarm project (${root})`)
   })
 
   test("validateStarterName rejects existing target folders", async () => {

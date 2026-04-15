@@ -32,6 +32,12 @@ interface CommandResult {
   stderr: string
 }
 
+interface PythonInfo {
+  cmd: string[]
+  executable: string
+  version: string
+}
+
 export function shouldRunNpxOnboarding(input: {
   env: NodeJS.ProcessEnv
   model?: string
@@ -89,7 +95,7 @@ export async function detectAgencyProject(directory: string) {
 }
 
 export function formatProjectLabel(project: AgencyProject) {
-  return `Use this Agency Swarm project (${project.directory})`
+  return `Use detected Agency Swarm project (${project.directory})`
 }
 
 export function validateStarterName(base: string, value?: string) {
@@ -131,6 +137,10 @@ export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLa
   }
 
   const launch = await prepareProjectLaunch(targetProject)
+  if (!launch) {
+    prompts.outro("Cancelled")
+    return
+  }
   prompts.outro(`Opening Agent Swarm in ${targetProject.directory}`)
   return launch
 }
@@ -138,7 +148,7 @@ export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLa
 async function chooseLaunchChoice(project: AgencyProject | undefined) {
   prompts.log.info("1. Choose how to start the terminal UI.")
   prompts.log.info(
-    "   The NPX launcher can reuse the current project, create a starter project, or connect to an existing server.",
+    "   The launcher can use a detected project, create a starter project, or connect to an existing server.",
   )
 
   const result = await prompts.select<LaunchChoice>({
@@ -349,13 +359,16 @@ async function createStarterProject(input: { baseDirectory: string }): Promise<A
   }
 }
 
-export async function prepareProjectLaunch(project: AgencyProject): Promise<PreparedNpxLaunch> {
+export async function prepareProjectLaunch(project: AgencyProject): Promise<PreparedNpxLaunch | undefined> {
   prompts.log.info("3. Start the Agency Swarm project.")
   prompts.log.info(
     "   The launcher will reuse a project `.venv`, start a local FastAPI server, and connect the terminal UI to it.",
   )
 
-  const server = await startProjectServer(project.directory, await ensureProjectPython(project.directory))
+  const python = await ensureProjectPython(project.directory)
+  if (!python) return
+
+  const server = await startProjectServer(project.directory, python)
   return {
     directory: project.directory,
     configContent: buildAgencyConfig({
@@ -369,33 +382,38 @@ export async function prepareProjectLaunch(project: AgencyProject): Promise<Prep
 async function ensureProjectPython(directory: string) {
   const venvPython = getVenvPythonPath(directory)
   const hasVenv = await Filesystem.exists(venvPython)
-  if (hasVenv) return [venvPython]
+  if (hasVenv) {
+    const info = await inspectPython([venvPython])
+    prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
+    return [venvPython]
+  }
 
   const detected = await findPythonExecutable()
   if (!detected) {
     throw new Error("Python 3.12 or newer was not found. Install Python, then rerun `npx @vrsen/agentswarm`.")
   }
+  prompts.log.info(`Detected Python: ${formatPython(detected, detected.cmd)}`)
 
   const createVenv = await prompts.confirm({
     message: "Create a local `.venv` in this project?",
     initialValue: true,
   })
   if (prompts.isCancel(createVenv)) {
-    throw new Error("Cancelled before creating the project virtual environment.")
+    return
   }
   if (!createVenv) {
-    const check = await runCommand([...detected, "-c", "import agency_swarm"])
+    const check = await runCommand([...detected.cmd, "-c", "import agency_swarm"])
     if (check.code !== 0) {
       throw new Error(
         "This project does not have a `.venv` yet, and the selected Python environment cannot import `agency_swarm`.",
       )
     }
-    return detected
+    return detected.cmd
   }
 
   const spinner = prompts.spinner()
   spinner.start("Creating `.venv`")
-  const created = await runCommand([...detected, "-m", "venv", ".venv"], {
+  const created = await runCommand([...detected.cmd, "-m", "venv", ".venv"], {
     cwd: directory,
   })
   if (created.code !== 0) {
@@ -533,17 +551,31 @@ async function findPythonExecutable() {
       : [["python3.13"], ["python3.12"], ["python3"], ["python"]]
 
   for (const candidate of candidates) {
-    const result = await runCommand([...candidate, "--version"])
-    if (result.code !== 0) continue
-    const versionText = `${result.stdout}${result.stderr}`
-    const match = versionText.match(/Python (\d+)\.(\d+)/)
+    const info = await inspectPython(candidate)
+    if (!info) continue
+    const match = info.version.match(/^(\d+)\.(\d+)/)
     if (!match) continue
     const major = Number(match[1])
     const minor = Number(match[2])
-    if (major > 3 || (major === 3 && minor >= 12)) {
-      return candidate
-    }
+    if (major > 3 || (major === 3 && minor >= 12)) return info
   }
+}
+
+async function inspectPython(cmd: string[]): Promise<PythonInfo | undefined> {
+  const result = await runCommand([...cmd, "-c", "import sys; print(sys.executable); print(sys.version.split()[0])"])
+  if (result.code !== 0) return
+  const [executable, version] = result.stdout.trim().split(/\r?\n/)
+  if (!executable || !version) return
+  return {
+    cmd,
+    executable,
+    version,
+  }
+}
+
+function formatPython(info: PythonInfo | undefined, cmd: string[]) {
+  if (!info) return cmd.join(" ")
+  return `${info.executable} (Python ${info.version})`
 }
 
 function getVenvPythonPath(directory: string) {
