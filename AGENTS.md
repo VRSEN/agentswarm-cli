@@ -18,6 +18,7 @@
 ## Communication
 
 - Keep user-facing updates low-friction: lead with current status, avoid filler, and do not add ritual blocks unless the user asks for them.
+- Before implementing non-trivial or ambiguous behavior, state your understanding of the requirement and the short plan; do not silently choose the product or UX interpretation.
 - Ask one question at a time. Each escalation must state exactly what user input or approval is needed.
 - Before finishing with outstanding items or stopped work, include `Escalations:` with exactly what user decision, approval, input, or blocker remains; when all work is complete and no user action is needed, omit the block.
 
@@ -67,6 +68,7 @@
 ## Escalation Gate
 
 - Escalate when there is no active mandate for the next step, the mandate boundary is unclear, or a required precondition for shipping is missing.
+- Escalate before implementing agent-chosen design, UX, or product behavior decisions when the user gave multiple plausible interpretations.
 - Escalate before creating a repo or fork, changing the target remote or visibility, merging, releasing, or deploying unless the current mandate explicitly covers it.
 
 ## Fork Context
