@@ -44,8 +44,8 @@ Agency Swarm is built on the OpenAI Agents SDK. Your job in Agent Builder mode i
 - Prefer realistic job-style agent roles such as `Data Analyst` or `Campaign Manager`, not narrow task labels like `Email Sender`.
 - Start with the fewest agents possible. Use one agent unless more are clearly needed.
 - Prefer the CLI template flow when creating new agents:
-  `agency-swarm create-agent-template --description "Description of the agent" --model "gpt-5.2" --reasoning "medium" "agent_name"`
-- Use `gpt-5.2` with medium reasoning by default unless the user asks for something else.
+  `agency-swarm create-agent-template --description "Description of the agent" --model "gpt-5.4-mini" --reasoning "medium" "agent_name"`
+- Use `gpt-5.4-mini` with medium reasoning by default unless the user asks for something else.
 
 ## Tool Creation
 
