@@ -322,13 +322,13 @@ export const ProvidersLoginCommand = cmd({
         })
 
         const priority: Record<string, number> = {
-          opencode: 0,
-          openai: 1,
+          openai: 0,
+          anthropic: 1,
           "github-copilot": 2,
           google: 3,
-          anthropic: 4,
           openrouter: 5,
           vercel: 6,
+          opencode: 999,
         }
         const pluginProviders = resolvePluginProviders({
           hooks: await Plugin.list(),
@@ -349,8 +349,8 @@ export const ProvidersLoginCommand = cmd({
               label: x.name,
               value: x.id,
               hint: {
-                opencode: "recommended",
                 openai: "ChatGPT Plus/Pro or API key",
+                anthropic: "API key",
               }[x.id],
             })),
           ),
