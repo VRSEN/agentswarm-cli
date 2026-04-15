@@ -37,6 +37,31 @@ describe("agency-swarm npx onboarding", () => {
     ).toBe(false)
   })
 
+  test("installed agentswarm binary enables onboarding for the default launch", () => {
+    delete process.env[NPX_ENTRY_ENV]
+
+    expect(
+      shouldRunNpxOnboarding({
+        env: process.env,
+        argv: ["/usr/local/bin/agentswarm"],
+      }),
+    ).toBe(true)
+
+    expect(
+      shouldRunNpxOnboarding({
+        env: process.env,
+        argv: ["C:\\Users\\runner\\bin\\agentswarm.exe"],
+      }),
+    ).toBe(true)
+
+    expect(
+      shouldRunNpxOnboarding({
+        env: process.env,
+        argv: ["/usr/local/bin/opencode"],
+      }),
+    ).toBe(false)
+  })
+
   test("buildAgencyConfig keeps launch config session-scoped", () => {
     const config = JSON.parse(
       buildAgencyConfig({

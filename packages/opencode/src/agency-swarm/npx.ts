@@ -40,19 +40,30 @@ interface PythonInfo {
 
 export function shouldRunNpxOnboarding(input: {
   env: NodeJS.ProcessEnv
+  argv?: string[]
   model?: string
   continue?: boolean
   session?: string
   prompt?: string
   agent?: string
 }) {
-  if (input.env[NPX_ENTRY_ENV] !== "1") return false
+  if (input.env[NPX_ENTRY_ENV] !== "1" && !isAgentswarmCommand(input.argv ?? process.argv)) return false
   if (input.model) return false
   if (input.continue) return false
   if (input.session) return false
   if (input.prompt) return false
   if (input.agent) return false
   return true
+}
+
+function isAgentswarmCommand(argv: string[]) {
+  return argv.slice(0, 2).some(
+    (item) =>
+      item
+        .split(/[\\/]/)
+        .at(-1)
+        ?.replace(/\.exe$/i, "") === "agentswarm",
+  )
 }
 
 export function buildAgencyConfig(input: { baseURL: string; agency: string; token?: string }) {
