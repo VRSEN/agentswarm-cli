@@ -6,22 +6,22 @@ import {
   buildPythonEnv,
   detectAgencyProject,
   formatProjectLabel,
-  NPX_ENTRY_ENV,
+  LAUNCHER_ENTRY_ENV,
   shouldRunNpxOnboarding,
   validateStarterName,
 } from "../../src/agency-swarm/npx"
 import { tmpdir } from "../fixture/fixture"
 
 describe("agency-swarm npx onboarding", () => {
-  const originalEnv = process.env[NPX_ENTRY_ENV]
+  const originalEnv = process.env[LAUNCHER_ENTRY_ENV]
 
   afterEach(() => {
-    if (originalEnv === undefined) delete process.env[NPX_ENTRY_ENV]
-    else process.env[NPX_ENTRY_ENV] = originalEnv
+    if (originalEnv === undefined) delete process.env[LAUNCHER_ENTRY_ENV]
+    else process.env[LAUNCHER_ENTRY_ENV] = originalEnv
   })
 
   test("wrapper env enables onboarding for the default launch only", () => {
-    process.env[NPX_ENTRY_ENV] = "1"
+    process.env[LAUNCHER_ENTRY_ENV] = "1"
 
     expect(
       shouldRunNpxOnboarding({
@@ -38,7 +38,7 @@ describe("agency-swarm npx onboarding", () => {
   })
 
   test("installed agentswarm binary enables onboarding for the default launch", () => {
-    delete process.env[NPX_ENTRY_ENV]
+    delete process.env[LAUNCHER_ENTRY_ENV]
 
     expect(
       shouldRunNpxOnboarding({

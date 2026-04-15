@@ -5,9 +5,10 @@ import path from "node:path"
 import { existsSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
+import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
 import { Filesystem } from "@/util/filesystem"
 
-export const NPX_ENTRY_ENV = "AGENTSWARM_NPX"
+export const LAUNCHER_ENTRY_ENV = "AGENTSWARM_LAUNCHER"
 export const STARTER_TEMPLATE_REPO = "agency-ai-solutions/agency-starter-template"
 export const STARTER_TEMPLATE_URL = `https://github.com/${STARTER_TEMPLATE_REPO}.git`
 export const LOCAL_AGENCY_ID = "local-agency"
@@ -47,7 +48,7 @@ export function shouldRunNpxOnboarding(input: {
   prompt?: string
   agent?: string
 }) {
-  if (input.env[NPX_ENTRY_ENV] !== "1" && !isAgentswarmCommand(input.argv ?? process.argv)) return false
+  if (input.env[LAUNCHER_ENTRY_ENV] !== "1" && !isAgentswarmCommand(input.argv ?? process.argv)) return false
   if (input.model) return false
   if (input.continue) return false
   if (input.session) return false
@@ -472,26 +473,7 @@ async function startProjectServer(directory: string, python: string[]) {
     }).catch(() => undefined)
 
   try {
-    await Filesystem.write(
-      scriptPath,
-      [
-        "from agency import create_agency",
-        "from agency_swarm.integrations.fastapi import run_fastapi",
-        "import sys",
-        "",
-        "port = int(sys.argv[1])",
-        "agency_id = sys.argv[2]",
-        "",
-        "run_fastapi(",
-        "    agencies={agency_id: create_agency},",
-        '    host="127.0.0.1",',
-        "    port=port,",
-        '    server_url=f"http://127.0.0.1:{port}",',
-        '    app_token_env="",',
-        ")",
-        "",
-      ].join("\n"),
-    )
+    await Filesystem.write(scriptPath, SERVER_LAUNCHER_SCRIPT)
   } catch (error) {
     await remove()
     throw error
