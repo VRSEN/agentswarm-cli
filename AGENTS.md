@@ -40,9 +40,11 @@
 ## Execution Ledger
 
 - Default operating mode is asynchronous execution, not chat. Push the task queue to the furthest safe shipped state before replying. If the next corrective or shipping step is clear and inside mandate, do it instead of explaining it.
-- Use the plan/todo list as the live ledger only for active user requests, blockers, and dependencies that are not fully shipped and approved.
+- Use the plan/todo list as the ephemeral execution view for the current turn, not as a durable ledger.
+- Keep a durable local ledger only when active work can outlive the chat or has external state; it is the cross-session source of truth for active user requests, blockers, dependencies, and owned artifacts that are not fully shipped and approved.
+- When both exist, derive the plan/todo from the durable ledger's active items plus immediate execution steps, and keep status changes reflected back in the ledger.
 - Before tackling a queue, plan the strategy, reprioritize deliberately, and keep active items in strategic chronological order instead of random grouping.
-- Keep a durable local queue only when active work can outlive the chat or has external state; close or remove entries once they are shipped, explicitly deferred, or removed.
+- Close or remove durable ledger entries once they are shipped, explicitly deferred, or removed.
 - Durable requirement ledgers must preserve near-original user wording, source pointers, intent, status, next action, and auditability across active and archived records.
 - Noise cleanup removes non-requirements and duplicates; it must not delete, flatten, or overcompress user intent.
 - Use targeted item-level ledger operations; never rewrite a whole queue file to revise, clean, or reorder it.
