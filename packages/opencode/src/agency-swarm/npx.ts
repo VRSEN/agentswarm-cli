@@ -2,11 +2,13 @@ import * as prompts from "@clack/prompts"
 import net from "node:net"
 import os from "node:os"
 import path from "node:path"
+import { existsSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
+import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
 import { Filesystem } from "@/util/filesystem"
 
-export const NPX_ENTRY_ENV = "AGENTSWARM_NPX"
+export const LAUNCHER_ENTRY_ENV = "AGENTSWARM_LAUNCHER"
 export const STARTER_TEMPLATE_REPO = "agency-ai-solutions/agency-starter-template"
 export const STARTER_TEMPLATE_URL = `https://github.com/${STARTER_TEMPLATE_REPO}.git`
 export const LOCAL_AGENCY_ID = "local-agency"
@@ -31,21 +33,38 @@ interface CommandResult {
   stderr: string
 }
 
+interface PythonInfo {
+  cmd: string[]
+  executable: string
+  version: string
+}
+
 export function shouldRunNpxOnboarding(input: {
   env: NodeJS.ProcessEnv
+  argv?: string[]
   model?: string
   continue?: boolean
   session?: string
   prompt?: string
   agent?: string
 }) {
-  if (input.env[NPX_ENTRY_ENV] !== "1") return false
+  if (input.env[LAUNCHER_ENTRY_ENV] !== "1" && !isAgentswarmCommand(input.argv ?? process.argv)) return false
   if (input.model) return false
   if (input.continue) return false
   if (input.session) return false
   if (input.prompt) return false
   if (input.agent) return false
   return true
+}
+
+function isAgentswarmCommand(argv: string[]) {
+  return argv.slice(0, 2).some(
+    (item) =>
+      item
+        .split(/[\\/]/)
+        .at(-1)
+        ?.replace(/\.exe$/i, "") === "agentswarm",
+  )
 }
 
 export function buildAgencyConfig(input: { baseURL: string; agency: string; token?: string }) {
@@ -75,15 +94,27 @@ export function buildPythonEnv(directory: string, env: NodeJS.ProcessEnv = proce
 }
 
 export async function detectAgencyProject(directory: string) {
-  const agencyFile = path.join(directory, "agency.py")
+  const dir = path.resolve(directory)
+  const agencyFile = path.join(dir, "agency.py")
   if (!(await Filesystem.exists(agencyFile))) return
   const source = await Filesystem.readText(agencyFile).catch(() => "")
   if (!source.includes("def create_agency")) return
   if (!source.includes("agency_swarm")) return
   return {
-    directory,
+    directory: dir,
     agencyFile,
   } satisfies AgencyProject
+}
+
+export function formatProjectLabel(project: AgencyProject) {
+  return `Use detected Agency Swarm project (${project.directory})`
+}
+
+export function validateStarterName(base: string, value?: string) {
+  const name = value?.trim()
+  if (!name) return "A name is required"
+  if (/[\\/:*?\"<>|]/.test(name)) return "Use a simple folder or repository name"
+  if (existsSync(path.join(base, name))) return "A folder with this name already exists"
 }
 
 export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLaunch | undefined> {
@@ -110,8 +141,7 @@ export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLa
     choice === "project"
       ? project
       : await createStarterProject({
-          currentDirectory: directory,
-          createInsideCurrentDirectory: !project,
+          baseDirectory: directory,
         })
   if (!targetProject) {
     prompts.outro("Cancelled")
@@ -119,6 +149,10 @@ export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLa
   }
 
   const launch = await prepareProjectLaunch(targetProject)
+  if (!launch) {
+    prompts.outro("Cancelled")
+    return
+  }
   prompts.outro(`Opening Agent Swarm in ${targetProject.directory}`)
   return launch
 }
@@ -126,7 +160,7 @@ export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLa
 async function chooseLaunchChoice(project: AgencyProject | undefined) {
   prompts.log.info("1. Choose how to start the terminal UI.")
   prompts.log.info(
-    "   The NPX launcher can reuse the current project, create a starter project, or connect to an existing server.",
+    "   The launcher can use a detected project, create a starter project, or connect to an existing server.",
   )
 
   const result = await prompts.select<LaunchChoice>({
@@ -136,8 +170,7 @@ async function chooseLaunchChoice(project: AgencyProject | undefined) {
         ? [
             {
               value: "project" as const,
-              label: "Use the current Agency Swarm project",
-              hint: path.basename(project.directory),
+              label: formatProjectLabel(project),
             },
           ]
         : []),
@@ -242,10 +275,7 @@ async function prepareRemoteLaunch(directory: string): Promise<PreparedNpxLaunch
   }
 }
 
-async function createStarterProject(input: {
-  currentDirectory: string
-  createInsideCurrentDirectory: boolean
-}): Promise<AgencyProject | undefined> {
+async function createStarterProject(input: { baseDirectory: string }): Promise<AgencyProject | undefined> {
   prompts.log.info("2. Create the starter project.")
   prompts.log.info("   This gives the terminal UI a ready-to-run Agency Swarm project to launch.")
 
@@ -253,8 +283,7 @@ async function createStarterProject(input: {
     message: "Project or repository name",
     placeholder: "my-agency",
     validate(value) {
-      if (!value?.trim()) return "A name is required"
-      if (/[\\/:*?\"<>|]/.test(value)) return "Use a simple folder or repository name"
+      return validateStarterName(input.baseDirectory, value)
     },
   })
   if (prompts.isCancel(repoName)) return
@@ -282,10 +311,7 @@ async function createStarterProject(input: {
   }
 
   const name = repoName.trim()
-  const baseDirectory = input.createInsideCurrentDirectory
-    ? input.currentDirectory
-    : path.dirname(input.currentDirectory)
-  const targetDirectory = path.join(baseDirectory, name)
+  const targetDirectory = path.join(input.baseDirectory, name)
   if (await Filesystem.exists(targetDirectory)) {
     throw new Error(`Target directory already exists: ${targetDirectory}`)
   }
@@ -316,7 +342,7 @@ async function createStarterProject(input: {
       const result = await runCommand(
         ["gh", "repo", "create", name, "--template", STARTER_TEMPLATE_REPO, "--clone", `--${visibility}`],
         {
-          cwd: baseDirectory,
+          cwd: input.baseDirectory,
         },
       )
       if (result.code !== 0) {
@@ -345,48 +371,61 @@ async function createStarterProject(input: {
   }
 }
 
-export async function prepareProjectLaunch(project: AgencyProject): Promise<PreparedNpxLaunch> {
-  prompts.log.info("3. Prepare Python for Agent Builder.")
+export async function prepareProjectLaunch(project: AgencyProject): Promise<PreparedNpxLaunch | undefined> {
+  prompts.log.info("3. Start the Agency Swarm project.")
   prompts.log.info(
-    "   The launcher will reuse a project `.venv` when it exists, otherwise it will create one before opening the local builder.",
+    "   The launcher will reuse a project `.venv`, start a local FastAPI server, and connect the terminal UI to it.",
   )
 
-  await ensureProjectPython(project.directory)
+  const python = await ensureProjectPython(project.directory)
+  if (!python) return
+
+  const server = await startProjectServer(project.directory, python)
   return {
     directory: project.directory,
+    configContent: buildAgencyConfig({
+      baseURL: server.baseURL,
+      agency: LOCAL_AGENCY_ID,
+    }),
+    cleanup: server.cleanup,
   }
 }
 
 async function ensureProjectPython(directory: string) {
   const venvPython = getVenvPythonPath(directory)
   const hasVenv = await Filesystem.exists(venvPython)
-  if (hasVenv) return [venvPython]
+  if (hasVenv) {
+    const info = await inspectPython([venvPython])
+    prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
+    return [venvPython]
+  }
 
   const detected = await findPythonExecutable()
   if (!detected) {
     throw new Error("Python 3.12 or newer was not found. Install Python, then rerun `npx @vrsen/agentswarm`.")
   }
+  prompts.log.info(`Detected Python: ${formatPython(detected, detected.cmd)}`)
 
   const createVenv = await prompts.confirm({
     message: "Create a local `.venv` in this project?",
     initialValue: true,
   })
   if (prompts.isCancel(createVenv)) {
-    throw new Error("Cancelled before creating the project virtual environment.")
+    return
   }
   if (!createVenv) {
-    const check = await runCommand([...detected, "-c", "import agency_swarm"])
+    const check = await runCommand([...detected.cmd, "-c", "import agency_swarm"])
     if (check.code !== 0) {
       throw new Error(
         "This project does not have a `.venv` yet, and the selected Python environment cannot import `agency_swarm`.",
       )
     }
-    return detected
+    return detected.cmd
   }
 
   const spinner = prompts.spinner()
   spinner.start("Creating `.venv`")
-  const created = await runCommand([...detected, "-m", "venv", ".venv"], {
+  const created = await runCommand([...detected.cmd, "-m", "venv", ".venv"], {
     cwd: directory,
   })
   if (created.code !== 0) {
@@ -427,52 +466,54 @@ async function startProjectServer(directory: string, python: string[]) {
   const port = await getFreePort()
   const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "agentswarm-npx-"))
   const scriptPath = path.join(tempDirectory, "launch_agency.py")
-  await Filesystem.write(
-    scriptPath,
-    [
-      "from agency import create_agency",
-      "from agency_swarm.integrations.fastapi import run_fastapi",
-      "import sys",
-      "",
-      "port = int(sys.argv[1])",
-      "agency_id = sys.argv[2]",
-      "",
-      "run_fastapi(",
-      "    agencies={agency_id: create_agency},",
-      '    host="127.0.0.1",',
-      "    port=port,",
-      '    server_url=f"http://127.0.0.1:{port}",',
-      '    app_token_env="",',
-      ")",
-      "",
-    ].join("\n"),
-  )
+  const remove = () =>
+    rm(tempDirectory, {
+      recursive: true,
+      force: true,
+    }).catch(() => undefined)
 
-  const child = Bun.spawn({
-    cmd: [...python, scriptPath, String(port), LOCAL_AGENCY_ID],
-    cwd: directory,
-    stdout: "ignore",
-    stderr: "pipe",
-    env: buildPythonEnv(directory),
-  })
+  try {
+    await Filesystem.write(scriptPath, SERVER_LAUNCHER_SCRIPT)
+  } catch (error) {
+    await remove()
+    throw error
+  }
+
+  let child
+  try {
+    child = Bun.spawn({
+      cmd: [...python, scriptPath, String(port), LOCAL_AGENCY_ID],
+      cwd: directory,
+      stdout: "ignore",
+      stderr: "pipe",
+      env: buildPythonEnv(directory),
+    })
+  } catch (error) {
+    await remove()
+    throw error
+  }
   const stderrPromise = child.stderr ? new Response(child.stderr).text().catch(() => "") : Promise.resolve("")
 
-  await waitForServer({
-    baseURL: `http://127.0.0.1:${port}`,
-    child,
-    stderrPromise,
-  })
+  const cleanup = async () => {
+    child.kill()
+    await Promise.race([child.exited, sleep(5000)])
+    await remove()
+  }
+
+  try {
+    await waitForServer({
+      baseURL: `http://127.0.0.1:${port}`,
+      child,
+      stderrPromise,
+    })
+  } catch (error) {
+    await cleanup()
+    throw error
+  }
 
   return {
     baseURL: `http://127.0.0.1:${port}`,
-    cleanup: async () => {
-      child.kill()
-      await Promise.race([child.exited, sleep(5000)])
-      await rm(tempDirectory, {
-        recursive: true,
-        force: true,
-      }).catch(() => undefined)
-    },
+    cleanup,
   }
 }
 
@@ -517,17 +558,31 @@ async function findPythonExecutable() {
       : [["python3.13"], ["python3.12"], ["python3"], ["python"]]
 
   for (const candidate of candidates) {
-    const result = await runCommand([...candidate, "--version"])
-    if (result.code !== 0) continue
-    const versionText = `${result.stdout}${result.stderr}`
-    const match = versionText.match(/Python (\d+)\.(\d+)/)
+    const info = await inspectPython(candidate)
+    if (!info) continue
+    const match = info.version.match(/^(\d+)\.(\d+)/)
     if (!match) continue
     const major = Number(match[1])
     const minor = Number(match[2])
-    if (major > 3 || (major === 3 && minor >= 12)) {
-      return candidate
-    }
+    if (major > 3 || (major === 3 && minor >= 12)) return info
   }
+}
+
+async function inspectPython(cmd: string[]): Promise<PythonInfo | undefined> {
+  const result = await runCommand([...cmd, "-c", "import sys; print(sys.executable); print(sys.version.split()[0])"])
+  if (result.code !== 0) return
+  const [executable, version] = result.stdout.trim().split(/\r?\n/)
+  if (!executable || !version) return
+  return {
+    cmd,
+    executable,
+    version,
+  }
+}
+
+function formatPython(info: PythonInfo | undefined, cmd: string[]) {
+  if (!info) return cmd.join(" ")
+  return `${info.executable} (Python ${info.version})`
 }
 
 function getVenvPythonPath(directory: string) {
