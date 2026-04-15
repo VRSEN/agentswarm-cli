@@ -454,43 +454,57 @@ async function startProjectServer(directory: string, python: string[]) {
   const port = await getFreePort()
   const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "agentswarm-npx-"))
   const scriptPath = path.join(tempDirectory, "launch_agency.py")
-  await Filesystem.write(
-    scriptPath,
-    [
-      "from agency import create_agency",
-      "from agency_swarm.integrations.fastapi import run_fastapi",
-      "import sys",
-      "",
-      "port = int(sys.argv[1])",
-      "agency_id = sys.argv[2]",
-      "",
-      "run_fastapi(",
-      "    agencies={agency_id: create_agency},",
-      '    host="127.0.0.1",',
-      "    port=port,",
-      '    server_url=f"http://127.0.0.1:{port}",',
-      '    app_token_env="",',
-      ")",
-      "",
-    ].join("\n"),
-  )
+  const remove = () =>
+    rm(tempDirectory, {
+      recursive: true,
+      force: true,
+    }).catch(() => undefined)
 
-  const child = Bun.spawn({
-    cmd: [...python, scriptPath, String(port), LOCAL_AGENCY_ID],
-    cwd: directory,
-    stdout: "ignore",
-    stderr: "pipe",
-    env: buildPythonEnv(directory),
-  })
+  try {
+    await Filesystem.write(
+      scriptPath,
+      [
+        "from agency import create_agency",
+        "from agency_swarm.integrations.fastapi import run_fastapi",
+        "import sys",
+        "",
+        "port = int(sys.argv[1])",
+        "agency_id = sys.argv[2]",
+        "",
+        "run_fastapi(",
+        "    agencies={agency_id: create_agency},",
+        '    host="127.0.0.1",',
+        "    port=port,",
+        '    server_url=f"http://127.0.0.1:{port}",',
+        '    app_token_env="",',
+        ")",
+        "",
+      ].join("\n"),
+    )
+  } catch (error) {
+    await remove()
+    throw error
+  }
+
+  let child
+  try {
+    child = Bun.spawn({
+      cmd: [...python, scriptPath, String(port), LOCAL_AGENCY_ID],
+      cwd: directory,
+      stdout: "ignore",
+      stderr: "pipe",
+      env: buildPythonEnv(directory),
+    })
+  } catch (error) {
+    await remove()
+    throw error
+  }
   const stderrPromise = child.stderr ? new Response(child.stderr).text().catch(() => "") : Promise.resolve("")
 
   const cleanup = async () => {
     child.kill()
     await Promise.race([child.exited, sleep(5000)])
-    await rm(tempDirectory, {
-      recursive: true,
-      force: true,
-    }).catch(() => undefined)
+    await remove()
   }
 
   try {
