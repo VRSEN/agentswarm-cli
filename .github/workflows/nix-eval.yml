@@ -3,8 +3,14 @@ name: nix-eval
 on:
   push:
     branches: [dev]
+    paths-ignore:
+      - "AGENTS.md"
+      - ".agentswarm/**"
   pull_request:
     branches: [dev]
+    paths-ignore:
+      - "AGENTS.md"
+      - ".agentswarm/**"
   workflow_dispatch:
 
 concurrency:

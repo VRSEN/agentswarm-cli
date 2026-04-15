@@ -4,7 +4,13 @@ on:
   push:
     branches:
       - dev
+    paths-ignore:
+      - "AGENTS.md"
+      - ".agentswarm/**"
   pull_request:
+    paths-ignore:
+      - "AGENTS.md"
+      - ".agentswarm/**"
   workflow_dispatch:
 
 concurrency:

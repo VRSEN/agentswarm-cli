@@ -2,14 +2,24 @@
 - ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
 - Re-read this file at the start of each new task.
 - Use fresh tool output before acting; do not rely on memory.
-- Protect the context window. Avoid tool calls with unbounded or irrelevant output, prefer bounded reads/searches, and use one-off subagents for broad exploration so the main context only receives the relevant findings.
-- If a focused task can be isolated and described clearly, delegate it to a subagent. If it is too messy to describe cleanly, keep it local.
-- Do not over-specify delegated work. Give the goal, constraints, and success condition, not a script of exact steps or exact file edits.
+- Default to proactive, rigorous, persistent, high-effort execution; keep working until the task is complete or genuinely blocked.
+- Default to simple, elegant solutions; when unsure, remove avoidable complexity instead of adding it.
+- Identify your role at task start from available tools: managers have a Subagent tool and coordinate; agents without it must state they are subagents, stay inside assigned scope, and report blockers instead of delegating.
+- Protect the context window. Avoid unbounded or irrelevant tool output; prefer bounded reads/searches and focused subagents for broad exploration when available.
+- Managers may use at most 10 subagents for one task.
+- Each subagent prompt must include full context, source of truth, scope, non-goals, constraints, source pointers, and success condition.
+- Do not over-specify delegated work. Give the goal, constraints, and success condition without scripting exact steps or file edits unless they are already known.
 - Keep this file short. Consolidate or tighten rules before adding new ones.
 - The operational branch for this repo is `dev`. Use `origin/dev` as the default baseline for diffs, review, and sync work.
 - If `origin/dev` is unavailable, escalate. Do not silently substitute another baseline.
 - Prefer automation for read, edit, and test work.
 - Before destructive commands, branch rewrites, force operations, releases, or process changes you did not start, get explicit user approval.
+
+## Communication
+
+- Keep user-facing updates low-friction: lead with current status, avoid filler, and do not add ritual blocks unless the user asks for them.
+- Ask one question at a time. Each escalation must state exactly what user input or approval is needed.
+- Before finishing with outstanding items or stopped work, include `Escalations:` with exactly what user decision, approval, input, or blocker remains; when all work is complete and no user action is needed, omit the block.
 
 ## Review Policy
 
@@ -20,15 +30,27 @@
 ## AGENTS.md Policy
 
 - `AGENTS.md` changes are user-reviewed manually and do not require Codex review.
+- Treat policy and `AGENTS.md` edits as red-zone work: no product work resumes until the policy blocker is finalized or explicitly deferred.
+- Use focused subagents for complex policy edits or independent policy review when the Subagent tool is available; subagents without that tool must report the review gap instead.
 - Do not open PRs for `AGENTS.md`-only changes.
 - Commit and push `AGENTS.md`-only changes directly to the default branch (`dev` in this repo) after user approval.
 - Before shipping unshipped work, ask the user for explicit shipping approval in one clear sentence and wait for approval before proceeding.
+- Do not leave unshipped local changes without surfacing the state, the next action, and the approval or blocker needed to resolve them.
 
 ## Execution Ledger
 
 - Default operating mode is asynchronous execution, not chat. Push the task queue to the furthest safe shipped state before replying. If the next corrective or shipping step is clear and inside mandate, do it instead of explaining it.
-
-- Use the plan/todo list as the live ledger for every user request, blocker, and dependency that is not fully shipped and approved.
+- Use the plan/todo list only for the short execution plan for the current task, not as a durable user-request backlog.
+- Keep a durable local ledger only when active work can outlive the chat or has external state; it is the cross-session source of truth for active user requests, blockers, dependencies, and request-linked artifacts that are not fully shipped and approved.
+- When both exist, keep them separate but aligned: the durable ledger stores user requests and request-linked cross-session state; the plan/todo stores the current execution steps needed to satisfy the active request. Do not duplicate the whole ledger into the plan.
+- Before tackling a queue, plan the strategy, reprioritize deliberately, and keep active items in strategic chronological order instead of random grouping.
+- Close or remove durable ledger entries once they are shipped, explicitly deferred, or removed.
+- Durable requirement ledgers must preserve near-original user wording, source pointers, intent, status, next action, and auditability across active and archived records.
+- Noise cleanup removes non-requirements and duplicates; it must not delete, flatten, or overcompress user intent.
+- Use targeted item-level ledger operations; never rewrite a whole queue file to revise, clean, or reorder it.
+- Active queues contain only unfulfilled requirements; completed requirements move to the archive.
+- If a ledger cleanup is rejected for losing user intent, treat the rejected cleanup as a failed source and restore the requirement from the preserved wording and source pointers.
+- Before resuming product tasks after ledger work, interruption, or recovery, list every active unfulfilled user requirement and account for its status.
 - Tasks are not code-only. Branches, PRs, and commits are optional artifacts, not the work itself.
 - Do not drop a task from that ledger until it is shipped, explicitly deferred, or explicitly removed by the user.
 - Track the escalation state of each surfaced item: not yet surfaced to the user, already surfaced and waiting on the user, or resolved and no longer needs a user decision.
@@ -51,6 +73,8 @@
 
 - This is `agentswarm-cli`, a minimal OpenCode fork for Agency Swarm.
 - Treat `origin/dev` as the upstream baseline and keep the fork delta limited to Agency Swarm integration, required fork packaging/release work, and approved product branding.
+- Keep the canonical testing checkout clean and current before relying on it as evidence; if it is stale or has unowned local changes, escalate before using it.
+- Do not hide local-only drift: surface uncommitted, unpushed, stale, or unowned checkout state with the next action or blocker before claiming evidence or completion.
 - Remote model:
   - `origin` = upstream OpenCode
   - `vrsen` = canonical fork remote for `dev` pushes
