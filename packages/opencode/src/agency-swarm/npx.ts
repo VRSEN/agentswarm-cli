@@ -2,7 +2,7 @@ import * as prompts from "@clack/prompts"
 import net from "node:net"
 import os from "node:os"
 import path from "node:path"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readdir, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { Filesystem } from "@/util/filesystem"
 
@@ -75,6 +75,31 @@ export function buildPythonEnv(directory: string, env: NodeJS.ProcessEnv = proce
 }
 
 export async function detectAgencyProject(directory: string) {
+  const project = await findProject(directory)
+  if (project) return project
+
+  const children = await readdir(directory, { withFileTypes: true }).catch(() => [])
+  const projects = (
+    await Promise.all(
+      children
+        .filter((child) => child.isDirectory() && !child.name.startsWith("."))
+        .map((child) => readProject(path.join(directory, child.name))),
+    )
+  ).filter((project): project is AgencyProject => Boolean(project))
+  if (projects.length === 1) return projects[0]
+}
+
+async function findProject(directory: string): Promise<AgencyProject | undefined> {
+  const dir = path.resolve(directory)
+  const project = await readProject(dir)
+  if (project) return project
+
+  const parent = path.dirname(dir)
+  if (parent === dir) return
+  return findProject(parent)
+}
+
+async function readProject(directory: string): Promise<AgencyProject | undefined> {
   const agencyFile = path.join(directory, "agency.py")
   if (!(await Filesystem.exists(agencyFile))) return
   const source = await Filesystem.readText(agencyFile).catch(() => "")
@@ -136,7 +161,7 @@ async function chooseLaunchChoice(project: AgencyProject | undefined) {
         ? [
             {
               value: "project" as const,
-              label: "Use the current Agency Swarm project",
+              label: "Use existing Agency Swarm project",
               hint: path.basename(project.directory),
             },
           ]

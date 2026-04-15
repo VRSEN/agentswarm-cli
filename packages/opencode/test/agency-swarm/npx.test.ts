@@ -64,20 +64,48 @@ describe("agency-swarm npx onboarding", () => {
 
   test("detectAgencyProject requires agency.py with create_agency", async () => {
     await using dir = await tmpdir()
-    await Bun.write(
-      path.join(dir.path, "agency.py"),
-      [
-        "from agency_swarm import Agency",
-        "",
-        "def create_agency(load_threads_callback=None):",
-        "    return Agency()",
-      ].join("\n"),
-    )
+    await writeAgency(dir.path)
 
     const project = await detectAgencyProject(dir.path)
 
     expect(project?.directory).toBe(dir.path)
     expect(project?.agencyFile).toBe(path.join(dir.path, "agency.py"))
+  })
+
+  test("detectAgencyProject finds the project root from nested folders", async () => {
+    await using dir = await tmpdir()
+    const nested = path.join(dir.path, "example_agent", "tools")
+    await mkdir(nested, { recursive: true })
+    await writeAgency(dir.path)
+
+    const project = await detectAgencyProject(nested)
+
+    expect(project?.directory).toBe(dir.path)
+    expect(project?.agencyFile).toBe(path.join(dir.path, "agency.py"))
+  })
+
+  test("detectAgencyProject finds one starter project inside the current folder", async () => {
+    await using dir = await tmpdir()
+    const child = path.join(dir.path, "my-agency")
+    await mkdir(child)
+    await writeAgency(child)
+
+    const project = await detectAgencyProject(dir.path)
+
+    expect(project?.directory).toBe(child)
+    expect(project?.agencyFile).toBe(path.join(child, "agency.py"))
+  })
+
+  test("detectAgencyProject ignores ambiguous starter project folders", async () => {
+    await using dir = await tmpdir()
+    await mkdir(path.join(dir.path, "first"))
+    await mkdir(path.join(dir.path, "second"))
+    await writeAgency(path.join(dir.path, "first"))
+    await writeAgency(path.join(dir.path, "second"))
+
+    const project = await detectAgencyProject(dir.path)
+
+    expect(project).toBeUndefined()
   })
 
   test("detectAgencyProject ignores unrelated python files", async () => {
@@ -110,3 +138,15 @@ describe("agency-swarm npx onboarding", () => {
     })
   })
 })
+
+async function writeAgency(dir: string) {
+  await Bun.write(
+    path.join(dir, "agency.py"),
+    [
+      "from agency_swarm import Agency",
+      "",
+      "def create_agency(load_threads_callback=None):",
+      "    return Agency()",
+    ].join("\n"),
+  )
+}
