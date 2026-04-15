@@ -152,10 +152,17 @@ describe("session.agency-swarm-utils", () => {
         msg([
           text("part-1", { type: "text", text: " first " }),
           text("part-2", { type: "text", text: "ignored", ignored: true }),
-          text("part-3", { type: "text", text: " second " }),
+          text("part-3", { type: "text", text: "<system-reminder>local only</system-reminder>", synthetic: true }),
+          text("part-4", {
+            type: "text",
+            text: "<system-reminder>local only</system-reminder>\n\nhandoff",
+            synthetic: true,
+          }),
+          text("part-5", { type: "text", text: " context ", synthetic: true }),
+          text("part-6", { type: "text", text: " second " }),
         ]),
       ),
-    ).toBe("first\n\nsecond")
+    ).toBe("first\n\nhandoff\n\ncontext\n\nsecond")
     expect(
       findRecipientAgent(
         msg([
