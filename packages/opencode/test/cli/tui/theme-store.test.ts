@@ -56,12 +56,21 @@ test("resolveTheme always uses the dark variant", () => {
   expect(color.b).toBeCloseTo(3 / 255, 6)
 })
 
+test("built-in opencode theme keeps the Agent Swarm dark palette", () => {
+  expect(DEFAULT_THEMES.opencode.defs?.darkStep1).toBe("#0c102d")
+  expect(DEFAULT_THEMES.opencode.defs?.darkStep9).toBe("#fcd53b")
+  expect(DEFAULT_THEMES.opencode.defs?.darkSecondary).toBe("#5a70b4")
+  expect(DEFAULT_THEMES.opencode.defs?.darkAccent).toBe("#e8d382")
+})
+
 test("upsertTheme cannot replace the built-in opencode theme", () => {
   const item = structuredClone(DEFAULT_THEMES.opencode)
   item.theme.primary = "#010203"
 
   expect(upsertTheme("opencode", item)).toBe(false)
-  expect(resolveTheme(allThemes().opencode).primary.toString()).toBe(resolveTheme(DEFAULT_THEMES.opencode).primary.toString())
+  expect(resolveTheme(allThemes().opencode).primary.toString()).toBe(
+    resolveTheme(DEFAULT_THEMES.opencode).primary.toString(),
+  )
 })
 
 test("resolveTheme rejects circular color refs", () => {
