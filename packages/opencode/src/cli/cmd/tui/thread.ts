@@ -252,12 +252,15 @@ export const TuiThreadCommand = cmd({
         })
       } finally {
         await stop()
+      }
+    } finally {
+      try {
         if (cleanup) {
           await cleanup()
         }
+      } finally {
+        unguard?.()
       }
-    } finally {
-      unguard?.()
     }
     process.exit(0)
   },

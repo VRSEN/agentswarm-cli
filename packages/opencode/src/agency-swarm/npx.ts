@@ -2,6 +2,7 @@ import * as prompts from "@clack/prompts"
 import net from "node:net"
 import os from "node:os"
 import path from "node:path"
+import { existsSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { Filesystem } from "@/util/filesystem"
@@ -89,6 +90,13 @@ export async function detectAgencyProject(directory: string) {
 
 export function formatProjectLabel(project: AgencyProject) {
   return `Use this Agency Swarm project (${project.directory})`
+}
+
+export function validateStarterName(base: string, value?: string) {
+  const name = value?.trim()
+  if (!name) return "A name is required"
+  if (/[\\/:*?\"<>|]/.test(name)) return "Use a simple folder or repository name"
+  if (existsSync(path.join(base, name))) return "A folder with this name already exists"
 }
 
 export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLaunch | undefined> {
@@ -253,8 +261,7 @@ async function createStarterProject(input: { baseDirectory: string }): Promise<A
     message: "Project or repository name",
     placeholder: "my-agency",
     validate(value) {
-      if (!value?.trim()) return "A name is required"
-      if (/[\\/:*?\"<>|]/.test(value)) return "Use a simple folder or repository name"
+      return validateStarterName(input.baseDirectory, value)
     },
   })
   if (prompts.isCancel(repoName)) return
@@ -459,22 +466,29 @@ async function startProjectServer(directory: string, python: string[]) {
   })
   const stderrPromise = child.stderr ? new Response(child.stderr).text().catch(() => "") : Promise.resolve("")
 
-  await waitForServer({
-    baseURL: `http://127.0.0.1:${port}`,
-    child,
-    stderrPromise,
-  })
+  const cleanup = async () => {
+    child.kill()
+    await Promise.race([child.exited, sleep(5000)])
+    await rm(tempDirectory, {
+      recursive: true,
+      force: true,
+    }).catch(() => undefined)
+  }
+
+  try {
+    await waitForServer({
+      baseURL: `http://127.0.0.1:${port}`,
+      child,
+      stderrPromise,
+    })
+  } catch (error) {
+    await cleanup()
+    throw error
+  }
 
   return {
     baseURL: `http://127.0.0.1:${port}`,
-    cleanup: async () => {
-      child.kill()
-      await Promise.race([child.exited, sleep(5000)])
-      await rm(tempDirectory, {
-        recursive: true,
-        force: true,
-      }).catch(() => undefined)
-    },
+    cleanup,
   }
 }
 

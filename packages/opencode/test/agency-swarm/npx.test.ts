@@ -8,6 +8,7 @@ import {
   formatProjectLabel,
   NPX_ENTRY_ENV,
   shouldRunNpxOnboarding,
+  validateStarterName,
 } from "../../src/agency-swarm/npx"
 import { tmpdir } from "../fixture/fixture"
 
@@ -83,6 +84,17 @@ describe("agency-swarm npx onboarding", () => {
     expect(project).toBeUndefined()
   })
 
+  test("detectAgencyProject ignores parent agency projects", async () => {
+    await using dir = await tmpdir()
+    const nested = path.join(dir.path, "example_agent")
+    await mkdir(nested)
+    await writeAgency(dir.path)
+
+    const project = await detectAgencyProject(nested)
+
+    expect(project).toBeUndefined()
+  })
+
   test("detectAgencyProject ignores unrelated python files", async () => {
     await using dir = await tmpdir()
     await Bun.write(path.join(dir.path, "agency.py"), "print('hello')")
@@ -101,6 +113,14 @@ describe("agency-swarm npx onboarding", () => {
         agencyFile: path.join(root, "agency.py"),
       }),
     ).toBe(`Use this Agency Swarm project (${root})`)
+  })
+
+  test("validateStarterName rejects existing target folders", async () => {
+    await using dir = await tmpdir()
+    await mkdir(path.join(dir.path, "my-agency"))
+
+    expect(validateStarterName(dir.path, "my-agency")).toBe("A folder with this name already exists")
+    expect(validateStarterName(dir.path, "new-agency")).toBeUndefined()
   })
 })
 
