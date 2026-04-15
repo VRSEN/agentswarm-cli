@@ -9,6 +9,10 @@ import { fileURLToPath } from "node:url"
 function run(target) {
   const result = childProcess.spawnSync(target, process.argv.slice(2), {
     stdio: "inherit",
+    env: {
+      ...process.env,
+      AGENTSWARM_NPX: process.env.AGENTSWARM_NPX || "1",
+    },
   })
   if (result.error) {
     console.error(result.error.message)

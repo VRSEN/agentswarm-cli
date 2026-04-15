@@ -2,7 +2,7 @@ import * as prompts from "@clack/prompts"
 import net from "node:net"
 import os from "node:os"
 import path from "node:path"
-import { mkdtemp, readdir, rm } from "node:fs/promises"
+import { mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { Filesystem } from "@/util/filesystem"
 
@@ -75,45 +75,20 @@ export function buildPythonEnv(directory: string, env: NodeJS.ProcessEnv = proce
 }
 
 export async function detectAgencyProject(directory: string) {
-  const project = await findProject(directory)
-  if (project) return project
-
-  const children = await readdir(directory, { withFileTypes: true }).catch(() => [])
-  const projects = (
-    await Promise.all(
-      children
-        .filter((child) => child.isDirectory() && !child.name.startsWith("."))
-        .map((child) => readProject(path.join(directory, child.name))),
-    )
-  ).filter((project): project is AgencyProject => Boolean(project))
-  if (projects.length === 1) return projects[0]
-}
-
-export function getStarterBaseDirectory(directory: string, project?: AgencyProject) {
-  if (project) return path.dirname(project.directory)
-  return directory
-}
-
-async function findProject(directory: string): Promise<AgencyProject | undefined> {
   const dir = path.resolve(directory)
-  const project = await readProject(dir)
-  if (project) return project
-
-  const parent = path.dirname(dir)
-  if (parent === dir) return
-  return findProject(parent)
-}
-
-async function readProject(directory: string): Promise<AgencyProject | undefined> {
-  const agencyFile = path.join(directory, "agency.py")
+  const agencyFile = path.join(dir, "agency.py")
   if (!(await Filesystem.exists(agencyFile))) return
   const source = await Filesystem.readText(agencyFile).catch(() => "")
   if (!source.includes("def create_agency")) return
   if (!source.includes("agency_swarm")) return
   return {
-    directory,
+    directory: dir,
     agencyFile,
   } satisfies AgencyProject
+}
+
+export function formatProjectLabel(project: AgencyProject) {
+  return `Use this Agency Swarm project (${project.directory})`
 }
 
 export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLaunch | undefined> {
@@ -140,7 +115,7 @@ export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLa
     choice === "project"
       ? project
       : await createStarterProject({
-          baseDirectory: getStarterBaseDirectory(directory, project),
+          baseDirectory: directory,
         })
   if (!targetProject) {
     prompts.outro("Cancelled")
@@ -165,8 +140,7 @@ async function chooseLaunchChoice(project: AgencyProject | undefined) {
         ? [
             {
               value: "project" as const,
-              label: "Use existing Agency Swarm project",
-              hint: path.basename(project.directory),
+              label: formatProjectLabel(project),
             },
           ]
         : []),
@@ -369,14 +343,19 @@ async function createStarterProject(input: { baseDirectory: string }): Promise<A
 }
 
 export async function prepareProjectLaunch(project: AgencyProject): Promise<PreparedNpxLaunch> {
-  prompts.log.info("3. Prepare Python for Agent Builder.")
+  prompts.log.info("3. Start the Agency Swarm project.")
   prompts.log.info(
-    "   The launcher will reuse a project `.venv` when it exists, otherwise it will create one before opening the local builder.",
+    "   The launcher will reuse a project `.venv`, start a local FastAPI server, and connect the terminal UI to it.",
   )
 
-  await ensureProjectPython(project.directory)
+  const server = await startProjectServer(project.directory, await ensureProjectPython(project.directory))
   return {
     directory: project.directory,
+    configContent: buildAgencyConfig({
+      baseURL: server.baseURL,
+      agency: LOCAL_AGENCY_ID,
+    }),
+    cleanup: server.cleanup,
   }
 }
 
