@@ -43,7 +43,7 @@
 - Default operating mode is asynchronous execution, not chat. Push the task queue to the furthest safe shipped state before replying. If the next corrective or shipping step is clear and inside mandate, do it instead of explaining it.
 - Use the plan/todo list only for the short execution plan for the current task, not as a durable user-request backlog.
 - Keep a durable local ledger only when active work can outlive the chat or has external state; it is the cross-session source of truth for active user requests, blockers, dependencies, and request-linked artifacts that are not fully shipped and approved.
-- When `.agentswarm/skills/requirement-ledger` exists, use its CLI for durable ledger operations; do not hand-edit ledger files.
+- Use `.agentswarm/skills/requirement-ledger` for durable ledger operations; do not hand-edit ledger files.
 - When both exist, keep them separate but aligned: the durable ledger stores user requests and request-linked cross-session state; the plan/todo stores the current execution steps needed to satisfy the active request. Do not duplicate the whole ledger into the plan.
 - Before tackling a queue, plan the strategy, reprioritize deliberately, and keep active items in strategic chronological order instead of random grouping.
 - Close or remove durable ledger entries once they are shipped, explicitly deferred, or removed.
