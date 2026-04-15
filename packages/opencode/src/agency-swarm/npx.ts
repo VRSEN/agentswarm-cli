@@ -89,6 +89,11 @@ export async function detectAgencyProject(directory: string) {
   if (projects.length === 1) return projects[0]
 }
 
+export function getStarterBaseDirectory(directory: string, project?: AgencyProject) {
+  if (project) return path.dirname(project.directory)
+  return directory
+}
+
 async function findProject(directory: string): Promise<AgencyProject | undefined> {
   const dir = path.resolve(directory)
   const project = await readProject(dir)
@@ -135,8 +140,7 @@ export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLa
     choice === "project"
       ? project
       : await createStarterProject({
-          currentDirectory: directory,
-          createInsideCurrentDirectory: !project,
+          baseDirectory: getStarterBaseDirectory(directory, project),
         })
   if (!targetProject) {
     prompts.outro("Cancelled")
@@ -267,10 +271,7 @@ async function prepareRemoteLaunch(directory: string): Promise<PreparedNpxLaunch
   }
 }
 
-async function createStarterProject(input: {
-  currentDirectory: string
-  createInsideCurrentDirectory: boolean
-}): Promise<AgencyProject | undefined> {
+async function createStarterProject(input: { baseDirectory: string }): Promise<AgencyProject | undefined> {
   prompts.log.info("2. Create the starter project.")
   prompts.log.info("   This gives the terminal UI a ready-to-run Agency Swarm project to launch.")
 
@@ -307,10 +308,7 @@ async function createStarterProject(input: {
   }
 
   const name = repoName.trim()
-  const baseDirectory = input.createInsideCurrentDirectory
-    ? input.currentDirectory
-    : path.dirname(input.currentDirectory)
-  const targetDirectory = path.join(baseDirectory, name)
+  const targetDirectory = path.join(input.baseDirectory, name)
   if (await Filesystem.exists(targetDirectory)) {
     throw new Error(`Target directory already exists: ${targetDirectory}`)
   }
@@ -341,7 +339,7 @@ async function createStarterProject(input: {
       const result = await runCommand(
         ["gh", "repo", "create", name, "--template", STARTER_TEMPLATE_REPO, "--clone", `--${visibility}`],
         {
-          cwd: baseDirectory,
+          cwd: input.baseDirectory,
         },
       )
       if (result.code !== 0) {

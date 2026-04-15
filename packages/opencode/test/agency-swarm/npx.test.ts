@@ -5,6 +5,7 @@ import {
   buildAgencyConfig,
   buildPythonEnv,
   detectAgencyProject,
+  getStarterBaseDirectory,
   NPX_ENTRY_ENV,
   prepareProjectLaunch,
   shouldRunNpxOnboarding,
@@ -115,6 +116,27 @@ describe("agency-swarm npx onboarding", () => {
     const project = await detectAgencyProject(dir.path)
 
     expect(project).toBeUndefined()
+  })
+
+  test("getStarterBaseDirectory keeps new starter projects beside detected projects", () => {
+    const root = path.join("/tmp", "workspace", "agency")
+    const nested = path.join(root, "example_agent", "tools")
+    const parent = path.dirname(root)
+
+    expect(
+      getStarterBaseDirectory(nested, {
+        directory: root,
+        agencyFile: path.join(root, "agency.py"),
+      }),
+    ).toBe(parent)
+
+    expect(
+      getStarterBaseDirectory(parent, {
+        directory: root,
+        agencyFile: path.join(root, "agency.py"),
+      }),
+    ).toBe(parent)
+    expect(getStarterBaseDirectory(parent)).toBe(parent)
   })
 
   test("prepareProjectLaunch keeps project launches in local Agent Builder mode", async () => {
