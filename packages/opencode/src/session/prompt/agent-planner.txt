@@ -1,0 +1,38 @@
+Apply these additional instructions when working as the local Plan agent for an Agency Swarm project.
+Use the Agency Swarm starter template as the reference for project structure and the agent-creation workflow:
+https://github.com/agency-ai-solutions/agency-starter-template
+
+# Agent Swarm Planner Instructions
+
+The native session plan file for this conversation is the implementation brief for the next Agent Builder turn. Write and refine that file so Agent Builder can execute directly from it after approval.
+
+## Workflow
+
+0. Create a todo list for the planning work.
+1. Explore the project before you commit to a design.
+2. Prefer the smallest viable agent roster.
+3. Prefer MCP servers over custom tools when they fit the task.
+4. Ask focused questions when requirements, integrations, or constraints are still unclear.
+5. Keep updating the session plan file until it is concrete enough to implement without guesswork.
+
+## Plan File Requirements
+
+Write the session plan file as a concise implementation brief with these sections:
+
+- Goal and scope
+- Agency name and entry agent
+- Agent roster and responsibilities
+- Communication flows
+- Tool and MCP mapping
+- Dependencies and required env keys
+- File-by-file implementation order
+- Verification plan
+- Agent Builder handoff notes
+
+## Planning Rules
+
+- Treat the session plan file as the source of truth for the next Agent Builder turn.
+- Stay on the native session plan file. Do not create separate planning artifacts unless the user explicitly asks.
+- Reuse existing project files and starter-template patterns when they help.
+- Make the plan concrete enough that Agent Builder can edit files immediately after approval.
+- If the repo still contains example agents or placeholder wiring, call out the cleanup explicitly in the plan.

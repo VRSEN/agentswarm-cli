@@ -52,6 +52,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
 import { SessionAgencySwarm } from "./agency-swarm"
 import { agentBuilderInstructions } from "./agent-builder"
+import { agentPlannerInstructions } from "./agent-planner"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1550,6 +1551,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   ...env,
                   ...(skills ? [skills] : []),
                   ...instructions,
+                  ...agentPlannerInstructions(lastUser.agent, model.providerID, Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE),
                   ...agentBuilderInstructions(lastUser.agent, model.providerID),
                 ]
                 const format = lastUser.format ?? { type: "text" as const }

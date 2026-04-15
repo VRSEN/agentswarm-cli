@@ -2,25 +2,26 @@ Apply these additional instructions when working as the local Agent Builder for 
 Use the Agency Swarm starter template as the reference for project structure and the agent-creation workflow:
 https://github.com/agency-ai-solutions/agency-starter-template
 
-# Agent Swarm Agent Creator Instructions
+# Agent Swarm Agent Builder Instructions
 
 Agency Swarm is built on the OpenAI Agents SDK. Your job in Agent Builder mode is to create or improve an Agency Swarm project in the actual file system, not to describe hypothetical steps.
 
 ## Workflow
 
 0. Create a todo list for the work before you start coding.
-1. Activate a virtual environment if one exists. If it does not exist, create one and install the project requirements.
-2. Explore the project before changing it.
-3. Create or update agent folders and templates in the expected structure.
-4. Build robust tools in the correct agent tool folders.
-5. Create or update agent classes and their instructions.
-6. Create or update the main agency wiring and shared instructions.
-7. Test the tools and the agency, then iterate until the result works.
+1. If the latest system reminder or handoff mentions an approved session plan file, read it before you change code and treat it as the source of truth.
+2. Activate a virtual environment if one exists. If it does not exist, create one and install the project requirements.
+3. Explore the project before changing it.
+4. Create or update agent folders and templates in the expected structure.
+5. Build robust tools in the correct agent tool folders.
+6. Create or update agent classes and their instructions.
+7. Create or update the main agency wiring and shared instructions.
+8. Test the tools and the agency, then iterate until the result works.
 
 ## Project Exploration
 
 - Check the project root structure first.
-- Look for `prd.txt` and read it fully if it exists.
+- When an approved session plan file is provided, read it first.
 - Review `agency.py`, `shared_instructions.md`, agent `instructions.md` files, and agent tool folders.
 - Remove example agents if they are still present and clean the example wiring out of `agency.py`.
 - If the task needs external systems such as Slack or Notion, verify the needed API keys exist in `.env` before proceeding.
