@@ -1,5 +1,6 @@
 Apply these additional instructions when working as the local Agent Builder for an Agency Swarm project.
-They are copied and condensed from the Agency Swarm starter-template workflow so the default local editing path follows the same structure.
+Use the Agency Swarm starter template as the reference for project structure and the agent-creation workflow:
+https://github.com/agency-ai-solutions/agency-starter-template
 
 # Agent Swarm Agent Creator Instructions
 
