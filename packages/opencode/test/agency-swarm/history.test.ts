@@ -1,76 +1,57 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, expect, test } from "bun:test"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
-import { Instance } from "../../src/project/instance"
-import { tmpdir } from "../fixture/fixture"
+import { Storage } from "../../src/storage/storage"
 
-describe("agency-swarm.history", () => {
-  test("stores and resumes chat history for the same baseURL/agency/session key", async () => {
-    await using tmp = await tmpdir({ config: {} })
+const originalRead = Storage.read
+const originalWrite = Storage.write
+const originalFile = Bun.file
 
-    await Instance.provide({
-      directory: tmp.path,
-      fn: async () => {
-        const scope = {
-          baseURL: "http://127.0.0.1:8000",
-          agency: "builder",
-          sessionID: "sess_1",
-        }
+afterEach(() => {
+  Storage.read = originalRead
+  Storage.write = originalWrite
+  Bun.file = originalFile
+})
 
-        await AgencySwarmHistory.appendMessages(scope, [{ type: "message", id: "msg_1" }])
-        const loaded = await AgencySwarmHistory.load(scope)
+test("load falls back to legacy opencode storage and migrates entry", async () => {
+  const scope = {
+    baseURL: "http://127.0.0.1:8000",
+    agency: "builder",
+    sessionID: "session_1",
+  }
+  const scopedKey = AgencySwarmHistory.scopeKey(scope)
+  const hash = Bun.hash.xxHash32(scopedKey).toString(16).padStart(8, "0")
+  const writes: Array<{ key: string[]; content: unknown }> = []
 
-        expect(loaded.chat_history).toEqual([{ type: "message", id: "msg_1" }])
-      },
-    })
+  Storage.read = (async () => {
+    throw new Storage.NotFoundError({ message: "missing" })
+  }) as typeof Storage.read
+  Storage.write = (async (key, content) => {
+    writes.push({ key, content })
+  }) as typeof Storage.write
+  Bun.file = ((file: string) => ({
+    json: async () => {
+      expect(file.endsWith(`/opencode/storage/agency_swarm_history/${hash}.json`)).toBeTrue()
+      return {
+        scope: scopedKey,
+        chat_history: [{ type: "message", role: "assistant" }],
+        last_run_id: "run_1",
+        updated_at: 123,
+      }
+    },
+  })) as typeof Bun.file
+
+  const entry = await AgencySwarmHistory.load(scope)
+
+  expect(entry).toEqual({
+    scope: scopedKey,
+    chat_history: [{ type: "message", role: "assistant" }],
+    last_run_id: "run_1",
+    updated_at: 123,
   })
-
-  test("does not leak history across baseURL or agency changes", async () => {
-    await using tmp = await tmpdir({ config: {} })
-
-    await Instance.provide({
-      directory: tmp.path,
-      fn: async () => {
-        const primary = {
-          baseURL: "http://127.0.0.1:8000",
-          agency: "builder",
-          sessionID: "sess_2",
-        }
-
-        await AgencySwarmHistory.appendMessages(primary, [{ type: "message", id: "msg_primary" }])
-
-        const differentAgency = await AgencySwarmHistory.load({
-          ...primary,
-          agency: "research",
-        })
-
-        const differentBaseURL = await AgencySwarmHistory.load({
-          ...primary,
-          baseURL: "http://127.0.0.1:9000",
-        })
-
-        expect(differentAgency.chat_history).toEqual([])
-        expect(differentBaseURL.chat_history).toEqual([])
-      },
-    })
-  })
-
-  test("stores last_run_id alongside chat_history", async () => {
-    await using tmp = await tmpdir({ config: {} })
-
-    await Instance.provide({
-      directory: tmp.path,
-      fn: async () => {
-        const scope = {
-          baseURL: "http://127.0.0.1:8000",
-          agency: "builder",
-          sessionID: "sess_3",
-        }
-
-        await AgencySwarmHistory.setLastRunID(scope, "run_123")
-        const loaded = await AgencySwarmHistory.load(scope)
-
-        expect(loaded.last_run_id).toBe("run_123")
-      },
-    })
-  })
+  expect(writes).toEqual([
+    {
+      key: ["agency_swarm_history", hash],
+      content: entry,
+    },
+  ])
 })

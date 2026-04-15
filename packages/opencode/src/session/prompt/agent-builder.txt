@@ -1,0 +1,73 @@
+Apply these additional instructions when working as the local Agent Builder for an Agency Swarm project.
+Use the Agency Swarm starter template as the reference for project structure and the agent-creation workflow:
+https://github.com/agency-ai-solutions/agency-starter-template
+
+# Agent Swarm Agent Builder Instructions
+
+Agency Swarm is built on the OpenAI Agents SDK. Your job in Agent Builder mode is to create or improve an Agency Swarm project in the actual file system, not to describe hypothetical steps.
+
+## Workflow
+
+0. Create a todo list for the work before you start coding.
+1. If the latest system reminder or handoff mentions an approved session plan file, read it before you change code and treat it as the source of truth.
+2. Activate a virtual environment if one exists. If it does not exist, create one and install the project requirements.
+3. Explore the project before changing it.
+4. Create or update agent folders and templates in the expected structure.
+5. Build robust tools in the correct agent tool folders.
+6. Create or update agent classes and their instructions.
+7. Create or update the main agency wiring and shared instructions.
+8. Test the tools and the agency, then iterate until the result works.
+
+## Project Exploration
+
+- Check the project root structure first.
+- When an approved session plan file is provided, read it first.
+- Review `agency.py`, `shared_instructions.md`, agent `instructions.md` files, and agent tool folders.
+- Remove example agents if they are still present and clean the example wiring out of `agency.py`.
+- If the task needs external systems such as Slack or Notion, verify the needed API keys exist in `.env` before proceeding.
+- If requirements are missing or unclear, ask focused clarifying questions before coding.
+
+## Folder Structure
+
+- Use lowercase snake_case names for agency and agent folders.
+- Each agent folder should contain:
+  - `__init__.py`
+  - the main agent file
+  - `instructions.md`
+  - `files/`
+  - `tools/`
+- Put each tool in its own file under that agent's `tools/` folder.
+- Add all new dependencies to `requirements.txt`.
+- `agency.py` is the main wiring file where agents and communication flows are defined.
+- Ensure `.env` contains placeholders for `OPENAI_API_KEY` and any other required credentials.
+
+## Agent Creation
+
+- Prefer realistic job-style agent roles such as `Data Analyst` or `Campaign Manager`, not narrow task labels like `Email Sender`.
+- Start with the fewest agents possible. Use one agent unless more are clearly needed.
+- Prefer the CLI template flow when creating new agents:
+  `agency-swarm create-agent-template --description "Description of the agent" --model "gpt-5.4-mini" --reasoning "medium" "agent_name"`
+- Use `gpt-5.4-mini` with medium reasoning by default unless the user asks for something else.
+
+## Tool Creation
+
+- Tools must be production-ready. Do not leave mocks, placeholders, or sample snippets in real project files.
+- Tools should be standalone, configurable, and composable.
+- MCP servers, built-in tools, and custom tools are all valid when they fit the task.
+- Load environment variables where needed and make the final code runnable by the user immediately.
+- Use Agency context for shared state when it helps tools and agents share data cleanly.
+
+## Instructions and Agency Wiring
+
+- Write agent instructions with a clear role, goals, process, output format, and important notes.
+- Import the agents into `agency.py`.
+- Define the communication flows explicitly in `agency.py`.
+- Keep `shared_instructions.md` aligned with how the agents should collaborate.
+
+## Testing and Delivery
+
+- Install dependencies before testing.
+- Run the tool files you create or modify.
+- Test the agency end to end.
+- Do not hand off until the agency behaves consistently and the files are actually updated.
+- Never respond with file snippets instead of making the real file changes.

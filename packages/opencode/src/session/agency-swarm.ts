@@ -1033,12 +1033,16 @@ export namespace SessionAgencySwarm {
         if (!callID) return []
         const toolName = normalizeToolName(itemType, rawItem)
         const itemID = asString(rawItem["id"])
+        const rawInput = toolRawInput(itemType, rawItem)
+        const knownRaw = tools.get(callID)?.raw ?? ""
         if (itemID) callByItem.set(itemID, callID)
         return [
-          ...ensureToolInput(callID, toolName, toolRawInput(itemType, rawItem), eventMeta, {
-            item_id: itemID,
-            source: "run_item_stream_event",
-          }),
+          ...(rawInput && rawInput !== knownRaw
+            ? ensureToolInput(callID, toolName, rawInput, eventMeta, {
+                item_id: itemID,
+                source: "run_item_stream_event",
+              })
+            : []),
           ...runTool(callID, toolName, eventMeta, {
             item_id: itemID,
             source: "run_item_stream_event",

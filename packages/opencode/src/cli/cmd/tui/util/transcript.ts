@@ -1,4 +1,5 @@
 import type { AssistantMessage, Part, Provider, UserMessage } from "@opencode-ai/sdk/v2"
+import { displayAgentName } from "@/agent/display"
 import { Locale } from "@/util/locale"
 import * as Model from "./model"
 
@@ -78,7 +79,7 @@ export function formatAssistantHeader(
 
   const modelName = Model.name(providers, msg.providerID, msg.modelID)
 
-  return `## Assistant (${Locale.titlecase(msg.agent)} · ${modelName}${duration ? ` · ${duration}` : ""})\n\n`
+  return `## Assistant (${displayAgentName(msg.agent)} · ${modelName}${duration ? ` · ${duration}` : ""})\n\n`
 }
 
 export function formatPart(part: Part, options: TranscriptOptions): string {

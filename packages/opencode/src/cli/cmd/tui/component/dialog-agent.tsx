@@ -1,4 +1,5 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { displayAgentName } from "@/agent/display"
 import { useLocal } from "@tui/context/local"
 import { useSDK } from "@tui/context/sdk"
 import { useSync } from "@tui/context/sync"
@@ -102,7 +103,7 @@ export function DialogAgent() {
             kind: "local",
             agent: item.name,
           } as AgentOptionValue,
-          title: item.name,
+          title: displayAgentName(item.name),
           description: item.native ? "native" : item.description,
         }
       })

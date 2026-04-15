@@ -324,7 +324,11 @@ test("session model restore across workspaces", async ({ page, project }) => {
   const twoDir = await newWorkspaceSession(page, two.slug)
   project.trackDirectory(twoDir)
 
-  const thirdState = await chooseOtherModel(page, [firstKey, secondKey])
+  const thirdKey = await currentModel(page)
+  const thirdState =
+    thirdKey !== firstKey && thirdKey !== secondKey
+      ? await read(page)
+      : await chooseOtherModel(page, [firstKey, secondKey])
   const third = await submit(project, `workspace two ${Date.now()}`)
 
   await goto(page, root, first)

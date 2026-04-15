@@ -51,6 +51,8 @@ import { Cause, Effect, Exit, Layer, Option, Scope, ServiceMap } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
 import { SessionAgencySwarm } from "./agency-swarm"
+import { agentBuilderInstructions } from "./agent-builder"
+import { agentPlannerInstructions } from "./agent-planner"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1545,7 +1547,13 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   instruction.system().pipe(Effect.orDie),
                   Effect.promise(() => MessageV2.toModelMessages(msgs, model)),
                 ])
-                const system = [...env, ...(skills ? [skills] : []), ...instructions]
+                const system = [
+                  ...env,
+                  ...(skills ? [skills] : []),
+                  ...instructions,
+                  ...agentPlannerInstructions(lastUser.agent, model.providerID, Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE),
+                  ...agentBuilderInstructions(lastUser.agent, model.providerID),
+                ]
                 const format = lastUser.format ?? { type: "text" as const }
                 if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
                 const result = yield* handle.process({

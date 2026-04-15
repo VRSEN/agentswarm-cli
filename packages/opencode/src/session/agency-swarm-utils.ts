@@ -99,7 +99,7 @@ export function buildOutgoingMessage(message: MessageV2.WithParts): string {
   const textParts = message.parts
     .filter((part): part is MessageV2.TextPart => part.type === "text")
     .filter((part) => !part.ignored)
-    .map((part) => part.text.trim())
+    .map((part) => visibleOutgoingText(part))
     .filter(Boolean)
 
   if (textParts.length === 0) {
@@ -107,6 +107,18 @@ export function buildOutgoingMessage(message: MessageV2.WithParts): string {
   }
 
   return textParts.join("\n\n")
+}
+
+function visibleOutgoingText(part: MessageV2.TextPart): string {
+  if (!part.synthetic) return part.text.trim()
+
+  const text = part.text.trimStart()
+  if (!text.startsWith("<system-reminder>")) return text.trim()
+
+  const end = text.indexOf("</system-reminder>")
+  if (end === -1) return ""
+
+  return text.slice(end + "</system-reminder>".length).trim()
 }
 
 export function findRecipientAgent(message: MessageV2.WithParts): string | undefined {
