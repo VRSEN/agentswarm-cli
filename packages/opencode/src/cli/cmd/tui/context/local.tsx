@@ -39,6 +39,109 @@ export function isUsableModel(input: {
   return !!input.configuredProviders?.[AgencySwarmAdapter.PROVIDER_ID]
 }
 
+export function selectCurrentModel(input: {
+  storedModel?: {
+    providerID: string
+    modelID: string
+  }
+  agentModel?: {
+    providerID: string
+    modelID: string
+  }
+  recentModels?: {
+    providerID: string
+    modelID: string
+  }[]
+  providers: {
+    id: string
+    models: Record<string, unknown>
+  }[]
+  providerDefaults?: Record<string, string>
+  argModel?: string
+  configModel?: string
+  configuredProviders?: Record<string, unknown>
+}) {
+  function isModelValid(model: { providerID: string; modelID: string }) {
+    return isUsableModel({
+      model,
+      providers: input.providers,
+      argModel: input.argModel,
+      configModel: input.configModel,
+      configuredProviders: input.configuredProviders,
+    })
+  }
+
+  function getFirstValidModel(...modelFns: (() => { providerID: string; modelID: string } | undefined)[]) {
+    for (const modelFn of modelFns) {
+      const model = modelFn()
+      if (!model) continue
+      if (isModelValid(model)) return model
+    }
+  }
+
+  const fallbackModel = () => {
+    if (input.argModel) {
+      const { providerID, modelID } = Provider.parseModel(input.argModel)
+      if (isModelValid({ providerID, modelID })) {
+        return {
+          providerID,
+          modelID,
+        }
+      }
+    }
+
+    if (input.configModel) {
+      const { providerID, modelID } = Provider.parseModel(input.configModel)
+      if (isModelValid({ providerID, modelID })) {
+        return {
+          providerID,
+          modelID,
+        }
+      }
+    }
+
+    for (const item of input.recentModels ?? []) {
+      if (isModelValid(item)) {
+        return item
+      }
+    }
+
+    const provider = input.providers[0]
+    if (!provider) return undefined
+    const defaultModel = input.providerDefaults?.[provider.id]
+    const firstModel = Object.values(provider.models)[0] as { id?: string } | undefined
+    const model = defaultModel ?? firstModel?.id
+    if (!model) return undefined
+    return {
+      providerID: provider.id,
+      modelID: model,
+    }
+  }
+
+  if (shouldPreferConfiguredAgencySwarmModel(input) && !input.storedModel) {
+    return getFirstValidModel(fallbackModel, () => input.agentModel)
+  }
+
+  return getFirstValidModel(
+    () => input.storedModel,
+    () => input.agentModel,
+    fallbackModel,
+  )
+}
+
+export function shouldSyncAgentModel(input: {
+  storedModel?: {
+    providerID: string
+    modelID: string
+  }
+  argModel?: string
+  configModel?: string
+}) {
+  if (input.storedModel) return false
+  if (shouldPreferConfiguredAgencySwarmModel(input)) return false
+  return true
+}
+
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
   init: () => {
@@ -58,14 +161,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         configModel: sync.data.config.model,
         configuredProviders: sync.data.config.provider,
       })
-    }
-
-    function getFirstValidModel(...modelFns: (() => { providerID: string; modelID: string } | undefined)[]) {
-      for (const modelFn of modelFns) {
-        const model = modelFn()
-        if (!model) continue
-        if (isModelValid(model)) return model
-      }
     }
 
     const agent = iife(() => {
@@ -184,58 +279,28 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (state.pending) save()
         })
 
-      const fallbackModel = createMemo(() => {
-        if (args.model) {
-          const { providerID, modelID } = Provider.parseModel(args.model)
-          if (isModelValid({ providerID, modelID })) {
-            return {
-              providerID,
-              modelID,
-            }
-          }
-        }
-
-        if (sync.data.config.model) {
-          const { providerID, modelID } = Provider.parseModel(sync.data.config.model)
-          if (isModelValid({ providerID, modelID })) {
-            return {
-              providerID,
-              modelID,
-            }
-          }
-        }
-
-        for (const item of modelStore.recent) {
-          if (isModelValid(item)) {
-            return item
-          }
-        }
-
-        const provider = sync.data.provider[0]
-        if (!provider) return undefined
-        const defaultModel = sync.data.provider_default[provider.id]
-        const firstModel = Object.values(provider.models)[0]
-        const model = defaultModel ?? firstModel?.id
-        if (!model) return undefined
-        return {
-          providerID: provider.id,
-          modelID: model,
-        }
-      })
-
       const currentModel = createMemo(() => {
         const a = agent.current()
-        return (
-          getFirstValidModel(
-            () => modelStore.model[a.name],
-            () => a.model,
-            fallbackModel,
-          ) ?? undefined
-        )
+        return selectCurrentModel({
+          storedModel: modelStore.model[a.name],
+          agentModel: a.model,
+          recentModels: modelStore.recent,
+          providers: sync.data.provider.map((item) => ({
+            id: item.id,
+            models: item.models,
+          })),
+          providerDefaults: sync.data.provider_default,
+          argModel: args.model,
+          configModel: sync.data.config.model,
+          configuredProviders: sync.data.config.provider,
+        })
       })
 
       return {
         current: currentModel,
+        override(name: string) {
+          return modelStore.model[name]
+        },
         get ready() {
           return modelStore.ready
         },
@@ -417,21 +482,25 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
     }
 
-    // Automatically update model when agent changes
+    // Current model already follows agent.model unless a local override exists.
+    // Keep this effect only for invalid-model warnings while following agent config.
     createEffect(() => {
       const value = agent.current()
-      if (value.model) {
-        if (isModelValid(value.model))
-          model.set({
-            providerID: value.model.providerID,
-            modelID: value.model.modelID,
-          })
-        else
-          toast.show({
-            variant: "warning",
-            message: `Agent ${value.name}'s configured model ${value.model.providerID}/${value.model.modelID} is not valid`,
-            duration: 3000,
-          })
+      if (
+        !shouldSyncAgentModel({
+          storedModel: model.override(value.name),
+          argModel: args.model,
+          configModel: sync.data.config.model,
+        })
+      ) {
+        return
+      }
+      if (value.model && !isModelValid(value.model)) {
+        toast.show({
+          variant: "warning",
+          message: `Agent ${value.name}'s configured model ${value.model.providerID}/${value.model.modelID} is not valid`,
+          duration: 3000,
+        })
       }
     })
 
@@ -443,3 +512,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     return result
   },
 })
+
+function shouldPreferConfiguredAgencySwarmModel(input: { argModel?: string; configModel?: string }) {
+  const model = input.argModel ?? input.configModel
+  return model === `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`
+}
