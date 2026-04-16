@@ -36,7 +36,7 @@ export function isUsableModel(input: {
     (value) => value === `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
   )
   if (!selectedAgencySwarmModel) return false
-  return !!input.configuredProviders?.[AgencySwarmAdapter.PROVIDER_ID]
+  return true
 }
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
