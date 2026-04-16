@@ -7,6 +7,13 @@ import type { Provider, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 export const AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS = ["openai", "anthropic"] as const
 
 type ProviderAuthMap = Record<string, ProviderAuthMethod[]>
+type AuthProvider = {
+  id: string
+  env: string[]
+  key?: string
+  source?: string
+  options?: Record<string, unknown>
+}
 
 export function hasUsableProvider(
   providers: Provider[],
@@ -34,9 +41,52 @@ function hasCredential(provider: Provider, providerAuth: ProviderAuthMap = {}) {
   return hasStoredProviderCredential([provider], providerAuth, provider.id)
 }
 
-export function isSupportedAgencyAuthProvider(providerID: string) {
+function hasConfiguredAPIStyleCredential(provider: AuthProvider | undefined) {
+  if (!provider) return false
+  if (provider.key) return true
+  if (provider.source === "api") return true
+  const options = provider.options ?? {}
+  return [options["apiKey"], options["api_key"], options["key"], options["token"]].some(
+    (item) => typeof item === "string" && item.length > 0,
+  )
+}
+
+function hasAPIStyleEnv(provider: AuthProvider | undefined) {
+  if (!provider) return false
+  return provider.env.some((name) => /(^|_)(API_KEY|API_TOKEN|PAT|TOKEN)$/.test(name))
+}
+
+function isLoopbackBaseURL(baseURL: string) {
+  try {
+    const parsed = new URL(baseURL)
+    return (
+      parsed.hostname === "127.0.0.1" ||
+      parsed.hostname === "0.0.0.0" ||
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "::1" ||
+      parsed.hostname === "[::1]"
+    )
+  } catch {
+    return false
+  }
+}
+
+function usesLocalAgencyProviderAuth(providers: Provider[]) {
+  const agencyProvider = providers.find((provider) => provider.id === AgencySwarmAdapter.PROVIDER_ID)
+  const rawBaseURL = agencyProvider?.options?.["baseURL"]
+  const baseURL = typeof rawBaseURL === "string" && rawBaseURL.trim() ? rawBaseURL : AgencySwarmAdapter.DEFAULT_BASE_URL
+  return isLoopbackBaseURL(baseURL)
+}
+
+export function isSupportedAgencyAuthProvider(
+  providerID: string,
+  provider?: AuthProvider,
+  methods: ProviderAuthMethod[] = [],
+) {
   if ((AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS as readonly string[]).includes(providerID)) return true
-  return mapProviderIDToLiteLLMProvider(providerID) !== undefined
+  if (mapProviderIDToLiteLLMProvider(providerID) === undefined) return false
+  if (methods.some((method) => method.type === "api")) return true
+  return hasAPIStyleEnv(provider) || hasConfiguredAPIStyleCredential(provider)
 }
 
 function isAgencyProviderCredentialFailure(message: string) {
@@ -48,8 +98,9 @@ function isAgencyProviderCredentialFailure(message: string) {
 function hasSupportedAgencyCredential(providers: Provider[], providerAuth: ProviderAuthMap = {}) {
   return providers.some((provider) => {
     if (provider.id === AgencySwarmAdapter.PROVIDER_ID) return false
-    if (!isSupportedAgencyAuthProvider(provider.id)) return false
-    return hasCredential(provider, providerAuth)
+    if (!isSupportedAgencyAuthProvider(provider.id, provider, providerAuth[provider.id] ?? [])) return false
+    if (provider.id === "openai") return hasCredential(provider, providerAuth)
+    return hasConfiguredAPIStyleCredential(provider)
   })
 }
 
@@ -77,6 +128,7 @@ export function shouldOpenStartupAuthDialog(input: {
   if (agencyProvider && (hasCredential(agencyProvider, input.providerAuth) || hasExplicitAgencyClientConfig(agencyProvider))) {
     return false
   }
+  if (!usesLocalAgencyProviderAuth(input.providers)) return false
 
   return !hasSupportedAgencyCredential(input.providers, input.providerAuth)
 }

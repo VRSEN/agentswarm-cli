@@ -244,7 +244,9 @@ export function DialogAuth() {
     }),
   )
   const providerIDs = frameworkMode()
-    ? sync.data.provider_next.all.filter((provider) => isSupportedAgencyAuthProvider(provider.id)).map((provider) => provider.id)
+    ? sync.data.provider_next.all
+        .filter((provider) => isSupportedAgencyAuthProvider(provider.id, provider, sync.data.provider_auth[provider.id] ?? []))
+        .map((provider) => provider.id)
     : undefined
   const allowed = new Set<string>(providerIDs ?? [])
   const providerOptions = createDialogProviderOptionsWithFilter({ providerIDs })

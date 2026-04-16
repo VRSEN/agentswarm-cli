@@ -132,6 +132,34 @@ describe("agency session errors", () => {
     ).toBe(true)
   })
 
+  test("framework mode skips local provider auth for remote agency-swarm backends", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {
+              baseURL: "https://agency.example.com",
+            },
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "config",
+            env: ["OPENAI_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
   test("framework mode follows the current provider override away from agency-swarm", () => {
     expect(
       isAgencySwarmFrameworkMode({
@@ -536,6 +564,42 @@ describe("agency session errors", () => {
         ],
       }),
     ).toBe(false)
+  })
+
+  test("framework mode still opens auth when a LiteLLM provider only has oauth methods", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providerAuth: {
+          "github-copilot": [
+            {
+              type: "oauth",
+              label: "GitHub sign-in",
+            },
+          ],
+        },
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "github-copilot",
+            name: "GitHub Copilot",
+            source: "custom",
+            env: [],
+            options: {
+              fetch: () => Promise.resolve(new Response()),
+            },
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
   })
 
   test("blocks the first agency prompt when supported auth is missing", () => {
