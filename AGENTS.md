@@ -49,6 +49,7 @@ Context
 - If task context can outlive the chat, maintain a durable local ledger file with concise atomic user requests, request-linked active artifacts, close original wording, source pointers, intent, status, blockers, and next actions.
 - Use `.agentswarm/skills/requirement-ledger` for durable ledger operations; do not hand-edit ledger files.
 - When both exist, keep them separate but aligned: the durable ledger stores user requests and request-linked cross-session state; the plan/todo stores the current execution steps needed to satisfy the active request. Do not duplicate the whole ledger into the plan.
+- Update the durable ledger at task boundaries: after new user requirements arrive, after meaningful progress, before commits, before PR/release actions, and before you stop or reply after substantive work.
 - Before editing a durable queue, plan the strategy for tackling it, reprioritize deliberately, and keep active items in their strategic chronological order rather than randomizing, sorting by convenience, or grouping away original sequence.
 - Keep durable ledgers active-only: record unfulfilled user requests and requirements, remove non-requirement and duplicate noise without deleting, flattening, or overcompressing the user's actual requests, and move completed, fulfilled, deferred, failed, or noise items to a concise archive that preserves source pointers and original wording.
 - Add every new user request to the active list immediately, queue it without interrupting the current highest-priority work unless it changes the critical path, then keep it there until it is fully shipped and approved, explicitly deferred, archived as fulfilled, or explicitly removed by the user.
@@ -68,6 +69,7 @@ Repo State
 - Mandatory start state: if `origin/dev` is reachable, run `git fetch --all --prune` and work from a named branch based on `origin/dev`; create or refresh that branch before analysis, edits, or tests. For fork shipping work, verify `origin/dev...vrsen/dev` counts before pushing. For danger-zone release work, also verify that the exact release commit is already reachable from `vrsen/dev` and that the target version already appears in the release inputs on that commit (for example `package.json`, package manifests, generated artifacts, and `bun.lock`) before drafting, tagging, publishing, deleting, or restoring any release artifact. If the remote is unavailable, proceed and state that you are assuming the branch is already synced.
 - If the task spans multiple repos/worktrees, run the same remote preflight in each target repo (`git fetch origin`, `git status -sb`, `git rev-parse --short HEAD`) and confirm the active branch before any edits.
 - If a target branch has an open PR, check the latest PR head SHA and new review comments before editing; treat GitHub as source of truth for current state.
+- Before opening, updating, or merging a PR, verify the exact source branch, base branch, PR head SHA, and live diff so you do not act from stale branches, stale worktrees, or already-superseded review state.
 
 Execution
 - Complete one change at a time; stash unrelated work before starting another.
@@ -91,7 +93,8 @@ Execution
 - Pending hosted CI, pending PR-bound Codex review, unresolved PR comments/threads, and any other agent-observable external workflow still count as outstanding work.
 - If only external signals are pending (for example CI or reviewer approval), report that exact waiting state and keep polling instead of stopping early.
 - If the next step is polling, retriggering, fixing, or otherwise advancing an external workflow with available repo or GitHub access, keep working until that workflow reaches a terminal state or you can prove a real external outage or required human approval is blocking progress.
-- When polling is the next step, do the polling yourself: keep an explicit CLI wait loop alive instead of replying early, poll at least once per minute with `sleep 60`, and set the command timeout to cover the real wait window. For PR-bound Codex, inspect and retrigger after 15 minutes without a terminal signal instead of waiting longer silently.
+- When polling is the next step, do the polling yourself: keep an explicit CLI wait loop alive instead of replying early, poll at least once per minute with `sleep 60`, and set the command timeout to cover the real wait window.
+- Wait up to 15 minutes for PR-bound Codex review before treating it as stalled, and wait up to 30 minutes for GitHub CI before treating it as stalled; until then, keep polling instead of ending your turn.
 
 ## Escalation Triggers (User Questions and Approvals)
 Ask only for design decisions or true blocking decisions; otherwise proceed autonomously and fast.
@@ -181,6 +184,7 @@ These requirements apply to every file in the repository. Bullets prefixed with 
 - When giving feedback, quote or restate only the minimum text needed to make the point.
 - Do not add dedicated `Validation` sections to user-facing replies or PR descriptions; if evidence matters, fold it into the main update in one short line.
 - Do not mention review-artifact file paths or artifact inventories in user-facing replies or PR descriptions unless the user explicitly asks for them.
+- When discussing PRs, branches, issues, docs pages, or other user-openable artifacts, include the relevant links unless the user explicitly asked for a no-links reply.
 - Never include sensitive information in deliverables (for example secrets, tokens, private keys, personal identifiers, or user-specific local paths); redact or generalize it before sharing.
 - Include an `Escalations:` block when outstanding items, stopped work, required user action, approval requests, or blockers remain; state exactly what is needed from the user or what blocks progress. If all work is complete and no user action is needed, omit the block instead of writing an empty escalation.
 
