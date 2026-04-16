@@ -24,6 +24,7 @@ describe("session.agency-swarm", () => {
   const originalAuthAll = Auth.all
   const originalEnvAll = Env.all
   const originalProviderList = Provider.list
+  const originalFetch = globalThis.fetch
 
   afterEach(() => {
     AgencySwarmAdapter.discover = originalDiscover
@@ -36,6 +37,7 @@ describe("session.agency-swarm", () => {
     Auth.all = originalAuthAll
     Env.all = originalEnvAll
     Provider.list = originalProviderList
+    globalThis.fetch = originalFetch
   })
 
   const helper = () => {
@@ -639,6 +641,38 @@ describe("session.agency-swarm", () => {
       base_url: "https://chatgpt.com/backend-api/codex/",
       default_headers: {
         "ChatGPT-Account-Id": "acct_123",
+      },
+    })
+  })
+
+  test("stream skips failing stored OpenAI OAuth refresh when other local credentials exist", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      openai: {
+        type: "oauth",
+        access: "expired-access",
+        refresh: "expired-refresh",
+        expires: 1,
+      } as any,
+      anthropic: { type: "api", key: "stored-anthropic" } as any,
+    })) as typeof Auth.all
+    globalThis.fetch = (async () => new Response("{}", { status: 401 })) as unknown as typeof globalThis.fetch
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      litellm_keys: {
+        anthropic: "stored-anthropic",
       },
     })
   })

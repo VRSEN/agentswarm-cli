@@ -25,7 +25,9 @@ function hasExplicitAgencyClientConfig(provider: Provider | undefined) {
 }
 
 export function isAgencySwarmFrameworkMode(input: { currentProviderID?: string; configuredModel?: string }) {
-  if (input.currentProviderID === AgencySwarmAdapter.PROVIDER_ID) return true
+  if (input.currentProviderID) {
+    return input.currentProviderID === AgencySwarmAdapter.PROVIDER_ID
+  }
   return input.configuredModel?.split("/")[0] === AgencySwarmAdapter.PROVIDER_ID
 }
 

@@ -128,10 +128,18 @@ describe("agency session errors", () => {
     ).toBe(true)
   })
 
-  test("framework mode stays enabled when the configured model is agency-swarm", () => {
+  test("framework mode follows the current provider override away from agency-swarm", () => {
     expect(
       isAgencySwarmFrameworkMode({
         currentProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode falls back to the configured agency-swarm model when no current provider is selected", () => {
+    expect(
+      isAgencySwarmFrameworkMode({
         configuredModel: "agency-swarm/default",
       }),
     ).toBe(true)

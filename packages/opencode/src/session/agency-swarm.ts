@@ -209,7 +209,13 @@ export namespace SessionAgencySwarm {
 
       if (providerID === "openai" && auth.type === "oauth") {
         if (options.skipOpenAI || !options.allowStoredOpenAIOAuth) continue
-        Object.assign(payload, await buildOpenAIOAuthClientConfig(auth))
+        try {
+          Object.assign(payload, await buildOpenAIOAuthClientConfig(auth))
+        } catch (error) {
+          log.warn("failed to refresh stored OpenAI OAuth for local agency run; skipping it", {
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
         continue
       }
 
