@@ -236,6 +236,82 @@ describe("agency-swarm npx onboarding", () => {
     expect(project?.directory).toBe(dir.path)
   })
 
+  test("resolveNpxAutoProject ignores legacy history for remote agencies", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    spyOn(Storage, "list").mockResolvedValue([["agency_swarm_history", "legacy"]])
+    spyOn(Storage, "read").mockResolvedValue({
+      scope: "https://remote.example|my-remote-agency|ses_123",
+      chat_history: [],
+      updated_at: 1,
+    } as never)
+
+    const project = await resolveNpxAutoProject({
+      directory: "/tmp/elsewhere",
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      session: "ses_123",
+      sessions: [
+        {
+          id: "ses_123" as any,
+          directory: dir.path,
+          parentID: undefined,
+          time: {
+            created: 1,
+            updated: 1,
+          },
+        },
+      ],
+      runSessions: [],
+    })
+
+    expect(project).toBeUndefined()
+  })
+
+  test("resolveNpxAutoProject ignores older local history when newer remote history exists", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    spyOn(Storage, "list").mockResolvedValue([
+      ["agency_swarm_history", "older-local"],
+      ["agency_swarm_history", "newer-remote"],
+    ])
+    spyOn(Storage, "read").mockImplementation(async (key) => {
+      if (key.at(-1) === "older-local") {
+        return {
+          scope: "http://127.0.0.1:8123|local-agency|ses_123",
+          chat_history: [],
+          updated_at: 1,
+        } as never
+      }
+      return {
+        scope: "https://remote.example|remote-agency|ses_123",
+        chat_history: [],
+        updated_at: 2,
+      } as never
+    })
+
+    const project = await resolveNpxAutoProject({
+      directory: "/tmp/elsewhere",
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      session: "ses_123",
+      sessions: [
+        {
+          id: "ses_123" as any,
+          directory: dir.path,
+          parentID: undefined,
+          time: {
+            created: 1,
+            updated: 1,
+          },
+        },
+      ],
+      runSessions: [],
+    })
+
+    expect(project).toBeUndefined()
+  })
+
   test("resolveNpxAutoProject does not fallback when explicit session is stale", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
@@ -365,6 +441,50 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(project?.directory).toBe(dir.path)
+  })
+
+  test("resolveNpxAutoProject ignores local-agency history when the newest scope is remote", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    spyOn(Storage, "list").mockResolvedValue([
+      ["agency_swarm_history", "old-local"],
+      ["agency_swarm_history", "newer-remote-local-agency"],
+    ])
+    spyOn(Storage, "read").mockImplementation(async (key) => {
+      if (key.at(-1) === "old-local") {
+        return {
+          scope: "http://127.0.0.1:8123|local-agency|ses_legacy",
+          chat_history: [],
+          updated_at: 1,
+        } as never
+      }
+      return {
+        scope: "https://remote.example|local-agency|ses_legacy",
+        chat_history: [],
+        updated_at: 2,
+      } as never
+    })
+
+    const project = await resolveNpxAutoProject({
+      directory: dir.path,
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      continue: true,
+      sessions: [
+        {
+          id: "ses_legacy" as any,
+          directory: dir.path,
+          parentID: undefined,
+          time: {
+            created: 1,
+            updated: 1,
+          },
+        },
+      ],
+      runSessions: [],
+    })
+
+    expect(project).toBeUndefined()
   })
 
   test("resolveNpxAutoProject falls back to current project when continue has no local session", async () => {

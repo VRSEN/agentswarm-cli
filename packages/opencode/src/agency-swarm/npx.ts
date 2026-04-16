@@ -149,16 +149,54 @@ function isAgentswarmCommand(argv: string[]) {
 
 async function hasLegacyLocalAgencyHistory(sessionID: string) {
   const keys = await Storage.list(["agency_swarm_history"]).catch(() => [] as string[][])
+  let newest:
+    | {
+        agency: string
+        baseURL: string
+        updatedAt: number
+      }
+    | undefined
   for (const key of keys) {
-    const entry = await Storage.read<{ scope?: unknown }>(key).catch(() => undefined)
-    const scope = typeof entry?.scope === "string" ? entry.scope : undefined
-    if (!scope) continue
-    const parts = scope.split("|")
-    if (parts.at(-1) !== sessionID) continue
-    if (parts.at(-2) !== LOCAL_AGENCY_ID) continue
-    return true
+    const entry = await Storage.read<{ scope?: unknown; updated_at?: unknown }>(key).catch(() => undefined)
+    const parsed = parseLegacyHistoryScope(entry?.scope)
+    if (!parsed || parsed.sessionID !== sessionID) continue
+    const updatedAt = typeof entry?.updated_at === "number" ? entry.updated_at : 0
+    if (!newest || updatedAt > newest.updatedAt) {
+      newest = {
+        agency: parsed.agency,
+        baseURL: parsed.baseURL,
+        updatedAt,
+      }
+    }
   }
-  return false
+  return !!newest && newest.agency === LOCAL_AGENCY_ID && isLoopbackBaseURL(newest.baseURL)
+}
+
+function parseLegacyHistoryScope(scope: unknown) {
+  if (typeof scope !== "string") return
+  const parts = scope.split("|")
+  const sessionID = parts.at(-1)
+  const agency = parts.at(-2)
+  if (!sessionID || !agency || parts.length < 3) return
+  return {
+    baseURL: parts.slice(0, -2).join("|"),
+    agency,
+    sessionID,
+  }
+}
+
+function isLoopbackBaseURL(baseURL: string) {
+  try {
+    const parsed = new URL(baseURL)
+    return (
+      parsed.hostname === "127.0.0.1" ||
+      parsed.hostname === "0.0.0.0" ||
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "::1"
+    )
+  } catch {
+    return false
+  }
 }
 
 export function buildAgencyConfig(input: { baseURL: string; agency: string; token?: string }) {
