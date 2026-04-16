@@ -4,11 +4,11 @@ import { Spinner } from "./spinner"
 
 export function StartupLoading(props: { ready: () => boolean; themed?: () => boolean }) {
   const theme = useTheme().theme
-  const [show, setShow] = createSignal(false)
+  const [mode, setMode] = createSignal<"hidden" | "pretheme" | "plugin">("hidden")
   const themed = () => props.themed?.() ?? true
   const text = createMemo(() => {
     if (props.ready()) return "Finishing startup..."
-    if (!themed()) return "Loading theme..."
+    if (mode() === "pretheme" && !themed()) return "Loading theme..."
     return "Loading plugins..."
   })
   let wait: NodeJS.Timeout | undefined
@@ -16,6 +16,8 @@ export function StartupLoading(props: { ready: () => boolean; themed?: () => boo
   let stamp = 0
 
   createEffect(() => {
+    const current = mode()
+
     if (!themed()) {
       if (wait) {
         clearTimeout(wait)
@@ -25,9 +27,27 @@ export function StartupLoading(props: { ready: () => boolean; themed?: () => boo
         clearTimeout(hold)
         hold = undefined
       }
-      if (show()) return
-      stamp = Date.now()
-      setShow(true)
+      if (current === "pretheme") return
+      setMode("pretheme")
+      return
+    }
+
+    if (current === "pretheme") {
+      if (props.ready()) {
+        if (wait) {
+          clearTimeout(wait)
+          wait = undefined
+        }
+        setMode("hidden")
+        return
+      }
+      if (wait) return
+
+      wait = setTimeout(() => {
+        wait = undefined
+        stamp = Date.now()
+        setMode("plugin")
+      }, 500).unref()
       return
     }
 
@@ -36,18 +56,18 @@ export function StartupLoading(props: { ready: () => boolean; themed?: () => boo
         clearTimeout(wait)
         wait = undefined
       }
-      if (!show()) return
+      if (current !== "plugin") return
       if (hold) return
 
       const left = 3000 - (Date.now() - stamp)
       if (left <= 0) {
-        setShow(false)
+        setMode("hidden")
         return
       }
 
       hold = setTimeout(() => {
         hold = undefined
-        setShow(false)
+        setMode("hidden")
       }, left).unref()
       return
     }
@@ -56,13 +76,13 @@ export function StartupLoading(props: { ready: () => boolean; themed?: () => boo
       clearTimeout(hold)
       hold = undefined
     }
-    if (show()) return
+    if (current === "plugin") return
     if (wait) return
 
     wait = setTimeout(() => {
       wait = undefined
       stamp = Date.now()
-      setShow(true)
+      setMode("plugin")
     }, 500).unref()
   })
 
@@ -72,9 +92,9 @@ export function StartupLoading(props: { ready: () => boolean; themed?: () => boo
   })
 
   return (
-    <Show when={show()}>
+    <Show when={mode() !== "hidden"}>
       <box position="absolute" zIndex={5000} left={0} right={0} bottom={1} justifyContent="center" alignItems="center">
-        <Show when={themed()} fallback={<text>{text()}</text>}>
+        <Show when={mode() === "plugin"} fallback={<text>{text()}</text>}>
           <box backgroundColor={theme.backgroundPanel} paddingLeft={1} paddingRight={1}>
             <Spinner color={theme.textMuted}>{text()}</Spinner>
           </box>
