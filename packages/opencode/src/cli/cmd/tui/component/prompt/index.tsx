@@ -773,17 +773,18 @@ export function Prompt(props: PromptProps) {
         })
       } catch (error) {
         const message = toErrorMessage(error)
+        const shouldReopenAuth = shouldOpenAgencyAuthDialog({
+          providerID: selectedModel.providerID,
+          message,
+        })
         if (createdSessionID) {
-          void sdk.client.session.delete({
-            sessionID: createdSessionID,
-          })
+          if (shouldReopenAuth) {
+            void sdk.client.session.delete({
+              sessionID: createdSessionID,
+            })
+          }
         }
-        if (
-          shouldOpenAgencyAuthDialog({
-            providerID: selectedModel.providerID,
-            message,
-          })
-        ) {
+        if (shouldReopenAuth) {
           toast.show({
             variant: "error",
             message: describeAgencyAuthFailure(message),

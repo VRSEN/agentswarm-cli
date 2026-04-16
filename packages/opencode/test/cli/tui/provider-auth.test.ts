@@ -48,6 +48,27 @@ test("detects stored oauth credentials for custom providers", () => {
           name: "OpenAI",
           source: "custom",
           env: [],
+          options: {
+            apiKey: "codex-dummy",
+          },
+          models: {},
+        },
+      ],
+      {},
+      "openai",
+    ),
+  ).toBe(true)
+})
+
+test("does not treat auth method catalogs as stored credentials", () => {
+  expect(
+    hasStoredProviderCredential(
+      [
+        {
+          id: "openai",
+          name: "OpenAI",
+          source: "custom",
+          env: [],
           options: {},
           models: {},
         },
@@ -62,7 +83,7 @@ test("detects stored oauth credentials for custom providers", () => {
       },
       "openai",
     ),
-  ).toBe(true)
+  ).toBe(false)
 })
 
 test("does not treat opencode public mode as a stored credential", () => {

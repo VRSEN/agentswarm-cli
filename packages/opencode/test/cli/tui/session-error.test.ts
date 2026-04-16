@@ -399,6 +399,34 @@ describe("agency session errors", () => {
     expect(
       shouldOpenStartupAuthDialog({
         frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "custom",
+            env: [],
+            options: {
+              apiKey: "codex-dummy",
+            },
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode still opens auth when only oauth methods are available", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
         providerAuth: {
           openai: [
             {
@@ -426,7 +454,7 @@ describe("agency session errors", () => {
           },
         ],
       }),
-    ).toBe(false)
+    ).toBe(true)
   })
 
   test("framework mode skips auth when stored api credentials are available", () => {
