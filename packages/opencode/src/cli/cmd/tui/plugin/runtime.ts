@@ -30,7 +30,7 @@ import {
 import { PluginLoader } from "@/plugin/loader"
 import { PluginMeta } from "@/plugin/meta"
 import { installPlugin as installModulePlugin, patchPluginConfig, readPluginManifest } from "@/plugin/install"
-import { hasTheme, upsertTheme } from "../context/theme"
+import { hasTheme, isReservedThemeName, upsertTheme } from "../context/theme"
 import { Global } from "@/global"
 import { Filesystem } from "@/util/filesystem"
 import { AgencyBrand } from "@/agency-swarm/brand"
@@ -157,6 +157,10 @@ function createThemeInstaller(
     const raw = file.startsWith("file://") ? fileURLToPath(file) : file
     const src = path.isAbsolute(raw) ? raw : path.resolve(root, raw)
     const name = path.basename(src, path.extname(src))
+    if (isReservedThemeName(name)) {
+      warn("reserved tui plugin theme name", { path: spec, theme: src, name })
+      return
+    }
     const source_dir = path.dirname(meta.source)
     const local_dir =
       path.basename(source_dir) === AgencyBrand.workspace

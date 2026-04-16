@@ -68,6 +68,11 @@ const pluginThemes: Record<string, ThemeJson> = {}
 let customThemes: Record<string, ThemeJson> = {}
 let systemTheme: ThemeJson | undefined
 const fixed = "opencode"
+const reserved = new Set([fixed, "system"])
+
+export function isReservedThemeName(name: string) {
+  return reserved.has(name)
+}
 
 function listThemes() {
   // Priority: defaults < plugin installs < custom files < generated system.
@@ -124,7 +129,7 @@ export function addTheme(name: string, theme: unknown) {
   if (!name) return false
   if (!isTheme(theme)) return false
   if (hasTheme(name)) return false
-  if (name === fixed) return false
+  if (isReservedThemeName(name)) return false
   pluginThemes[name] = theme
   syncThemes()
   return true
@@ -133,7 +138,7 @@ export function addTheme(name: string, theme: unknown) {
 export function upsertTheme(name: string, theme: unknown) {
   if (!name) return false
   if (!isTheme(theme)) return false
-  if (name === fixed) return false
+  if (isReservedThemeName(name)) return false
   if (customThemes[name] !== undefined) {
     customThemes[name] = theme
   } else {
@@ -399,6 +404,7 @@ async function getCustomThemes() {
       symlink: true,
     })) {
       const name = path.basename(item, ".json")
+      if (isReservedThemeName(name)) continue
       result[name] = await Filesystem.readJson(item)
     }
   }

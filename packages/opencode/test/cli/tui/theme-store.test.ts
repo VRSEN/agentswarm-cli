@@ -7,6 +7,7 @@ const {
   canSelectBuiltInThemeName,
   defaultThemeName,
   hasTheme,
+  isReservedThemeName,
   resolveTheme,
   upsertTheme,
 } = await import("../../../src/cli/cmd/tui/context/theme")
@@ -84,13 +85,16 @@ test("built-in opencode theme keeps the Agent Swarm dark palette", () => {
   expect(DEFAULT_THEMES.opencode.defs?.darkAccent).toBe("#e8d382")
 })
 
-test("system can be added while the built-in opencode theme stays protected", () => {
+test("system stays reserved while the built-in opencode theme stays protected", () => {
   const item = structuredClone(DEFAULT_THEMES.opencode)
   item.theme.primary = "#010203"
 
+  expect(isReservedThemeName("opencode")).toBe(true)
+  expect(isReservedThemeName("system")).toBe(true)
   expect(addTheme(`system-${Date.now()}`, item)).toBe(true)
-  expect(addTheme("system", item)).toBe(true)
-  expect(allThemes().system).toBeDefined()
+  expect(addTheme("system", item)).toBe(false)
+  expect(upsertTheme("system", item)).toBe(false)
+  expect(allThemes().system).toBeUndefined()
   expect(upsertTheme("opencode", item)).toBe(false)
   expect(resolveTheme(allThemes().opencode).primary.toString()).toBe(
     resolveTheme(DEFAULT_THEMES.opencode).primary.toString(),
