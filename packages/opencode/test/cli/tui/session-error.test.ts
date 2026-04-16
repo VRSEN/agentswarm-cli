@@ -498,6 +498,33 @@ describe("agency session errors", () => {
             models: {},
           },
           {
+            id: "unsupported-provider",
+            name: "Unsupported Provider",
+            source: "api",
+            env: ["UNSUPPORTED_API_KEY"],
+            key: "unsupported-key",
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
+  test("framework mode skips auth when another LiteLLM-compatible provider is credentialed", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
             id: "google",
             name: "Google",
             source: "api",
@@ -508,7 +535,7 @@ describe("agency session errors", () => {
           },
         ],
       }),
-    ).toBe(true)
+    ).toBe(false)
   })
 
   test("blocks the first agency prompt when supported auth is missing", () => {

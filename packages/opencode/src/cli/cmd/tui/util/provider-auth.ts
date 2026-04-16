@@ -20,6 +20,8 @@ export function getVisibleProviderAuthMethods(
   options?: { frameworkMode?: boolean },
 ) {
   if (!options?.frameworkMode) return methods
-  if (providerID !== "openai") return methods
-  return methods.filter((item) => !(item.type === "oauth" && /headless/i.test(item.label)))
+  if (providerID === "openai") {
+    return methods.filter((item) => !(item.type === "oauth" && /headless/i.test(item.label)))
+  }
+  return methods.filter((item) => item.type === "api")
 }

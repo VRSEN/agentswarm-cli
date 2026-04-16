@@ -17,7 +17,7 @@ import { useToast } from "../ui/toast"
 import { CONSOLE_MANAGED_ICON, isConsoleManagedProvider } from "@tui/util/provider-origin"
 import { getVisibleProviderAuthMethods, hasStoredProviderCredential } from "@tui/util/provider-auth"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import { AGENCY_SWARM_AUTH_PROVIDER_IDS, isAgencySwarmFrameworkMode } from "../session-error"
+import { isAgencySwarmFrameworkMode, isSupportedAgencyAuthProvider } from "../session-error"
 import { errorMessage as toErrorMessage } from "@/util/error"
 import open from "open"
 
@@ -93,14 +93,22 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
                 frameworkMode: frameworkMode(),
               },
             )
+            const visibleMethods = methods.length
+              ? methods
+              : [
+                  {
+                    type: "api" as const,
+                    label: "API key",
+                  },
+                ]
             let index: number | null = 0
-            if (methods.length > 1) {
+            if (visibleMethods.length > 1) {
               index = await new Promise<number | null>((resolve) => {
                 dialog.replace(
                   () => (
                     <DialogSelect
                       title={`Select ${provider.name} auth method`}
-                      options={methods.map((x, index) => ({
+                      options={visibleMethods.map((x, index) => ({
                         title: x.label,
                         value: index,
                       }))}
@@ -112,7 +120,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
               })
             }
             if (index == null) return
-            const method = methods[index]
+            const method = visibleMethods[index]
             if (method.type === "oauth") {
               let inputs: Record<string, string> | undefined
               if (method.prompts?.length) {
@@ -235,7 +243,9 @@ export function DialogAuth() {
       configuredModel: sync.data.config.model,
     }),
   )
-  const providerIDs = frameworkMode() ? [...AGENCY_SWARM_AUTH_PROVIDER_IDS] : undefined
+  const providerIDs = frameworkMode()
+    ? sync.data.provider_next.all.filter((provider) => isSupportedAgencyAuthProvider(provider.id)).map((provider) => provider.id)
+    : undefined
   const allowed = new Set<string>(providerIDs ?? [])
   const providerOptions = createDialogProviderOptionsWithFilter({ providerIDs })
   const options = createMemo<DialogSelectOption<string>[]>(() => {

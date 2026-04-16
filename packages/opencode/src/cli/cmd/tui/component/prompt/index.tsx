@@ -687,7 +687,7 @@ export function Prompt(props: PromptProps) {
     ) {
       toast.show({
         variant: "warning",
-        message: "Add an OpenAI or Anthropic credential before sending a message",
+        message: "Add a supported provider credential before sending a message",
         duration: 4000,
       })
       dialog.replace(() => <DialogAuth />)

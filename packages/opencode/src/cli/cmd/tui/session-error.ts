@@ -1,9 +1,10 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { mapProviderIDToLiteLLMProvider } from "@/agency-swarm/litellm-provider"
 import { hasClientConfigCredential } from "@/agency-swarm/client-config"
 import { hasStoredProviderCredential } from "@tui/util/provider-auth"
 import type { Provider, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 
-export const AGENCY_SWARM_AUTH_PROVIDER_IDS = ["openai", "anthropic"] as const
+export const AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS = ["openai", "anthropic"] as const
 
 type ProviderAuthMap = Record<string, ProviderAuthMethod[]>
 
@@ -33,8 +34,9 @@ function hasCredential(provider: Provider, providerAuth: ProviderAuthMap = {}) {
   return hasStoredProviderCredential([provider], providerAuth, provider.id)
 }
 
-function isSupportedAgencyAuthProvider(providerID: string) {
-  return (AGENCY_SWARM_AUTH_PROVIDER_IDS as readonly string[]).includes(providerID)
+export function isSupportedAgencyAuthProvider(providerID: string) {
+  if ((AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS as readonly string[]).includes(providerID)) return true
+  return mapProviderIDToLiteLLMProvider(providerID) !== undefined
 }
 
 function isAgencyProviderCredentialFailure(message: string) {
@@ -120,7 +122,7 @@ export function shouldOpenAgencyAuthDialog(input: { providerID?: string; message
 
 export function describeAgencyAuthFailure(message: string) {
   if (/missing provider credentials|client_config/i.test(message)) {
-    return "Add an OpenAI or Anthropic credential before sending a message."
+    return "Add a supported provider credential before sending a message."
   }
   if (/unauthori[sz]ed|forbidden|invalid api key|auth failed|\b401\b|\b403\b/i.test(message)) {
     return "The current provider credential was rejected. Reconnect OpenAI or Anthropic and try again."

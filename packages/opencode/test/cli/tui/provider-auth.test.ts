@@ -139,3 +139,16 @@ test("keeps openai headless auth outside agency-swarm framework mode", () => {
     { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
   ])
 })
+
+test("keeps only API auth methods for non-openai providers in agency-swarm framework mode", () => {
+  expect(
+    getVisibleProviderAuthMethods(
+      "github-copilot",
+      [
+        { type: "oauth", label: "GitHub sign-in" },
+        { type: "api", label: "API key" },
+      ],
+      { frameworkMode: true },
+    ),
+  ).toEqual([{ type: "api", label: "API key" }])
+})
