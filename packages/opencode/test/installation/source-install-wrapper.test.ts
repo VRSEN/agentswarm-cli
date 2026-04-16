@@ -7,23 +7,21 @@ import { tmpdir } from "../fixture/fixture"
 const wrapperPath = fileURLToPath(new URL("../../bin/agentswarm", import.meta.url))
 
 function platformName() {
-  return (
-    {
-      darwin: "darwin",
-      linux: "linux",
-      win32: "windows",
-    }[process.platform] ?? process.platform
-  )
+  const names: Record<string, string> = {
+    darwin: "darwin",
+    linux: "linux",
+    win32: "windows",
+  }
+  return names[process.platform] ?? process.platform
 }
 
 function archName() {
-  return (
-    {
-      x64: "x64",
-      arm64: "arm64",
-      arm: "arm",
-    }[process.arch] ?? process.arch
-  )
+  const names: Record<string, string> = {
+    x64: "x64",
+    arm64: "arm64",
+    arm: "arm",
+  }
+  return names[process.arch] ?? process.arch
 }
 
 function possibleDistTargets() {
