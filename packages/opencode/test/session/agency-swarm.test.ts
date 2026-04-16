@@ -602,8 +602,44 @@ describe("session.agency-swarm", () => {
     }
 
     expect(captured).toEqual({
-      api_key: "oauth-access",
       base_url: "https://proxy.example.com/v1",
+    })
+  })
+
+  test("stream preserves stored OpenAI OAuth when explicit base_url still targets Codex", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      openai: {
+        type: "oauth",
+        access: "oauth-access",
+        refresh: "oauth-refresh",
+        expires: Date.now() + 60_000,
+        accountId: "acct_123",
+      } as any,
+    })) as typeof Auth.all
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.clientConfig = {
+      base_url: "https://chatgpt.com/backend-api/codex/",
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "oauth-access",
+      base_url: "https://chatgpt.com/backend-api/codex/",
+      default_headers: {
+        "ChatGPT-Account-Id": "acct_123",
+      },
     })
   })
 
@@ -1150,6 +1186,89 @@ describe("session.agency-swarm", () => {
         timestamp: 2,
       },
     ])
+  })
+
+  test("compactHistory falls back when visible history mixes providers", () => {
+    const msgs = [
+      {
+        info: {
+          id: "user_1",
+          role: "user",
+          agent: "build",
+          model: { providerID: "openai", modelID: "gpt-5" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "text", text: "first question", ignored: false }],
+      },
+      {
+        info: {
+          id: "assistant_1",
+          role: "assistant",
+          parentID: "user_1",
+          providerID: "openai",
+          modelID: "gpt-5",
+          mode: "Default",
+          agent: "Assistant",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "first answer" }],
+      },
+      {
+        info: {
+          id: "user_2",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [{ type: "text", text: "agency prompt", ignored: false }],
+      },
+      {
+        info: {
+          id: "assistant_2",
+          role: "assistant",
+          parentID: "user_2",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Reviewer",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 4 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "agency answer" }],
+      },
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 5 },
+        },
+        parts: [{ type: "text", text: "current prompt", ignored: false }],
+      },
+    ] as any
+
+    expect(SessionAgencySwarm.compactHistory({ msgs, currentID: "current" })).toBeUndefined()
   })
 
   test("stream resolves configured recipient alias to live agent id from metadata", async () => {

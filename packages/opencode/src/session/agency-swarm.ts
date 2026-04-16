@@ -113,18 +113,23 @@ export namespace SessionAgencySwarm {
     baseURL: string,
     config: Record<string, unknown> | undefined,
   ): Promise<Record<string, unknown> | undefined> {
+    const explicit = asRecord(config)
+    const explicitUpstreamBaseURL = readConfiguredBaseURL(explicit)
     const generated = isLoopbackBaseURL(baseURL)
       ? await buildAuthClientConfig(
           await Auth.all(),
           await listProvidersForEnvCheck(),
           getEnvForClientConfig(),
-          hasExplicitOpenAIClientConfig(config),
+          {
+            skipOpenAI: hasExplicitOpenAIClientConfig(config),
+            allowStoredOpenAIOAuth:
+              !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
+          },
         )
       : undefined
     if (!config) return generated
     if (!generated) return config
 
-    const explicit = asRecord(config)
     if (!explicit) return generated
 
     const merged: Record<string, unknown> = {
@@ -175,7 +180,10 @@ export namespace SessionAgencySwarm {
     auths: Record<string, Auth.Info>,
     providers: Record<string, Provider.Info> | undefined,
     env: Record<string, string | undefined>,
-    skipOpenAI: boolean,
+    options: {
+      skipOpenAI: boolean
+      allowStoredOpenAIOAuth: boolean
+    },
   ): Promise<Record<string, unknown> | undefined> {
     const litellmKeys: Record<string, string> = {}
     const payload: Record<string, unknown> = {}
@@ -186,7 +194,7 @@ export namespace SessionAgencySwarm {
       if (!key) continue
 
       if (providerID === "openai") {
-        if (!skipOpenAI) payload["api_key"] = key
+        if (!options.skipOpenAI) payload["api_key"] = key
         continue
       }
 
@@ -200,7 +208,7 @@ export namespace SessionAgencySwarm {
       if (hasEnvCredential(providerID, providers, env)) continue
 
       if (providerID === "openai" && auth.type === "oauth") {
-        if (skipOpenAI) continue
+        if (options.skipOpenAI || !options.allowStoredOpenAIOAuth) continue
         Object.assign(payload, await buildOpenAIOAuthClientConfig(auth))
         continue
       }
@@ -208,7 +216,7 @@ export namespace SessionAgencySwarm {
       if (auth.type !== "api") continue
 
       if (providerID === "openai") {
-        if (!skipOpenAI) payload["api_key"] = auth.key
+        if (!options.skipOpenAI) payload["api_key"] = auth.key
         continue
       }
 
@@ -247,6 +255,14 @@ export namespace SessionAgencySwarm {
       base_url: CODEX_API_BASE_URL,
       ...(Object.keys(headers).length > 0 ? { default_headers: headers } : {}),
     }
+  }
+
+  function readConfiguredBaseURL(config: Record<string, unknown> | undefined) {
+    return asString(config?.["base_url"]) ?? asString(config?.["baseURL"])
+  }
+
+  function isCodexAPIBaseURL(value: string) {
+    return value.replace(/\/+$/, "") === CODEX_API_BASE_URL
   }
 
   function hasEnvCredential(
@@ -1709,7 +1725,10 @@ export namespace SessionAgencySwarm {
       break
     }
 
-    return input.msgs.slice(start < 0 ? 0 : start).flatMap((msg) => {
+    const slice = input.msgs.slice(start < 0 ? 0 : start)
+    if (slice.some((msg) => msg.info.id !== input.currentID && !isAgencySwarmMessage(msg))) return
+
+    return slice.flatMap((msg) => {
       if (msg.info.id === input.currentID) return []
 
       if (msg.info.role === "user") {
@@ -1745,6 +1764,13 @@ export namespace SessionAgencySwarm {
         },
       ]
     })
+  }
+
+  function isAgencySwarmMessage(msg: MessageV2.WithParts) {
+    if (msg.info.role === "assistant") {
+      return msg.info.providerID === AgencySwarmAdapter.PROVIDER_ID
+    }
+    return msg.info.model.providerID === AgencySwarmAdapter.PROVIDER_ID
   }
 
   function extractRecipientMap(metadata: AgencySwarmAdapter.AgencyMetadata): Map<string, string> {
