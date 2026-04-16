@@ -80,10 +80,10 @@ describe("tui local model selection", () => {
     ).toBe(false)
   })
 
-  test("prefers configured agency-swarm model over stale stored model state", () => {
+  test("prefers configured agency-swarm model over stale agent model before user override", () => {
     expect(
       selectCurrentModel({
-        storedModel: {
+        agentModel: {
           providerID: "openai",
           modelID: "gpt-5",
         },
@@ -106,6 +106,74 @@ describe("tui local model selection", () => {
     ).toEqual({
       providerID: "agency-swarm",
       modelID: "default",
+    })
+  })
+
+  test("keeps explicit stored model overrides over configured agency-swarm", () => {
+    expect(
+      selectCurrentModel({
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+        },
+        agentModel: {
+          providerID: "anthropic",
+          modelID: "claude-sonnet-4",
+        },
+        providers: [
+          {
+            id: "openai",
+            models: {
+              "gpt-5": {},
+            },
+          },
+          {
+            id: "anthropic",
+            models: {
+              "claude-sonnet-4": {},
+            },
+          },
+        ],
+        configModel: "agency-swarm/default",
+        configuredProviders: {
+          "agency-swarm": {
+            name: "Agency Swarm",
+            options: {},
+          },
+        },
+      }),
+    ).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5",
+    })
+  })
+
+  test("keeps explicit stored model overrides over launcher agency-swarm args", () => {
+    expect(
+      selectCurrentModel({
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+        },
+        providers: [
+          {
+            id: "openai",
+            models: {
+              "gpt-5": {},
+            },
+          },
+        ],
+        argModel: "agency-swarm/default",
+        configuredProviders: {
+          "agency-swarm": {
+            name: "Agency Swarm",
+            options: {},
+          },
+        },
+      }),
+    ).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5",
     })
   })
 

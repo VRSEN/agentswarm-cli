@@ -118,10 +118,9 @@ export function selectCurrentModel(input: {
     }
   }
 
-  if (shouldPreferConfiguredAgencySwarmModel(input)) {
+  if (shouldPreferConfiguredAgencySwarmModel(input) && !input.storedModel) {
     return getFirstValidModel(
       fallbackModel,
-      () => input.storedModel,
       () => input.agentModel,
     )
   }
