@@ -95,6 +95,10 @@ const [store, setStore] = createStore<State>({
   ready: false,
 })
 
+export function defaultThemeName(input?: { termProgram?: string }) {
+  return input?.termProgram === "Apple_Terminal" ? "system" : "opencode"
+}
+
 export function allThemes() {
   return store.themes
 }
@@ -242,12 +246,15 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
   name: "Theme",
   init: (_props: { mode: "dark" | "light" }) => {
     const renderer = useRenderer()
+    const fallbackTheme = defaultThemeName({
+      termProgram: process.env.TERM_PROGRAM,
+    })
 
     setStore(
       produce((draft) => {
         draft.mode = "dark"
         draft.lock = "dark"
-        draft.active = "opencode"
+        draft.active = fallbackTheme
         draft.ready = false
       }),
     )
@@ -260,9 +267,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
             customThemes = custom
             syncThemes()
           })
-          .catch(() => {
-            setStore("active", "opencode")
-          }),
+          .catch(() => {}),
       ]).finally(() => {
         setStore("ready", true)
       })
@@ -297,7 +302,8 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     }
 
     const values = createMemo(() => {
-      return resolveTheme(store.themes.opencode)
+      const active = store.themes[store.active] ?? store.themes[fallbackTheme] ?? store.themes.opencode
+      return resolveTheme(active)
     })
 
     createEffect(() => {

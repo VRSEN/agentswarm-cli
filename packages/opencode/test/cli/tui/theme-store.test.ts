@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 
-const { DEFAULT_THEMES, allThemes, addTheme, hasTheme, resolveTheme, upsertTheme } = await import(
+const { DEFAULT_THEMES, allThemes, addTheme, defaultThemeName, hasTheme, resolveTheme, upsertTheme } = await import(
   "../../../src/cli/cmd/tui/context/theme"
 )
 
@@ -36,6 +36,11 @@ test("hasTheme checks theme presence", () => {
   expect(hasTheme(name)).toBe(false)
   expect(addTheme(name, DEFAULT_THEMES.opencode)).toBe(true)
   expect(hasTheme(name)).toBe(true)
+})
+
+test("defaultThemeName prefers the system palette in Apple Terminal", () => {
+  expect(defaultThemeName({ termProgram: "Apple_Terminal" })).toBe("system")
+  expect(defaultThemeName({ termProgram: "iTerm.app" })).toBe("opencode")
 })
 
 test("resolveTheme always uses the dark variant", () => {
