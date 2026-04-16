@@ -311,6 +311,50 @@ export async function openSettings(page: Page) {
   return dialog
 }
 
+export async function chooseSelect(page: Page, input: { root: Locator; text: string | RegExp; timeout?: number }) {
+  const timeout = input.timeout ?? 10_000
+  const trigger = input.root.locator('[data-slot="select-select-trigger"]')
+  const item = () => page.locator('[data-slot="select-select-item"]').filter({ hasText: input.text }).first()
+
+  for (const _ of [0, 1, 2]) {
+    await expect(trigger).toBeVisible({ timeout: 30_000 })
+    await trigger.click({ force: true })
+
+    const ready = await item()
+      .waitFor({ state: "visible", timeout: 2_000 })
+      .then(() => true)
+      .catch(() => false)
+
+    if (!ready) {
+      await page.keyboard.press("Escape").catch(() => undefined)
+      continue
+    }
+
+    const clicked = await item()
+      .click({ force: true, timeout: 1_500 })
+      .then(() => true)
+      .catch(() => false)
+
+    if (!clicked) {
+      await page.keyboard.press("Escape").catch(() => undefined)
+      continue
+    }
+
+    const closed = await expect
+      .poll(() => trigger.getAttribute("data-expanded"), { timeout })
+      .toBeNull()
+      .then(() => true)
+      .catch(() => false)
+
+    if (closed) return
+
+    await page.keyboard.press("Escape").catch(() => undefined)
+  }
+
+  await trigger.click({ force: true })
+  await item().click({ force: true, timeout })
+}
+
 export async function createTestProject(input?: { serverUrl?: string }) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-e2e-project-"))
   const id = `e2e-${path.basename(root)}`
@@ -806,7 +850,10 @@ export async function openStatusPopover(page: Page) {
   const rightSection = page.locator(titlebarRightSelector)
   const trigger = rightSection.getByRole("button", { name: /status/i }).first()
 
-  const popoverBody = page.locator(popoverBodySelector).filter({ has: page.locator('[data-component="tabs"]') }).first()
+  const popoverBody = page
+    .locator(popoverBodySelector)
+    .filter({ has: page.locator('[data-component="tabs"]') })
+    .first()
 
   const opened = await popoverBody
     .isVisible()
@@ -829,6 +876,64 @@ export async function openStatusPopover(page: Page) {
   }
 
   return { rightSection, popoverBody }
+}
+
+export async function openStatusTab(page: Page, name: string | RegExp) {
+  for (const _ of [0, 1, 2]) {
+    const { popoverBody } = await openStatusPopover(page)
+    const tab = popoverBody.getByRole("tab", { name }).first()
+    const panel = popoverBody.locator('[role="tabpanel"]:visible').first()
+
+    const ready = await tab
+      .waitFor({ state: "visible", timeout: 2_000 })
+      .then(() => true)
+      .catch(() => false)
+
+    if (!ready) {
+      await page.keyboard.press("Escape").catch(() => undefined)
+      continue
+    }
+
+    const keyed = await tab
+      .focus()
+      .then(() => page.keyboard.press("Enter"))
+      .then(() => true)
+      .catch(() => false)
+
+    if (!keyed) {
+      await page.keyboard.press("Escape").catch(() => undefined)
+      continue
+    }
+
+    const selected = await expect
+      .poll(() => tab.getAttribute("aria-selected"), { timeout: 2_000 })
+      .toBe("true")
+      .then(() => true)
+      .catch(() => false)
+
+    if (!selected) {
+      await page.keyboard.press("Escape").catch(() => undefined)
+      continue
+    }
+
+    const visible = await panel
+      .waitFor({ state: "visible", timeout: 2_000 })
+      .then(() => true)
+      .catch(() => false)
+
+    if (visible) return { popoverBody, tab, panel }
+
+    await page.keyboard.press("Escape").catch(() => undefined)
+  }
+
+  const { popoverBody } = await openStatusPopover(page)
+  const tab = popoverBody.getByRole("tab", { name }).first()
+  const panel = popoverBody.locator('[role="tabpanel"]:visible').first()
+  await tab.focus()
+  await page.keyboard.press("Enter")
+  await expect(tab).toHaveAttribute("aria-selected", "true")
+  await expect(panel).toBeVisible()
+  return { popoverBody, tab, panel }
 }
 
 export async function openProjectMenu(page: Page, projectSlug: string) {

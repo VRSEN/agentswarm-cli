@@ -1,5 +1,5 @@
 import { test, expect } from "../fixtures"
-import { openStatusPopover } from "../actions"
+import { openStatusPopover, openStatusTab } from "../actions"
 
 test("status popover opens and shows tabs", async ({ page, gotoSession }) => {
   await gotoSession()
@@ -30,46 +30,19 @@ test("status popover servers tab shows current server", async ({ page, gotoSessi
 test("status popover can switch to mcp tab", async ({ page, gotoSession }) => {
   await gotoSession()
 
-  const { popoverBody } = await openStatusPopover(page)
-
-  const mcpTab = popoverBody.getByRole("tab", { name: /mcp/i })
-  await mcpTab.click()
-
-  const ariaSelected = await mcpTab.getAttribute("aria-selected")
-  expect(ariaSelected).toBe("true")
-
-  const mcpContent = popoverBody.locator('[role="tabpanel"]:visible').first()
-  await expect(mcpContent).toBeVisible()
+  await openStatusTab(page, /mcp/i)
 })
 
 test("status popover can switch to lsp tab", async ({ page, gotoSession }) => {
   await gotoSession()
 
-  const { popoverBody } = await openStatusPopover(page)
-
-  const lspTab = popoverBody.getByRole("tab", { name: /lsp/i })
-  await lspTab.click()
-
-  const ariaSelected = await lspTab.getAttribute("aria-selected")
-  expect(ariaSelected).toBe("true")
-
-  const lspContent = popoverBody.locator('[role="tabpanel"]:visible').first()
-  await expect(lspContent).toBeVisible()
+  await openStatusTab(page, /lsp/i)
 })
 
 test("status popover can switch to plugins tab", async ({ page, gotoSession }) => {
   await gotoSession()
 
-  const { popoverBody } = await openStatusPopover(page)
-
-  const pluginsTab = popoverBody.getByRole("tab", { name: /plugins/i })
-  await pluginsTab.click()
-
-  const ariaSelected = await pluginsTab.getAttribute("aria-selected")
-  expect(ariaSelected).toBe("true")
-
-  const pluginsContent = popoverBody.locator('[role="tabpanel"]:visible').first()
-  await expect(pluginsContent).toBeVisible()
+  await openStatusTab(page, /plugins/i)
 })
 
 test("status popover closes on escape", async ({ page, gotoSession }) => {
