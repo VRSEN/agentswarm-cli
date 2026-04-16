@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import {
@@ -14,12 +14,14 @@ import {
 import { AgencySwarmRunSession } from "../../src/agency-swarm/run-session"
 import { Instance } from "../../src/project/instance"
 import { Session } from "../../src/session"
+import { Storage } from "../../src/storage/storage"
 import { tmpdir } from "../fixture/fixture"
 
 describe("agency-swarm npx onboarding", () => {
   const originalEnv = process.env[LAUNCHER_ENTRY_ENV]
 
   afterEach(() => {
+    mock.restore()
     if (originalEnv === undefined) delete process.env[LAUNCHER_ENTRY_ENV]
     else process.env[LAUNCHER_ENTRY_ENV] = originalEnv
   })
@@ -202,6 +204,38 @@ describe("agency-swarm npx onboarding", () => {
     expect(project).toBeUndefined()
   })
 
+  test("resolveNpxAutoProject uses legacy local-agency history for explicit session resumes", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    spyOn(Storage, "list").mockResolvedValue([["agency_swarm_history", "legacy"]])
+    spyOn(Storage, "read").mockResolvedValue({
+      scope: "http://127.0.0.1:8123|local-agency|ses_123",
+      chat_history: [],
+      updated_at: 1,
+    } as never)
+
+    const project = await resolveNpxAutoProject({
+      directory: "/tmp/elsewhere",
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      session: "ses_123",
+      sessions: [
+        {
+          id: "ses_123" as any,
+          directory: dir.path,
+          parentID: undefined,
+          time: {
+            created: 1,
+            updated: 1,
+          },
+        },
+      ],
+      runSessions: [],
+    })
+
+    expect(project?.directory).toBe(dir.path)
+  })
+
   test("resolveNpxAutoProject does not fallback when explicit session is stale", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
@@ -299,6 +333,38 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(project).toBeUndefined()
+  })
+
+  test("resolveNpxAutoProject uses legacy local-agency history for continue", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    spyOn(Storage, "list").mockResolvedValue([["agency_swarm_history", "legacy"]])
+    spyOn(Storage, "read").mockResolvedValue({
+      scope: "http://127.0.0.1:8123|local-agency|ses_legacy",
+      chat_history: [],
+      updated_at: 1,
+    } as never)
+
+    const project = await resolveNpxAutoProject({
+      directory: dir.path,
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      continue: true,
+      sessions: [
+        {
+          id: "ses_legacy" as any,
+          directory: dir.path,
+          parentID: undefined,
+          time: {
+            created: 1,
+            updated: 1,
+          },
+        },
+      ],
+      runSessions: [],
+    })
+
+    expect(project?.directory).toBe(dir.path)
   })
 
   test("resolveNpxAutoProject falls back to current project when continue has no local session", async () => {

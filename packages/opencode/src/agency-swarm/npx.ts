@@ -7,6 +7,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { AgencySwarmRunSession } from "./run-session"
 import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
+import { Storage } from "@/storage/storage"
 import { Filesystem } from "@/util/filesystem"
 import type { Session } from "@/session"
 import { SessionID } from "@/session/schema"
@@ -125,9 +126,15 @@ async function resolveRunProject(
   const run = runSessions
     ? Array.from(runSessions).find((item) => item.sessionID === session.id)
     : await AgencySwarmRunSession.get(session.id)
-  if (!run) return
-  if (path.resolve(run.directory) !== path.resolve(session.directory)) return
-  return detectAgencyProject(run.directory)
+  if (run) {
+    if (path.resolve(run.directory) !== path.resolve(session.directory)) return
+    return detectAgencyProject(run.directory)
+  }
+
+  const project = await detectAgencyProject(session.directory)
+  if (!project) return
+  if (!(await hasLegacyLocalAgencyHistory(session.id))) return
+  return project
 }
 
 function isAgentswarmCommand(argv: string[]) {
@@ -138,6 +145,20 @@ function isAgentswarmCommand(argv: string[]) {
         .at(-1)
         ?.replace(/\.exe$/i, "") === "agentswarm",
   )
+}
+
+async function hasLegacyLocalAgencyHistory(sessionID: string) {
+  const keys = await Storage.list(["agency_swarm_history"]).catch(() => [] as string[][])
+  for (const key of keys) {
+    const entry = await Storage.read<{ scope?: unknown }>(key).catch(() => undefined)
+    const scope = typeof entry?.scope === "string" ? entry.scope : undefined
+    if (!scope) continue
+    const parts = scope.split("|")
+    if (parts.at(-1) !== sessionID) continue
+    if (parts.at(-2) !== LOCAL_AGENCY_ID) continue
+    return true
+  }
+  return false
 }
 
 export function buildAgencyConfig(input: { baseURL: string; agency: string; token?: string }) {

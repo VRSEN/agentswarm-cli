@@ -295,12 +295,39 @@ describe("agency session errors", () => {
             name: "OpenAI",
             source: "env",
             env: ["OPENAI_API_KEY"],
+            key: "env-openai",
             options: {},
             models: {},
           },
         ],
       }),
     ).toBe(false)
+  })
+
+  test("framework mode opens auth when env-backed provider only has non-secret config", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "azure",
+            name: "Azure OpenAI",
+            source: "env",
+            env: ["AZURE_RESOURCE_NAME", "AZURE_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
   })
 
   test("framework mode skips auth when a configured provider carries an env key", () => {

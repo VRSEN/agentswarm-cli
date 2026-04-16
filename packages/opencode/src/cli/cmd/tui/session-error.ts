@@ -11,7 +11,7 @@ export function hasUsableProvider(providers: Provider[], credentialed = false) {
 
 function hasCredential(provider: Provider) {
   if (provider.key) return true
-  if (provider.source === "api" || provider.source === "env") return true
+  if (provider.source === "api") return true
   const options = provider.options ?? {}
   return [options["apiKey"], options["api_key"], options["key"], options["token"]].some(
     (item) => typeof item === "string" && item.length > 0,
