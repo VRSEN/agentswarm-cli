@@ -17,6 +17,8 @@ North Star: keep the user's general intent and direction clear; read intent betw
 - At task start, identify your role from available tools because the same AGENTS.md governs managers and subagents: agents with the Subagent tool are managers/execution-loop coordinators; agents without it are subagents, must stay inside delegated scope, report blockers, and must not claim they can delegate.
 - Protect the context window. Avoid tool calls with unbounded or irrelevant output, prefer bounded reads/searches, and use delegated agents for broad exploration only when available through the real Subagent tool so the main context receives relevant findings.
 - Managers delegate focused work through the real Subagent tool only when it materially reduces risk, context load, or non-blocking exploration time; never spawn more than 10 subagents for one task.
+- When a manager is in doubt about a change, seek bounded subagent counsel before editing or shipping.
+- After delegating work, do not interrupt, rush, or repeatedly ping subagents; block and wait for their result unless the user changes scope or you have clear evidence of a hard failure.
 - Each subagent prompt must include the full relevant context, source of truth, scope, non-goals, constraints, source pointers, and success condition; avoid vague one-off labels such as "cleanup" unless the prompt defines the exact work.
 - Do not over-specify delegated work. Managers give the goal, constraints, and success condition, not a script of exact steps or exact file edits unless those edits are already known.
 
@@ -289,7 +291,7 @@ After each meaningful tool call or code edit, validate the result in 1-2 lines a
 - Remote model:
   - `origin` = upstream OpenCode
   - `vrsen` = canonical fork remote for `dev` pushes
-- `dev` on fork remotes is append-only. Do not force-push, rebase, or rewrite published `dev` history.
+- Treat `dev` and other long-lived shared/default fork branches as append-only. Do not force-push, rebase, or rewrite their published history unless the user explicitly requests that exact recovery; use common sense on short-lived branches.
 - Upstream sync policy for fork `dev`: merge `origin/dev` into fork `dev` (or merge fork `dev` into a branch from `origin/dev`), then fast-forward push. Avoid restacking published commit series.
 - Commit preservation is mandatory. If a rewrite is explicitly approved as an emergency exception, create immutable backup tags/refs first and record a `range-diff` proof before and after.
 - Default delegated-review model policy: use Codex CLI with `gpt-5.4` at `xhigh`.
