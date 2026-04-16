@@ -119,10 +119,7 @@ export function selectCurrentModel(input: {
   }
 
   if (shouldPreferConfiguredAgencySwarmModel(input) && !input.storedModel) {
-    return getFirstValidModel(
-      fallbackModel,
-      () => input.agentModel,
-    )
+    return getFirstValidModel(fallbackModel, () => input.agentModel)
   }
 
   return getFirstValidModel(
@@ -485,7 +482,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
     }
 
-    // Automatically update model when agent changes
+    // Current model already follows agent.model unless a local override exists.
+    // Keep this effect only for invalid-model warnings while following agent config.
     createEffect(() => {
       const value = agent.current()
       if (
@@ -497,18 +495,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       ) {
         return
       }
-      if (value.model) {
-        if (isModelValid(value.model))
-          model.set({
-            providerID: value.model.providerID,
-            modelID: value.model.modelID,
-          })
-        else
-          toast.show({
-            variant: "warning",
-            message: `Agent ${value.name}'s configured model ${value.model.providerID}/${value.model.modelID} is not valid`,
-            duration: 3000,
-          })
+      if (value.model && !isModelValid(value.model)) {
+        toast.show({
+          variant: "warning",
+          message: `Agent ${value.name}'s configured model ${value.model.providerID}/${value.model.modelID} is not valid`,
+          duration: 3000,
+        })
       }
     })
 
