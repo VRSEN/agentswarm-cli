@@ -301,6 +301,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
       return {
         current: currentModel,
+        override(name: string) {
+          return modelStore.model[name]
+        },
         get ready() {
           return modelStore.ready
         },
@@ -487,7 +490,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       const value = agent.current()
       if (
         !shouldSyncAgentModel({
-          storedModel: modelStore.model[value.name],
+          storedModel: model.override(value.name),
           argModel: args.model,
           configModel: sync.data.config.model,
         })
