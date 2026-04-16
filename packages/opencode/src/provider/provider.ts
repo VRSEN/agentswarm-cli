@@ -1555,9 +1555,6 @@ export namespace Provider {
         const s = yield* InstanceState.get(state)
         const provider = s.providers[providerID]
         if (!provider) {
-          if (providerID === AgencySwarmAdapter.PROVIDER_ID && modelID === AgencySwarmAdapter.DEFAULT_MODEL_ID) {
-            return createAgencySwarmProvider().models[ModelID.make(AgencySwarmAdapter.DEFAULT_MODEL_ID)]
-          }
           const available = Object.keys(s.providers)
           const matches = fuzzysort.go(providerID, available, { limit: 3, threshold: -10000 })
           throw new ModelNotFoundError({ providerID, modelID, suggestions: matches.map((m) => m.target) })
