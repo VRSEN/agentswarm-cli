@@ -10,11 +10,20 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+async function waitFor(condition: () => boolean, timeout = 1000) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (condition()) return
+    await delay(5)
+  }
+  throw new Error("Timed out waiting for condition")
+}
+
 function loadThemeModule() {
   return import(`../../../src/cli/cmd/tui/context/theme.tsx?test=${Date.now()}-${Math.random()}`)
 }
 
-test("ThemeProvider mounts after palette resolution but before theme.ready flips", async () => {
+test.serial("ThemeProvider mounts after palette resolution but before theme.ready flips", async () => {
   const { ThemeProvider, DEFAULT_THEMES, useTheme } = await loadThemeModule()
   const name = `delayed-theme-${Date.now()}`
   const customTheme = structuredClone(DEFAULT_THEMES.opencode)
@@ -69,7 +78,7 @@ test("ThemeProvider mounts after palette resolution but before theme.ready flips
 
   try {
     await testRender(() => <App />)
-    await delay(100)
+    await waitFor(() => snapshots.some((entry) => entry.ready === true && entry.hasCustom === true))
 
     expect(mounted).toEqual([false])
     expect(snapshots.some((entry) => entry.ready === false && entry.hasCustom === false)).toBe(true)
@@ -81,7 +90,7 @@ test("ThemeProvider mounts after palette resolution but before theme.ready flips
   }
 })
 
-test("ThemeProvider mounts on Apple Terminal before palette paint completes", async () => {
+test.serial("ThemeProvider mounts on Apple Terminal before palette paint completes", async () => {
   const { ThemeProvider, useTheme } = await loadThemeModule()
   const originalTermProgram = process.env.TERM_PROGRAM
   const originalUp = Filesystem.up
@@ -132,7 +141,7 @@ test("ThemeProvider mounts on Apple Terminal before palette paint completes", as
 
   try {
     await testRender(() => <App />)
-    await delay(10)
+    await waitFor(() => mounted.length === 1 && snapshots.some((entry) => entry.ready === false && entry.paintReady === false))
 
     expect(mounted).toEqual([{ ready: false, paintReady: false }])
     expect(snapshots.some((entry) => entry.ready === false && entry.paintReady === false)).toBe(true)
@@ -142,7 +151,7 @@ test("ThemeProvider mounts on Apple Terminal before palette paint completes", as
       defaultForeground: undefined,
       palette: [],
     } as unknown as TerminalColors)
-    await delay(10)
+    await waitFor(() => snapshots.some((entry) => entry.paintReady === true))
 
     expect(snapshots.some((entry) => entry.paintReady === true)).toBe(true)
   } finally {
@@ -153,7 +162,7 @@ test("ThemeProvider mounts on Apple Terminal before palette paint completes", as
   }
 })
 
-test("ThemeProvider blocks system theme selection on light Apple Terminal palettes", async () => {
+test.serial("ThemeProvider blocks system theme selection on light Apple Terminal palettes", async () => {
   const { ThemeProvider, useTheme } = await loadThemeModule()
   const originalTermProgram = process.env.TERM_PROGRAM
   const originalUp = Filesystem.up
@@ -199,7 +208,7 @@ test("ThemeProvider blocks system theme selection on light Apple Terminal palett
 
   try {
     await testRender(() => <App />)
-    await delay(10)
+    await waitFor(() => attempts.length === 1)
 
     expect(attempts).toEqual([{ allowed: false, selected: "opencode" }])
   } finally {
