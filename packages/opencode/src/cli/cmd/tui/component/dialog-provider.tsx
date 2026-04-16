@@ -20,6 +20,7 @@ import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { isAgencySwarmFrameworkMode, isSupportedAgencyAuthProvider } from "../session-error"
 import { errorMessage as toErrorMessage } from "@/util/error"
 import open from "open"
+import type { Provider } from "@opencode-ai/sdk/v2"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
   openai: 0,
@@ -37,6 +38,20 @@ export function createDialogProviderOptions() {
 type DialogProviderProps = {
   providerIDs?: readonly string[]
   title?: string
+}
+
+export function listRemovableAuthProviders(input: {
+  all: { id: string; name: string }[]
+  providers: Provider[]
+  providerAuth: Record<string, ProviderAuthMethod[]>
+  consoleManagedProviders: string[]
+}) {
+  return input.all.filter((provider) => {
+    if (provider.id === AgencySwarmAdapter.PROVIDER_ID) return false
+    if (!hasStoredProviderCredential(input.providers, input.providerAuth, provider.id)) return false
+    if (isConsoleManagedProvider(input.consoleManagedProviders, provider.id)) return false
+    return true
+  })
 }
 
 export function createDialogProviderOptionsWithFilter(props: DialogProviderProps = {}) {
@@ -190,26 +205,19 @@ export function DialogProvider(props: DialogProviderProps = {}) {
   return <DialogSelect title={props.title ?? "Connect a provider"} options={options()} />
 }
 
-function DialogRemoveCredential(props: DialogProviderProps = {}) {
+function DialogRemoveCredential() {
   const sync = useSync()
   const dialog = useDialog()
   const sdk = useSDK()
   const toast = useToast()
-  const allowed = new Set<string>(props.providerIDs ?? [])
   const options = createMemo(() =>
     pipe(
-      sync.data.provider_next.all,
-      (items) =>
-        items.filter((provider) => {
-          if (provider.id === AgencySwarmAdapter.PROVIDER_ID) return false
-          if (allowed.size > 0 && !allowed.has(provider.id)) return false
-          if (
-            !hasStoredProviderCredential(sync.data.provider, sync.data.provider_auth, provider.id)
-          )
-            return false
-          if (isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, provider.id)) return false
-          return true
-        }),
+      listRemovableAuthProviders({
+        all: sync.data.provider_next.all,
+        providers: sync.data.provider,
+        providerAuth: sync.data.provider_auth,
+        consoleManagedProviders: sync.data.console_state.consoleManagedProviders,
+      }),
       sortBy((provider) => PROVIDER_PRIORITY[provider.id] ?? 99),
       map((provider) => ({
         title: provider.name,
@@ -248,15 +256,13 @@ export function DialogAuth() {
         .filter((provider) => isSupportedAgencyAuthProvider(provider.id, provider, sync.data.provider_auth[provider.id] ?? []))
         .map((provider) => provider.id)
     : undefined
-  const allowed = new Set<string>(providerIDs ?? [])
   const providerOptions = createDialogProviderOptionsWithFilter({ providerIDs })
   const options = createMemo<DialogSelectOption<string>[]>(() => {
-    const removable = sync.data.provider_next.all.filter((provider) => {
-      if (provider.id === AgencySwarmAdapter.PROVIDER_ID) return false
-      if (allowed.size > 0 && !allowed.has(provider.id)) return false
-      if (!hasStoredProviderCredential(sync.data.provider, sync.data.provider_auth, provider.id)) return false
-      if (isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, provider.id)) return false
-      return true
+    const removable = listRemovableAuthProviders({
+      all: sync.data.provider_next.all,
+      providers: sync.data.provider,
+      providerAuth: sync.data.provider_auth,
+      consoleManagedProviders: sync.data.console_state.consoleManagedProviders,
     })
     if (removable.length === 0) return providerOptions()
 
@@ -267,7 +273,7 @@ export function DialogAuth() {
         description: "Delete a stored provider credential",
         category: "Manage",
         onSelect: () => {
-          dialog.replace(() => <DialogRemoveCredential providerIDs={providerIDs} />)
+          dialog.replace(() => <DialogRemoveCredential />)
         },
       },
       ...providerOptions(),

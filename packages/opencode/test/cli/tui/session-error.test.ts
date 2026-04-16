@@ -160,6 +160,34 @@ describe("agency session errors", () => {
     ).toBe(false)
   })
 
+  test("framework mode also skips local provider auth for remote agency-swarm backends using base_url", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {
+              base_url: "https://agency.example.com",
+            },
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "config",
+            env: ["OPENAI_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
   test("framework mode follows the current provider override away from agency-swarm", () => {
     expect(
       isAgencySwarmFrameworkMode({

@@ -73,7 +73,7 @@ function isLoopbackBaseURL(baseURL: string) {
 
 function usesLocalAgencyProviderAuth(providers: Provider[]) {
   const agencyProvider = providers.find((provider) => provider.id === AgencySwarmAdapter.PROVIDER_ID)
-  const rawBaseURL = agencyProvider?.options?.["baseURL"]
+  const rawBaseURL = agencyProvider?.options?.["baseURL"] ?? agencyProvider?.options?.["base_url"]
   const baseURL = typeof rawBaseURL === "string" && rawBaseURL.trim() ? rawBaseURL : AgencySwarmAdapter.DEFAULT_BASE_URL
   return isLoopbackBaseURL(baseURL)
 }
