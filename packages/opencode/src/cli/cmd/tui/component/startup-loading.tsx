@@ -2,17 +2,21 @@ import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-j
 import { useTheme } from "../context/theme"
 import { Spinner } from "./spinner"
 
-export function StartupLoading(props: { ready: () => boolean; enabled?: () => boolean }) {
+export function StartupLoading(props: { ready: () => boolean; themed?: () => boolean }) {
   const theme = useTheme().theme
   const [show, setShow] = createSignal(false)
-  const text = createMemo(() => (props.ready() ? "Finishing startup..." : "Loading plugins..."))
-  const enabled = () => props.enabled?.() ?? true
+  const themed = () => props.themed?.() ?? true
+  const text = createMemo(() => {
+    if (props.ready()) return "Finishing startup..."
+    if (!themed()) return "Loading theme..."
+    return "Loading plugins..."
+  })
   let wait: NodeJS.Timeout | undefined
   let hold: NodeJS.Timeout | undefined
   let stamp = 0
 
   createEffect(() => {
-    if (!enabled()) {
+    if (!themed()) {
       if (wait) {
         clearTimeout(wait)
         wait = undefined
@@ -21,7 +25,9 @@ export function StartupLoading(props: { ready: () => boolean; enabled?: () => bo
         clearTimeout(hold)
         hold = undefined
       }
-      if (show()) setShow(false)
+      if (show()) return
+      stamp = Date.now()
+      setShow(true)
       return
     }
 
@@ -68,9 +74,11 @@ export function StartupLoading(props: { ready: () => boolean; enabled?: () => bo
   return (
     <Show when={show()}>
       <box position="absolute" zIndex={5000} left={0} right={0} bottom={1} justifyContent="center" alignItems="center">
-        <box backgroundColor={theme.backgroundPanel} paddingLeft={1} paddingRight={1}>
-          <Spinner color={theme.textMuted}>{text()}</Spinner>
-        </box>
+        <Show when={themed()} fallback={<text>{text()}</text>}>
+          <box backgroundColor={theme.backgroundPanel} paddingLeft={1} paddingRight={1}>
+            <Spinner color={theme.textMuted}>{text()}</Spinner>
+          </box>
+        </Show>
       </box>
     </Show>
   )

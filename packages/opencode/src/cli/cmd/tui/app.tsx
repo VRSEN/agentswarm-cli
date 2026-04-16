@@ -971,7 +971,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       <Show when={ready()}>
         <TuiPluginRuntime.Slot name="app" />
       </Show>
-      <StartupLoading ready={ready} enabled={() => themeState.ready} />
+      <StartupLoading ready={ready} themed={() => themeState.ready} />
     </box>
   )
 }
