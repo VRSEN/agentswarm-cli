@@ -1299,6 +1299,18 @@ export namespace Provider {
             mergeProvider(providerID, partial)
           }
 
+          const agencySwarmProviderID = ProviderID.make(AgencySwarmAdapter.PROVIDER_ID)
+          const shouldLoadAgencySwarmProvider =
+            isProviderAllowed(agencySwarmProviderID) &&
+            !providers[agencySwarmProviderID] &&
+            (cfg.provider?.[AgencySwarmAdapter.PROVIDER_ID] !== undefined ||
+              auths[AgencySwarmAdapter.PROVIDER_ID] !== undefined ||
+              cfg.model === `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`)
+
+          if (shouldLoadAgencySwarmProvider) {
+            mergeProvider(agencySwarmProviderID, { source: "config" })
+          }
+
           const gitlab = ProviderID.make("gitlab")
           if (discoveryLoaders[gitlab] && providers[gitlab] && isProviderAllowed(gitlab)) {
             yield* Effect.promise(async () => {
@@ -1543,6 +1555,9 @@ export namespace Provider {
         const s = yield* InstanceState.get(state)
         const provider = s.providers[providerID]
         if (!provider) {
+          if (providerID === AgencySwarmAdapter.PROVIDER_ID && modelID === AgencySwarmAdapter.DEFAULT_MODEL_ID) {
+            return createAgencySwarmProvider().models[ModelID.make(AgencySwarmAdapter.DEFAULT_MODEL_ID)]
+          }
           const available = Object.keys(s.providers)
           const matches = fuzzysort.go(providerID, available, { limit: 3, threshold: -10000 })
           throw new ModelNotFoundError({ providerID, modelID, suggestions: matches.map((m) => m.target) })
