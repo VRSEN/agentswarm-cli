@@ -61,7 +61,13 @@ import { createTuiApi, TuiPluginRuntime, type RouteMap } from "./plugin"
 import { FormatError, FormatUnknownError } from "@/cli/error"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencyProduct } from "@/agency-swarm/product"
-import { isAgencySwarmFrameworkMode, shouldOpenAgencyConnectDialog, shouldOpenStartupAuthDialog } from "./session-error"
+import {
+  describeAgencyAuthFailure,
+  isAgencySwarmFrameworkMode,
+  shouldOpenAgencyAuthDialog,
+  shouldOpenAgencyConnectDialog,
+  shouldOpenStartupAuthDialog,
+} from "./session-error"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -443,6 +449,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
           sync.status === "complete" &&
           shouldOpenStartupAuthDialog({
             providers: sync.data.provider,
+            providerAuth: sync.data.provider_auth,
             frameworkMode: isAgencySwarmFrameworkMode({
               currentProviderID: local.model.current()?.providerID,
               configuredModel: sync.data.config.model,
@@ -852,6 +859,20 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       })
     ) {
       dialog.replace(() => <DialogAgencySwarmConnect />)
+      return
+    }
+    if (
+      shouldOpenAgencyAuthDialog({
+        providerID: frameworkMode() ? AgencySwarmAdapter.PROVIDER_ID : local.model.current()?.providerID,
+        message,
+      })
+    ) {
+      toast.show({
+        variant: "error",
+        message: describeAgencyAuthFailure(message),
+        duration: 5000,
+      })
+      dialog.replace(() => <DialogAuth />)
       return
     }
 

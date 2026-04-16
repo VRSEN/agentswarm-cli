@@ -390,6 +390,72 @@ describe("session.agency-swarm", () => {
     }
   })
 
+  test("stream sends stored Anthropic API auth to a real local agency server", async () => {
+    mockHistory()
+    await Auth.set("anthropic", {
+      type: "api",
+      key: "anthropic-live",
+    } as any)
+
+    let body: Record<string, unknown> | undefined
+    const server = createServer(async (request, response) => {
+      if (request.url !== "/builder/get_response_stream") {
+        response.writeHead(404)
+        response.end("not found")
+        return
+      }
+
+      const chunks: Buffer[] = []
+      for await (const chunk of request) {
+        if (Buffer.isBuffer(chunk)) chunks.push(chunk)
+        else chunks.push(Buffer.from(chunk))
+      }
+      body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream",
+      })
+      response.end(
+        [
+          'data: {"data":{"type":"raw_response_event","data":{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"ok"}}}\n\n',
+          "event: end\ndata: [DONE]\n\n",
+        ].join(""),
+      )
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject)
+        resolve()
+      })
+    })
+
+    const address = server.address()
+    if (!address || typeof address === "string") {
+      server.close()
+      throw new Error("Expected local test server address")
+    }
+
+    try {
+      const { input } = helper()
+      input.options.baseURL = `http://127.0.0.1:${(address as AddressInfo).port}`
+      const stream = await SessionAgencySwarm.stream(input)
+      const text: string[] = []
+      for await (const event of stream.fullStream) {
+        if (event.type === "text-delta") text.push(event.text)
+      }
+
+      expect(text).toEqual(["ok"])
+      expect(body?.["client_config"]).toEqual({
+        litellm_keys: {
+          anthropic: "anthropic-live",
+        },
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+      await Auth.remove("anthropic")
+    }
+  })
+
   test("stream sends explicit header-based client_config to a real local agency server", async () => {
     mockHistory()
     await Auth.set("openai", {

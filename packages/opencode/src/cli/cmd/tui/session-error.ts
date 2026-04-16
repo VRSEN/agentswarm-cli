@@ -1,21 +1,54 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { hasClientConfigCredential } from "@/agency-swarm/client-config"
-import type { Provider } from "@opencode-ai/sdk/v2"
+import { hasStoredProviderCredential } from "@tui/util/provider-auth"
+import type { Provider, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 
-export function hasUsableProvider(providers: Provider[], credentialed = false) {
+export const AGENCY_SWARM_AUTH_PROVIDER_IDS = ["openai", "anthropic"] as const
+
+type ProviderAuthMap = Record<string, ProviderAuthMethod[]>
+
+export function hasUsableProvider(
+  providers: Provider[],
+  credentialed = false,
+  providerAuth: ProviderAuthMap = {},
+) {
   return providers.some((provider) => {
-    if (provider.id !== "opencode") return credentialed ? hasCredential(provider) : true
+    if (provider.id !== "opencode") return credentialed ? hasCredential(provider, providerAuth) : true
     return Object.values(provider.models).some((model) => model.cost?.input !== 0)
   })
 }
 
-function hasCredential(provider: Provider) {
+function hasCredential(provider: Provider, providerAuth: ProviderAuthMap = {}) {
   if (provider.key) return true
   if (provider.source === "api") return true
   const options = provider.options ?? {}
-  return [options["apiKey"], options["api_key"], options["key"], options["token"]].some(
-    (item) => typeof item === "string" && item.length > 0,
+  if (
+    [options["apiKey"], options["api_key"], options["key"], options["token"]].some(
+      (item) => typeof item === "string" && item.length > 0,
+    )
+  ) {
+    return true
+  }
+
+  return hasStoredProviderCredential([provider], providerAuth, provider.id)
+}
+
+function isSupportedAgencyAuthProvider(providerID: string) {
+  return (AGENCY_SWARM_AUTH_PROVIDER_IDS as readonly string[]).includes(providerID)
+}
+
+function isAgencyProviderCredentialFailure(message: string) {
+  return /missing provider credentials|client_config|invalid api key|api key rejected|authentication failed|auth failed|access token/i.test(
+    message,
   )
+}
+
+function hasSupportedAgencyCredential(providers: Provider[], providerAuth: ProviderAuthMap = {}) {
+  return providers.some((provider) => {
+    if (provider.id === AgencySwarmAdapter.PROVIDER_ID) return false
+    if (!isSupportedAgencyAuthProvider(provider.id)) return false
+    return hasCredential(provider, providerAuth)
+  })
 }
 
 function hasExplicitAgencyClientConfig(provider: Provider | undefined) {
@@ -31,19 +64,66 @@ export function isAgencySwarmFrameworkMode(input: { currentProviderID?: string; 
   return input.configuredModel?.split("/")[0] === AgencySwarmAdapter.PROVIDER_ID
 }
 
-export function shouldOpenStartupAuthDialog(input: { providers: Provider[]; frameworkMode: boolean }) {
-  if (!input.frameworkMode) return !hasUsableProvider(input.providers)
+export function shouldOpenStartupAuthDialog(input: {
+  providers: Provider[]
+  providerAuth?: ProviderAuthMap
+  frameworkMode: boolean
+}) {
+  if (!input.frameworkMode) return !hasUsableProvider(input.providers, false, input.providerAuth)
 
   const agencyProvider = input.providers.find((provider) => provider.id === AgencySwarmAdapter.PROVIDER_ID)
-  if (agencyProvider && (hasCredential(agencyProvider) || hasExplicitAgencyClientConfig(agencyProvider))) return false
+  if (agencyProvider && (hasCredential(agencyProvider, input.providerAuth) || hasExplicitAgencyClientConfig(agencyProvider))) {
+    return false
+  }
 
-  return !hasUsableProvider(
-    input.providers.filter((provider) => provider.id !== AgencySwarmAdapter.PROVIDER_ID),
-    true,
-  )
+  return !hasSupportedAgencyCredential(input.providers, input.providerAuth)
+}
+
+export function shouldBlockAgencyPromptSend(input: {
+  currentProviderID?: string
+  configuredModel?: string
+  providers: Provider[]
+  providerAuth?: ProviderAuthMap
+}) {
+  if (!isAgencySwarmFrameworkMode(input)) return false
+  return shouldOpenStartupAuthDialog({
+    providers: input.providers,
+    providerAuth: input.providerAuth,
+    frameworkMode: true,
+  })
+}
+
+export function shouldBlockAgencyPromptSubmit(input: {
+  currentProviderID?: string
+  configuredModel?: string
+  providers: Provider[]
+  providerAuth?: ProviderAuthMap
+  mode: "normal" | "shell"
+  isSlashCommand: boolean
+}) {
+  if (input.mode === "shell" || input.isSlashCommand) return false
+  return shouldBlockAgencyPromptSend(input)
 }
 
 export function shouldOpenAgencyConnectDialog(input: { providerID?: string; message: string }) {
   if (input.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
-  return /cannot reach agency-swarm backend/i.test(input.message)
+  if (/cannot reach agency-swarm backend/i.test(input.message)) return true
+  if (isAgencyProviderCredentialFailure(input.message)) return false
+  return /unauthori[sz]ed|forbidden|\b401\b|\b403\b/i.test(input.message)
+}
+
+export function shouldOpenAgencyAuthDialog(input: { providerID?: string; message: string }) {
+  if (input.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
+  if (shouldOpenAgencyConnectDialog(input)) return false
+  return isAgencyProviderCredentialFailure(input.message)
+}
+
+export function describeAgencyAuthFailure(message: string) {
+  if (/missing provider credentials|client_config/i.test(message)) {
+    return "Add an OpenAI or Anthropic credential before sending a message."
+  }
+  if (/unauthori[sz]ed|forbidden|invalid api key|auth failed|\b401\b|\b403\b/i.test(message)) {
+    return "The current provider credential was rejected. Reconnect OpenAI or Anthropic and try again."
+  }
+  return message
 }

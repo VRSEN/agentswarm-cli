@@ -11,3 +11,13 @@ export function hasStoredProviderCredential(
   if (provider.source !== "custom") return false
   return (methods[providerID] ?? []).some((item) => item.type === "oauth")
 }
+
+export function getVisibleProviderAuthMethods(
+  providerID: string,
+  methods: ProviderAuthMethod[],
+  options?: { frameworkMode?: boolean },
+) {
+  if (!options?.frameworkMode) return methods
+  if (providerID !== "openai") return methods
+  return methods.filter((item) => !(item.type === "oauth" && /headless/i.test(item.label)))
+}

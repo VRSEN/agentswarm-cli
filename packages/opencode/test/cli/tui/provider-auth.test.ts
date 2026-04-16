@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { hasStoredProviderCredential } from "../../../src/cli/cmd/tui/util/provider-auth"
+import { getVisibleProviderAuthMethods, hasStoredProviderCredential } from "../../../src/cli/cmd/tui/util/provider-auth"
 
 test("detects stored api credentials", () => {
   expect(
@@ -84,4 +84,37 @@ test("does not treat opencode public mode as a stored credential", () => {
       "opencode",
     ),
   ).toBe(false)
+})
+
+test("hides openai headless auth in agency-swarm framework mode", () => {
+  expect(
+    getVisibleProviderAuthMethods(
+      "openai",
+      [
+        { type: "oauth", label: "ChatGPT Pro/Plus (browser)" },
+        { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
+        { type: "api", label: "Manually enter API Key" },
+      ],
+      { frameworkMode: true },
+    ),
+  ).toEqual([
+    { type: "oauth", label: "ChatGPT Pro/Plus (browser)" },
+    { type: "api", label: "Manually enter API Key" },
+  ])
+})
+
+test("keeps openai headless auth outside agency-swarm framework mode", () => {
+  expect(
+    getVisibleProviderAuthMethods(
+      "openai",
+      [
+        { type: "oauth", label: "ChatGPT Pro/Plus (browser)" },
+        { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
+      ],
+      { frameworkMode: false },
+    ),
+  ).toEqual([
+    { type: "oauth", label: "ChatGPT Pro/Plus (browser)" },
+    { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
+  ])
 })

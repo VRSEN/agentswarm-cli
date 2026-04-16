@@ -15,9 +15,11 @@ import { useKeyboard } from "@opentui/solid"
 import { Clipboard } from "@tui/util/clipboard"
 import { useToast } from "../ui/toast"
 import { CONSOLE_MANAGED_ICON, isConsoleManagedProvider } from "@tui/util/provider-origin"
-import { hasStoredProviderCredential } from "@tui/util/provider-auth"
+import { getVisibleProviderAuthMethods, hasStoredProviderCredential } from "@tui/util/provider-auth"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import { isAgencySwarmFrameworkMode } from "../session-error"
+import { AGENCY_SWARM_AUTH_PROVIDER_IDS, isAgencySwarmFrameworkMode } from "../session-error"
+import { errorMessage as toErrorMessage } from "@/util/error"
+import open from "open"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
   openai: 0,
@@ -42,8 +44,15 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
   const dialog = useDialog()
   const sdk = useSDK()
   const toast = useToast()
+  const local = useLocal()
   const { theme } = useTheme()
   const allowed = createMemo(() => new Set(props.providerIDs ?? []))
+  const frameworkMode = createMemo(() =>
+    isAgencySwarmFrameworkMode({
+      currentProviderID: local.model.current()?.providerID,
+      configuredModel: sync.data.config.model,
+    }),
+  )
   const options = createMemo(() => {
     return pipe(
       sync.data.provider_next.all,
@@ -59,7 +68,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
           description: {
             opencode: "(Recommended)",
             anthropic: "(API key)",
-            openai: "(ChatGPT Plus/Pro or API key)",
+            openai: "(Browser sign-in or API key)",
             "opencode-go": "Low cost subscription for everyone",
           }[provider.id],
           footer: consoleManaged ? sync.data.console_state.activeOrgName : undefined,
@@ -72,19 +81,25 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
           async onSelect() {
             if (consoleManaged) return
 
-            const methods = sync.data.provider_auth[provider.id] ?? [
+            const methods = getVisibleProviderAuthMethods(
+              provider.id,
+              sync.data.provider_auth[provider.id] ?? [
+                {
+                  type: "api",
+                  label: "API key",
+                },
+              ],
               {
-                type: "api",
-                label: "API key",
+                frameworkMode: frameworkMode(),
               },
-            ]
+            )
             let index: number | null = 0
             if (methods.length > 1) {
               index = await new Promise<number | null>((resolve) => {
                 dialog.replace(
                   () => (
                     <DialogSelect
-                      title="Select auth method"
+                      title={`Select ${provider.name} auth method`}
                       options={methods.map((x, index) => ({
                         title: x.label,
                         value: index,
@@ -117,9 +132,9 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
               if (result.error) {
                 toast.show({
                   variant: "error",
-                  message: JSON.stringify(result.error),
+                  message: toErrorMessage(result.error),
+                  duration: 5000,
                 })
-                dialog.clear()
                 return
               }
               if (result.data?.method === "code") {
@@ -167,17 +182,19 @@ export function DialogProvider(props: DialogProviderProps = {}) {
   return <DialogSelect title={props.title ?? "Connect a provider"} options={options()} />
 }
 
-function DialogRemoveCredential() {
+function DialogRemoveCredential(props: DialogProviderProps = {}) {
   const sync = useSync()
   const dialog = useDialog()
   const sdk = useSDK()
   const toast = useToast()
+  const allowed = new Set<string>(props.providerIDs ?? [])
   const options = createMemo(() =>
     pipe(
       sync.data.provider_next.all,
       (items) =>
         items.filter((provider) => {
           if (provider.id === AgencySwarmAdapter.PROVIDER_ID) return false
+          if (allowed.size > 0 && !allowed.has(provider.id)) return false
           if (
             !hasStoredProviderCredential(sync.data.provider, sync.data.provider_auth, provider.id)
           )
@@ -211,10 +228,20 @@ function DialogRemoveCredential() {
 export function DialogAuth() {
   const dialog = useDialog()
   const sync = useSync()
-  const providerOptions = createDialogProviderOptions()
+  const local = useLocal()
+  const frameworkMode = createMemo(() =>
+    isAgencySwarmFrameworkMode({
+      currentProviderID: local.model.current()?.providerID,
+      configuredModel: sync.data.config.model,
+    }),
+  )
+  const providerIDs = frameworkMode() ? [...AGENCY_SWARM_AUTH_PROVIDER_IDS] : undefined
+  const allowed = new Set<string>(providerIDs ?? [])
+  const providerOptions = createDialogProviderOptionsWithFilter({ providerIDs })
   const options = createMemo<DialogSelectOption<string>[]>(() => {
     const removable = sync.data.provider_next.all.filter((provider) => {
       if (provider.id === AgencySwarmAdapter.PROVIDER_ID) return false
+      if (allowed.size > 0 && !allowed.has(provider.id)) return false
       if (!hasStoredProviderCredential(sync.data.provider, sync.data.provider_auth, provider.id)) return false
       if (isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, provider.id)) return false
       return true
@@ -228,14 +255,14 @@ export function DialogAuth() {
         description: "Delete a stored provider credential",
         category: "Manage",
         onSelect: () => {
-          dialog.replace(() => <DialogRemoveCredential />)
+          dialog.replace(() => <DialogRemoveCredential providerIDs={providerIDs} />)
         },
       },
       ...providerOptions(),
     ]
   })
 
-  return <DialogSelect title="Manage provider auth" options={options()} />
+  return <DialogSelect title={frameworkMode() ? "Manage Agent Swarm auth" : "Manage provider auth"} options={options()} />
 }
 
 type Option =
@@ -598,6 +625,7 @@ function AutoMethod(props: AutoMethodProps) {
   const sync = useSync()
   const local = useLocal()
   const toast = useToast()
+  const [error, setError] = createSignal<string>()
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
       currentProviderID: local.model.current()?.providerID,
@@ -615,21 +643,40 @@ function AutoMethod(props: AutoMethodProps) {
   })
 
   onMount(async () => {
+    if (frameworkMode()) {
+      void open(props.authorization.url).catch(() => undefined)
+    }
     const result = await sdk.client.provider.oauth.callback({
       providerID: props.providerID,
       method: props.index,
     })
     if (result.error) {
-      dialog.clear()
+      const message = toErrorMessage(result.error)
+      setError(message)
+      toast.show({
+        variant: "error",
+        message,
+        duration: 5000,
+      })
       return
     }
-    await sdk.client.instance.dispose()
-    await sync.bootstrap()
-    if (frameworkMode()) {
-      dialog.clear()
-      return
+    try {
+      await sdk.client.instance.dispose()
+      await sync.bootstrap()
+      if (frameworkMode()) {
+        dialog.clear()
+        return
+      }
+      dialog.replace(() => <DialogModel providerID={props.providerID} />)
+    } catch (error) {
+      const message = toErrorMessage(error)
+      setError(message)
+      toast.show({
+        variant: "error",
+        message,
+        duration: 5000,
+      })
     }
-    dialog.replace(() => <DialogModel providerID={props.providerID} />)
   })
 
   return (
@@ -646,7 +693,14 @@ function AutoMethod(props: AutoMethodProps) {
         <Link href={props.authorization.url} fg={theme.primary} />
         <text fg={theme.textMuted}>{props.authorization.instructions}</text>
       </box>
-      <text fg={theme.textMuted}>Waiting for authorization...</text>
+      <text fg={theme.textMuted}>
+        {frameworkMode()
+          ? "Your default browser should open. If it does not, use the link above."
+          : "Finish sign-in in your browser, then wait here."}
+      </text>
+      <Show when={error()}>
+        {(message) => <text fg={theme.error}>{message()}</text>}
+      </Show>
       <text fg={theme.text}>
         c <span style={{ fg: theme.textMuted }}>copy</span>
       </text>
@@ -666,7 +720,8 @@ function CodeMethod(props: CodeMethodProps) {
   const sync = useSync()
   const dialog = useDialog()
   const local = useLocal()
-  const [error, setError] = createSignal(false)
+  const toast = useToast()
+  const [error, setError] = createSignal<string>()
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
       currentProviderID: local.model.current()?.providerID,
@@ -685,23 +740,39 @@ function CodeMethod(props: CodeMethodProps) {
           code: value,
         })
         if (!error) {
-          await sdk.client.instance.dispose()
-          await sync.bootstrap()
-          if (frameworkMode()) {
-            dialog.clear()
-            return
+          try {
+            await sdk.client.instance.dispose()
+            await sync.bootstrap()
+            if (frameworkMode()) {
+              dialog.clear()
+              return
+            }
+            dialog.replace(() => <DialogModel providerID={props.providerID} />)
+          } catch (error) {
+            const message = toErrorMessage(error)
+            setError(message)
+            toast.show({
+              variant: "error",
+              message,
+              duration: 5000,
+            })
           }
-          dialog.replace(() => <DialogModel providerID={props.providerID} />)
           return
         }
-        setError(true)
+        const message = toErrorMessage(error)
+        setError(message)
+        toast.show({
+          variant: "error",
+          message,
+          duration: 5000,
+        })
       }}
       description={() => (
         <box gap={1}>
           <text fg={theme.textMuted}>{props.authorization.instructions}</text>
           <Link href={props.authorization.url} fg={theme.primary} />
           <Show when={error()}>
-            <text fg={theme.error}>Invalid code</text>
+            {(message) => <text fg={theme.error}>{message()}</text>}
           </Show>
         </box>
       )}
@@ -719,47 +790,60 @@ function ApiMethod(props: ApiMethodProps) {
   const sdk = useSDK()
   const sync = useSync()
   const local = useLocal()
+  const toast = useToast()
   const { theme } = useTheme()
+  const [error, setError] = createSignal<string>()
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
     }),
   )
+  const description = () => {
+    const builtin =
+      {
+        opencode: (
+          <box gap={1}>
+            <text fg={theme.textMuted}>
+              OpenCode Zen gives you access to all the best coding models at the cheapest prices with a single API
+              key.
+            </text>
+            <text fg={theme.text}>
+              Go to <span style={{ fg: theme.primary }}>https://opencode.ai/zen</span> to get a key
+            </text>
+          </box>
+        ),
+        "opencode-go": (
+          <box gap={1}>
+            <text fg={theme.textMuted}>
+              OpenCode Go is a $10 per month subscription that provides reliable access to popular open coding models
+              with generous usage limits.
+            </text>
+            <text fg={theme.text}>
+              Go to <span style={{ fg: theme.primary }}>https://opencode.ai/zen</span> and enable OpenCode Go
+            </text>
+          </box>
+        ),
+      }[props.providerID] ?? undefined
+
+    return (
+      <box gap={1}>
+        {builtin}
+        <Show when={error()}>
+          {(message) => <text fg={theme.error}>{message()}</text>}
+        </Show>
+      </box>
+    )
+  }
 
   return (
     <DialogPrompt
       title={props.title}
       placeholder="API key"
-      description={
-        {
-          opencode: (
-            <box gap={1}>
-              <text fg={theme.textMuted}>
-                OpenCode Zen gives you access to all the best coding models at the cheapest prices with a single API
-                key.
-              </text>
-              <text fg={theme.text}>
-                Go to <span style={{ fg: theme.primary }}>https://opencode.ai/zen</span> to get a key
-              </text>
-            </box>
-          ),
-          "opencode-go": (
-            <box gap={1}>
-              <text fg={theme.textMuted}>
-                OpenCode Go is a $10 per month subscription that provides reliable access to popular open coding models
-                with generous usage limits.
-              </text>
-              <text fg={theme.text}>
-                Go to <span style={{ fg: theme.primary }}>https://opencode.ai/zen</span> and enable OpenCode Go
-              </text>
-            </box>
-          ),
-        }[props.providerID] ?? undefined
-      }
+      description={description}
       onConfirm={async (value) => {
         if (!value) return
-        await sdk.client.auth.set({
+        const result = await sdk.client.auth.set({
           providerID: props.providerID,
           auth: {
             type: "api",
@@ -767,13 +851,33 @@ function ApiMethod(props: ApiMethodProps) {
             ...(props.metadata ? { metadata: props.metadata } : {}),
           },
         })
-        await sdk.client.instance.dispose()
-        await sync.bootstrap()
-        if (frameworkMode()) {
-          dialog.clear()
+        if (result.error) {
+          const message = toErrorMessage(result.error)
+          setError(message)
+          toast.show({
+            variant: "error",
+            message,
+            duration: 5000,
+          })
           return
         }
-        dialog.replace(() => <DialogModel providerID={props.providerID} />)
+        try {
+          await sdk.client.instance.dispose()
+          await sync.bootstrap()
+          if (frameworkMode()) {
+            dialog.clear()
+            return
+          }
+          dialog.replace(() => <DialogModel providerID={props.providerID} />)
+        } catch (error) {
+          const message = toErrorMessage(error)
+          setError(message)
+          toast.show({
+            variant: "error",
+            message,
+            duration: 5000,
+          })
+        }
       }}
     />
   )

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
+import type { Provider } from "@opencode-ai/sdk/v2"
 import {
+  shouldBlockAgencyPromptSubmit,
+  shouldBlockAgencyPromptSend,
+  shouldOpenAgencyAuthDialog,
   hasUsableProvider,
   isAgencySwarmFrameworkMode,
   shouldOpenAgencyConnectDialog,
@@ -395,6 +399,14 @@ describe("agency session errors", () => {
     expect(
       shouldOpenStartupAuthDialog({
         frameworkMode: true,
+        providerAuth: {
+          openai: [
+            {
+              type: "oauth",
+              label: "ChatGPT",
+            },
+          ],
+        },
         providers: [
           {
             id: "agency-swarm",
@@ -409,9 +421,7 @@ describe("agency session errors", () => {
             name: "OpenAI",
             source: "custom",
             env: [],
-            options: {
-              apiKey: "oauth-dummy",
-            },
+            options: {},
             models: {},
           },
         ],
@@ -437,11 +447,183 @@ describe("agency session errors", () => {
             name: "OpenAI",
             source: "api",
             env: ["OPENAI_API_KEY"],
+            key: "sk-openai",
             options: {},
             models: {},
           },
         ],
       }),
     ).toBe(false)
+  })
+
+  test("framework mode still opens auth when an unsupported provider is credentialed", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "google",
+            name: "Google",
+            source: "api",
+            env: ["GOOGLE_API_KEY"],
+            key: "google-key",
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
+  test("blocks the first agency prompt when supported auth is missing", () => {
+    expect(
+      shouldBlockAgencyPromptSend({
+        currentProviderID: "agency-swarm",
+        configuredModel: "agency-swarm/default",
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "config",
+            env: ["OPENAI_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
+  test("does not block the first agency prompt when supported auth exists", () => {
+    expect(
+      shouldBlockAgencyPromptSend({
+        currentProviderID: "agency-swarm",
+        configuredModel: "agency-swarm/default",
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "anthropic",
+            name: "Anthropic",
+            source: "api",
+            env: ["ANTHROPIC_API_KEY"],
+            key: "sk-ant",
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
+  test("does not block shell mode or slash commands during agency auth gating", () => {
+    const input = {
+      currentProviderID: "agency-swarm",
+      configuredModel: "agency-swarm/default",
+      providers: [
+        {
+          id: "agency-swarm",
+          name: "Agency Swarm",
+          source: "config",
+          env: [],
+          options: {},
+          models: {},
+        },
+        {
+          id: "openai",
+          name: "OpenAI",
+          source: "config",
+          env: ["OPENAI_API_KEY"],
+          options: {},
+          models: {},
+        },
+      ] satisfies Provider[],
+    }
+
+    expect(
+      shouldBlockAgencyPromptSubmit({
+        ...input,
+        mode: "shell",
+        isSlashCommand: false,
+      }),
+    ).toBe(false)
+
+    expect(
+      shouldBlockAgencyPromptSubmit({
+        ...input,
+        mode: "normal",
+        isSlashCommand: true,
+      }),
+    ).toBe(false)
+  })
+
+  test("opens auth dialog for agency auth failures", () => {
+    expect(
+      shouldOpenAgencyAuthDialog({
+        providerID: "agency-swarm",
+        message: "Streaming request failed (401): Missing provider credentials in client_config",
+      }),
+    ).toBe(true)
+
+    expect(
+      shouldOpenAgencyAuthDialog({
+        providerID: "agency-swarm",
+        message: "cannot reach agency-swarm backend at http://127.0.0.1:8000/openapi.json",
+      }),
+    ).toBe(false)
+  })
+
+  test("opens connect instead of auth for agency server authorization failures", () => {
+    expect(
+      shouldOpenAgencyConnectDialog({
+        providerID: "agency-swarm",
+        message: "Streaming request failed (401): Unauthorized",
+      }),
+    ).toBe(true)
+
+    expect(
+      shouldOpenAgencyAuthDialog({
+        providerID: "agency-swarm",
+        message: "Streaming request failed (401): Unauthorized",
+      }),
+    ).toBe(false)
+  })
+
+  test("keeps provider credential rejection routed to auth", () => {
+    expect(
+      shouldOpenAgencyConnectDialog({
+        providerID: "agency-swarm",
+        message: "Streaming request failed (403): Invalid API key for OpenAI",
+      }),
+    ).toBe(false)
+
+    expect(
+      shouldOpenAgencyAuthDialog({
+        providerID: "agency-swarm",
+        message: "Streaming request failed (403): Invalid API key for OpenAI",
+      }),
+    ).toBe(true)
   })
 })

@@ -31,7 +31,7 @@ import { Locale } from "@/util/locale"
 import { formatDuration } from "@/util/format"
 import { createColors, createFrames } from "../../ui/spinner.ts"
 import { useDialog } from "@tui/ui/dialog"
-import { DialogAgencySwarmConnect, DialogProvider as DialogProviderConnect } from "../dialog-provider"
+import { DialogAgencySwarmConnect, DialogAuth, DialogProvider as DialogProviderConnect } from "../dialog-provider"
 import { DialogAlert } from "../../ui/dialog-alert"
 import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
@@ -40,6 +40,8 @@ import { DialogSkill } from "../dialog-skill"
 import { CONSOLE_MANAGED_ICON, consoleManagedProviderLabel } from "@tui/util/provider-origin"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencySwarmRunSession } from "@/agency-swarm/run-session"
+import { describeAgencyAuthFailure, shouldBlockAgencyPromptSubmit, shouldOpenAgencyAuthDialog } from "../../session-error"
+import { errorMessage as toErrorMessage } from "@/util/error"
 
 export type PromptProps = {
   sessionID?: string
@@ -607,31 +609,6 @@ export function Prompt(props: PromptProps) {
       exit()
       return
     }
-    const selectedModel = local.model.current()
-    if (!selectedModel) {
-      promptModelWarning()
-      return
-    }
-
-    let sessionID = props.sessionID
-    if (sessionID == null) {
-      const res = await sdk.client.session.create({
-        workspaceID: props.workspaceID,
-      })
-
-      if (res.error) {
-        toast.show({
-          message: "Creating a session failed.",
-          variant: "error",
-        })
-
-        return
-      }
-
-      sessionID = res.data.id
-    }
-
-    const messageID = MessageID.ascending()
     let inputText = store.prompt.input
 
     // Expand pasted text inline before submitting
@@ -652,10 +629,92 @@ export function Prompt(props: PromptProps) {
 
     // Filter out text parts (pasted content) since they're now expanded inline
     const nonTextParts = store.prompt.parts.filter((part) => part.type !== "text")
+    const firstLineEnd = inputText.indexOf("\n")
+    const firstLine = firstLineEnd === -1 ? inputText : inputText.slice(0, firstLineEnd)
+    const firstWord = firstLine.split(" ")[0]
+    const localSlash = firstWord.startsWith("/")
+      ? command
+          .slashes()
+          .find((item) => [item.display, ...(item.aliases ?? [])].includes(firstWord))
+      : undefined
+
+    const clearSubmittedPrompt = (submittedMode: typeof store.mode) => {
+      history.append({
+        ...store.prompt,
+        mode: submittedMode,
+      })
+      input.extmarks.clear()
+      setStore("prompt", {
+        input: "",
+        parts: [],
+      })
+      setStore("extmarkToPartIndex", new Map())
+      props.onSubmit?.()
+      input.clear()
+    }
+
+    if (localSlash) {
+      localSlash.onSelect()
+      clearSubmittedPrompt(store.mode)
+      return
+    }
+
+    const selectedModel = local.model.current()
+    if (!selectedModel) {
+      promptModelWarning()
+      return
+    }
 
     // Capture mode before it gets reset
     const currentMode = store.mode
     const variant = local.model.variant.current()
+    const isServerSlashCommand =
+      inputText.startsWith("/") &&
+      iife(() => {
+        const commandName = firstWord.slice(1)
+        return sync.data.command.some((x) => x.name === commandName)
+      })
+
+    if (
+      shouldBlockAgencyPromptSubmit({
+        currentProviderID: selectedModel.providerID,
+        configuredModel: sync.data.config.model,
+        providers: sync.data.provider,
+        providerAuth: sync.data.provider_auth,
+        mode: currentMode,
+        isSlashCommand: isServerSlashCommand,
+      })
+    ) {
+      toast.show({
+        variant: "warning",
+        message: "Add an OpenAI or Anthropic credential before sending a message",
+        duration: 4000,
+      })
+      dialog.replace(() => <DialogAuth />)
+      return
+    }
+
+    let sessionID = props.sessionID
+    let createdSessionID: string | undefined
+    if (sessionID == null) {
+      const res = await sdk.client.session.create({
+        workspaceID: props.workspaceID,
+      })
+
+      if (res.error) {
+        toast.show({
+          message: "Creating a session failed.",
+          variant: "error",
+        })
+
+        return
+      }
+
+      sessionID = res.data.id
+      createdSessionID = sessionID
+    }
+
+    const messageID = MessageID.ascending()
     void AgencySwarmRunSession.sync({
       sessionID,
       providerID: selectedModel.providerID,
@@ -673,17 +732,8 @@ export function Prompt(props: PromptProps) {
         command: inputText,
       })
       setStore("mode", "normal")
-    } else if (
-      inputText.startsWith("/") &&
-      iife(() => {
-        const firstLine = inputText.split("\n")[0]
-        const command = firstLine.split(" ")[0].slice(1)
-        return sync.data.command.some((x) => x.name === command)
-      })
-    ) {
+    } else if (isServerSlashCommand) {
       // Parse command from first line, preserve multi-line content in arguments
-      const firstLineEnd = inputText.indexOf("\n")
-      const firstLine = firstLineEnd === -1 ? inputText : inputText.slice(0, firstLineEnd)
       const [command, ...firstLineArgs] = firstLine.split(" ")
       const restOfInput = firstLineEnd === -1 ? "" : inputText.slice(firstLineEnd + 1)
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
@@ -704,8 +754,8 @@ export function Prompt(props: PromptProps) {
           })),
       })
     } else {
-      sdk.client.session
-        .prompt({
+      try {
+        await sdk.client.session.prompt({
           sessionID,
           ...selectedModel,
           messageID,
@@ -721,19 +771,36 @@ export function Prompt(props: PromptProps) {
             ...nonTextParts.map(assign),
           ],
         })
-        .catch(() => {})
+      } catch (error) {
+        const message = toErrorMessage(error)
+        if (createdSessionID) {
+          void sdk.client.session.delete({
+            sessionID: createdSessionID,
+          })
+        }
+        if (
+          shouldOpenAgencyAuthDialog({
+            providerID: selectedModel.providerID,
+            message,
+          })
+        ) {
+          toast.show({
+            variant: "error",
+            message: describeAgencyAuthFailure(message),
+            duration: 5000,
+          })
+          dialog.replace(() => <DialogAuth />)
+          return
+        }
+        toast.show({
+          variant: "error",
+          message,
+          duration: 5000,
+        })
+        return
+      }
     }
-    history.append({
-      ...store.prompt,
-      mode: currentMode,
-    })
-    input.extmarks.clear()
-    setStore("prompt", {
-      input: "",
-      parts: [],
-    })
-    setStore("extmarkToPartIndex", new Map())
-    props.onSubmit?.()
+    clearSubmittedPrompt(currentMode)
 
     // temporary hack to make sure the message is sent
     if (!props.sessionID)
@@ -743,7 +810,6 @@ export function Prompt(props: PromptProps) {
           sessionID,
         })
       }, 50)
-    input.clear()
   }
   const exit = useExit()
 
