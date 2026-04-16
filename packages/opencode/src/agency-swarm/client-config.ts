@@ -12,7 +12,10 @@ export function readStringRecord(value: unknown): Record<string, string> | undef
   const record = asRecord(value)
   if (!record) return undefined
   const result = Object.fromEntries(
-    Object.entries(record).flatMap(([key, item]) => (typeof item === "string" ? [[key, item]] : [])),
+    Object.entries(record).flatMap(([key, item]) => {
+      const text = asString(item)
+      return text ? [[key, text]] : []
+    }),
   )
   return Object.keys(result).length > 0 ? result : undefined
 }

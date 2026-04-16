@@ -223,6 +223,31 @@ describe("agency session errors", () => {
     ).toBe(false)
   })
 
+  test("framework mode opens auth when auth-like headers are empty", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {
+              clientConfig: {
+                base_url: "https://proxy.example.com/v1",
+                default_headers: {
+                  Authorization: "",
+                },
+              },
+            },
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
   test("framework mode skips auth when another provider is available", () => {
     expect(
       shouldOpenStartupAuthDialog({

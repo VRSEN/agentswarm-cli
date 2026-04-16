@@ -39,4 +39,21 @@ describe("agency-swarm client config credentials", () => {
       }),
     ).toBe(false)
   })
+
+  test("ignores empty auth-like headers", () => {
+    expect(
+      hasClientConfigCredential({
+        default_headers: {
+          Authorization: "",
+        },
+      }),
+    ).toBe(false)
+    expect(
+      hasExplicitOpenAIClientConfig({
+        default_headers: {
+          Authorization: "",
+        },
+      }),
+    ).toBe(false)
+  })
 })
