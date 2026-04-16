@@ -495,11 +495,13 @@ export namespace AgencySwarmAdapter {
     const baseURL = asString(value["base_url"]) ?? asString(value["baseURL"])
     const apiKey = asString(value["api_key"]) ?? asString(value["apiKey"])
     const litellmKeys = asRecord(value["litellm_keys"]) ?? asRecord(value["litellmKeys"])
+    const headers = readStringRecord(value["default_headers"]) ?? readStringRecord(value["defaultHeaders"])
 
     const payload: Record<string, unknown> = {}
     if (baseURL) payload["base_url"] = baseURL
     if (apiKey) payload["api_key"] = apiKey
     if (litellmKeys && Object.keys(litellmKeys).length > 0) payload["litellm_keys"] = litellmKeys
+    if (headers) payload["default_headers"] = headers
 
     return Object.keys(payload).length > 0 ? payload : undefined
   }
@@ -610,6 +612,15 @@ export namespace AgencySwarmAdapter {
     if (typeof value !== "string") return undefined
     const trimmed = value.trim()
     return trimmed ? trimmed : undefined
+  }
+
+  function readStringRecord(value: unknown): Record<string, string> | undefined {
+    const record = asRecord(value)
+    if (!record) return undefined
+    const result = Object.fromEntries(
+      Object.entries(record).flatMap(([key, item]) => (typeof item === "string" ? [[key, item]] : [])),
+    )
+    return Object.keys(result).length > 0 ? result : undefined
   }
 
   function asArray(value: unknown): unknown[] {

@@ -149,6 +149,55 @@ describe("agency session errors", () => {
     ).toBe(false)
   })
 
+  test("framework mode skips auth when explicit client_config has LiteLLM keys", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {
+              clientConfig: {
+                litellm_keys: {
+                  anthropic: "manual-ant",
+                },
+              },
+            },
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode opens auth when explicit client_config has no credentials", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {
+              clientConfig: {
+                base_url: "https://proxy.example.com/v1",
+                default_headers: {
+                  "x-proxy": "1",
+                },
+              },
+            },
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
   test("framework mode skips auth when another provider is available", () => {
     expect(
       shouldOpenStartupAuthDialog({
@@ -166,6 +215,113 @@ describe("agency session errors", () => {
             id: "openai",
             name: "OpenAI",
             source: "env",
+            env: ["OPENAI_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode skips auth when a configured provider carries an env key", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "config",
+            env: ["OPENAI_API_KEY"],
+            key: "env-openai",
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode opens auth when another provider has no credential", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "config",
+            env: ["OPENAI_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
+  test("framework mode skips auth when stored oauth credentials are available", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "custom",
+            env: [],
+            options: {
+              apiKey: "oauth-dummy",
+            },
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode skips auth when stored api credentials are available", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "api",
             env: ["OPENAI_API_KEY"],
             options: {},
             models: {},

@@ -17,7 +17,13 @@ import { TuiConfig } from "@/config/tui"
 import { Instance } from "@/project/instance"
 import { writeHeapSnapshot } from "v8"
 import { AgencyProduct } from "@/agency-swarm/product"
-import { prepareNpxLaunch, shouldRunNpxOnboarding } from "@/agency-swarm/npx"
+import {
+  prepareNpxLaunch,
+  prepareProjectLaunch,
+  resolveNpxAutoProject,
+  shouldRunNpxOnboarding,
+} from "@/agency-swarm/npx"
+import { AgencySwarmRunSession } from "@/agency-swarm/run-session"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -141,13 +147,32 @@ export const TuiThreadCommand = cmd({
         prompt: args.prompt,
         agent: args.agent,
       })
-      const prepared = shouldBootstrap ? await prepareNpxLaunch(selectedProject) : undefined
-      if (shouldBootstrap && !prepared) {
+      const project = shouldBootstrap
+        ? undefined
+        : await resolveNpxAutoProject({
+            directory: selectedProject,
+            env: process.env,
+            model: args.model,
+            continue: args.continue,
+            fork: args.fork,
+            session: args.session,
+            prompt: args.prompt,
+            agent: args.agent,
+          })
+      const prepared = shouldBootstrap
+        ? await prepareNpxLaunch(selectedProject)
+        : project
+          ? await prepareProjectLaunch(project)
+          : undefined
+      if ((shouldBootstrap || project) && !prepared) {
         return
       }
       cleanup = prepared?.cleanup
       if (prepared?.configContent) {
         process.env.OPENCODE_CONFIG_CONTENT = prepared.configContent
+      }
+      if (prepared?.runProjectDirectory) {
+        process.env[AgencySwarmRunSession.LOCAL_PROJECT_ENV] = Filesystem.resolve(prepared.runProjectDirectory)
       }
       const next = prepared?.directory ? Filesystem.resolve(prepared.directory) : selectedProject
       const file = await target()

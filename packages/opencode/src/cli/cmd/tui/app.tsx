@@ -439,12 +439,11 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   createEffect(
     on(
       () => {
-        const selected = args.model ? Provider.parseModel(args.model).providerID : undefined
         return (
           sync.status === "complete" &&
           shouldOpenStartupAuthDialog({
             providers: sync.data.provider,
-            frameworkMode: selected === AgencySwarmAdapter.PROVIDER_ID,
+            frameworkMode: local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID,
           })
         )
       },

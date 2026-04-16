@@ -3,6 +3,7 @@ import { AgencySwarmHistory } from "@/agency-swarm/history"
 import { mapProviderIDToLiteLLMProvider } from "@/agency-swarm/litellm-provider"
 import { Auth } from "@/auth"
 import { Env } from "@/env"
+import { CODEX_API_BASE_URL, extractAccountId, refreshAccessToken } from "@/plugin/codex"
 import { Provider } from "@/provider/provider"
 import { Session } from "@/session"
 import { MessageV2 } from "@/session/message-v2"
@@ -109,7 +110,12 @@ export namespace SessionAgencySwarm {
     config: Record<string, unknown> | undefined,
   ): Promise<Record<string, unknown> | undefined> {
     const generated = isLoopbackBaseURL(baseURL)
-      ? buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), getEnvForClientConfig())
+      ? await buildAuthClientConfig(
+          await Auth.all(),
+          await listProvidersForEnvCheck(),
+          getEnvForClientConfig(),
+          hasExplicitOpenAIConfig(config),
+        )
       : undefined
     if (!config) return generated
     if (!generated) return config
@@ -122,17 +128,20 @@ export namespace SessionAgencySwarm {
       ...explicit,
     }
 
-    const explicitBaseURL = asString(explicit["base_url"]) ?? asString(explicit["baseURL"])
-    if (explicitBaseURL) {
-      merged["base_url"] = explicitBaseURL
-    }
-    delete merged["baseURL"]
-
     const explicitAPIKey = asString(explicit["api_key"]) ?? asString(explicit["apiKey"])
     if (explicitAPIKey) {
       merged["api_key"] = explicitAPIKey
     }
     delete merged["apiKey"]
+
+    const explicitBaseURL = asString(explicit["base_url"]) ?? asString(explicit["baseURL"])
+    const generatedBaseURL = asString(generated["base_url"])
+    if (explicitBaseURL && (explicitAPIKey || generatedBaseURL !== CODEX_API_BASE_URL)) {
+      merged["base_url"] = explicitBaseURL
+    } else if (generatedBaseURL) {
+      merged["base_url"] = generatedBaseURL
+    }
+    delete merged["baseURL"]
 
     const generatedLiteLLMKeys = asRecord(generated["litellm_keys"])
     const explicitLiteLLMKeys = asRecord(explicit["litellm_keys"]) ?? asRecord(explicit["litellmKeys"])
@@ -144,24 +153,58 @@ export namespace SessionAgencySwarm {
     }
     delete merged["litellmKeys"]
 
+    const generatedHeaders = readStringRecord(generated["default_headers"])
+    const explicitHeaders =
+      readStringRecord(explicit["default_headers"]) ?? readStringRecord(explicit["defaultHeaders"])
+    if (generatedHeaders || explicitHeaders) {
+      merged["default_headers"] = {
+        ...(generatedHeaders ?? {}),
+        ...(explicitHeaders ?? {}),
+      }
+    }
+    delete merged["defaultHeaders"]
+
     return merged
   }
 
-  function buildAuthClientConfig(
+  async function buildAuthClientConfig(
     auths: Record<string, Auth.Info>,
     providers: Record<string, Provider.Info> | undefined,
     env: Record<string, string | undefined>,
-  ): Record<string, unknown> | undefined {
+    skipOpenAI: boolean,
+  ): Promise<Record<string, unknown> | undefined> {
     const litellmKeys: Record<string, string> = {}
     const payload: Record<string, unknown> = {}
 
-    for (const [providerID, auth] of Object.entries(auths)) {
+    for (const [providerID, provider] of Object.entries(providers ?? {})) {
       if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
-      if (auth.type !== "api") continue
-      if (hasEnvCredential(providerID, providers, env)) continue
+      const key = getEnvCredential(provider, env)
+      if (!key) continue
 
       if (providerID === "openai") {
-        payload["api_key"] = auth.key
+        if (!skipOpenAI) payload["api_key"] = key
+        continue
+      }
+
+      const litellmProvider = mapProviderIDToLiteLLMProvider(providerID)
+      if (!litellmProvider) continue
+      litellmKeys[litellmProvider] = key
+    }
+
+    for (const [providerID, auth] of Object.entries(auths)) {
+      if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
+      if (hasEnvCredential(providerID, providers, env)) continue
+
+      if (providerID === "openai" && auth.type === "oauth") {
+        if (skipOpenAI) continue
+        Object.assign(payload, await buildOpenAIOAuthClientConfig(auth))
+        continue
+      }
+
+      if (auth.type !== "api") continue
+
+      if (providerID === "openai") {
+        if (!skipOpenAI) payload["api_key"] = auth.key
         continue
       }
 
@@ -177,6 +220,44 @@ export namespace SessionAgencySwarm {
     return Object.keys(payload).length > 0 ? payload : undefined
   }
 
+  async function buildOpenAIOAuthClientConfig(auth: Auth.Oauth): Promise<Record<string, unknown>> {
+    const current =
+      auth.expires < Date.now()
+        ? await refreshAccessToken(auth.refresh).then(async (tokens) => {
+            const accountID = extractAccountId(tokens) ?? auth.accountId
+            const next = {
+              type: "oauth" as const,
+              refresh: tokens.refresh_token,
+              access: tokens.access_token,
+              expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
+              ...(accountID ? { accountId: accountID } : {}),
+            }
+            await Auth.set("openai", next)
+            return next
+          })
+        : auth
+    const headers: Record<string, string> = {}
+    if (current.accountId) headers["ChatGPT-Account-Id"] = current.accountId
+    return {
+      api_key: current.access,
+      base_url: CODEX_API_BASE_URL,
+      ...(Object.keys(headers).length > 0 ? { default_headers: headers } : {}),
+    }
+  }
+
+  function readStringRecord(value: unknown): Record<string, string> | undefined {
+    const record = asRecord(value)
+    if (!record) return undefined
+    const result = Object.fromEntries(
+      Object.entries(record).flatMap(([key, item]) => (typeof item === "string" ? [[key, item]] : [])),
+    )
+    return Object.keys(result).length > 0 ? result : undefined
+  }
+
+  function hasExplicitOpenAIConfig(config: Record<string, unknown> | undefined) {
+    return !!(asString(config?.["api_key"]) ?? asString(config?.["apiKey"]))
+  }
+
   function hasEnvCredential(
     providerID: string,
     providers: Record<string, Provider.Info> | undefined,
@@ -185,7 +266,17 @@ export namespace SessionAgencySwarm {
     if (!providers) return false
     const provider = providers[providerID]
     if (!provider) return false
-    return provider.env.some((key) => Boolean(env[key]))
+    return !!getEnvCredential(provider, env)
+  }
+
+  function getEnvCredential(provider: Provider.Info, env: Record<string, string | undefined>) {
+    if (provider.env.length === 0) return undefined
+    if (!provider.env.every(isAPIKeyEnvName)) return undefined
+    return provider.env.map((key) => env[key]).find(Boolean)
+  }
+
+  function isAPIKeyEnvName(name: string) {
+    return /(^|_)(API_KEY|API_TOKEN|PAT|TOKEN)$/.test(name)
   }
 
   async function listProvidersForEnvCheck(): Promise<Record<string, Provider.Info> | undefined> {

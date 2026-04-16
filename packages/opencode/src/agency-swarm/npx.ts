@@ -5,8 +5,11 @@ import path from "node:path"
 import { existsSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
+import { AgencySwarmRunSession } from "./run-session"
 import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
 import { Filesystem } from "@/util/filesystem"
+import type { Session } from "@/session"
+import { SessionID } from "@/session/schema"
 
 export const LAUNCHER_ENTRY_ENV = "AGENTSWARM_LAUNCHER"
 export const STARTER_TEMPLATE_REPO = "agency-ai-solutions/agency-starter-template"
@@ -19,6 +22,7 @@ type StarterMode = "github" | "local"
 export interface PreparedNpxLaunch {
   directory: string
   configContent?: string
+  runProjectDirectory?: string
   cleanup?: () => Promise<void>
 }
 
@@ -48,13 +52,82 @@ export function shouldRunNpxOnboarding(input: {
   prompt?: string
   agent?: string
 }) {
-  if (input.env[LAUNCHER_ENTRY_ENV] !== "1" && !isAgentswarmCommand(input.argv ?? process.argv)) return false
+  if (!isLauncher(input)) return false
   if (input.model) return false
   if (input.continue) return false
   if (input.session) return false
   if (input.prompt) return false
   if (input.agent) return false
   return true
+}
+
+export async function resolveNpxAutoProject(input: {
+  directory: string
+  env: NodeJS.ProcessEnv
+  argv?: string[]
+  model?: string
+  continue?: boolean
+  fork?: boolean
+  session?: string
+  prompt?: string
+  agent?: string
+  sessions?: Iterable<Pick<Session.Info, "id" | "directory" | "parentID" | "time">>
+  runSessions?: Iterable<{ sessionID: string; directory: string }>
+}) {
+  if (!isLauncher(input)) return
+  if (input.model && input.model.split("/")[0] !== AgencySwarmAdapter.PROVIDER_ID) return
+
+  if (input.session) {
+    const session = await getResumeSession(input.session, input.sessions)
+    return session ? resolveRunProject(session, input.runSessions) : undefined
+  }
+
+  if (input.continue) {
+    const sessions = input.sessions ? Array.from(input.sessions) : await listResumeSessions(input.directory)
+    const session = sessions
+      .filter((item) => item.directory === input.directory && !item.parentID)
+      .toSorted((a, b) => b.time.updated - a.time.updated)[0]
+    if (session) return resolveRunProject(session, input.runSessions)
+    if (input.fork) return
+    return detectAgencyProject(input.directory)
+  }
+
+  if (input.prompt || input.agent || input.model) {
+    return detectAgencyProject(input.directory)
+  }
+}
+
+async function getResumeSession(
+  sessionID: string,
+  sessions?: Iterable<Pick<Session.Info, "id" | "directory" | "parentID" | "time">>,
+) {
+  if (sessions) {
+    return Array.from(sessions).find((item) => item.id === sessionID)
+  }
+  const { Session } = await import("@/session")
+  return Session.get(SessionID.make(sessionID)).catch(() => undefined)
+}
+
+async function listResumeSessions(directory: string) {
+  const { Session } = await import("@/session")
+  const start = Date.now() - 30 * 24 * 60 * 60 * 1000
+  return Array.from(Session.listGlobal({ directory, roots: true, start, limit: 1 }))
+}
+
+function isLauncher(input: { env: NodeJS.ProcessEnv; argv?: string[] }) {
+  return input.env[LAUNCHER_ENTRY_ENV] === "1" || isAgentswarmCommand(input.argv ?? process.argv)
+}
+
+async function resolveRunProject(
+  session: Pick<Session.Info, "id" | "directory">,
+  runSessions?: Iterable<{ sessionID: string; directory: string }>,
+) {
+  const run = runSessions
+    ? Array.from(runSessions).find((item) => item.sessionID === session.id)
+    : await AgencySwarmRunSession.get(session.id)
+  if (!run) return
+  if (path.resolve(run.directory) !== path.resolve(session.directory)) return
+  return detectAgencyProject(run.directory)
 }
 
 function isAgentswarmCommand(argv: string[]) {
@@ -383,6 +456,7 @@ export async function prepareProjectLaunch(project: AgencyProject): Promise<Prep
   const server = await startProjectServer(project.directory, python)
   return {
     directory: project.directory,
+    runProjectDirectory: project.directory,
     configContent: buildAgencyConfig({
       baseURL: server.baseURL,
       agency: LOCAL_AGENCY_ID,
