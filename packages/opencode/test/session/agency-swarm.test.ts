@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
 import { Auth } from "../../src/auth"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
@@ -22,6 +24,7 @@ describe("session.agency-swarm", () => {
   const originalAuthAll = Auth.all
   const originalEnvAll = Env.all
   const originalProviderList = Provider.list
+  const originalFetch = globalThis.fetch
 
   afterEach(() => {
     AgencySwarmAdapter.discover = originalDiscover
@@ -34,6 +37,7 @@ describe("session.agency-swarm", () => {
     Auth.all = originalAuthAll
     Env.all = originalEnvAll
     Provider.list = originalProviderList
+    globalThis.fetch = originalFetch
   })
 
   const helper = () => {
@@ -315,14 +319,231 @@ describe("session.agency-swarm", () => {
     })
   })
 
-  test("stream does not forward stored auth for providers already covered by env", async () => {
+  test("stream sends stored OpenAI OAuth auth to a real local agency server", async () => {
+    mockHistory()
+    await Auth.set("openai", {
+      type: "oauth",
+      access: "oauth-access",
+      refresh: "oauth-refresh",
+      expires: Date.now() + 60_000,
+      accountId: "acct_123",
+    } as any)
+
+    let body: Record<string, unknown> | undefined
+    const server = createServer(async (request, response) => {
+      if (request.url !== "/builder/get_response_stream") {
+        response.writeHead(404)
+        response.end("not found")
+        return
+      }
+
+      const chunks: Buffer[] = []
+      for await (const chunk of request) {
+        if (Buffer.isBuffer(chunk)) chunks.push(chunk)
+        else chunks.push(Buffer.from(chunk))
+      }
+      body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream",
+      })
+      response.end(
+        [
+          'data: {"data":{"type":"raw_response_event","data":{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"ok"}}}\n\n',
+          "event: end\ndata: [DONE]\n\n",
+        ].join(""),
+      )
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject)
+        resolve()
+      })
+    })
+
+    const address = server.address()
+    if (!address || typeof address === "string") {
+      server.close()
+      throw new Error("Expected local test server address")
+    }
+
+    try {
+      const { input } = helper()
+      input.options.baseURL = `http://127.0.0.1:${(address as AddressInfo).port}`
+      const stream = await SessionAgencySwarm.stream(input)
+      const text: string[] = []
+      for await (const event of stream.fullStream) {
+        if (event.type === "text-delta") text.push(event.text)
+      }
+
+      expect(text).toEqual(["ok"])
+      expect(body?.["client_config"]).toEqual({
+        api_key: "oauth-access",
+        base_url: "https://chatgpt.com/backend-api/codex",
+        default_headers: {
+          "ChatGPT-Account-Id": "acct_123",
+        },
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+      await Auth.remove("openai")
+    }
+  })
+
+  test("stream sends stored Anthropic API auth to a real local agency server", async () => {
+    mockHistory()
+    await Auth.set("anthropic", {
+      type: "api",
+      key: "anthropic-live",
+    } as any)
+
+    let body: Record<string, unknown> | undefined
+    const server = createServer(async (request, response) => {
+      if (request.url !== "/builder/get_response_stream") {
+        response.writeHead(404)
+        response.end("not found")
+        return
+      }
+
+      const chunks: Buffer[] = []
+      for await (const chunk of request) {
+        if (Buffer.isBuffer(chunk)) chunks.push(chunk)
+        else chunks.push(Buffer.from(chunk))
+      }
+      body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream",
+      })
+      response.end(
+        [
+          'data: {"data":{"type":"raw_response_event","data":{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"ok"}}}\n\n',
+          "event: end\ndata: [DONE]\n\n",
+        ].join(""),
+      )
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject)
+        resolve()
+      })
+    })
+
+    const address = server.address()
+    if (!address || typeof address === "string") {
+      server.close()
+      throw new Error("Expected local test server address")
+    }
+
+    try {
+      const { input } = helper()
+      input.options.baseURL = `http://127.0.0.1:${(address as AddressInfo).port}`
+      const stream = await SessionAgencySwarm.stream(input)
+      const text: string[] = []
+      for await (const event of stream.fullStream) {
+        if (event.type === "text-delta") text.push(event.text)
+      }
+
+      expect(text).toEqual(["ok"])
+      expect(body?.["client_config"]).toEqual({
+        litellm_keys: {
+          anthropic: "anthropic-live",
+        },
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+      await Auth.remove("anthropic")
+    }
+  })
+
+  test("stream sends explicit header-based client_config to a real local agency server", async () => {
+    mockHistory()
+    await Auth.set("openai", {
+      type: "oauth",
+      access: "oauth-access",
+      refresh: "oauth-refresh",
+      expires: Date.now() + 60_000,
+      accountId: "acct_123",
+    } as any)
+
+    let body: Record<string, unknown> | undefined
+    const server = createServer(async (request, response) => {
+      if (request.url !== "/builder/get_response_stream") {
+        response.writeHead(404)
+        response.end("not found")
+        return
+      }
+
+      const chunks: Buffer[] = []
+      for await (const chunk of request) {
+        if (Buffer.isBuffer(chunk)) chunks.push(chunk)
+        else chunks.push(Buffer.from(chunk))
+      }
+      body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream",
+      })
+      response.end(
+        [
+          'data: {"data":{"type":"raw_response_event","data":{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"ok"}}}\n\n',
+          "event: end\ndata: [DONE]\n\n",
+        ].join(""),
+      )
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject)
+        resolve()
+      })
+    })
+
+    const address = server.address()
+    if (!address || typeof address === "string") {
+      server.close()
+      throw new Error("Expected local test server address")
+    }
+
+    try {
+      const { input } = helper()
+      input.options.baseURL = `http://127.0.0.1:${(address as AddressInfo).port}`
+      input.options.clientConfig = {
+        base_url: "https://proxy.example.com/v1",
+        default_headers: {
+          Authorization: "Bearer proxy-token",
+        },
+      }
+      const stream = await SessionAgencySwarm.stream(input)
+      const text: string[] = []
+      for await (const event of stream.fullStream) {
+        if (event.type === "text-delta") text.push(event.text)
+      }
+
+      expect(text).toEqual(["ok"])
+      expect(body?.["client_config"]).toEqual({
+        base_url: "https://proxy.example.com/v1",
+        default_headers: {
+          Authorization: "Bearer proxy-token",
+        },
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+      await Auth.remove("openai")
+    }
+  })
+
+  test("stream prefers env auth over stored auth for providers already covered by env", async () => {
     mockHistory()
     Auth.all = (async () => ({
       openai: { type: "api", key: "stored-openai" } as any,
       anthropic: { type: "api", key: "stored-anthropic" } as any,
+      azure: { type: "api", key: "stored-azure" } as any,
     })) as typeof Auth.all
     Env.all = (() => ({
       OPENAI_API_KEY: "env-openai",
+      AZURE_RESOURCE_NAME: "azure-resource",
+      AZURE_API_KEY: "env-azure",
+      GOOGLE_GENERATIVE_AI_API_KEY: "env-google",
     })) as typeof Env.all
     Provider.list = (async () => ({
       openai: {
@@ -338,6 +559,22 @@ describe("session.agency-swarm", () => {
         name: "Anthropic",
         source: "api",
         env: ["ANTHROPIC_API_KEY"],
+        options: {},
+        models: {},
+      },
+      azure: {
+        id: "azure",
+        name: "Azure",
+        source: "api",
+        env: ["AZURE_RESOURCE_NAME", "AZURE_API_KEY"],
+        options: {},
+        models: {},
+      },
+      google: {
+        id: "google",
+        name: "Google",
+        source: "api",
+        env: ["GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY"],
         options: {},
         models: {},
       },
@@ -364,8 +601,182 @@ describe("session.agency-swarm", () => {
     }
 
     expect(captured).toEqual({
+      api_key: "env-openai",
       litellm_keys: {
         anthropic: "stored-anthropic",
+        azure: "stored-azure",
+        gemini: "env-google",
+      },
+    })
+  })
+
+  test("stream does not refresh stored OpenAI OAuth when explicit OpenAI client_config exists", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      openai: {
+        type: "oauth",
+        access: "expired-access",
+        refresh: "expired-refresh",
+        expires: 1,
+      } as any,
+    })) as typeof Auth.all
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.clientConfig = {
+      api_key: "manual-openai",
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "manual-openai",
+    })
+  })
+
+  test("stream keeps explicit base_url when stored OpenAI OAuth exists", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      openai: {
+        type: "oauth",
+        access: "oauth-access",
+        refresh: "oauth-refresh",
+        expires: Date.now() + 60_000,
+      } as any,
+    })) as typeof Auth.all
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.clientConfig = {
+      base_url: "https://proxy.example.com/v1",
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      base_url: "https://proxy.example.com/v1",
+    })
+  })
+
+  test("stream preserves stored OpenAI OAuth when explicit base_url still targets Codex", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      openai: {
+        type: "oauth",
+        access: "oauth-access",
+        refresh: "oauth-refresh",
+        expires: Date.now() + 60_000,
+        accountId: "acct_123",
+      } as any,
+    })) as typeof Auth.all
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.clientConfig = {
+      base_url: "https://chatgpt.com/backend-api/codex/",
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "oauth-access",
+      base_url: "https://chatgpt.com/backend-api/codex/",
+      default_headers: {
+        "ChatGPT-Account-Id": "acct_123",
+      },
+    })
+  })
+
+  test("stream skips failing stored OpenAI OAuth refresh when other local credentials exist", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      openai: {
+        type: "oauth",
+        access: "expired-access",
+        refresh: "expired-refresh",
+        expires: 1,
+      } as any,
+      anthropic: { type: "api", key: "stored-anthropic" } as any,
+    })) as typeof Auth.all
+    globalThis.fetch = (async () => new Response("{}", { status: 401 })) as unknown as typeof globalThis.fetch
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      litellm_keys: {
+        anthropic: "stored-anthropic",
+      },
+    })
+  })
+
+  test("stream preserves explicit header-based OpenAI auth without merging stored OAuth", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      openai: {
+        type: "oauth",
+        access: "oauth-access",
+        refresh: "oauth-refresh",
+        expires: Date.now() + 60_000,
+      } as any,
+    })) as typeof Auth.all
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.clientConfig = {
+      base_url: "https://proxy.example.com/v1",
+      default_headers: {
+        Authorization: "Bearer proxy-token",
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      base_url: "https://proxy.example.com/v1",
+      default_headers: {
+        Authorization: "Bearer proxy-token",
       },
     })
   })
@@ -808,6 +1219,139 @@ describe("session.agency-swarm", () => {
         timestamp: 4,
       },
     ])
+  })
+
+  test("compactHistory falls back when no compaction summary exists", () => {
+    const msgs = [
+      {
+        info: {
+          id: "user_1",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "text", text: "first question", ignored: false }],
+      },
+      {
+        info: {
+          id: "assistant_1",
+          role: "assistant",
+          parentID: "user_1",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Reviewer",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "first answer" }],
+      },
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [{ type: "text", text: "current prompt", ignored: false }],
+      },
+    ] as any
+
+    expect(SessionAgencySwarm.compactHistory({ msgs, currentID: "current" })).toBeUndefined()
+  })
+
+  test("compactHistory falls back when visible history mixes providers", () => {
+    const msgs = [
+      {
+        info: {
+          id: "user_1",
+          role: "user",
+          agent: "build",
+          model: { providerID: "openai", modelID: "gpt-5" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "text", text: "first question", ignored: false }],
+      },
+      {
+        info: {
+          id: "assistant_1",
+          role: "assistant",
+          parentID: "user_1",
+          providerID: "openai",
+          modelID: "gpt-5",
+          mode: "Default",
+          agent: "Assistant",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "first answer" }],
+      },
+      {
+        info: {
+          id: "user_2",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [{ type: "text", text: "agency prompt", ignored: false }],
+      },
+      {
+        info: {
+          id: "assistant_2",
+          role: "assistant",
+          parentID: "user_2",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Reviewer",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 4 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "agency answer" }],
+      },
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 5 },
+        },
+        parts: [{ type: "text", text: "current prompt", ignored: false }],
+      },
+    ] as any
+
+    expect(SessionAgencySwarm.compactHistory({ msgs, currentID: "current" })).toBeUndefined()
   })
 
   test("stream resolves configured recipient alias to live agent id from metadata", async () => {

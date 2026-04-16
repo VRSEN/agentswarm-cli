@@ -184,6 +184,9 @@ describe("agency-swarm.adapter", () => {
       clientConfig: {
         baseURL: "https://proxy.example.com/v1",
         apiKey: "secret",
+        defaultHeaders: {
+          "ChatGPT-Account-Id": "acct_123",
+        },
         litellmKeys: {
           anthropic: "ant-secret",
         },
@@ -208,6 +211,9 @@ describe("agency-swarm.adapter", () => {
       client_config: {
         base_url: "https://proxy.example.com/v1",
         api_key: "secret",
+        default_headers: {
+          "ChatGPT-Account-Id": "acct_123",
+        },
         litellm_keys: {
           anthropic: "ant-secret",
         },

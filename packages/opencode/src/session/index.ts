@@ -33,6 +33,7 @@ import { ModelID, ProviderID } from "@/provider/schema"
 import { Permission } from "@/permission"
 import { Global } from "@/global"
 import { AgencyBrand } from "@/agency-swarm/brand"
+import { AgencySwarmRunSession } from "@/agency-swarm/run-session"
 import type { LanguageModelV2Usage } from "@ai-sdk/provider"
 import { Effect, Layer, Scope, ServiceMap } from "effect"
 import { makeRuntime } from "@/effect/run-service"
@@ -403,6 +404,10 @@ export namespace Session {
         log.info("created", result)
 
         yield* Effect.sync(() => SyncEvent.run(Event.Created, { sessionID: result.id, info: result }))
+        const runProject = process.env[AgencySwarmRunSession.LOCAL_PROJECT_ENV]
+        if (runProject && path.resolve(runProject) === path.resolve(result.directory)) {
+          yield* Effect.promise(() => AgencySwarmRunSession.mark({ sessionID: result.id, directory: result.directory }))
+        }
 
         const cfg = yield* config.get()
         if (!result.parentID && (Flag.OPENCODE_AUTO_SHARE || cfg.share === "auto")) {

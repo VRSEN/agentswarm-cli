@@ -61,7 +61,13 @@ import { createTuiApi, TuiPluginRuntime, type RouteMap } from "./plugin"
 import { FormatError, FormatUnknownError } from "@/cli/error"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencyProduct } from "@/agency-swarm/product"
-import { shouldOpenAgencyConnectDialog, shouldOpenStartupAuthDialog } from "./session-error"
+import {
+  describeAgencyAuthFailure,
+  isAgencySwarmFrameworkMode,
+  shouldOpenAgencyAuthDialog,
+  shouldOpenAgencyConnectDialog,
+  shouldOpenStartupAuthDialog,
+} from "./session-error"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -439,12 +445,15 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   createEffect(
     on(
       () => {
-        const selected = args.model ? Provider.parseModel(args.model).providerID : undefined
         return (
           sync.status === "complete" &&
           shouldOpenStartupAuthDialog({
             providers: sync.data.provider,
-            frameworkMode: selected === AgencySwarmAdapter.PROVIDER_ID,
+            providerAuth: sync.data.provider_auth,
+            frameworkMode: isAgencySwarmFrameworkMode({
+              currentProviderID: local.model.current()?.providerID,
+              configuredModel: sync.data.config.model,
+            }),
           })
         )
       },
@@ -456,6 +465,12 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   )
 
   const connected = useConnected()
+  const frameworkMode = createMemo(() =>
+    isAgencySwarmFrameworkMode({
+      currentProviderID: local.model.current()?.providerID,
+      configuredModel: sync.data.config.model,
+    }),
+  )
   command.register(() => [
     {
       title: "Switch session",
@@ -517,6 +532,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       keybind: "model_list",
       suggested: true,
       category: "Agent",
+      enabled: !frameworkMode(),
+      hidden: frameworkMode(),
       slash: {
         name: "models",
       },
@@ -602,6 +619,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       value: "variant.cycle",
       keybind: "variant_cycle",
       category: "Agent",
+      enabled: !frameworkMode(),
+      hidden: frameworkMode(),
       onSelect: () => {
         local.model.variant.cycle()
       },
@@ -611,7 +630,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       value: "variant.list",
       keybind: "variant_list",
       category: "Agent",
-      hidden: local.model.variant.list().length === 0,
+      enabled: !frameworkMode(),
+      hidden: frameworkMode() || local.model.variant.list().length === 0,
       slash: {
         name: "variants",
       },
@@ -832,8 +852,27 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     const error = evt.properties.error
     if (error && typeof error === "object" && error.name === "MessageAbortedError") return
     const message = errorMessage(error)
-    if (shouldOpenAgencyConnectDialog({ providerID: local.model.current()?.providerID, message })) {
+    if (
+      shouldOpenAgencyConnectDialog({
+        providerID: frameworkMode() ? AgencySwarmAdapter.PROVIDER_ID : local.model.current()?.providerID,
+        message,
+      })
+    ) {
       dialog.replace(() => <DialogAgencySwarmConnect />)
+      return
+    }
+    if (
+      shouldOpenAgencyAuthDialog({
+        providerID: frameworkMode() ? AgencySwarmAdapter.PROVIDER_ID : local.model.current()?.providerID,
+        message,
+      })
+    ) {
+      toast.show({
+        variant: "error",
+        message: describeAgencyAuthFailure(message),
+        duration: 5000,
+      })
+      dialog.replace(() => <DialogAuth />)
       return
     }
 
