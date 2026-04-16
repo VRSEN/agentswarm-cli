@@ -159,6 +159,10 @@ const [store, setStore] = createStore<State>({
   ready: false,
 })
 
+export function defaultThemeName(input?: { termProgram?: string }) {
+  return input?.termProgram === "Apple_Terminal" ? "system" : "opencode"
+}
+
 export function allThemes() {
   return store.themes
 }
@@ -317,8 +321,12 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         const mode = pick(kv.get("theme_mode", props.mode))
         draft.mode = lock ?? mode ?? props.mode
         draft.lock = lock
-        const active = config.theme ?? kv.get("theme", "opencode")
-        draft.active = typeof active === "string" ? active : "opencode"
+        const savedTheme = kv.get("theme")
+        const fallbackTheme = defaultThemeName({
+          termProgram: process.env.TERM_PROGRAM,
+        })
+        const active = config.theme ?? (typeof savedTheme === "string" ? savedTheme : fallbackTheme)
+        draft.active = typeof active === "string" ? active : fallbackTheme
         draft.ready = false
       }),
     )
