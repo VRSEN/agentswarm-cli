@@ -24,11 +24,16 @@ function hasExplicitAgencyClientConfig(provider: Provider | undefined) {
   return hasClientConfigCredential(raw as Record<string, unknown>)
 }
 
+export function isAgencySwarmFrameworkMode(input: { currentProviderID?: string; configuredModel?: string }) {
+  if (input.currentProviderID === AgencySwarmAdapter.PROVIDER_ID) return true
+  return input.configuredModel?.split("/")[0] === AgencySwarmAdapter.PROVIDER_ID
+}
+
 export function shouldOpenStartupAuthDialog(input: { providers: Provider[]; frameworkMode: boolean }) {
   if (!input.frameworkMode) return !hasUsableProvider(input.providers)
 
   const agencyProvider = input.providers.find((provider) => provider.id === AgencySwarmAdapter.PROVIDER_ID)
-  if (hasExplicitAgencyClientConfig(agencyProvider)) return false
+  if (agencyProvider && (hasCredential(agencyProvider) || hasExplicitAgencyClientConfig(agencyProvider))) return false
 
   return !hasUsableProvider(
     input.providers.filter((provider) => provider.id !== AgencySwarmAdapter.PROVIDER_ID),

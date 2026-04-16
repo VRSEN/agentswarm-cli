@@ -61,7 +61,7 @@ import { createTuiApi, TuiPluginRuntime, type RouteMap } from "./plugin"
 import { FormatError, FormatUnknownError } from "@/cli/error"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencyProduct } from "@/agency-swarm/product"
-import { shouldOpenAgencyConnectDialog, shouldOpenStartupAuthDialog } from "./session-error"
+import { isAgencySwarmFrameworkMode, shouldOpenAgencyConnectDialog, shouldOpenStartupAuthDialog } from "./session-error"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -443,7 +443,10 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
           sync.status === "complete" &&
           shouldOpenStartupAuthDialog({
             providers: sync.data.provider,
-            frameworkMode: local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID,
+            frameworkMode: isAgencySwarmFrameworkMode({
+              currentProviderID: local.model.current()?.providerID,
+              configuredModel: sync.data.config.model,
+            }),
           })
         )
       },
@@ -455,7 +458,12 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   )
 
   const connected = useConnected()
-  const frameworkMode = createMemo(() => local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID)
+  const frameworkMode = createMemo(() =>
+    isAgencySwarmFrameworkMode({
+      currentProviderID: local.model.current()?.providerID,
+      configuredModel: sync.data.config.model,
+    }),
+  )
   command.register(() => [
     {
       title: "Switch session",
@@ -837,7 +845,12 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     const error = evt.properties.error
     if (error && typeof error === "object" && error.name === "MessageAbortedError") return
     const message = errorMessage(error)
-    if (shouldOpenAgencyConnectDialog({ providerID: local.model.current()?.providerID, message })) {
+    if (
+      shouldOpenAgencyConnectDialog({
+        providerID: frameworkMode() ? AgencySwarmAdapter.PROVIDER_ID : local.model.current()?.providerID,
+        message,
+      })
+    ) {
       dialog.replace(() => <DialogAgencySwarmConnect />)
       return
     }

@@ -8,6 +8,7 @@ import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
 import { useToast } from "@tui/ui/toast"
 import { createMemo, createResource } from "solid-js"
 import { DialogAgencySwarmConnect } from "./dialog-provider"
+import { isAgencySwarmFrameworkMode } from "../session-error"
 
 type AgentOptionValue =
   | {
@@ -35,7 +36,12 @@ export function DialogAgent() {
   const toast = useToast()
 
   const currentModel = createMemo(() => local.model.current())
-  const agencySwarmEnabled = createMemo(() => currentModel()?.providerID === AgencySwarmAdapter.PROVIDER_ID)
+  const agencySwarmEnabled = createMemo(() =>
+    isAgencySwarmFrameworkMode({
+      currentProviderID: currentModel()?.providerID,
+      configuredModel: sync.data.config.model,
+    }),
+  )
 
   const providerOptions = createMemo(() => {
     const provider = sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID]

@@ -1709,9 +1709,7 @@ export namespace SessionAgencySwarm {
       break
     }
 
-    if (start < 0) return
-
-    return input.msgs.slice(start).flatMap((msg) => {
+    return input.msgs.slice(start < 0 ? 0 : start).flatMap((msg) => {
       if (msg.info.id === input.currentID) return []
 
       if (msg.info.role === "user") {

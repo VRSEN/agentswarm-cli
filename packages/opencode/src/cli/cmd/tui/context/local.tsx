@@ -4,6 +4,7 @@ import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
 import { uniqueBy } from "remeda"
 import path from "path"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { Global } from "@/global"
 import { iife } from "@/util/iife"
 import { createSimpleContext } from "./helper"
@@ -14,16 +15,49 @@ import { useSDK } from "./sdk"
 import { RGBA } from "@opentui/core"
 import { Filesystem } from "@/util/filesystem"
 
+export function isUsableModel(input: {
+  model: {
+    providerID: string
+    modelID: string
+  }
+  providers: {
+    id: string
+    models: Record<string, unknown>
+  }[]
+  argModel?: string
+  configModel?: string
+  configuredProviders?: Record<string, unknown>
+}) {
+  const provider = input.providers.find((x) => x.id === input.model.providerID)
+  if (provider?.models[input.model.modelID]) return true
+  if (input.model.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
+  if (input.model.modelID !== AgencySwarmAdapter.DEFAULT_MODEL_ID) return false
+  const selectedAgencySwarmModel = [input.argModel, input.configModel].some(
+    (value) => value === `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
+  )
+  if (!selectedAgencySwarmModel) return false
+  return !!input.configuredProviders?.[AgencySwarmAdapter.PROVIDER_ID]
+}
+
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
   init: () => {
     const sync = useSync()
     const sdk = useSDK()
     const toast = useToast()
+    const args = useArgs()
 
     function isModelValid(model: { providerID: string; modelID: string }) {
-      const provider = sync.data.provider.find((x) => x.id === model.providerID)
-      return !!provider?.models[model.modelID]
+      return isUsableModel({
+        model,
+        providers: sync.data.provider.map((item) => ({
+          id: item.id,
+          models: item.models,
+        })),
+        argModel: args.model,
+        configModel: sync.data.config.model,
+        configuredProviders: sync.data.config.provider,
+      })
     }
 
     function getFirstValidModel(...modelFns: (() => { providerID: string; modelID: string } | undefined)[]) {
@@ -150,7 +184,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (state.pending) save()
         })
 
-      const args = useArgs()
       const fallbackModel = createMemo(() => {
         if (args.model) {
           const { providerID, modelID } = Provider.parseModel(args.model)

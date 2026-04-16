@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   hasUsableProvider,
+  isAgencySwarmFrameworkMode,
   shouldOpenAgencyConnectDialog,
   shouldOpenStartupAuthDialog,
 } from "../../../src/cli/cmd/tui/session-error"
@@ -127,6 +128,15 @@ describe("agency session errors", () => {
     ).toBe(true)
   })
 
+  test("framework mode stays enabled when the configured model is agency-swarm", () => {
+    expect(
+      isAgencySwarmFrameworkMode({
+        currentProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+      }),
+    ).toBe(true)
+  })
+
   test("framework mode skips auth when explicit client_config exists", () => {
     expect(
       shouldOpenStartupAuthDialog({
@@ -142,6 +152,25 @@ describe("agency session errors", () => {
                 api_key: "manual-openai",
               },
             },
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode skips auth when agency-swarm already has a token", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            key: "server-token",
+            options: {},
             models: {},
           },
         ],

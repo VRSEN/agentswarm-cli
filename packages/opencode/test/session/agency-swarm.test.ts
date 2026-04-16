@@ -1085,6 +1085,73 @@ describe("session.agency-swarm", () => {
     ])
   })
 
+  test("compactHistory rebuilds visible history when no compaction summary exists", () => {
+    const msgs = [
+      {
+        info: {
+          id: "user_1",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "text", text: "first question", ignored: false }],
+      },
+      {
+        info: {
+          id: "assistant_1",
+          role: "assistant",
+          parentID: "user_1",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Reviewer",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "first answer" }],
+      },
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [{ type: "text", text: "current prompt", ignored: false }],
+      },
+    ] as any
+
+    expect(SessionAgencySwarm.compactHistory({ msgs, currentID: "current" })).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "first question" }],
+        agent: "build",
+        callerAgent: null,
+        timestamp: 1,
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "first answer" }],
+        agent: "Reviewer",
+        callerAgent: null,
+        timestamp: 2,
+      },
+    ])
+  })
+
   test("stream resolves configured recipient alias to live agent id from metadata", async () => {
     mockHistory()
     let sentRecipient: string | undefined

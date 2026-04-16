@@ -17,6 +17,7 @@ import { useToast } from "../ui/toast"
 import { CONSOLE_MANAGED_ICON, isConsoleManagedProvider } from "@tui/util/provider-origin"
 import { hasStoredProviderCredential } from "@tui/util/provider-auth"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { isAgencySwarmFrameworkMode } from "../session-error"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
   openai: 0,
@@ -597,6 +598,12 @@ function AutoMethod(props: AutoMethodProps) {
   const sync = useSync()
   const local = useLocal()
   const toast = useToast()
+  const frameworkMode = createMemo(() =>
+    isAgencySwarmFrameworkMode({
+      currentProviderID: local.model.current()?.providerID,
+      configuredModel: sync.data.config.model,
+    }),
+  )
 
   useKeyboard((evt) => {
     if (evt.name === "c" && !evt.ctrl && !evt.meta) {
@@ -618,7 +625,7 @@ function AutoMethod(props: AutoMethodProps) {
     }
     await sdk.client.instance.dispose()
     await sync.bootstrap()
-    if (local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID) {
+    if (frameworkMode()) {
       dialog.clear()
       return
     }
@@ -660,6 +667,12 @@ function CodeMethod(props: CodeMethodProps) {
   const dialog = useDialog()
   const local = useLocal()
   const [error, setError] = createSignal(false)
+  const frameworkMode = createMemo(() =>
+    isAgencySwarmFrameworkMode({
+      currentProviderID: local.model.current()?.providerID,
+      configuredModel: sync.data.config.model,
+    }),
+  )
 
   return (
     <DialogPrompt
@@ -674,7 +687,7 @@ function CodeMethod(props: CodeMethodProps) {
         if (!error) {
           await sdk.client.instance.dispose()
           await sync.bootstrap()
-          if (local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID) {
+          if (frameworkMode()) {
             dialog.clear()
             return
           }
@@ -707,6 +720,12 @@ function ApiMethod(props: ApiMethodProps) {
   const sync = useSync()
   const local = useLocal()
   const { theme } = useTheme()
+  const frameworkMode = createMemo(() =>
+    isAgencySwarmFrameworkMode({
+      currentProviderID: local.model.current()?.providerID,
+      configuredModel: sync.data.config.model,
+    }),
+  )
 
   return (
     <DialogPrompt
@@ -750,7 +769,7 @@ function ApiMethod(props: ApiMethodProps) {
         })
         await sdk.client.instance.dispose()
         await sync.bootstrap()
-        if (local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID) {
+        if (frameworkMode()) {
           dialog.clear()
           return
         }
