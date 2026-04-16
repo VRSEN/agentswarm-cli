@@ -877,14 +877,6 @@ export function Session() {
           )
 
           if (options.openWithoutSaving) {
-            if (!Editor.isConfigured()) {
-              toast.show({
-                message: "Set VISUAL or EDITOR to open the transcript in your editor",
-                variant: "warning",
-              })
-              dialog.clear()
-              return
-            }
             // Just open in editor without saving
             await Editor.open({ value: transcript, renderer })
           } else {
@@ -895,7 +887,7 @@ export function Session() {
             await Filesystem.write(filepath, transcript)
 
             // Open with EDITOR if available
-            const result = Editor.isConfigured() ? await Editor.open({ value: transcript, renderer }) : undefined
+            const result = await Editor.open({ value: transcript, renderer })
             if (result !== undefined) {
               await Filesystem.write(filepath, result)
             }

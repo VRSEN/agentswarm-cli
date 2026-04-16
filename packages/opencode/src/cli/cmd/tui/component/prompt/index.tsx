@@ -305,13 +305,6 @@ export function Prompt(props: PromptProps) {
         },
         onSelect: async (dialog) => {
           dialog.clear()
-          if (!Editor.isConfigured()) {
-            toast.show({
-              message: "Set VISUAL or EDITOR to use the external editor",
-              variant: "warning",
-            })
-            return
-          }
 
           // replace summarized text parts with the actual text
           const text = store.prompt.parts

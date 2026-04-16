@@ -7,10 +7,6 @@ import { Filesystem } from "@/util/filesystem"
 import { Process } from "@/util/process"
 
 export namespace Editor {
-  export function isConfigured() {
-    return Boolean(process.env["VISUAL"] || process.env["EDITOR"])
-  }
-
   export async function open(opts: { value: string; renderer: CliRenderer }): Promise<string | undefined> {
     const editor = process.env["VISUAL"] || process.env["EDITOR"]
     if (!editor) return
