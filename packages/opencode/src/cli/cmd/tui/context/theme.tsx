@@ -101,6 +101,10 @@ export function defaultThemeName(input?: { termProgram?: string; background?: st
     : "opencode"
 }
 
+export function canSelectBuiltInThemeName(name: string, input?: { hasSystemTheme?: boolean }) {
+  return name === fixed || (name === "system" && input?.hasSystemTheme === true)
+}
+
 export function allThemes() {
   return store.themes
 }
@@ -364,7 +368,11 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         return
       },
       set(theme: string) {
-        return theme === "opencode"
+        if (!canSelectBuiltInThemeName(theme, { hasSystemTheme: systemTheme !== undefined })) {
+          return false
+        }
+        setStore("active", theme)
+        return true
       },
       get ready() {
         return store.ready

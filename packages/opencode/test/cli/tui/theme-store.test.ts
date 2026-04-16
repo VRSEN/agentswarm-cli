@@ -1,8 +1,15 @@
 import { expect, test } from "bun:test"
 
-const { DEFAULT_THEMES, allThemes, addTheme, defaultThemeName, hasTheme, resolveTheme, upsertTheme } = await import(
-  "../../../src/cli/cmd/tui/context/theme"
-)
+const {
+  DEFAULT_THEMES,
+  allThemes,
+  addTheme,
+  canSelectBuiltInThemeName,
+  defaultThemeName,
+  hasTheme,
+  resolveTheme,
+  upsertTheme,
+} = await import("../../../src/cli/cmd/tui/context/theme")
 
 test("addTheme writes into module theme store", () => {
   const name = `plugin-theme-${Date.now()}`
@@ -43,6 +50,13 @@ test("defaultThemeName only prefers the system palette for dark Apple Terminal t
   expect(defaultThemeName({ termProgram: "Apple_Terminal", background: "#101010" })).toBe("system")
   expect(defaultThemeName({ termProgram: "Apple_Terminal", background: "#f5f5f5" })).toBe("opencode")
   expect(defaultThemeName({ termProgram: "iTerm.app" })).toBe("opencode")
+})
+
+test("built-in theme selection only allows opencode plus generated system", () => {
+  expect(canSelectBuiltInThemeName("opencode")).toBe(true)
+  expect(canSelectBuiltInThemeName("system")).toBe(false)
+  expect(canSelectBuiltInThemeName("system", { hasSystemTheme: true })).toBe(true)
+  expect(canSelectBuiltInThemeName("solarized", { hasSystemTheme: true })).toBe(false)
 })
 
 test("resolveTheme always uses the dark variant", () => {
