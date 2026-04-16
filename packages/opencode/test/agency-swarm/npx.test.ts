@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
+import * as prompts from "@clack/prompts"
 import {
   buildAgencyConfig,
   buildPythonEnv,
   detectAgencyProject,
   formatProjectLabel,
   LAUNCHER_ENTRY_ENV,
+  prepareProjectLaunch,
   resolveNpxAutoProject,
   shouldRunNpxOnboarding,
   validateStarterName,
@@ -92,6 +94,62 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(env.PYTHONPATH).toBe(`/tmp/project${path.delimiter}/existing/path`)
+  })
+
+  test("prepareProjectLaunch installs LiteLLM extras when no dependency manifest exists", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+    const spawnSpy = spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (cmd.includes("-c")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "/usr/bin/python3.12\n3.12.7\n",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("venv")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("pip")) {
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: "fallback install failed",
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    await expect(
+      prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      }),
+    ).rejects.toThrow("fallback install failed")
+
+    const installCommand = spawnSpy.mock.calls
+      .map(([options]) => options?.cmd as string[] | undefined)
+      .find((cmd) => cmd?.includes("pip"))
+
+    expect(installCommand).toEqual([
+      path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin", process.platform === "win32" ? "python.exe" : "python"),
+      "-m",
+      "pip",
+      "install",
+      "agency-swarm[fastapi,litellm]>=1.8.1",
+    ])
   })
 
   test("detectAgencyProject requires agency.py with create_agency", async () => {
