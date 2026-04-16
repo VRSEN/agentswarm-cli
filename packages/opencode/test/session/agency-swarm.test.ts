@@ -1155,7 +1155,7 @@ describe("session.agency-swarm", () => {
     ])
   })
 
-  test("compactHistory rebuilds visible history when no compaction summary exists", () => {
+  test("compactHistory falls back when no compaction summary exists", () => {
     const msgs = [
       {
         info: {
@@ -1202,24 +1202,7 @@ describe("session.agency-swarm", () => {
       },
     ] as any
 
-    expect(SessionAgencySwarm.compactHistory({ msgs, currentID: "current" })).toEqual([
-      {
-        type: "message",
-        role: "user",
-        content: [{ type: "input_text", text: "first question" }],
-        agent: "build",
-        callerAgent: null,
-        timestamp: 1,
-      },
-      {
-        type: "message",
-        role: "assistant",
-        content: [{ type: "output_text", text: "first answer" }],
-        agent: "Reviewer",
-        callerAgent: null,
-        timestamp: 2,
-      },
-    ])
+    expect(SessionAgencySwarm.compactHistory({ msgs, currentID: "current" })).toBeUndefined()
   })
 
   test("compactHistory falls back when visible history mixes providers", () => {

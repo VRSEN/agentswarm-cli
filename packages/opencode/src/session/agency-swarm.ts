@@ -1731,6 +1731,7 @@ export namespace SessionAgencySwarm {
       break
     }
 
+    if (start < 0) return
     const slice = input.msgs.slice(start < 0 ? 0 : start)
     if (slice.some((msg) => msg.info.id !== input.currentID && !isAgencySwarmMessage(msg))) return
 
