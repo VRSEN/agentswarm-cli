@@ -3,7 +3,6 @@ import { expect, test } from "bun:test"
 import type { TerminalColors } from "@opentui/core"
 import { testRender, useRenderer } from "@opentui/solid"
 import { createEffect, onMount } from "solid-js"
-import { ThemeProvider, DEFAULT_THEMES, useTheme } from "../../../src/cli/cmd/tui/context/theme"
 import { Filesystem } from "../../../src/util/filesystem"
 import { Glob } from "../../../src/util/glob"
 
@@ -11,7 +10,12 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function loadThemeModule() {
+  return import(`../../../src/cli/cmd/tui/context/theme.tsx?test=${Date.now()}-${Math.random()}`)
+}
+
 test("ThemeProvider mounts after palette resolution but before theme.ready flips", async () => {
+  const { ThemeProvider, DEFAULT_THEMES, useTheme } = await loadThemeModule()
   const name = `delayed-theme-${Date.now()}`
   const customTheme = structuredClone(DEFAULT_THEMES.opencode)
   customTheme.theme.primary = "#010203"
@@ -78,6 +82,7 @@ test("ThemeProvider mounts after palette resolution but before theme.ready flips
 })
 
 test("ThemeProvider mounts on Apple Terminal before palette paint completes", async () => {
+  const { ThemeProvider, useTheme } = await loadThemeModule()
   const originalTermProgram = process.env.TERM_PROGRAM
   const originalUp = Filesystem.up
   const originalScan = Glob.scan
@@ -149,6 +154,7 @@ test("ThemeProvider mounts on Apple Terminal before palette paint completes", as
 })
 
 test("ThemeProvider blocks system theme selection on light Apple Terminal palettes", async () => {
+  const { ThemeProvider, useTheme } = await loadThemeModule()
   const originalTermProgram = process.env.TERM_PROGRAM
   const originalUp = Filesystem.up
   const originalScan = Glob.scan
