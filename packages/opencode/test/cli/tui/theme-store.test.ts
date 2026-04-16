@@ -70,12 +70,13 @@ test("built-in opencode theme keeps the Agent Swarm dark palette", () => {
   expect(DEFAULT_THEMES.opencode.defs?.darkAccent).toBe("#e8d382")
 })
 
-test("reserved theme names cannot be replaced", () => {
+test("system can be added while the built-in opencode theme stays protected", () => {
   const item = structuredClone(DEFAULT_THEMES.opencode)
   item.theme.primary = "#010203"
 
-  expect(addTheme("system", item)).toBe(false)
-  expect(upsertTheme("system", item)).toBe(false)
+  expect(addTheme(`system-${Date.now()}`, item)).toBe(true)
+  expect(addTheme("system", item)).toBe(true)
+  expect(allThemes().system).toBeDefined()
   expect(upsertTheme("opencode", item)).toBe(false)
   expect(resolveTheme(allThemes().opencode).primary.toString()).toBe(
     resolveTheme(DEFAULT_THEMES.opencode).primary.toString(),
