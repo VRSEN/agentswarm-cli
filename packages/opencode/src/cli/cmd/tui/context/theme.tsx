@@ -344,9 +344,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
             customThemes = custom
             syncThemes()
           })
-          .catch(() => {
-            setStore("active", "opencode")
-          }),
+          .catch(() => {}),
       ]).finally(() => {
         setStore("ready", true)
       })
