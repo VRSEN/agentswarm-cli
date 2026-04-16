@@ -388,7 +388,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         return store.ready
       },
       get providerReady() {
-        return process.env.TERM_PROGRAM !== "Apple_Terminal" || store.paintReady
+        return true
       },
     }
   },
