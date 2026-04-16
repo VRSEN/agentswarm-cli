@@ -498,7 +498,7 @@ describe("session.agency-swarm", () => {
     })
   })
 
-  test("stream keeps generated OpenAI OAuth bound to Codex base URL", async () => {
+  test("stream keeps explicit base_url when stored OpenAI OAuth exists", async () => {
     mockHistory()
     Auth.all = (async () => ({
       openai: {
@@ -527,7 +527,7 @@ describe("session.agency-swarm", () => {
 
     expect(captured).toEqual({
       api_key: "oauth-access",
-      base_url: "https://chatgpt.com/backend-api/codex",
+      base_url: "https://proxy.example.com/v1",
     })
   })
 

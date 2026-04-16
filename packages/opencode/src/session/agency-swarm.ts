@@ -136,7 +136,7 @@ export namespace SessionAgencySwarm {
 
     const explicitBaseURL = asString(explicit["base_url"]) ?? asString(explicit["baseURL"])
     const generatedBaseURL = asString(generated["base_url"])
-    if (explicitBaseURL && (explicitAPIKey || generatedBaseURL !== CODEX_API_BASE_URL)) {
+    if (explicitBaseURL) {
       merged["base_url"] = explicitBaseURL
     } else if (generatedBaseURL) {
       merged["base_url"] = generatedBaseURL
