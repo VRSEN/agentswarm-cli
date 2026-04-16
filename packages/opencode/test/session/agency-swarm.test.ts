@@ -388,6 +388,82 @@ describe("session.agency-swarm", () => {
     }
   })
 
+  test("stream sends explicit header-based client_config to a real local agency server", async () => {
+    mockHistory()
+    await Auth.set("openai", {
+      type: "oauth",
+      access: "oauth-access",
+      refresh: "oauth-refresh",
+      expires: Date.now() + 60_000,
+      accountId: "acct_123",
+    } as any)
+
+    let body: Record<string, unknown> | undefined
+    const server = createServer(async (request, response) => {
+      if (request.url !== "/builder/get_response_stream") {
+        response.writeHead(404)
+        response.end("not found")
+        return
+      }
+
+      const chunks: Buffer[] = []
+      for await (const chunk of request) {
+        if (Buffer.isBuffer(chunk)) chunks.push(chunk)
+        else chunks.push(Buffer.from(chunk))
+      }
+      body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream",
+      })
+      response.end(
+        [
+          'data: {"data":{"type":"raw_response_event","data":{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"ok"}}}\n\n',
+          "event: end\ndata: [DONE]\n\n",
+        ].join(""),
+      )
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject)
+        resolve()
+      })
+    })
+
+    const address = server.address()
+    if (!address || typeof address === "string") {
+      server.close()
+      throw new Error("Expected local test server address")
+    }
+
+    try {
+      const { input } = helper()
+      input.options.baseURL = `http://127.0.0.1:${(address as AddressInfo).port}`
+      input.options.clientConfig = {
+        base_url: "https://proxy.example.com/v1",
+        default_headers: {
+          Authorization: "Bearer proxy-token",
+        },
+      }
+      const stream = await SessionAgencySwarm.stream(input)
+      const text: string[] = []
+      for await (const event of stream.fullStream) {
+        if (event.type === "text-delta") text.push(event.text)
+      }
+
+      expect(text).toEqual(["ok"])
+      expect(body?.["client_config"]).toEqual({
+        base_url: "https://proxy.example.com/v1",
+        default_headers: {
+          Authorization: "Bearer proxy-token",
+        },
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+      await Auth.remove("openai")
+    }
+  })
+
   test("stream prefers env auth over stored auth for providers already covered by env", async () => {
     mockHistory()
     Auth.all = (async () => ({
@@ -528,6 +604,44 @@ describe("session.agency-swarm", () => {
     expect(captured).toEqual({
       api_key: "oauth-access",
       base_url: "https://proxy.example.com/v1",
+    })
+  })
+
+  test("stream preserves explicit header-based OpenAI auth without merging stored OAuth", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      openai: {
+        type: "oauth",
+        access: "oauth-access",
+        refresh: "oauth-refresh",
+        expires: Date.now() + 60_000,
+      } as any,
+    })) as typeof Auth.all
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.clientConfig = {
+      base_url: "https://proxy.example.com/v1",
+      default_headers: {
+        Authorization: "Bearer proxy-token",
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      base_url: "https://proxy.example.com/v1",
+      default_headers: {
+        Authorization: "Bearer proxy-token",
+      },
     })
   })
 

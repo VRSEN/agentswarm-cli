@@ -1,4 +1,8 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import {
+  hasExplicitOpenAIClientConfig,
+  readStringRecord,
+} from "@/agency-swarm/client-config"
 import { AgencySwarmHistory } from "@/agency-swarm/history"
 import { mapProviderIDToLiteLLMProvider } from "@/agency-swarm/litellm-provider"
 import { Auth } from "@/auth"
@@ -114,7 +118,7 @@ export namespace SessionAgencySwarm {
           await Auth.all(),
           await listProvidersForEnvCheck(),
           getEnvForClientConfig(),
-          hasExplicitOpenAIConfig(config),
+          hasExplicitOpenAIClientConfig(config),
         )
       : undefined
     if (!config) return generated
@@ -243,19 +247,6 @@ export namespace SessionAgencySwarm {
       base_url: CODEX_API_BASE_URL,
       ...(Object.keys(headers).length > 0 ? { default_headers: headers } : {}),
     }
-  }
-
-  function readStringRecord(value: unknown): Record<string, string> | undefined {
-    const record = asRecord(value)
-    if (!record) return undefined
-    const result = Object.fromEntries(
-      Object.entries(record).flatMap(([key, item]) => (typeof item === "string" ? [[key, item]] : [])),
-    )
-    return Object.keys(result).length > 0 ? result : undefined
-  }
-
-  function hasExplicitOpenAIConfig(config: Record<string, unknown> | undefined) {
-    return !!(asString(config?.["api_key"]) ?? asString(config?.["apiKey"]))
   }
 
   function hasEnvCredential(

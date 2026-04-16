@@ -198,6 +198,31 @@ describe("agency session errors", () => {
     ).toBe(true)
   })
 
+  test("framework mode skips auth when explicit client_config authenticates through headers", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {
+              clientConfig: {
+                base_url: "https://proxy.example.com/v1",
+                default_headers: {
+                  Authorization: "Bearer proxy-token",
+                },
+              },
+            },
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
   test("framework mode skips auth when another provider is available", () => {
     expect(
       shouldOpenStartupAuthDialog({

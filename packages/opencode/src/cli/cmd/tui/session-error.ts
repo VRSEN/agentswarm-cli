@@ -1,4 +1,5 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { hasClientConfigCredential } from "@/agency-swarm/client-config"
 import type { Provider } from "@opencode-ai/sdk/v2"
 
 export function hasUsableProvider(providers: Provider[], credentialed = false) {
@@ -21,14 +22,6 @@ function hasExplicitAgencyClientConfig(provider: Provider | undefined) {
   const raw = provider?.options?.["clientConfig"] ?? provider?.options?.["client_config"]
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false
   return hasClientConfigCredential(raw as Record<string, unknown>)
-}
-
-function hasClientConfigCredential(config: Record<string, unknown>) {
-  if (typeof config["api_key"] === "string" && config["api_key"]) return true
-  if (typeof config["apiKey"] === "string" && config["apiKey"]) return true
-  const litellmKeys = config["litellm_keys"] ?? config["litellmKeys"]
-  if (!litellmKeys || typeof litellmKeys !== "object" || Array.isArray(litellmKeys)) return false
-  return Object.values(litellmKeys).some((item) => typeof item === "string" && item.length > 0)
 }
 
 export function shouldOpenStartupAuthDialog(input: { providers: Provider[]; frameworkMode: boolean }) {

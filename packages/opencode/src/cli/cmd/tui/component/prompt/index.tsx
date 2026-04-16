@@ -39,6 +39,7 @@ import { useTextareaKeybindings } from "../textarea-keybindings"
 import { DialogSkill } from "../dialog-skill"
 import { CONSOLE_MANAGED_ICON, consoleManagedProviderLabel } from "@tui/util/provider-origin"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { AgencySwarmRunSession } from "@/agency-swarm/run-session"
 
 export type PromptProps = {
   sessionID?: string
@@ -304,6 +305,13 @@ export function Prompt(props: PromptProps) {
         },
         onSelect: async (dialog) => {
           dialog.clear()
+          if (!Editor.isConfigured()) {
+            toast.show({
+              message: "Set VISUAL or EDITOR to use the external editor",
+              variant: "warning",
+            })
+            return
+          }
 
           // replace summarized text parts with the actual text
           const text = store.prompt.parts
@@ -655,6 +663,11 @@ export function Prompt(props: PromptProps) {
     // Capture mode before it gets reset
     const currentMode = store.mode
     const variant = local.model.variant.current()
+    void AgencySwarmRunSession.sync({
+      sessionID,
+      providerID: selectedModel.providerID,
+      directory: process.env[AgencySwarmRunSession.LOCAL_PROJECT_ENV],
+    })
 
     if (store.mode === "shell") {
       sdk.client.session.shell({
