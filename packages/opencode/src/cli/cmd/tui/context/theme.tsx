@@ -68,12 +68,21 @@ const pluginThemes: Record<string, ThemeJson> = {}
 let customThemes: Record<string, ThemeJson> = {}
 let systemTheme: ThemeJson | undefined
 const fixed = "opencode"
+const reserved = new Set([fixed, "system"])
+
+function isReservedThemeName(name: string) {
+  return reserved.has(name)
+}
+
+function withoutReservedThemeNames(themes: Record<string, ThemeJson>) {
+  return Object.fromEntries(Object.entries(themes).filter(([name]) => !isReservedThemeName(name)))
+}
 
 function listThemes() {
   // Priority: defaults < plugin installs < custom files < generated system.
   const themes = {
-    ...pluginThemes,
-    ...customThemes,
+    ...withoutReservedThemeNames(pluginThemes),
+    ...withoutReservedThemeNames(customThemes),
     ...DEFAULT_THEMES,
   }
   if (!systemTheme) return themes
@@ -95,8 +104,10 @@ const [store, setStore] = createStore<State>({
   ready: false,
 })
 
-export function defaultThemeName(input?: { termProgram?: string }) {
-  return input?.termProgram === "Apple_Terminal" ? "system" : "opencode"
+export function defaultThemeName(input?: { termProgram?: string; background?: string }) {
+  return input?.termProgram === "Apple_Terminal" && isDarkTerminalBackground(input)
+    ? "system"
+    : "opencode"
 }
 
 export function allThemes() {
@@ -118,7 +129,7 @@ export function addTheme(name: string, theme: unknown) {
   if (!name) return false
   if (!isTheme(theme)) return false
   if (hasTheme(name)) return false
-  if (name === fixed) return false
+  if (isReservedThemeName(name)) return false
   pluginThemes[name] = theme
   syncThemes()
   return true
@@ -127,7 +138,7 @@ export function addTheme(name: string, theme: unknown) {
 export function upsertTheme(name: string, theme: unknown) {
   if (!name) return false
   if (!isTheme(theme)) return false
-  if (name === fixed) return false
+  if (isReservedThemeName(name)) return false
   if (customThemes[name] !== undefined) {
     customThemes[name] = theme
   } else {
@@ -195,6 +206,13 @@ export function resolveTheme(theme: ThemeJson, _mode: "dark" | "light" = "dark")
     _hasSelectedListItemText: hasSelectedListItemText,
     thinkingOpacity,
   } as Theme
+}
+
+function isDarkTerminalBackground(input?: { background?: string }) {
+  if (!input?.background) return false
+  const color = RGBA.fromHex(input.background)
+  const luminance = 0.299 * color.r + 0.587 * color.g + 0.114 * color.b
+  return luminance < 0.5
 }
 
 function ansiToRgba(code: number): RGBA {
@@ -291,6 +309,13 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
           }
           systemTheme = generateSystem(colors, mode)
           syncThemes()
+          const startupTheme = defaultThemeName({
+            termProgram: process.env.TERM_PROGRAM,
+            background: colors.defaultBackground ?? colors.palette[0],
+          })
+          if (startupTheme === "system" && store.active === fallbackTheme) {
+            setStore("active", startupTheme)
+          }
         })
         .catch(() => {
           systemTheme = undefined
