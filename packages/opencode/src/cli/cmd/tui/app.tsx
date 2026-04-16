@@ -297,13 +297,14 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     toast,
     renderer,
   })
-  const [ready, setReady] = createSignal(false)
+  const [pluginsReady, setPluginsReady] = createSignal(false)
+  const ready = createMemo(() => pluginsReady() && themeState.ready)
   TuiPluginRuntime.init(api)
     .catch((error) => {
       console.error("Failed to load TUI plugins", error)
     })
     .finally(() => {
-      setReady(true)
+      setPluginsReady(true)
     })
 
   useKeyboard((evt) => {
@@ -942,7 +943,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     <box
       width={dimensions().width}
       height={dimensions().height}
-      backgroundColor={theme.background}
+      backgroundColor={themeState.ready ? theme.background : undefined}
       onMouseDown={(evt) => {
         if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
         if (evt.button !== MouseButton.RIGHT) return
@@ -967,8 +968,10 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         </Switch>
       </Show>
       {plugin()}
-      <TuiPluginRuntime.Slot name="app" />
-      <StartupLoading ready={ready} />
+      <Show when={ready()}>
+        <TuiPluginRuntime.Slot name="app" />
+      </Show>
+      <StartupLoading ready={ready} enabled={() => themeState.ready} />
     </box>
   )
 }

@@ -323,6 +323,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     })
 
     createEffect(() => {
+      if (!store.ready) return
       renderer.setBackgroundColor(values().background)
     })
 

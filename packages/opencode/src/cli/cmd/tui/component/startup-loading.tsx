@@ -2,15 +2,29 @@ import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-j
 import { useTheme } from "../context/theme"
 import { Spinner } from "./spinner"
 
-export function StartupLoading(props: { ready: () => boolean }) {
+export function StartupLoading(props: { ready: () => boolean; enabled?: () => boolean }) {
   const theme = useTheme().theme
   const [show, setShow] = createSignal(false)
   const text = createMemo(() => (props.ready() ? "Finishing startup..." : "Loading plugins..."))
+  const enabled = () => props.enabled?.() ?? true
   let wait: NodeJS.Timeout | undefined
   let hold: NodeJS.Timeout | undefined
   let stamp = 0
 
   createEffect(() => {
+    if (!enabled()) {
+      if (wait) {
+        clearTimeout(wait)
+        wait = undefined
+      }
+      if (hold) {
+        clearTimeout(hold)
+        hold = undefined
+      }
+      if (show()) setShow(false)
+      return
+    }
+
     if (props.ready()) {
       if (wait) {
         clearTimeout(wait)
