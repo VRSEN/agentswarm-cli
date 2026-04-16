@@ -1,27 +1,45 @@
 /** @jsxImportSource @opentui/solid */
-import { expect, test } from "bun:test"
+import { afterEach, expect, mock, spyOn, test } from "bun:test"
+import * as fs from "fs/promises"
+import path from "path"
 import type { TerminalColors } from "@opentui/core"
 import { testRender, useRenderer } from "@opentui/solid"
 import { createEffect, onMount } from "solid-js"
-import { Filesystem } from "../../../src/util/filesystem"
-import { Glob } from "../../../src/util/glob"
+import { tmpdir } from "../../fixture/fixture"
 
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
 }
 
-async function waitFor(condition: () => boolean, timeout = 1000) {
-  const deadline = Date.now() + timeout
-  while (Date.now() < deadline) {
-    if (condition()) return
-    await delay(5)
+async function awaitSignal<T>(promise: Promise<T>, message: string, timeout = 2000) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeout)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
   }
-  throw new Error("Timed out waiting for condition")
 }
 
 function loadThemeModule() {
   return import(`../../../src/cli/cmd/tui/context/theme.tsx?test=${Date.now()}-${Math.random()}`)
 }
+
+const originalTermProgram = process.env.TERM_PROGRAM
+
+afterEach(() => {
+  mock.restore()
+  if (originalTermProgram === undefined) delete process.env.TERM_PROGRAM
+  else process.env.TERM_PROGRAM = originalTermProgram
+})
 
 test.serial("ThemeProvider mounts after palette resolution but before theme.ready flips", async () => {
   const { ThemeProvider, DEFAULT_THEMES, useTheme } = await loadThemeModule()
@@ -29,32 +47,34 @@ test.serial("ThemeProvider mounts after palette resolution but before theme.read
   const customTheme = structuredClone(DEFAULT_THEMES.opencode)
   customTheme.theme.primary = "#010203"
 
-  const originalUp = Filesystem.up
-  const originalScan = Glob.scan
-  const originalReadJson = Filesystem.readJson
+  await using tmp = await tmpdir()
+  const themePath = path.join(tmp.path, ".agentswarm", "themes", `${name}.json`)
+  await fs.mkdir(path.dirname(themePath), { recursive: true })
+  await fs.writeFile(themePath, JSON.stringify(customTheme))
+  spyOn(process, "cwd").mockImplementation(() => tmp.path)
 
-  Filesystem.up = async function* () {}
-  Glob.scan = async () => {
-    await delay(50)
-    return [`/tmp/${name}.json`]
-  }
-  Filesystem.readJson = async () => customTheme as never
-
-  const mounted: boolean[] = []
-  const snapshots: Array<{ ready: boolean; hasCustom: boolean }> = []
+  const mounted = deferred<boolean>()
+  const missingCustom = deferred<void>()
+  const loadedCustom = deferred<void>()
+  let sawMissingCustom = false
+  let sawLoadedCustom = false
 
   const Probe = () => {
     const theme = useTheme()
 
     onMount(() => {
-      mounted.push(theme.ready)
+      mounted.resolve(theme.ready)
     })
 
     createEffect(() => {
-      snapshots.push({
-        ready: theme.ready,
-        hasCustom: theme.has(name),
-      })
+      if (!sawMissingCustom && theme.ready === false && theme.has(name) === false) {
+        sawMissingCustom = true
+        missingCustom.resolve()
+      }
+      if (!sawLoadedCustom && theme.ready === true && theme.has(name) === true) {
+        sawLoadedCustom = true
+        loadedCustom.resolve()
+      }
     })
 
     return <box />
@@ -76,53 +96,50 @@ test.serial("ThemeProvider mounts after palette resolution but before theme.read
     )
   }
 
-  try {
-    await testRender(() => <App />)
-    await waitFor(() => snapshots.some((entry) => entry.ready === true && entry.hasCustom === true))
+  await testRender(() => <App />)
 
-    expect(mounted).toEqual([false])
-    expect(snapshots.some((entry) => entry.ready === false && entry.hasCustom === false)).toBe(true)
-    expect(snapshots.some((entry) => entry.ready === true && entry.hasCustom === true)).toBe(true)
-  } finally {
-    Filesystem.up = originalUp
-    Glob.scan = originalScan
-    Filesystem.readJson = originalReadJson
-  }
+  expect(await awaitSignal(mounted.promise, "ThemeProvider did not mount")).toBe(false)
+  await awaitSignal(missingCustom.promise, "ThemeProvider never observed the pre-ready state")
+  await awaitSignal(loadedCustom.promise, "ThemeProvider never loaded the custom theme")
 })
 
 test.serial("ThemeProvider mounts on Apple Terminal before palette paint completes", async () => {
-  const { ThemeProvider, useTheme } = await loadThemeModule()
-  const originalTermProgram = process.env.TERM_PROGRAM
-  const originalUp = Filesystem.up
-  const originalScan = Glob.scan
-
   process.env.TERM_PROGRAM = "Apple_Terminal"
-  Filesystem.up = async function* () {}
-  Glob.scan = async () => []
+
+  const { ThemeProvider, useTheme } = await loadThemeModule()
+  await using tmp = await tmpdir()
+  spyOn(process, "cwd").mockImplementation(() => tmp.path)
 
   let resolvePalette!: (colors: TerminalColors) => void
   const palette = new Promise<TerminalColors>((resolve) => {
     resolvePalette = resolve
   })
 
-  const mounted: Array<{ ready: boolean; paintReady: boolean }> = []
-  const snapshots: Array<{ ready: boolean; paintReady: boolean }> = []
+  const mounted = deferred<{ ready: boolean; paintReady: boolean }>()
+  const initialSnapshot = deferred<void>()
+  const paintReadySnapshot = deferred<void>()
+  let sawInitialSnapshot = false
+  let sawPaintReady = false
 
   const Probe = () => {
     const theme = useTheme()
 
     onMount(() => {
-      mounted.push({
+      mounted.resolve({
         ready: theme.ready,
         paintReady: theme.paintReady,
       })
     })
 
     createEffect(() => {
-      snapshots.push({
-        ready: theme.ready,
-        paintReady: theme.paintReady,
-      })
+      if (!sawInitialSnapshot && theme.ready === false && theme.paintReady === false) {
+        sawInitialSnapshot = true
+        initialSnapshot.resolve()
+      }
+      if (!sawPaintReady && theme.paintReady === true) {
+        sawPaintReady = true
+        paintReadySnapshot.resolve()
+      }
     })
 
     return <box />
@@ -139,40 +156,31 @@ test.serial("ThemeProvider mounts on Apple Terminal before palette paint complet
     )
   }
 
-  try {
-    await testRender(() => <App />)
-    await waitFor(() => mounted.length === 1 && snapshots.some((entry) => entry.ready === false && entry.paintReady === false))
+  await testRender(() => <App />)
 
-    expect(mounted).toEqual([{ ready: false, paintReady: false }])
-    expect(snapshots.some((entry) => entry.ready === false && entry.paintReady === false)).toBe(true)
+  expect(await awaitSignal(mounted.promise, "ThemeProvider did not mount in Apple Terminal")).toEqual({
+    ready: false,
+    paintReady: false,
+  })
+  await awaitSignal(initialSnapshot.promise, "ThemeProvider never reported the pre-paint Apple Terminal state")
 
-    resolvePalette({
-      defaultBackground: undefined,
-      defaultForeground: undefined,
-      palette: [],
-    } as unknown as TerminalColors)
-    await waitFor(() => snapshots.some((entry) => entry.paintReady === true))
+  resolvePalette({
+    defaultBackground: undefined,
+    defaultForeground: undefined,
+    palette: [],
+  } as unknown as TerminalColors)
 
-    expect(snapshots.some((entry) => entry.paintReady === true)).toBe(true)
-  } finally {
-    if (originalTermProgram === undefined) delete process.env.TERM_PROGRAM
-    else process.env.TERM_PROGRAM = originalTermProgram
-    Filesystem.up = originalUp
-    Glob.scan = originalScan
-  }
+  await awaitSignal(paintReadySnapshot.promise, "ThemeProvider never became paint-ready")
 })
 
 test.serial("ThemeProvider blocks system theme selection on light Apple Terminal palettes", async () => {
-  const { ThemeProvider, useTheme } = await loadThemeModule()
-  const originalTermProgram = process.env.TERM_PROGRAM
-  const originalUp = Filesystem.up
-  const originalScan = Glob.scan
-
   process.env.TERM_PROGRAM = "Apple_Terminal"
-  Filesystem.up = async function* () {}
-  Glob.scan = async () => []
 
-  const attempts: Array<{ allowed: boolean; selected: string }> = []
+  const { ThemeProvider, useTheme } = await loadThemeModule()
+  await using tmp = await tmpdir()
+  spyOn(process, "cwd").mockImplementation(() => tmp.path)
+
+  const attempt = deferred<{ allowed: boolean; selected: string }>()
   let triedSystem = false
 
   const Probe = () => {
@@ -181,7 +189,7 @@ test.serial("ThemeProvider blocks system theme selection on light Apple Terminal
     createEffect(() => {
       if (!theme.paintReady || triedSystem) return
       triedSystem = true
-      attempts.push({
+      attempt.resolve({
         allowed: theme.set("system"),
         selected: theme.selected,
       })
@@ -206,15 +214,9 @@ test.serial("ThemeProvider blocks system theme selection on light Apple Terminal
     )
   }
 
-  try {
-    await testRender(() => <App />)
-    await waitFor(() => attempts.length === 1)
+  await testRender(() => <App />)
 
-    expect(attempts).toEqual([{ allowed: false, selected: "opencode" }])
-  } finally {
-    if (originalTermProgram === undefined) delete process.env.TERM_PROGRAM
-    else process.env.TERM_PROGRAM = originalTermProgram
-    Filesystem.up = originalUp
-    Glob.scan = originalScan
-  }
+  expect(
+    await awaitSignal(attempt.promise, "ThemeProvider never attempted to select the system theme"),
+  ).toEqual({ allowed: false, selected: "opencode" })
 })
