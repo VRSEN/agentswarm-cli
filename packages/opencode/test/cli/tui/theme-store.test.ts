@@ -53,10 +53,12 @@ test("defaultThemeName only prefers the system palette for dark Apple Terminal t
   expect(defaultThemeName({ termProgram: "iTerm.app" })).toBe("opencode")
 })
 
-test("built-in theme selection only allows opencode plus generated system", () => {
+test("built-in theme selection only allows opencode plus dark Apple Terminal system", () => {
   expect(canSelectBuiltInThemeName("opencode")).toBe(true)
   expect(canSelectBuiltInThemeName("system")).toBe(false)
-  expect(canSelectBuiltInThemeName("system", { hasSystemTheme: true })).toBe(true)
+  expect(canSelectBuiltInThemeName("system", { hasSystemTheme: true })).toBe(false)
+  expect(canSelectBuiltInThemeName("system", { hasSystemTheme: true, allowSystemThemeSelection: false })).toBe(false)
+  expect(canSelectBuiltInThemeName("system", { hasSystemTheme: true, allowSystemThemeSelection: true })).toBe(true)
   expect(canSelectBuiltInThemeName("solarized", { hasSystemTheme: true })).toBe(false)
 })
 

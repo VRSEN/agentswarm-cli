@@ -147,3 +147,59 @@ test("ThemeProvider mounts on Apple Terminal before palette paint completes", as
     Glob.scan = originalScan
   }
 })
+
+test("ThemeProvider blocks system theme selection on light Apple Terminal palettes", async () => {
+  const originalTermProgram = process.env.TERM_PROGRAM
+  const originalUp = Filesystem.up
+  const originalScan = Glob.scan
+
+  process.env.TERM_PROGRAM = "Apple_Terminal"
+  Filesystem.up = async function* () {}
+  Glob.scan = async () => []
+
+  const attempts: Array<{ allowed: boolean; selected: string }> = []
+  let triedSystem = false
+
+  const Probe = () => {
+    const theme = useTheme()
+
+    createEffect(() => {
+      if (!theme.paintReady || triedSystem) return
+      triedSystem = true
+      attempts.push({
+        allowed: theme.set("system"),
+        selected: theme.selected,
+      })
+    })
+
+    return <box />
+  }
+
+  const App = () => {
+    const renderer = useRenderer()
+    renderer.getPalette = async () =>
+      ({
+        defaultBackground: "#f5f5f5",
+        defaultForeground: "#101010",
+        palette: ["#f5f5f5", "#ff5555", "#50fa7b", "#f1fa8c", "#bd93f9", "#ff79c6", "#8be9fd", "#101010"],
+      }) as unknown as TerminalColors
+
+    return (
+      <ThemeProvider mode="dark">
+        <Probe />
+      </ThemeProvider>
+    )
+  }
+
+  try {
+    await testRender(() => <App />)
+    await delay(10)
+
+    expect(attempts).toEqual([{ allowed: false, selected: "opencode" }])
+  } finally {
+    if (originalTermProgram === undefined) delete process.env.TERM_PROGRAM
+    else process.env.TERM_PROGRAM = originalTermProgram
+    Filesystem.up = originalUp
+    Glob.scan = originalScan
+  }
+})

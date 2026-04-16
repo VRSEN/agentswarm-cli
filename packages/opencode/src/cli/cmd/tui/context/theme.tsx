@@ -68,6 +68,7 @@ type State = {
 const pluginThemes: Record<string, ThemeJson> = {}
 let customThemes: Record<string, ThemeJson> = {}
 let systemTheme: ThemeJson | undefined
+let allowSystemThemeSelection = false
 const fixed = "opencode"
 const reserved = new Set([fixed, "system"])
 
@@ -106,8 +107,17 @@ export function defaultThemeName(input?: { termProgram?: string; background?: st
   return input?.termProgram === "Apple_Terminal" && isDarkTerminalBackground(input) ? "system" : "opencode"
 }
 
-export function canSelectBuiltInThemeName(name: string, input?: { hasSystemTheme?: boolean }) {
-  return name === fixed || (name === "system" && input?.hasSystemTheme === true)
+export function canSelectBuiltInThemeName(
+  name: string,
+  input?: {
+    hasSystemTheme?: boolean
+    allowSystemThemeSelection?: boolean
+  },
+) {
+  return (
+    name === fixed ||
+    (name === "system" && input?.hasSystemTheme === true && input?.allowSystemThemeSelection === true)
+  )
 }
 
 export function allThemes() {
@@ -267,6 +277,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     const fallbackTheme = defaultThemeName({
       termProgram: process.env.TERM_PROGRAM,
     })
+    allowSystemThemeSelection = false
 
     setStore(
       produce((draft) => {
@@ -302,6 +313,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         })
         .then((colors: TerminalColors) => {
           if (!colors.palette[0]) {
+            allowSystemThemeSelection = false
             systemTheme = undefined
             syncThemes()
             if (store.active === "system") {
@@ -309,17 +321,20 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
             }
             return
           }
-          systemTheme = generateSystem(colors, mode)
-          syncThemes()
+          const background = colors.defaultBackground ?? colors.palette[0]
           const startupTheme = defaultThemeName({
             termProgram: process.env.TERM_PROGRAM,
-            background: colors.defaultBackground ?? colors.palette[0],
+            background,
           })
+          allowSystemThemeSelection = startupTheme === "system"
+          systemTheme = generateSystem(colors, mode)
+          syncThemes()
           if (startupTheme === "system" && store.active === fallbackTheme) {
             setStore("active", startupTheme)
           }
         })
         .catch(() => {
+          allowSystemThemeSelection = false
           systemTheme = undefined
           syncThemes()
           if (store.active === "system") {
@@ -375,7 +390,12 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         return
       },
       set(theme: string) {
-        if (!canSelectBuiltInThemeName(theme, { hasSystemTheme: systemTheme !== undefined })) {
+        if (
+          !canSelectBuiltInThemeName(theme, {
+            hasSystemTheme: systemTheme !== undefined,
+            allowSystemThemeSelection,
+          })
+        ) {
           return false
         }
         setStore("active", theme)
