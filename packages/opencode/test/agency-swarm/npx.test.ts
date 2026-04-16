@@ -312,6 +312,50 @@ describe("agency-swarm npx onboarding", () => {
     expect(project).toBeUndefined()
   })
 
+  test("resolveNpxAutoProject does not use legacy local history after an explicit session switches providers", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    spyOn(Storage, "list").mockResolvedValue([["agency_swarm_history", "legacy"]])
+    spyOn(Storage, "read").mockResolvedValue({
+      scope: "http://127.0.0.1:8123|local-agency|ses_123",
+      chat_history: [],
+      updated_at: 1,
+    } as never)
+    spyOn(Session, "messages").mockResolvedValue([
+      {
+        info: {
+          role: "user",
+          model: {
+            providerID: "openai",
+            modelID: "gpt-5",
+          },
+        },
+        parts: [],
+      } as never,
+    ])
+
+    const project = await resolveNpxAutoProject({
+      directory: "/tmp/elsewhere",
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      session: "ses_123",
+      sessions: [
+        {
+          id: "ses_123" as any,
+          directory: dir.path,
+          parentID: undefined,
+          time: {
+            created: 1,
+            updated: 1,
+          },
+        },
+      ],
+      runSessions: [],
+    })
+
+    expect(project).toBeUndefined()
+  })
+
   test("resolveNpxAutoProject does not fallback when explicit session is stale", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
@@ -441,6 +485,48 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(project?.directory).toBe(dir.path)
+  })
+
+  test("resolveNpxAutoProject does not use legacy local history for continue after switching providers", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    spyOn(Storage, "list").mockResolvedValue([["agency_swarm_history", "legacy"]])
+    spyOn(Storage, "read").mockResolvedValue({
+      scope: "http://127.0.0.1:8123|local-agency|ses_legacy",
+      chat_history: [],
+      updated_at: 1,
+    } as never)
+    spyOn(Session, "messages").mockResolvedValue([
+      {
+        info: {
+          role: "assistant",
+          providerID: "openai",
+          modelID: "gpt-5",
+        },
+        parts: [],
+      } as never,
+    ])
+
+    const project = await resolveNpxAutoProject({
+      directory: dir.path,
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      continue: true,
+      sessions: [
+        {
+          id: "ses_legacy" as any,
+          directory: dir.path,
+          parentID: undefined,
+          time: {
+            created: 1,
+            updated: 1,
+          },
+        },
+      ],
+      runSessions: [],
+    })
+
+    expect(project).toBeUndefined()
   })
 
   test("resolveNpxAutoProject ignores local-agency history when the newest scope is remote", async () => {

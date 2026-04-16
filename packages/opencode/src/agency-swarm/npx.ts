@@ -133,8 +133,22 @@ async function resolveRunProject(
 
   const project = await detectAgencyProject(session.directory)
   if (!project) return
+  if (!(await isLegacyAgencySwarmRunSession(session.id))) return
   if (!(await hasLegacyLocalAgencyHistory(session.id))) return
   return project
+}
+
+async function isLegacyAgencySwarmRunSession(sessionID: Session.Info["id"]) {
+  const providerID = await getLatestSessionProviderID(sessionID)
+  if (providerID && providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
+  return true
+}
+
+async function getLatestSessionProviderID(sessionID: Session.Info["id"]) {
+  const { Session } = await import("@/session")
+  const [latest] = await Session.messages({ sessionID, limit: 1 }).catch(() => [])
+  if (!latest) return
+  return latest.info.role === "user" ? latest.info.model.providerID : latest.info.providerID
 }
 
 function isAgentswarmCommand(argv: string[]) {
