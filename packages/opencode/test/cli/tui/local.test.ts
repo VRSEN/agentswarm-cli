@@ -74,6 +74,48 @@ describe("tui local model selection", () => {
     ).toBe(true)
   })
 
+  test("does not keep agency-swarm usable when disabled_providers filters it out", () => {
+    expect(
+      isUsableModel({
+        model: {
+          providerID: "agency-swarm",
+          modelID: "default",
+        },
+        providers: [
+          {
+            id: "openai",
+            models: {
+              "gpt-5": {},
+            },
+          },
+        ],
+        configModel: "agency-swarm/default",
+        disabledProviders: ["agency-swarm"],
+      }),
+    ).toBe(false)
+  })
+
+  test("does not keep agency-swarm usable when enabled_providers excludes it", () => {
+    expect(
+      isUsableModel({
+        model: {
+          providerID: "agency-swarm",
+          modelID: "default",
+        },
+        providers: [
+          {
+            id: "openai",
+            models: {
+              "gpt-5": {},
+            },
+          },
+        ],
+        argModel: "agency-swarm/default",
+        enabledProviders: ["openai"],
+      }),
+    ).toBe(false)
+  })
+
   test("does not treat unrelated missing models as usable", () => {
     expect(
       isUsableModel({
