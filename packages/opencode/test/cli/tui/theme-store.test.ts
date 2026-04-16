@@ -1,8 +1,16 @@
 import { expect, test } from "bun:test"
 
-const { DEFAULT_THEMES, allThemes, addTheme, hasTheme, resolveTheme, upsertTheme } = await import(
-  "../../../src/cli/cmd/tui/context/theme"
-)
+const {
+  DEFAULT_THEMES,
+  allThemes,
+  addTheme,
+  canSelectBuiltInThemeName,
+  defaultThemeName,
+  hasTheme,
+  isReservedThemeName,
+  resolveTheme,
+  upsertTheme,
+} = await import("../../../src/cli/cmd/tui/context/theme")
 
 test("addTheme writes into module theme store", () => {
   const name = `plugin-theme-${Date.now()}`
@@ -38,6 +46,22 @@ test("hasTheme checks theme presence", () => {
   expect(hasTheme(name)).toBe(true)
 })
 
+test("defaultThemeName only prefers the system palette for dark Apple Terminal themes", () => {
+  expect(defaultThemeName({ termProgram: "Apple_Terminal" })).toBe("opencode")
+  expect(defaultThemeName({ termProgram: "Apple_Terminal", background: "#101010" })).toBe("system")
+  expect(defaultThemeName({ termProgram: "Apple_Terminal", background: "#f5f5f5" })).toBe("opencode")
+  expect(defaultThemeName({ termProgram: "iTerm.app" })).toBe("opencode")
+})
+
+test("built-in theme selection only allows opencode plus dark Apple Terminal system", () => {
+  expect(canSelectBuiltInThemeName("opencode")).toBe(true)
+  expect(canSelectBuiltInThemeName("system")).toBe(false)
+  expect(canSelectBuiltInThemeName("system", { hasSystemTheme: true })).toBe(false)
+  expect(canSelectBuiltInThemeName("system", { hasSystemTheme: true, allowSystemThemeSelection: false })).toBe(false)
+  expect(canSelectBuiltInThemeName("system", { hasSystemTheme: true, allowSystemThemeSelection: true })).toBe(true)
+  expect(canSelectBuiltInThemeName("solarized", { hasSystemTheme: true })).toBe(false)
+})
+
 test("resolveTheme always uses the dark variant", () => {
   const item = structuredClone(DEFAULT_THEMES.opencode)
   item.defs = {
@@ -63,10 +87,16 @@ test("built-in opencode theme keeps the Agent Swarm dark palette", () => {
   expect(DEFAULT_THEMES.opencode.defs?.darkAccent).toBe("#e8d382")
 })
 
-test("upsertTheme cannot replace the built-in opencode theme", () => {
+test("system stays reserved while the built-in opencode theme stays protected", () => {
   const item = structuredClone(DEFAULT_THEMES.opencode)
   item.theme.primary = "#010203"
 
+  expect(isReservedThemeName("opencode")).toBe(true)
+  expect(isReservedThemeName("system")).toBe(true)
+  expect(addTheme(`system-${Date.now()}`, item)).toBe(true)
+  expect(addTheme("system", item)).toBe(false)
+  expect(upsertTheme("system", item)).toBe(false)
+  expect(allThemes().system).toBeUndefined()
   expect(upsertTheme("opencode", item)).toBe(false)
   expect(resolveTheme(allThemes().opencode).primary.toString()).toBe(
     resolveTheme(DEFAULT_THEMES.opencode).primary.toString(),

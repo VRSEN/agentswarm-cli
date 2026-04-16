@@ -61,13 +61,20 @@ type State = {
   mode: "dark" | "light"
   lock: "dark" | "light" | undefined
   active: string
+  paintReady: boolean
   ready: boolean
 }
 
 const pluginThemes: Record<string, ThemeJson> = {}
 let customThemes: Record<string, ThemeJson> = {}
 let systemTheme: ThemeJson | undefined
+let allowSystemThemeSelection = false
 const fixed = "opencode"
+const reserved = new Set([fixed, "system"])
+
+export function isReservedThemeName(name: string) {
+  return reserved.has(name)
+}
 
 function listThemes() {
   // Priority: defaults < plugin installs < custom files < generated system.
@@ -92,8 +99,26 @@ const [store, setStore] = createStore<State>({
   mode: "dark",
   lock: undefined,
   active: "opencode",
+  paintReady: false,
   ready: false,
 })
+
+export function defaultThemeName(input?: { termProgram?: string; background?: string }) {
+  return input?.termProgram === "Apple_Terminal" && isDarkTerminalBackground(input) ? "system" : "opencode"
+}
+
+export function canSelectBuiltInThemeName(
+  name: string,
+  input?: {
+    hasSystemTheme?: boolean
+    allowSystemThemeSelection?: boolean
+  },
+) {
+  return (
+    name === fixed ||
+    (name === "system" && input?.hasSystemTheme === true && input?.allowSystemThemeSelection === true)
+  )
+}
 
 export function allThemes() {
   return store.themes
@@ -114,7 +139,7 @@ export function addTheme(name: string, theme: unknown) {
   if (!name) return false
   if (!isTheme(theme)) return false
   if (hasTheme(name)) return false
-  if (name === fixed) return false
+  if (isReservedThemeName(name)) return false
   pluginThemes[name] = theme
   syncThemes()
   return true
@@ -123,7 +148,7 @@ export function addTheme(name: string, theme: unknown) {
 export function upsertTheme(name: string, theme: unknown) {
   if (!name) return false
   if (!isTheme(theme)) return false
-  if (name === fixed) return false
+  if (isReservedThemeName(name)) return false
   if (customThemes[name] !== undefined) {
     customThemes[name] = theme
   } else {
@@ -193,6 +218,13 @@ export function resolveTheme(theme: ThemeJson, _mode: "dark" | "light" = "dark")
   } as Theme
 }
 
+function isDarkTerminalBackground(input?: { background?: string }) {
+  if (!input?.background) return false
+  const color = RGBA.fromHex(input.background)
+  const luminance = 0.299 * color.r + 0.587 * color.g + 0.114 * color.b
+  return luminance < 0.5
+}
+
 function ansiToRgba(code: number): RGBA {
   // Standard ANSI colors (0-15)
   if (code < 16) {
@@ -242,28 +274,32 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
   name: "Theme",
   init: (_props: { mode: "dark" | "light" }) => {
     const renderer = useRenderer()
+    const fallbackTheme = defaultThemeName({
+      termProgram: process.env.TERM_PROGRAM,
+    })
+    allowSystemThemeSelection = false
 
     setStore(
       produce((draft) => {
         draft.mode = "dark"
         draft.lock = "dark"
-        draft.active = "opencode"
+        draft.active = fallbackTheme
+        draft.paintReady = false
         draft.ready = false
       }),
     )
 
     function init() {
-      Promise.allSettled([
-        resolveSystemTheme("dark"),
-        getCustomThemes()
-          .then((custom) => {
-            customThemes = custom
-            syncThemes()
-          })
-          .catch(() => {
-            setStore("active", "opencode")
-          }),
-      ]).finally(() => {
+      const palette = resolveSystemTheme("dark").finally(() => {
+        setStore("paintReady", true)
+      })
+      const registry = getCustomThemes()
+        .then((custom) => {
+          customThemes = custom
+          syncThemes()
+        })
+        .catch(() => {})
+      void Promise.allSettled([palette, registry]).finally(() => {
         setStore("ready", true)
       })
     }
@@ -277,6 +313,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         })
         .then((colors: TerminalColors) => {
           if (!colors.palette[0]) {
+            allowSystemThemeSelection = false
             systemTheme = undefined
             syncThemes()
             if (store.active === "system") {
@@ -284,10 +321,20 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
             }
             return
           }
+          const background = colors.defaultBackground ?? colors.palette[0]
+          const startupTheme = defaultThemeName({
+            termProgram: process.env.TERM_PROGRAM,
+            background,
+          })
+          allowSystemThemeSelection = startupTheme === "system"
           systemTheme = generateSystem(colors, mode)
           syncThemes()
+          if (startupTheme === "system" && store.active === fallbackTheme) {
+            setStore("active", startupTheme)
+          }
         })
         .catch(() => {
+          allowSystemThemeSelection = false
           systemTheme = undefined
           syncThemes()
           if (store.active === "system") {
@@ -297,10 +344,12 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     }
 
     const values = createMemo(() => {
-      return resolveTheme(store.themes.opencode)
+      const active = store.themes[store.active] ?? store.themes[fallbackTheme] ?? store.themes.opencode
+      return resolveTheme(active)
     })
 
     createEffect(() => {
+      if (!store.paintReady) return
       renderer.setBackgroundColor(values().background)
     })
 
@@ -341,10 +390,25 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         return
       },
       set(theme: string) {
-        return theme === "opencode"
+        if (
+          !canSelectBuiltInThemeName(theme, {
+            hasSystemTheme: systemTheme !== undefined,
+            allowSystemThemeSelection,
+          })
+        ) {
+          return false
+        }
+        setStore("active", theme)
+        return true
+      },
+      get paintReady() {
+        return store.paintReady
       },
       get ready() {
         return store.ready
+      },
+      get providerReady() {
+        return true
       },
     }
   },
@@ -370,6 +434,7 @@ async function getCustomThemes() {
       symlink: true,
     })) {
       const name = path.basename(item, ".json")
+      if (isReservedThemeName(name)) continue
       result[name] = await Filesystem.readJson(item)
     }
   }

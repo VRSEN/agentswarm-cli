@@ -297,14 +297,22 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     toast,
     renderer,
   })
-  const [ready, setReady] = createSignal(false)
-  TuiPluginRuntime.init(api)
-    .catch((error) => {
-      console.error("Failed to load TUI plugins", error)
-    })
-    .finally(() => {
-      setReady(true)
-    })
+  const [pluginsReady, setPluginsReady] = createSignal(false)
+  const themePaintReady = createMemo(() => process.env.TERM_PROGRAM !== "Apple_Terminal" || themeState.paintReady)
+  const ready = createMemo(() => themeState.ready && pluginsReady() && themePaintReady())
+  let pluginsStarted = false
+  createEffect(() => {
+    if (!themeState.ready) return
+    if (pluginsStarted) return
+    pluginsStarted = true
+    void TuiPluginRuntime.init(api)
+      .catch((error) => {
+        console.error("Failed to load TUI plugins", error)
+      })
+      .finally(() => {
+        setPluginsReady(true)
+      })
+  })
 
   useKeyboard((evt) => {
     if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
@@ -942,7 +950,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     <box
       width={dimensions().width}
       height={dimensions().height}
-      backgroundColor={theme.background}
+      backgroundColor={themePaintReady() ? theme.background : undefined}
       onMouseDown={(evt) => {
         if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
         if (evt.button !== MouseButton.RIGHT) return
@@ -967,8 +975,10 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         </Switch>
       </Show>
       {plugin()}
-      <TuiPluginRuntime.Slot name="app" />
-      <StartupLoading ready={ready} />
+      <Show when={ready()}>
+        <TuiPluginRuntime.Slot name="app" />
+      </Show>
+      <StartupLoading ready={ready} themed={themePaintReady} />
     </box>
   )
 }
