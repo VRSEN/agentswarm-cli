@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isUsableModel } from "../../../src/cli/cmd/tui/context/local"
+import { isUsableModel, selectCurrentModel } from "../../../src/cli/cmd/tui/context/local"
 
 describe("tui local model selection", () => {
   test("keeps agency-swarm launcher model usable before provider metadata loads", () => {
@@ -78,5 +78,64 @@ describe("tui local model selection", () => {
         },
       }),
     ).toBe(false)
+  })
+
+  test("prefers configured agency-swarm model over stale stored model state", () => {
+    expect(
+      selectCurrentModel({
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+        },
+        providers: [
+          {
+            id: "openai",
+            models: {
+              "gpt-5": {},
+            },
+          },
+        ],
+        configModel: "agency-swarm/default",
+        configuredProviders: {
+          "agency-swarm": {
+            name: "Agency Swarm",
+            options: {},
+          },
+        },
+      }),
+    ).toEqual({
+      providerID: "agency-swarm",
+      modelID: "default",
+    })
+  })
+
+  test("keeps explicit args.model overrides away from agency-swarm", () => {
+    expect(
+      selectCurrentModel({
+        storedModel: {
+          providerID: "anthropic",
+          modelID: "claude-sonnet-4",
+        },
+        providers: [
+          {
+            id: "openai",
+            models: {
+              "gpt-5": {},
+            },
+          },
+        ],
+        argModel: "openai/gpt-5",
+        configModel: "agency-swarm/default",
+        configuredProviders: {
+          "agency-swarm": {
+            name: "Agency Swarm",
+            options: {},
+          },
+        },
+      }),
+    ).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5",
+    })
   })
 })
