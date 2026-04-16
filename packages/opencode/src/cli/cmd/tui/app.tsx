@@ -298,15 +298,21 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     renderer,
   })
   const [pluginsReady, setPluginsReady] = createSignal(false)
-  const themePaintReady = createMemo(() => process.env.TERM_PROGRAM !== "Apple_Terminal" || themeState.ready)
-  const ready = createMemo(() => pluginsReady() && themePaintReady())
-  TuiPluginRuntime.init(api)
-    .catch((error) => {
-      console.error("Failed to load TUI plugins", error)
-    })
-    .finally(() => {
-      setPluginsReady(true)
-    })
+  const themePaintReady = createMemo(() => process.env.TERM_PROGRAM !== "Apple_Terminal" || themeState.paintReady)
+  const ready = createMemo(() => themeState.ready && pluginsReady() && themePaintReady())
+  let pluginsStarted = false
+  createEffect(() => {
+    if (!themeState.ready) return
+    if (pluginsStarted) return
+    pluginsStarted = true
+    void TuiPluginRuntime.init(api)
+      .catch((error) => {
+        console.error("Failed to load TUI plugins", error)
+      })
+      .finally(() => {
+        setPluginsReady(true)
+      })
+  })
 
   useKeyboard((evt) => {
     if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return

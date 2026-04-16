@@ -61,6 +61,7 @@ type State = {
   mode: "dark" | "light"
   lock: "dark" | "light" | undefined
   active: string
+  paintReady: boolean
   ready: boolean
 }
 
@@ -97,13 +98,12 @@ const [store, setStore] = createStore<State>({
   mode: "dark",
   lock: undefined,
   active: "opencode",
+  paintReady: false,
   ready: false,
 })
 
 export function defaultThemeName(input?: { termProgram?: string; background?: string }) {
-  return input?.termProgram === "Apple_Terminal" && isDarkTerminalBackground(input)
-    ? "system"
-    : "opencode"
+  return input?.termProgram === "Apple_Terminal" && isDarkTerminalBackground(input) ? "system" : "opencode"
 }
 
 export function canSelectBuiltInThemeName(name: string, input?: { hasSystemTheme?: boolean }) {
@@ -273,20 +273,24 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         draft.mode = "dark"
         draft.lock = "dark"
         draft.active = fallbackTheme
+        draft.paintReady = false
         draft.ready = false
       }),
     )
 
     function init() {
-      void resolveSystemTheme("dark").finally(() => {
-        setStore("ready", true)
+      const palette = resolveSystemTheme("dark").finally(() => {
+        setStore("paintReady", true)
       })
-      void getCustomThemes()
+      const registry = getCustomThemes()
         .then((custom) => {
           customThemes = custom
           syncThemes()
         })
         .catch(() => {})
+      void Promise.allSettled([palette, registry]).finally(() => {
+        setStore("ready", true)
+      })
     }
 
     onMount(init)
@@ -330,7 +334,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     })
 
     createEffect(() => {
-      if (!store.ready) return
+      if (!store.paintReady) return
       renderer.setBackgroundColor(values().background)
     })
 
@@ -377,8 +381,14 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         setStore("active", theme)
         return true
       },
+      get paintReady() {
+        return store.paintReady
+      },
       get ready() {
         return store.ready
+      },
+      get providerReady() {
+        return process.env.TERM_PROGRAM !== "Apple_Terminal" || store.paintReady
       },
     }
   },
