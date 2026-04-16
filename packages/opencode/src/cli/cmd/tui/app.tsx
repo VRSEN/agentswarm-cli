@@ -298,7 +298,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     renderer,
   })
   const [pluginsReady, setPluginsReady] = createSignal(false)
-  const ready = createMemo(() => pluginsReady() && themeState.ready)
+  const themePaintReady = createMemo(() => process.env.TERM_PROGRAM !== "Apple_Terminal" || themeState.ready)
+  const ready = createMemo(() => pluginsReady() && themePaintReady())
   TuiPluginRuntime.init(api)
     .catch((error) => {
       console.error("Failed to load TUI plugins", error)
@@ -943,7 +944,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     <box
       width={dimensions().width}
       height={dimensions().height}
-      backgroundColor={themeState.ready ? theme.background : undefined}
+      backgroundColor={themePaintReady() ? theme.background : undefined}
       onMouseDown={(evt) => {
         if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
         if (evt.button !== MouseButton.RIGHT) return
@@ -971,7 +972,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       <Show when={ready()}>
         <TuiPluginRuntime.Slot name="app" />
       </Show>
-      <StartupLoading ready={ready} themed={() => themeState.ready} />
+      <StartupLoading ready={ready} themed={themePaintReady} />
     </box>
   )
 }

@@ -273,17 +273,15 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     )
 
     function init() {
-      Promise.allSettled([
-        resolveSystemTheme("dark"),
-        getCustomThemes()
-          .then((custom) => {
-            customThemes = custom
-            syncThemes()
-          })
-          .catch(() => {}),
-      ]).finally(() => {
+      void resolveSystemTheme("dark").finally(() => {
         setStore("ready", true)
       })
+      void getCustomThemes()
+        .then((custom) => {
+          customThemes = custom
+          syncThemes()
+        })
+        .catch(() => {})
     }
 
     onMount(init)
