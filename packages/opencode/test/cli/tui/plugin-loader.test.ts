@@ -323,6 +323,8 @@ export default {
       }
     },
   })
+  const meta = process.env.OPENCODE_PLUGIN_META_FILE
+  process.env.OPENCODE_PLUGIN_META_FILE = path.join(tmp.path, "plugin-meta.json")
   const cwd = spyOn(process, "cwd").mockImplementation(() => tmp.path)
   const wait = spyOn(TuiConfig, "waitForDependencies").mockResolvedValue()
   const install = spyOn(Config, "installDependencies").mockResolvedValue()
@@ -410,6 +412,11 @@ export default {
     cwd.mockRestore()
     wait.mockRestore()
     install.mockRestore()
+    if (meta === undefined) {
+      delete process.env.OPENCODE_PLUGIN_META_FILE
+    } else {
+      process.env.OPENCODE_PLUGIN_META_FILE = meta
+    }
     if (backup === undefined) {
       await fs.rm(globalConfigPath, { force: true })
     } else {
