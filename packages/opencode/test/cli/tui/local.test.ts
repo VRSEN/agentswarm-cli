@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isUsableModel, selectCurrentModel } from "../../../src/cli/cmd/tui/context/local"
+import { isUsableModel, selectCurrentModel, shouldSyncAgentModel } from "../../../src/cli/cmd/tui/context/local"
 
 describe("tui local model selection", () => {
   test("keeps agency-swarm launcher model usable before provider metadata loads", () => {
@@ -205,5 +205,33 @@ describe("tui local model selection", () => {
       providerID: "openai",
       modelID: "gpt-5",
     })
+  })
+
+  test("does not sync stale agent models into startup state for agency-swarm launcher mode", () => {
+    expect(
+      shouldSyncAgentModel({
+        argModel: "agency-swarm/default",
+      }),
+    ).toBe(false)
+  })
+
+  test("does not sync agent models over explicit stored overrides", () => {
+    expect(
+      shouldSyncAgentModel({
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+        },
+        configModel: "agency-swarm/default",
+      }),
+    ).toBe(false)
+  })
+
+  test("still syncs agent models in normal startup mode with no override", () => {
+    expect(
+      shouldSyncAgentModel({
+        configModel: "openai/gpt-5",
+      }),
+    ).toBe(true)
   })
 })

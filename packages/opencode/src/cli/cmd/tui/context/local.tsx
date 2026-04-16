@@ -132,6 +132,19 @@ export function selectCurrentModel(input: {
   )
 }
 
+export function shouldSyncAgentModel(input: {
+  storedModel?: {
+    providerID: string
+    modelID: string
+  }
+  argModel?: string
+  configModel?: string
+}) {
+  if (input.storedModel) return false
+  if (shouldPreferConfiguredAgencySwarmModel(input)) return false
+  return true
+}
+
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
   init: () => {
@@ -472,6 +485,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     // Automatically update model when agent changes
     createEffect(() => {
       const value = agent.current()
+      if (
+        !shouldSyncAgentModel({
+          storedModel: modelStore.model[value.name],
+          argModel: args.model,
+          configModel: sync.data.config.model,
+        })
+      ) {
+        return
+      }
       if (value.model) {
         if (isModelValid(value.model))
           model.set({
