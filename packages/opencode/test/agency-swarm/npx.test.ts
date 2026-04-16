@@ -105,9 +105,11 @@ describe("agency-swarm npx onboarding", () => {
       start() {},
       stop() {},
     } as never)
-    const spawnSpy = spyOn(Bun, "spawn").mockImplementation((options: any) => {
+    const commands: string[][] = []
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
       const cmd = options?.cmd as string[] | undefined
       if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
       if (cmd.includes("-c")) {
         return {
           exited: Promise.resolve(0),
@@ -139,12 +141,15 @@ describe("agency-swarm npx onboarding", () => {
       }),
     ).rejects.toThrow("fallback install failed")
 
-    const installCommand = spawnSpy.mock.calls
-      .map(([options]) => options?.cmd as string[] | undefined)
-      .find((cmd) => cmd?.includes("pip"))
+    const installCommand = commands.find((cmd) => cmd.includes("pip"))
 
     expect(installCommand).toEqual([
-      path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin", process.platform === "win32" ? "python.exe" : "python"),
+      path.join(
+        dir.path,
+        ".venv",
+        process.platform === "win32" ? "Scripts" : "bin",
+        process.platform === "win32" ? "python.exe" : "python",
+      ),
       "-m",
       "pip",
       "install",
