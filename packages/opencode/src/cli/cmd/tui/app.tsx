@@ -13,7 +13,6 @@ import {
   onMount,
   batch,
   Show,
-  on,
   onCleanup,
 } from "solid-js"
 import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
@@ -450,27 +449,21 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     })
   })
 
-  createEffect(
-    on(
-      () => {
-        return (
-          sync.status === "complete" &&
-          shouldOpenStartupAuthDialog({
-            providers: sync.data.provider,
-            providerAuth: sync.data.provider_auth,
-            frameworkMode: isAgencySwarmFrameworkMode({
-              currentProviderID: local.model.current()?.providerID,
-              configuredModel: sync.data.config.model,
-            }),
-          })
-        )
-      },
-      (needsAuth, previouslyNeededAuth) => {
-        if (!needsAuth || previouslyNeededAuth) return
-        dialog.replace(() => <DialogAuth />)
-      },
-    ),
-  )
+  createEffect(() => {
+    const needsAuth =
+      sync.status === "complete" &&
+      shouldOpenStartupAuthDialog({
+        providers: sync.data.provider,
+        providerAuth: sync.data.provider_auth,
+        frameworkMode: isAgencySwarmFrameworkMode({
+          currentProviderID: local.model.current()?.providerID,
+          configuredModel: sync.data.config.model,
+        }),
+      })
+
+    if (!needsAuth || dialog.stack.length > 0) return
+    dialog.replace(() => <DialogAuth />)
+  })
 
   const connected = useConnected()
   const frameworkMode = createMemo(() =>

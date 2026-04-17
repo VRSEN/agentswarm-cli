@@ -1,5 +1,4 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import { mapProviderIDToLiteLLMProvider } from "@/agency-swarm/litellm-provider"
 import { hasClientConfigCredential } from "@/agency-swarm/client-config"
 import { hasStoredProviderCredential } from "@tui/util/provider-auth"
 import type { Provider, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
@@ -51,11 +50,6 @@ function hasConfiguredAPIStyleCredential(provider: AuthProvider | undefined) {
   )
 }
 
-function hasAPIStyleEnv(provider: AuthProvider | undefined) {
-  if (!provider) return false
-  return provider.env.some((name) => /(^|_)(API_KEY|API_TOKEN|PAT|TOKEN)$/.test(name))
-}
-
 function isLoopbackBaseURL(baseURL: string) {
   try {
     const parsed = new URL(baseURL)
@@ -80,13 +74,10 @@ function usesLocalAgencyProviderAuth(providers: Provider[]) {
 
 export function isSupportedAgencyAuthProvider(
   providerID: string,
-  provider?: AuthProvider,
-  methods: ProviderAuthMethod[] = [],
+  _provider?: AuthProvider,
+  _methods: ProviderAuthMethod[] = [],
 ) {
-  if ((AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS as readonly string[]).includes(providerID)) return true
-  if (mapProviderIDToLiteLLMProvider(providerID) === undefined) return false
-  if (methods.some((method) => method.type === "api")) return true
-  return hasAPIStyleEnv(provider) || hasConfiguredAPIStyleCredential(provider)
+  return (AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS as readonly string[]).includes(providerID)
 }
 
 function isAgencyProviderCredentialFailure(message: string) {

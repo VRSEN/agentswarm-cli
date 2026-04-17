@@ -218,6 +218,7 @@ export namespace SessionPrompt {
           ? yield* provider.getModel(ag.model.providerID, ag.model.modelID)
           : ((yield* provider.getSmallModel(input.providerID)) ??
             (yield* provider.getModel(input.providerID, input.modelID)))
+        if (!ag.model && mdl.providerID === SessionAgencySwarm.PROVIDER_ID) return
         const msgs = onlySubtasks
           ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
           : yield* MessageV2.toModelMessagesEffect(context, mdl)

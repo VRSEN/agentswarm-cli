@@ -5,6 +5,7 @@ import {
   shouldBlockAgencyPromptSend,
   shouldOpenAgencyAuthDialog,
   hasUsableProvider,
+  isSupportedAgencyAuthProvider,
   isAgencySwarmFrameworkMode,
   shouldOpenAgencyConnectDialog,
   shouldOpenStartupAuthDialog,
@@ -567,7 +568,7 @@ describe("agency session errors", () => {
     ).toBe(true)
   })
 
-  test("framework mode skips auth when another LiteLLM-compatible provider is credentialed", () => {
+  test("framework mode still opens auth when only a non-primary provider is credentialed", () => {
     expect(
       shouldOpenStartupAuthDialog({
         frameworkMode: true,
@@ -591,7 +592,14 @@ describe("agency session errors", () => {
           },
         ],
       }),
-    ).toBe(false)
+    ).toBe(true)
+  })
+
+  test("framework auth only supports openai and anthropic", () => {
+    expect(isSupportedAgencyAuthProvider("openai")).toBe(true)
+    expect(isSupportedAgencyAuthProvider("anthropic")).toBe(true)
+    expect(isSupportedAgencyAuthProvider("google")).toBe(false)
+    expect(isSupportedAgencyAuthProvider("github-copilot")).toBe(false)
   })
 
   test("framework mode still opens auth when a LiteLLM provider only has oauth methods", () => {
