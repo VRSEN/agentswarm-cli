@@ -1305,6 +1305,13 @@ export namespace SessionAgencySwarm {
           await applyAssistantLabel(input.assistantMessage, eventMeta)
 
           const kind = asString(frame.payload["type"])
+          if (kind === "error") {
+            const content = asString(frame.payload["content"]) ?? ""
+            streamError = new Error(
+              content || "Agency Swarm backend returned an error without a message",
+            )
+            break
+          }
           if (kind === "agent_updated_stream_event") {
             const next = asRecord(frame.payload["new_agent"])
             const maybeName = next ? asString(next["name"]) : undefined
