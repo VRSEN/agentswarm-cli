@@ -1,8 +1,5 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import {
-  hasExplicitOpenAIClientConfig,
-  readStringRecord,
-} from "@/agency-swarm/client-config"
+import { hasExplicitOpenAIClientConfig, readStringRecord } from "@/agency-swarm/client-config"
 import { AgencySwarmHistory } from "@/agency-swarm/history"
 import { Auth } from "@/auth"
 import { Env } from "@/env"
@@ -115,16 +112,10 @@ export namespace SessionAgencySwarm {
     const explicit = asRecord(config)
     const explicitUpstreamBaseURL = readConfiguredBaseURL(explicit)
     const generated = isLoopbackBaseURL(baseURL)
-      ? await buildAuthClientConfig(
-          await Auth.all(),
-          await listProvidersForEnvCheck(),
-          getEnvForClientConfig(),
-          {
-            skipOpenAI: hasExplicitOpenAIClientConfig(config),
-            allowStoredOpenAIOAuth:
-              !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
-          },
-        )
+      ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), getEnvForClientConfig(), {
+          skipOpenAI: hasExplicitOpenAIClientConfig(config),
+          allowStoredOpenAIOAuth: !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
+        })
       : undefined
     if (!config) return generated
     if (!generated) return config
@@ -1750,11 +1741,23 @@ export namespace SessionAgencySwarm {
           role: "assistant",
           content: [{ type: "output_text", text }],
           agent: msg.info.agent,
-          callerAgent: null,
+          callerAgent: extractCallerAgent(msg),
           timestamp: msg.info.time.created,
         },
       ]
     })
+  }
+
+  function extractCallerAgent(msg: MessageV2.WithParts): string | null {
+    for (let i = msg.parts.length - 1; i >= 0; i--) {
+      const part = msg.parts[i]
+      if (part.type !== "text" && part.type !== "reasoning") continue
+      const metadata = asRecord(part.metadata)
+      if (!metadata || !Object.prototype.hasOwnProperty.call(metadata, "callerAgent")) continue
+      if (metadata["callerAgent"] === null) return null
+      return normalizeCallerAgentValue(asString(metadata["callerAgent"])) ?? null
+    }
+    return null
   }
 
   function isAgencySwarmMessage(msg: MessageV2.WithParts) {
