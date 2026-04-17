@@ -4,7 +4,6 @@ import {
   readStringRecord,
 } from "@/agency-swarm/client-config"
 import { AgencySwarmHistory } from "@/agency-swarm/history"
-import { mapProviderIDToLiteLLMProvider } from "@/agency-swarm/litellm-provider"
 import { Auth } from "@/auth"
 import { Env } from "@/env"
 import { CODEX_API_BASE_URL, extractAccountId, refreshAccessToken } from "@/plugin/codex"
@@ -185,26 +184,22 @@ export namespace SessionAgencySwarm {
       allowStoredOpenAIOAuth: boolean
     },
   ): Promise<Record<string, unknown> | undefined> {
-    const litellmKeys: Record<string, string> = {}
     const payload: Record<string, unknown> = {}
 
+    // Keep automatic request-scoped auth limited to OpenAI. Local Agency Swarm
+    // backends already inherit process.env, and many do not accept LiteLLM config.
     for (const [providerID, provider] of Object.entries(providers ?? {})) {
       if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
+      if (providerID !== "openai") continue
       const key = getEnvCredential(provider, env)
       if (!key) continue
 
-      if (providerID === "openai") {
-        if (!options.skipOpenAI) payload["api_key"] = key
-        continue
-      }
-
-      const litellmProvider = mapProviderIDToLiteLLMProvider(providerID)
-      if (!litellmProvider) continue
-      litellmKeys[litellmProvider] = key
+      if (!options.skipOpenAI) payload["api_key"] = key
     }
 
     for (const [providerID, auth] of Object.entries(auths)) {
       if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
+      if (providerID !== "openai") continue
       if (hasEnvCredential(providerID, providers, env)) continue
 
       if (providerID === "openai" && auth.type === "oauth") {
@@ -221,18 +216,7 @@ export namespace SessionAgencySwarm {
 
       if (auth.type !== "api") continue
 
-      if (providerID === "openai") {
-        if (!options.skipOpenAI) payload["api_key"] = auth.key
-        continue
-      }
-
-      const litellmProvider = mapProviderIDToLiteLLMProvider(providerID)
-      if (!litellmProvider) continue
-      litellmKeys[litellmProvider] = auth.key
-    }
-
-    if (Object.keys(litellmKeys).length > 0) {
-      payload["litellm_keys"] = litellmKeys
+      if (!options.skipOpenAI) payload["api_key"] = auth.key
     }
 
     return Object.keys(payload).length > 0 ? payload : undefined

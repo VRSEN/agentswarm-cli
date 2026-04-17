@@ -1344,16 +1344,29 @@ export namespace Config {
           const deps: Promise<void>[] = []
 
           for (const dir of unique(directories)) {
+            let needsDependencies = dir === Flag.OPENCODE_CONFIG_DIR
+
             if (dir.endsWith(AgencyBrand.workspace) || dir === Flag.OPENCODE_CONFIG_DIR) {
               for (const file of AgencyBrand.configFiles) {
                 const source = path.join(dir, file)
                 log.debug(`loading config from ${source}`)
-                merge(source, yield* loadFile(source))
+                const next = yield* loadFile(source)
+                merge(source, next)
+                if (next.plugin?.length) needsDependencies = true
                 result.agent ??= {}
                 result.mode ??= {}
                 result.plugin ??= []
               }
             }
+
+            result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => loadCommand(dir)))
+            result.agent = mergeDeep(result.agent, yield* Effect.promise(() => loadAgent(dir)))
+            result.agent = mergeDeep(result.agent, yield* Effect.promise(() => loadMode(dir)))
+            const list = yield* Effect.promise(() => loadPlugin(dir))
+            if (list.length) needsDependencies = true
+            track(dir, list)
+
+            if (!needsDependencies) continue
 
             const dep = iife(async () => {
               await installDependencies(dir)
@@ -1362,12 +1375,6 @@ export namespace Config {
               log.warn("background dependency install failed", { dir, error: err })
             })
             deps.push(dep)
-
-            result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => loadCommand(dir)))
-            result.agent = mergeDeep(result.agent, yield* Effect.promise(() => loadAgent(dir)))
-            result.agent = mergeDeep(result.agent, yield* Effect.promise(() => loadMode(dir)))
-            const list = yield* Effect.promise(() => loadPlugin(dir))
-            track(dir, list)
           }
 
           if (process.env.OPENCODE_CONFIG_CONTENT) {

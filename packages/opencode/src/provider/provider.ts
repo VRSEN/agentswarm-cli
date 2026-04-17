@@ -1299,6 +1299,18 @@ export namespace Provider {
             mergeProvider(providerID, partial)
           }
 
+          const agencySwarmProviderID = ProviderID.make(AgencySwarmAdapter.PROVIDER_ID)
+          const shouldLoadAgencySwarmProvider =
+            isProviderAllowed(agencySwarmProviderID) &&
+            !providers[agencySwarmProviderID] &&
+            (cfg.provider?.[AgencySwarmAdapter.PROVIDER_ID] !== undefined ||
+              auths[AgencySwarmAdapter.PROVIDER_ID] !== undefined ||
+              cfg.model === `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`)
+
+          if (shouldLoadAgencySwarmProvider) {
+            mergeProvider(agencySwarmProviderID, { source: "config" })
+          }
+
           const gitlab = ProviderID.make("gitlab")
           if (discoveryLoaders[gitlab] && providers[gitlab] && isProviderAllowed(gitlab)) {
             yield* Effect.promise(async () => {

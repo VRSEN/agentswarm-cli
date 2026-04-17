@@ -27,16 +27,20 @@ export function isUsableModel(input: {
   argModel?: string
   configModel?: string
   configuredProviders?: Record<string, unknown>
+  enabledProviders?: string[]
+  disabledProviders?: string[]
 }) {
   const provider = input.providers.find((x) => x.id === input.model.providerID)
   if (provider?.models[input.model.modelID]) return true
   if (input.model.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
   if (input.model.modelID !== AgencySwarmAdapter.DEFAULT_MODEL_ID) return false
+  if (input.enabledProviders && !input.enabledProviders.includes(AgencySwarmAdapter.PROVIDER_ID)) return false
+  if (input.disabledProviders?.includes(AgencySwarmAdapter.PROVIDER_ID)) return false
   const selectedAgencySwarmModel = [input.argModel, input.configModel].some(
     (value) => value === `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
   )
   if (!selectedAgencySwarmModel) return false
-  return !!input.configuredProviders?.[AgencySwarmAdapter.PROVIDER_ID]
+  return true
 }
 
 export function selectCurrentModel(input: {
@@ -160,6 +164,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         argModel: args.model,
         configModel: sync.data.config.model,
         configuredProviders: sync.data.config.provider,
+        enabledProviders: sync.data.config.enabled_providers,
+        disabledProviders: sync.data.config.disabled_providers,
       })
     }
 
