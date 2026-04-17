@@ -3,6 +3,8 @@ import { Global } from "@/global"
 import path from "path"
 import { AgencySwarmAdapter } from "./adapter"
 
+const LOCAL_AGENCY_ID = "local-agency"
+
 export namespace AgencySwarmHistory {
   export type Scope = {
     baseURL: string
@@ -20,14 +22,18 @@ export namespace AgencySwarmHistory {
   export async function load(scope: Scope): Promise<Entry> {
     const key = storageKey(scope)
     const expectedScope = scopeKey(scope)
-    const current = normalize(
-      await Storage.read<Entry>(key).catch((error) => {
-        if (Storage.NotFoundError.isInstance(error)) return undefined
-        throw error
-      }),
-      expectedScope,
-    )
+    const current = normalize(await readEntry(key), expectedScope)
     if (current) return current
+
+    const recovered = await loadRecoveredLocalLoopback(scope)
+    if (recovered) {
+      const migrated = {
+        ...recovered,
+        scope: expectedScope,
+      } satisfies Entry
+      await save(scope, migrated)
+      return migrated
+    }
 
     const legacy = normalize(await loadLegacy(scope), expectedScope)
     if (!legacy) return empty(expectedScope)
@@ -74,6 +80,13 @@ export namespace AgencySwarmHistory {
     await Storage.write<Entry>(storageKey(scope), entry)
   }
 
+  async function readEntry(key: string[]) {
+    return Storage.read<Entry>(key).catch((error) => {
+      if (Storage.NotFoundError.isInstance(error)) return undefined
+      throw error
+    })
+  }
+
   function storageKey(scope: Scope): string[] {
     const scopedKey = scopeKey(scope)
     const hash = Bun.hash.xxHash32(scopedKey).toString(16).padStart(8, "0")
@@ -82,7 +95,9 @@ export namespace AgencySwarmHistory {
 
   function asHistory(input: unknown): Array<Record<string, unknown>> {
     if (!Array.isArray(input)) return []
-    return input.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item))
+    return input.filter(
+      (item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item),
+    )
   }
 
   async function loadLegacy(scope: Scope): Promise<Entry | undefined> {
@@ -97,13 +112,61 @@ export namespace AgencySwarmHistory {
     return path.join(path.dirname(Global.Path.data), "opencode", "storage", ...storageKey(scope)) + ".json"
   }
 
-  function normalize(existing: Entry | undefined, expectedScope: string): Entry | undefined {
-    if (!existing || existing.scope !== expectedScope) return
+  async function loadRecoveredLocalLoopback(scope: Scope): Promise<Entry | undefined> {
+    if (scope.agency !== LOCAL_AGENCY_ID || !isLoopbackBaseURL(scope.baseURL)) return
+
+    const keys = await Storage.list(["agency_swarm_history"]).catch(() => [] as string[][])
+    let newest: Entry | undefined
+
+    for (const key of keys) {
+      const existing = normalize(await readEntry(key))
+      const parsed = parseScope(existing?.scope)
+      if (!existing || !parsed) continue
+      if (parsed.sessionID !== scope.sessionID || parsed.agency !== scope.agency) continue
+      if (!isLoopbackBaseURL(parsed.baseURL)) continue
+      if (!newest || existing.updated_at > newest.updated_at) {
+        newest = existing
+      }
+    }
+
+    return newest
+  }
+
+  function normalize(existing: Entry | undefined, expectedScope?: string): Entry | undefined {
+    if (!existing) return
+    if (expectedScope && existing.scope !== expectedScope) return
     return {
       scope: existing.scope,
       chat_history: asHistory(existing.chat_history),
       last_run_id: typeof existing.last_run_id === "string" && existing.last_run_id ? existing.last_run_id : undefined,
       updated_at: typeof existing.updated_at === "number" ? existing.updated_at : Date.now(),
+    }
+  }
+
+  function parseScope(scope: string | undefined) {
+    if (!scope) return
+    const parts = scope.split("|")
+    const sessionID = parts.at(-1)
+    const agency = parts.at(-2)
+    if (!sessionID || !agency || parts.length < 3) return
+    return {
+      baseURL: parts.slice(0, -2).join("|"),
+      agency,
+      sessionID,
+    }
+  }
+
+  function isLoopbackBaseURL(baseURL: string) {
+    try {
+      const parsed = new URL(baseURL)
+      return (
+        parsed.hostname === "127.0.0.1" ||
+        parsed.hostname === "0.0.0.0" ||
+        parsed.hostname === "localhost" ||
+        parsed.hostname === "::1"
+      )
+    } catch {
+      return false
     }
   }
 }
