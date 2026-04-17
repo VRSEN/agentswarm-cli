@@ -2590,6 +2590,35 @@ describe("session.agency-swarm", () => {
     expect(events.some((event) => event.type === "finish")).toBeFalse()
   })
 
+  test("stream surfaces bridge data-frame error payloads instead of silently dropping them", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "error",
+          content: "Error code: 400 - The 'gpt-5' model is not supported when using Codex with a ChatGPT account.",
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    const errorEvent = events.find((event) => event.type === "error")
+    expect(errorEvent).toBeDefined()
+    expect(String(errorEvent.error?.message ?? errorEvent.error ?? "")).toContain(
+      "The 'gpt-5' model is not supported when using Codex with a ChatGPT account.",
+    )
+    expect(events.some((event) => event.type === "finish-step")).toBeFalse()
+    expect(events.some((event) => event.type === "finish")).toBeFalse()
+  })
+
   test("stream does not complete function_call on response.function_call.completed before output", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
