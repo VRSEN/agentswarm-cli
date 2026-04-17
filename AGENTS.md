@@ -19,11 +19,12 @@ North Star: keep the user's general intent and direction clear; read intent betw
 - For any update anywhere in the repo, apply `remove > update > add` when the outcome is equivalent; do not add new code, docs, tests, or rules until you have ruled out deleting, tightening, or reusing the existing path.
 - At task start, identify your role from available tools because the same Instruction File governs managers and subagents: agents with the Subagent tool are managers/execution-loop coordinators; agents without it are subagents, must stay inside delegated scope, report blockers, and must not claim they can delegate.
 - Protect the context window. Avoid tool calls with unbounded or irrelevant output, prefer bounded reads/searches, and use delegated agents for broad exploration only when available through the real Subagent tool so the main context receives relevant findings.
-- Managers delegate focused work through the real Subagent tool only when it materially reduces risk, context load, or non-blocking exploration time; never spawn more than 10 subagents for one task.
-- When a manager is in doubt about a change, seek bounded subagent counsel before editing or shipping.
+- Managers delegate only when it clearly shortens the critical path or removes main-thread context load; use the bare minimum number of subagents, defaulting to one.
+- Combine related delegated work when one subagent can cover it; add another only when it clearly shortens the critical path.
 - After delegating work, do not interrupt, rush, or repeatedly ping subagents; block and wait for their result unless the user changes scope or you have clear evidence of a hard failure.
-- Each subagent prompt must include the full relevant context, source of truth, scope, non-goals, constraints, source pointers, and success condition; avoid vague one-off labels such as "cleanup" unless the prompt defines the exact work.
-- Do not over-specify delegated work. Managers give the goal, constraints, and success condition, not a script of exact steps or exact file edits unless those edits are already known.
+- Start every subagent task with background explaining what went wrong. Include enough context for the handoff, with no fixed length requirement.
+- Keep subagent prompts goal-based and avoid unnecessary scripting; do not script exact file edits. If the exact edit is already known, apply it in the main thread and use the subagent for review or finalization.
+- PR-specific work belongs to subagents, not the manager. If no suitable native subagent is available, stop and surface the blocker or use Codex CLI only as the fallback review path.
 - Default native-subagent model policy: use `gpt-5.4` with `high` reasoning unless the user explicitly overrides it.
 
 ## Requirement Completeness Gate
@@ -66,13 +67,13 @@ Context
 - Restate the user's intent and the active task in your responses to the user when it helps clarity; when asked about anything, answer concisely and explicitly before elaborating.
 - Keep user-facing summaries short and executive. Lead with what changed, what matters, and what needs a decision; do not surface raw internal checks or process chatter unless the user asks.
 - Prime yourself with enough context to act safely—read, trace, and analyze the relevant paths before changes, and do not proceed unless you can explain the change in your own words.
-- Use fresh tool outputs before acting; do not rely on memory.
+- Use fresh tool outputs before acting or responding when the evidence could have changed; do not rely on memory or earlier command results.
 - Assume user guidance may contain mistakes; verify referenced files and facts against the repo and latest diffs before acting.
 - If verified evidence conflicts with a core user requirement, stop, ask one concise question, and wait.
 - Always produce evidence when asked—run the relevant code, examples, or commands before responding, and cite the observed output.
 
 Repo State
-- Keep one explicit live list of active artifacts you own (repos, worktrees, branches, PRs, files, temp assets). Every artifact you touch becomes a tracked ledger item and a blocker until it is shipped, explicitly discarded, or clearly handed off with status. When your work is shipped to `vrsen/dev` or otherwise closed, clean up stale local branches/worktrees you own before starting the next task; if ownership or merge state is ambiguous, escalate before cleanup.
+- Keep one explicit live list of active artifacts you own (repos, worktrees, branches, PRs, files, temp assets). Every artifact you touch becomes a tracked ledger item and a blocker until it is shipped, explicitly discarded, or clearly handed off with status. Clean up outdated artifacts you created for the current task when they have been superseded by a newer artifact for the same purpose and are no longer the single source of truth or needed for rollback or evidence. When your work is shipped to `vrsen/dev` or otherwise closed, clean up stale local branches/worktrees you own before starting the next task; if ownership or merge state is ambiguous, escalate before cleanup.
 - Keep code changes and docs-only changes in separate review streams when practical. Combine them only when the docs are inseparable from the exact code change.
 - Mandatory start state: if `origin/dev` is reachable, run `git fetch --all --prune` and work from a named branch based on `origin/dev`; create or refresh that branch before analysis, edits, or tests. For fork shipping work, verify `origin/dev...vrsen/dev` counts before pushing. For danger-zone release work, also verify that the exact release commit is already reachable from `vrsen/dev` and that the target version already appears in the release inputs on that commit (for example `package.json`, package manifests, generated artifacts, and `bun.lock`) before drafting, tagging, publishing, deleting, or restoring any release artifact. If the remote is unavailable, proceed and state that you are assuming the branch is already synced.
 - If the task spans multiple repos/worktrees, run the same remote preflight in each target repo (`git fetch origin`, `git status -sb`, `git rev-parse --short HEAD`) and confirm the active branch before any edits.
@@ -83,7 +84,7 @@ Repo State
 Execution
 - Complete one change at a time; stash unrelated work before starting another.
 - If a change breaks these rules, fix it right away with the smallest safe edit.
-- Run deliberate mental simulations to surface risks and confirm the smallest coherent diff.
+- Think 100 times before editing. Run deliberate mental simulations to surface risks and confirm the smallest coherent diff.
 - Favor repository tooling (`bun`, package scripts, `turbo`, and the plan/todo tool) over ad-hoc paths; escalate tooling or permission limits when blocked.
 - When a non-readonly command is blocked by sandboxing, rerun it with escalated permissions if needed.
 - Before adding or changing any rule, locate related Instruction File rules, re-read the diff against the prior file state, make sure you did not remove anything valuable, and consolidate by `remove > update > add`; never append blindly.
@@ -179,10 +180,10 @@ These requirements apply to every file in the repository. Bullets prefixed with 
 - Single clear path: prefer single-path behavior where outcomes are identical; flatten unnecessary branching. Avoid optional fallbacks unless explicitly requested.
 
 ## Self-Improvement (High Priority)
-- On each user message, decide whether the Instruction File needs a policy adjustment to prevent a repeated mistake, user-visible failure, or recurring slowdown; when the user directly requests the policy change, draft the smallest local rule update promptly without derailing the active critical path.
+- On each user message, decide whether the Instruction File needs a policy adjustment to keep standing user instructions from this chat derivable from it and to prevent repeated mistakes, user-visible failures, or recurring slowdown; if a standing user instruction is not derivable from the Instruction File, update it promptly without derailing the active critical path.
 - When adding or changing an Instruction File rule, include or preserve the rule's concrete motivation: what observed failure, risk, or recurring slowdown it prevents. Do not add abstract rules that cannot be grounded in real task experience.
-- Instruction File and policy edits are red-zone work: managers delegate complex policy edits or independent policy review through the real Subagent tool when required or materially risk-reducing; if required Subagent tooling is unavailable, stop and surface the blocker instead of substituting CLI. Subagents must stay inside assigned policy scope and report blockers or review gaps instead of inventing delegation.
-- Before treating Instruction File edits as ready, review the local diff for concrete motivation, duplication, conflict with existing rules, and harmful process overhead; keep rule updates out of unrelated feature PRs so self-improvement remains fast, reviewed, and isolated from product diffs.
+- Instruction File and policy edits are red-zone work because process mistakes slowed execution. Use one native subagent run by default for review or finalization, start with the root cause and enough background for the handoff, avoid unnecessary scripting, and follow `remove > update > add`. Use Codex CLI only when suitable native subagents are unavailable.
+- Before treating Instruction File edits as ready, review the local diff for concrete motivation, duplication, conflict with existing rules, and harmful process overhead; keep critical priming paths non-duplicative by updating or moving an existing rule instead of restating it, and keep rule updates out of unrelated feature PRs so self-improvement remains fast, reviewed, and isolated from product diffs.
 - For policy/rule updates you make on your own initiative, request user approval before editing; do not pause normal coding/testing/review loops for extra approval requests.
 
 ### Writing Style (User Responses Only)
@@ -218,6 +219,7 @@ These requirements apply to every file in the repository. Bullets prefixed with 
 - Share findings promptly when failures/root causes are found; avoid silent fixes.
 - Debug with systematic source analysis, logging, and minimal unit testing.
 - MANDATORY: Before fixing any error, reproduce it locally first. Run the exact command or test that triggers the error and confirm you see the same failure. Never apply a fix without first observing the error yourself.
+- MANDATORY: End-user QA is the only accepted proof of a fix. A bug is "fixed" only after you re-run the exact end-user flow that surfaced it (same installed binary or same release artifact, same starting state, same commands) and observe the failure no longer reproduces. Unit tests and PR checks are necessary but never sufficient. If the bug was reported from a TUI session, prove the fix in a TUI session against the released build (drive it via pty/pexpect/expect/script if you have no human at the keyboard); if from a CLI subcommand, prove it by running that subcommand against the released build; if from an installed package, install the released artifact fresh and retry. Do not claim a fix as complete and do not close a REQ until that end-user proof exists and is cited.
 - For bug fixes, encode the report in an automated test before touching runtime code; confirm it fails with the same error you saw in the report.
 - Edit incrementally: make small, focused changes, validating each with tests when practical.
 - After changes affecting data flow or order, scan for related patterns and remove obsolete ones when in scope.
@@ -298,7 +300,6 @@ After each meaningful tool call or code edit, validate the result in 1-2 lines a
 - Treat `dev` and other long-lived shared/default fork branches as append-only. Do not force-push, rebase, or rewrite their published history unless the user explicitly requests that exact recovery; use common sense on short-lived branches.
 - Upstream sync policy for fork `dev`: merge `origin/dev` into fork `dev` (or merge fork `dev` into a branch from `origin/dev`), then fast-forward push. Avoid restacking published commit series.
 - Commit preservation is mandatory. If a rewrite is explicitly approved as an emergency exception, create immutable backup tags/refs first and record a `range-diff` proof before and after.
-- Default delegated-review fallback policy when native subagents are unavailable: use Codex CLI with `gpt-5.4` at `high`.
 - Sync workflow:
   - run `git fetch --all --prune`
   - verify `origin/dev...vrsen/dev` counts
@@ -424,7 +425,8 @@ Strictness
 ### PR Comment Review Loop (Mandatory for Local Coding Work)
 - If you are doing coding work locally (outside GitHub UI) for an open PR and you can post GitHub comments, you must run this loop:
   - Open the PR and resolve every correct active comment-thread finding.
-  - Launch bounded subagents only when they materially reduce risk or context load; follow the global 10-subagent cap and keep the critical path local.
+  - Route PR-specific work through one suitable native subagent by default. Keep the manager on the local critical path and add another subagent only when it clearly shortens that path.
+  - PR-specific work includes comment review, thread replies, issue-link checks, PR-body edits, and other GitHub-side mutations; do not do that work in the manager thread.
   - If suitable native subagents are unavailable, use local Codex CLI only as the fallback review path and write output to a `/tmp/codex_review_<sha>.txt` artifact.
   - Preferred fallback command: `codex review --base origin/dev -c model_reasoning_effort="high" > /tmp/codex_review_<short_sha>.txt 2>&1`.
   - Fallback inside that Codex CLI path when `codex review` is unavailable: use equivalent `codex exec` diff review and save to the same artifact pattern.
