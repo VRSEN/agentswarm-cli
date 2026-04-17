@@ -606,7 +606,7 @@ async function installProjectDependencies(directory: string, python: string[]) {
     })
   }
 
-  return runCommand([...python, "-m", "pip", "install", "agency-swarm[fastapi]>=1.8.1"])
+  return runCommand([...python, "-m", "pip", "install", "agency-swarm[fastapi,litellm]>=1.8.1"])
 }
 
 async function startProjectServer(directory: string, python: string[]) {
