@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { Auth } from "../../src/auth"
@@ -1625,6 +1625,88 @@ describe("session.agency-swarm", () => {
     }
 
     expect(sentRecipient).toBe("MathAgent")
+  })
+
+  test("stream reuses stored history when compactHistory falls back", async () => {
+    const storedHistory = [{ type: "message", role: "assistant", content: "kept memory" }]
+    const mixedProviderMessages = [
+      {
+        info: {
+          id: "user_1",
+          role: "user",
+          agent: "build",
+          model: { providerID: "openai", modelID: "gpt-5" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "text", text: "first question", ignored: false }],
+      },
+      {
+        info: {
+          id: "assistant_1",
+          role: "assistant",
+          parentID: "user_1",
+          providerID: "openai",
+          modelID: "gpt-5",
+          mode: "Default",
+          agent: "Assistant",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "first answer" }],
+      },
+      {
+        info: {
+          id: "message_user_1",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [{ type: "text", text: "current prompt", ignored: false }],
+      },
+    ] as any
+
+    let sentHistory: unknown
+    AgencySwarmHistory.load = (async () => ({
+      scope: "http://127.0.0.1:8000|builder|session_1",
+      chat_history: storedHistory as any,
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.load
+    AgencySwarmHistory.appendMessages = (async () => ({
+      scope: "scope",
+      chat_history: [],
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.appendMessages
+    AgencySwarmHistory.setLastRunID = (async () => ({
+      scope: "scope",
+      chat_history: [],
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.setLastRunID
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      sentHistory = args.chatHistory
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const messagesSpy = spyOn(Session, "messages").mockResolvedValue(mixedProviderMessages)
+    try {
+      const { input } = helper()
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _ of stream.fullStream) {
+      }
+    } finally {
+      messagesSpy.mockRestore()
+    }
+
+    expect(sentHistory).toEqual(storedHistory)
   })
 
   test("stream persists handed off recipient from session history", async () => {
