@@ -58,20 +58,20 @@ test("load falls back to legacy opencode storage and migrates entry", async () =
   ])
 })
 
-test("load recovers latest local-agency loopback history across baseURL port changes", async () => {
+test("load recovers latest loopback history across baseURL port changes for the same local agency", async () => {
   const scope = {
     baseURL: "http://127.0.0.1:8124",
-    agency: "local-agency",
+    agency: "QAAgency",
     sessionID: "session_1",
   }
   const previousScope = {
     baseURL: "http://127.0.0.1:8123",
-    agency: "local-agency",
+    agency: "QAAgency",
     sessionID: "session_1",
   }
   const ignoredRemoteScope = {
     baseURL: "https://remote.example.com",
-    agency: "local-agency",
+    agency: "QAAgency",
     sessionID: "session_1",
   }
   const ignoredAgencyScope = {

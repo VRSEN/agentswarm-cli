@@ -3,8 +3,6 @@ import { Global } from "@/global"
 import path from "path"
 import { AgencySwarmAdapter } from "./adapter"
 
-const LOCAL_AGENCY_ID = "local-agency"
-
 export namespace AgencySwarmHistory {
   export type Scope = {
     baseURL: string
@@ -25,7 +23,7 @@ export namespace AgencySwarmHistory {
     const current = normalize(await readEntry(key), expectedScope)
     if (current) return current
 
-    const recovered = await loadRecoveredLocalLoopback(scope)
+    const recovered = await loadRecoveredLoopback(scope)
     if (recovered) {
       const migrated = {
         ...recovered,
@@ -112,8 +110,8 @@ export namespace AgencySwarmHistory {
     return path.join(path.dirname(Global.Path.data), "opencode", "storage", ...storageKey(scope)) + ".json"
   }
 
-  async function loadRecoveredLocalLoopback(scope: Scope): Promise<Entry | undefined> {
-    if (scope.agency !== LOCAL_AGENCY_ID || !isLoopbackBaseURL(scope.baseURL)) return
+  async function loadRecoveredLoopback(scope: Scope): Promise<Entry | undefined> {
+    if (!isLoopbackBaseURL(scope.baseURL)) return
 
     const keys = await Storage.list(["agency_swarm_history"]).catch(() => [] as string[][])
     let newest: Entry | undefined
