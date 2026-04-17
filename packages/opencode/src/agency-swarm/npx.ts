@@ -544,6 +544,7 @@ async function ensureProjectPython(directory: string) {
   if (hasVenv) {
     const info = await inspectPython([venvPython])
     prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
+    await ensureLatestAgencySwarm(directory, [venvPython])
     return [venvPython]
   }
 
@@ -594,19 +595,37 @@ async function ensureProjectPython(directory: string) {
 async function installProjectDependencies(directory: string, python: string[]) {
   const requirements = path.join(directory, "requirements.txt")
   if (await Filesystem.exists(requirements)) {
-    return runCommand([...python, "-m", "pip", "install", "-r", "requirements.txt"], {
+    return runCommand([...python, "-m", "pip", "install", "--upgrade", "-r", "requirements.txt"], {
       cwd: directory,
     })
   }
 
   const pyproject = path.join(directory, "pyproject.toml")
   if (await Filesystem.exists(pyproject)) {
-    return runCommand([...python, "-m", "pip", "install", "-e", "."], {
+    return runCommand([...python, "-m", "pip", "install", "--upgrade", "-e", "."], {
       cwd: directory,
     })
   }
 
-  return runCommand([...python, "-m", "pip", "install", "agency-swarm[fastapi,litellm]>=1.8.1"])
+  return runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.1"])
+}
+
+async function ensureLatestAgencySwarm(directory: string, python: string[]) {
+  try {
+    const result = await runCommand(
+      [...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]"],
+      { cwd: directory },
+    )
+    if (result.code !== 0) {
+      prompts.log.warn(
+        "Could not refresh agency-swarm to the latest version. The current venv package will be used as-is.",
+      )
+    }
+  } catch {
+    prompts.log.warn(
+      "Could not refresh agency-swarm to the latest version. The current venv package will be used as-is.",
+    )
+  }
 }
 
 async function startProjectServer(directory: string, python: string[]) {
