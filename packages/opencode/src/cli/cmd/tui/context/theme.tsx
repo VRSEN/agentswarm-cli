@@ -103,8 +103,8 @@ const [store, setStore] = createStore<State>({
   ready: false,
 })
 
-export function defaultThemeName(input?: { termProgram?: string; background?: string }) {
-  return input?.termProgram === "Apple_Terminal" && isDarkTerminalBackground(input) ? "system" : "opencode"
+export function defaultThemeName(_input?: { termProgram?: string; background?: string }) {
+  return "opencode"
 }
 
 export function canSelectBuiltInThemeName(

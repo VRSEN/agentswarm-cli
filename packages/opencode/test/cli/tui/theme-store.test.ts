@@ -46,11 +46,12 @@ test("hasTheme checks theme presence", () => {
   expect(hasTheme(name)).toBe(true)
 })
 
-test("defaultThemeName only prefers the system palette for dark Apple Terminal themes", () => {
+test("defaultThemeName always returns the Agent Swarm opencode palette regardless of terminal", () => {
   expect(defaultThemeName({ termProgram: "Apple_Terminal" })).toBe("opencode")
-  expect(defaultThemeName({ termProgram: "Apple_Terminal", background: "#101010" })).toBe("system")
+  expect(defaultThemeName({ termProgram: "Apple_Terminal", background: "#101010" })).toBe("opencode")
   expect(defaultThemeName({ termProgram: "Apple_Terminal", background: "#f5f5f5" })).toBe("opencode")
   expect(defaultThemeName({ termProgram: "iTerm.app" })).toBe("opencode")
+  expect(defaultThemeName()).toBe("opencode")
 })
 
 test("built-in theme selection only allows opencode plus dark Apple Terminal system", () => {
