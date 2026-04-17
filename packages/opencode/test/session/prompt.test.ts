@@ -5,9 +5,11 @@ import { fileURLToPath } from "url"
 import { Instance } from "../../src/project/instance"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Session } from "../../src/session"
+import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { SessionPrompt } from "../../src/session/prompt"
 import { Log } from "../../src/util/log"
+import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { tmpdir } from "../fixture/fixture"
 
 Log.init({ print: false })
@@ -227,6 +229,75 @@ describe("session.prompt special characters", () => {
 })
 
 describe("session.prompt regression", () => {
+  test("skips fallback title generation for agency-swarm sessions", async () => {
+    const originalStreamRun = AgencySwarmAdapter.streamRun
+    const originalLLMStream = LLM.stream
+    const titleProviders: string[] = []
+
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "messages",
+        payload: {
+          run_id: "run_1",
+          new_messages: [
+            {
+              type: "message",
+              id: "msg_1",
+              content: [{ type: "output_text", text: "agency answer" }],
+            },
+          ],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    LLM.stream = (async (input) => {
+      titleProviders.push(String(input.model.providerID))
+      return { text: "unexpected title" } as unknown as Awaited<ReturnType<typeof LLM.stream>>
+    }) as typeof LLM.stream
+
+    try {
+      await using tmp = await tmpdir({
+        git: true,
+        config: {
+          model: "agency-swarm/default",
+          enabled_providers: ["agency-swarm"],
+          provider: {
+            "agency-swarm": {
+              options: {
+                baseURL: "http://127.0.0.1:8000",
+                agency: "builder",
+              },
+            },
+          },
+        },
+      })
+
+      await Instance.provide({
+        directory: tmp.path,
+        fn: async () => {
+          const session = await Session.create({})
+          const result = await SessionPrompt.prompt({
+            sessionID: session.id,
+            agent: "build",
+            parts: [{ type: "text", text: "hello" }],
+          })
+
+          expect(result.info.role).toBe("assistant")
+          const messages = await Session.messages({ sessionID: session.id })
+          expect(messages.filter((message) => message.info.role === "assistant")).toHaveLength(1)
+
+          await new Promise((resolve) => setTimeout(resolve, 100))
+
+          expect(titleProviders).not.toContain(AgencySwarmAdapter.PROVIDER_ID)
+        },
+      })
+    } finally {
+      AgencySwarmAdapter.streamRun = originalStreamRun
+      LLM.stream = originalLLMStream
+    }
+  })
+
   test("does not loop empty assistant turns for a simple reply", async () => {
     let calls = 0
     const server = Bun.serve({
