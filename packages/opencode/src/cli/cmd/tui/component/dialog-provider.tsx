@@ -253,7 +253,9 @@ export function DialogAuth() {
   )
   const providerIDs = frameworkMode()
     ? sync.data.provider_next.all
-        .filter((provider) => isSupportedAgencyAuthProvider(provider.id, provider, sync.data.provider_auth[provider.id] ?? []))
+        .filter((provider) =>
+          isSupportedAgencyAuthProvider(provider.id, provider, sync.data.provider_auth[provider.id] ?? []),
+        )
         .map((provider) => provider.id)
     : undefined
   const providerOptions = createDialogProviderOptionsWithFilter({ providerIDs })
@@ -280,7 +282,9 @@ export function DialogAuth() {
     ]
   })
 
-  return <DialogSelect title={frameworkMode() ? "Manage Agent Swarm auth" : "Manage provider auth"} options={options()} />
+  return (
+    <DialogSelect title={frameworkMode() ? "Manage Agent Swarm auth" : "Manage provider auth"} options={options()} />
+  )
 }
 
 type Option =
@@ -479,8 +483,9 @@ export function DialogAgencySwarmConnect() {
       localServers: remembered,
       discoveryTimeoutMs: current.discoveryTimeoutMs,
       agency: sameServer ? (readString(current.options["agency"]) ?? null) : null,
-      recipientAgent:
-        sameServer ? (readString(current.options["recipientAgent"]) ?? readString(current.options["recipient_agent"]) ?? null) : null,
+      recipientAgent: sameServer
+        ? (readString(current.options["recipientAgent"]) ?? readString(current.options["recipient_agent"]) ?? null)
+        : null,
     }
     if (!current.configToken) nextOptions["token"] = null
 
@@ -636,6 +641,38 @@ interface AutoMethodProps {
   title: string
   authorization: ProviderAuthAuthorization
 }
+
+function describeBrowserOpenFailure(error: unknown) {
+  const detail = toErrorMessage(error)
+  if (!detail) return "Could not open your default browser automatically. Open the link above to continue."
+  return `Could not open your default browser automatically. Open the link above to continue. ${detail}`
+}
+
+function watchBrowserOpen(url: string, onFailure: (message: string) => void) {
+  return open(url)
+    .then((subprocess) => {
+      let settled = false
+      const fail = (error: unknown) => {
+        if (settled) return
+        settled = true
+        onFailure(describeBrowserOpenFailure(error))
+      }
+      const timer = setTimeout(() => {
+        settled = true
+      }, 500)
+      subprocess.once?.("error", (error) => {
+        clearTimeout(timer)
+        fail(error)
+      })
+      subprocess.once?.("exit", (code) => {
+        if (code === null || code === 0) return
+        clearTimeout(timer)
+        fail(new Error(`Browser open failed with exit code ${code}`))
+      })
+    })
+    .catch((error) => onFailure(describeBrowserOpenFailure(error)))
+}
+
 function AutoMethod(props: AutoMethodProps) {
   const { theme } = useTheme()
   const sdk = useSDK()
@@ -662,7 +699,14 @@ function AutoMethod(props: AutoMethodProps) {
 
   onMount(async () => {
     if (frameworkMode()) {
-      void open(props.authorization.url).catch(() => undefined)
+      void watchBrowserOpen(props.authorization.url, (message) => {
+        setError(message)
+        toast.show({
+          variant: "warning",
+          message,
+          duration: 7000,
+        })
+      })
     }
     const result = await sdk.client.provider.oauth.callback({
       providerID: props.providerID,
@@ -716,9 +760,7 @@ function AutoMethod(props: AutoMethodProps) {
           ? "Your default browser should open. If it does not, use the link above."
           : "Finish sign-in in your browser, then wait here."}
       </text>
-      <Show when={error()}>
-        {(message) => <text fg={theme.error}>{message()}</text>}
-      </Show>
+      <Show when={error()}>{(message) => <text fg={theme.error}>{message()}</text>}</Show>
       <text fg={theme.text}>
         c <span style={{ fg: theme.textMuted }}>copy</span>
       </text>
@@ -789,9 +831,7 @@ function CodeMethod(props: CodeMethodProps) {
         <box gap={1}>
           <text fg={theme.textMuted}>{props.authorization.instructions}</text>
           <Link href={props.authorization.url} fg={theme.primary} />
-          <Show when={error()}>
-            {(message) => <text fg={theme.error}>{message()}</text>}
-          </Show>
+          <Show when={error()}>{(message) => <text fg={theme.error}>{message()}</text>}</Show>
         </box>
       )}
     />
@@ -823,8 +863,7 @@ function ApiMethod(props: ApiMethodProps) {
         opencode: (
           <box gap={1}>
             <text fg={theme.textMuted}>
-              OpenCode Zen gives you access to all the best coding models at the cheapest prices with a single API
-              key.
+              OpenCode Zen gives you access to all the best coding models at the cheapest prices with a single API key.
             </text>
             <text fg={theme.text}>
               Go to <span style={{ fg: theme.primary }}>https://opencode.ai/zen</span> to get a key
@@ -847,9 +886,7 @@ function ApiMethod(props: ApiMethodProps) {
     return (
       <box gap={1}>
         {builtin}
-        <Show when={error()}>
-          {(message) => <text fg={theme.error}>{message()}</text>}
-        </Show>
+        <Show when={error()}>{(message) => <text fg={theme.error}>{message()}</text>}</Show>
       </box>
     )
   }
