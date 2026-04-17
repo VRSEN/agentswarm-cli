@@ -858,6 +858,40 @@ test("installs dependencies in writable OPENCODE_CONFIG_DIR", async () => {
   }
 })
 
+test("skips installing dependencies for workspace dirs without config or plugins", async () => {
+  await using tmp = await tmpdir({
+    git: true,
+    init: async (dir) => {
+      const workspaceDir = path.join(dir, AgencyBrand.workspace)
+      await fs.mkdir(path.join(workspaceDir, "skills", "requirement-ledger", "scripts"), { recursive: true })
+      await Filesystem.write(path.join(workspaceDir, ".gitignore"), "node_modules\n")
+      await Filesystem.write(path.join(workspaceDir, "skills", "requirement-ledger", "SKILL.md"), "# skill\n")
+      await Filesystem.write(
+        path.join(workspaceDir, "skills", "requirement-ledger", "scripts", "requirement_ledger.py"),
+        "print('ok')\n",
+      )
+    },
+  })
+
+  const install = spyOn(Npm, "install").mockImplementation(async () => {
+    throw new Error("workspace dependency install should not run")
+  })
+
+  try {
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        await Config.get()
+        await Config.waitForDependencies()
+      },
+    })
+  } finally {
+    install.mockRestore()
+  }
+
+  expect(install).not.toHaveBeenCalled()
+})
+
 test("dedupes concurrent config dependency installs for the same dir", async () => {
   await using tmp = await tmpdir()
   const dir = path.join(tmp.path, "a")
