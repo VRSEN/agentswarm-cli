@@ -669,13 +669,18 @@ async function waitForServer(input: {
   child: ReturnType<typeof Bun.spawn>
   stderrPromise: Promise<string>
 }) {
-  const deadline = Date.now() + 15000
+  const deadline = Date.now() + 30000
   const metadataURL = `${input.baseURL}/${LOCAL_AGENCY_ID}/get_metadata`
   while (Date.now() < deadline) {
     const exited = await Promise.race([input.child.exited.then((code: number) => code), sleep(200).then(() => null)])
     if (typeof exited === "number") {
       const stderr = await input.stderrPromise
-      throw new Error(stderr.trim() || `Agency Swarm server exited with code ${exited}`)
+      const summary = summarizeBridgeStderr(stderr)
+      throw new Error(
+        summary
+          ? `Agency Swarm server exited with code ${exited}: ${summary}`
+          : `Agency Swarm server exited with code ${exited}`,
+      )
     }
 
     try {
@@ -688,7 +693,20 @@ async function waitForServer(input: {
 
   input.child.kill()
   const stderr = await input.stderrPromise
-  throw new Error(stderr.trim() || "Timed out waiting for the Agency Swarm server to start")
+  const summary = summarizeBridgeStderr(stderr)
+  throw new Error(
+    summary
+      ? `Timed out waiting for the Agency Swarm server to start. Last bridge output: ${summary}`
+      : "Timed out waiting for the Agency Swarm server to start",
+  )
+}
+
+export function summarizeBridgeStderr(stderr: string): string {
+  const trimmed = stderr.trim()
+  if (!trimmed) return ""
+  const lines = trimmed.split(/\r?\n/).filter((line) => line.trim().length > 0)
+  const tail = lines.slice(-5).join(" | ")
+  return tail.length > 500 ? `${tail.slice(0, 500)}...` : tail
 }
 
 async function hasGitHubTemplateFlow() {

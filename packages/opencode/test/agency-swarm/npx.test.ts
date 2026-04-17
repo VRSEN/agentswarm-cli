@@ -11,6 +11,7 @@ import {
   prepareProjectLaunch,
   resolveNpxAutoProject,
   shouldRunNpxOnboarding,
+  summarizeBridgeStderr,
   validateStarterName,
 } from "../../src/agency-swarm/npx"
 import { AgencySwarmRunSession } from "../../src/agency-swarm/run-session"
@@ -753,6 +754,28 @@ describe("agency-swarm npx onboarding", () => {
       if (runProject === undefined) delete process.env[AgencySwarmRunSession.LOCAL_PROJECT_ENV]
       else process.env[AgencySwarmRunSession.LOCAL_PROJECT_ENV] = runProject
     }
+  })
+
+  test("summarizeBridgeStderr collapses multiline warnings into a concise tail", () => {
+    expect(summarizeBridgeStderr("")).toBe("")
+    expect(summarizeBridgeStderr("   \n  \n")).toBe("")
+
+    const warnings =
+      "Files folder '/project/example_agent/files' does not exist. Skipping...\n" +
+      "Files folder '/project/example_agent2/files' does not exist. Skipping..."
+    const summary = summarizeBridgeStderr(warnings)
+    expect(summary).toBe(
+      "Files folder '/project/example_agent/files' does not exist. Skipping... | Files folder '/project/example_agent2/files' does not exist. Skipping...",
+    )
+
+    const manyLines = Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n")
+    const tail = summarizeBridgeStderr(manyLines)
+    expect(tail).toBe("line 15 | line 16 | line 17 | line 18 | line 19")
+
+    const huge = "x".repeat(2000)
+    const truncated = summarizeBridgeStderr(huge)
+    expect(truncated.endsWith("...")).toBe(true)
+    expect(truncated.length).toBeLessThanOrEqual(503)
   })
 })
 
