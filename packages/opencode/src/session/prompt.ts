@@ -1376,11 +1376,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             // Some providers return "stop" even when the assistant message contains tool calls.
             // Keep the loop running so tool results can be sent back to the model.
             const hasToolCalls = lastAssistantMsg?.parts.some((part) => part.type === "tool") ?? false
+            const isAgencySwarm = lastAssistant?.providerID === SessionAgencySwarm.PROVIDER_ID
 
             if (
               lastAssistant?.finish &&
               !["tool-calls"].includes(lastAssistant.finish) &&
-              !hasToolCalls &&
+              (!hasToolCalls || isAgencySwarm) &&
               lastUser.id < lastAssistant.id
             ) {
               log.info("exiting loop", { sessionID })
