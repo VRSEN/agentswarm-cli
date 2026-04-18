@@ -292,9 +292,11 @@ After each meaningful tool call or code edit, validate the result in 1-2 lines a
 
 ## Fork Context
 - This is `agentswarm-cli`, a minimal OpenCode fork for Agency Swarm.
-- Treat `origin/dev` as the upstream baseline and keep the fork delta limited to Agency Swarm integration, required fork packaging/release work, and approved product branding.
+- Treat `origin/dev` as the upstream baseline and keep the fork delta limited to Agency Swarm integration, required fork packaging/release work, and approved product branding. Before any non-trivial edit, prove it fits one of those buckets; unrelated refactors, reformatting, stylistic drift, while-you're-here cleanup, and speculative abstractions are forbidden. Every fork-only change must be intentional and documented, and its commit message or PR body must state why upstream behavior is insufficient.
+  - **Why:** keep the fork rebuildable from upstream with a small, auditable delta.
 - Keep the canonical testing checkout clean and current before relying on it as evidence; if it is stale or has unowned local changes, escalate before using it.
-- Do not hide local-only drift: surface uncommitted, unpushed, stale, or unowned checkout state with the next action or blocker before claiming evidence or completion.
+- Do not hide local-only drift: surface uncommitted, unpushed, stale, or unowned checkout state with the next action or blocker before claiming evidence or completion. Before any commit, PR, or release, run a separate drift audit against `origin/dev`, `vrsen/dev`, or the last known clean state and flag anything not traceable to a deliberate, documented requirement; revert or justify it before shipping.
+  - **Why:** preserve rebuild-from-upstream capability and stop silent fork drift.
 - Remote model:
   - `origin` = upstream OpenCode
   - `vrsen` = canonical fork remote for `dev` pushes
@@ -310,7 +312,8 @@ After each meaningful tool call or code edit, validate the result in 1-2 lines a
 
 ## Release Gate
 - Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts change.
-- Before any release, build and reinstall the CLI from the fresh local build, then run the documented Agency Swarm terminal end-to-end flow to verify the real auth/onboarding path, the changed behavior, and focused regressions for each touched area.
+- Before any release or safety claim for `agentswarm-cli`, `agency-swarm`, or a 1.9.x Agency Swarm build, build and reinstall the CLI from the fresh local build, launch `agentswarm` (or the equivalent CLI) against `/Users/nick/Desktop/agentswarm-test/my-agency`, send a real first message through the connected conversation, and verify a non-empty streaming assistant response renders. Auth-smoke CI alone never satisfies this gate; any launch failure, including environment, credential, dependency, or TUI-transition issues, is a release blocker until reproduced and root-caused.
+  - **Why:** release claims were repeated while the installed binary still failed before a usable conversation.
 - MANDATORY Codex pre-release review: no tag, GitHub release, or npm publish may proceed without a green Codex CLI review (model `gpt-5.4`, reasoning `extra-high`) of the exact commit being released. Run `codex review --base vrsen/dev -c model_reasoning_effort="extra-high"` (or equivalent `codex exec` review when `codex review` is unavailable), save to `/tmp/codex_review_<short_sha>.txt`, and only proceed when the verdict is clean. If Codex flags any P1/P2, stop and surface the findings to the user.
 
 ## Documentation Rules
