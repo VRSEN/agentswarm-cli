@@ -32,6 +32,7 @@ import { formatDuration } from "@/util/format"
 import { createColors, createFrames } from "../../ui/spinner.ts"
 import { useDialog } from "@tui/ui/dialog"
 import { DialogAgencySwarmConnect, DialogAuth, DialogProvider as DialogProviderConnect } from "../dialog-provider"
+import { isAgencySwarmFrameworkMode } from "../../session-error"
 import { DialogAlert } from "../../ui/dialog-alert"
 import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
@@ -305,6 +306,16 @@ export function Prompt(props: PromptProps) {
         slash: {
           name: "editor",
         },
+        enabled:
+          !isAgencySwarmFrameworkMode({
+            currentProviderID: local.model.current()?.providerID,
+            configuredModel: sync.data.config.model,
+          }) || local.agent.current()?.name === "build",
+        hidden:
+          isAgencySwarmFrameworkMode({
+            currentProviderID: local.model.current()?.providerID,
+            configuredModel: sync.data.config.model,
+          }) && local.agent.current()?.name !== "build",
         onSelect: async (dialog) => {
           dialog.clear()
 
