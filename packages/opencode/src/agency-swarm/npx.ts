@@ -628,7 +628,11 @@ async function installProjectDependencies(directory: string, python: string[]) {
 }
 
 async function venvCanaryPasses(python: string[]) {
-  const result = await runCommand([...python, "-c", "import agency_swarm, rich, pygments, pathspec"])
+  const result = await runCommand([
+    ...python,
+    "-c",
+    "from agency_swarm.integrations.fastapi import run_fastapi",
+  ])
   return result.code === 0
 }
 

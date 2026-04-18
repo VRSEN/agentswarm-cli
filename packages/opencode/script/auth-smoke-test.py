@@ -75,9 +75,10 @@ def ensure_venv(project: Path) -> Path:
     req = project / "requirements.txt"
     if req.exists():
         run([str(python), "-m", "pip", "install", "-r", "requirements.txt"], cwd=str(project))
-    # Ensure litellm extra too so Anthropic client_config forwarding doesn't 422.
+    # Install the litellm extra only (no --upgrade) so Anthropic client_config
+    # forwarding works without overriding the framework version the template pins.
     run(
-        [str(python), "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]"],
+        [str(python), "-m", "pip", "install", "agency-swarm[fastapi,litellm]"],
         cwd=str(project),
     )
     return python
