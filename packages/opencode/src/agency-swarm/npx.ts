@@ -552,7 +552,8 @@ async function ensureProjectPython(directory: string) {
     corruptedVenv = true
   }
 
-  const detected = await findPythonExecutable()
+  const venvDir = path.resolve(path.join(directory, ".venv"))
+  const detected = await findPythonExecutable(corruptedVenv ? venvDir : undefined)
   if (!detected) {
     if (corruptedVenv) {
       throw new Error(
@@ -761,15 +762,22 @@ async function hasGitHubTemplateFlow() {
   return auth.code === 0
 }
 
-async function findPythonExecutable() {
+async function findPythonExecutable(excludeUnder?: string) {
   const candidates: string[][] =
     process.platform === "win32"
       ? [["py", "-3.13"], ["py", "-3.12"], ["python"], ["python3"]]
       : [["python3.13"], ["python3.12"], ["python3"], ["python"]]
 
+  const excludeRoot = excludeUnder ? path.resolve(excludeUnder) : undefined
+  const excludePrefix = excludeRoot ? excludeRoot + path.sep : undefined
+
   for (const candidate of candidates) {
     const info = await inspectPython(candidate)
     if (!info) continue
+    if (excludeRoot && excludePrefix) {
+      const resolved = path.resolve(info.executable)
+      if (resolved === excludeRoot || resolved.startsWith(excludePrefix)) continue
+    }
     const match = info.version.match(/^(\d+)\.(\d+)/)
     if (!match) continue
     const major = Number(match[1])
