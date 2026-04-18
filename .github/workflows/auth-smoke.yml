@@ -31,7 +31,22 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Detect configured secrets
+        id: secrets
+        env:
+          OPENAI_OAUTH_ACCESS_TOKEN: ${{ secrets.OPENAI_OAUTH_ACCESS_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [[ -n "$OPENAI_OAUTH_ACCESS_TOKEN" || -n "$OPENAI_API_KEY" || -n "$ANTHROPIC_API_KEY" ]]; then
+            echo "has_creds=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_creds=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::auth-smoke secrets not configured in repo settings; the release gate is inactive until they are added (OPENAI_OAUTH_ACCESS_TOKEN / OPENAI_API_KEY / ANTHROPIC_API_KEY)."
+          fi
+
       - name: Run auth smoke
+        if: steps.secrets.outputs.has_creds == 'true'
         env:
           OPENAI_OAUTH_ACCESS_TOKEN: ${{ secrets.OPENAI_OAUTH_ACCESS_TOKEN }}
           OPENAI_OAUTH_ACCOUNT_ID: ${{ secrets.OPENAI_OAUTH_ACCOUNT_ID }}
