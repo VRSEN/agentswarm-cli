@@ -137,10 +137,6 @@ export namespace Installation {
         const repo = "VRSEN/agentswarm-cli"
         const install = `https://raw.githubusercontent.com/${repo}/dev/install`
 
-        const getBrewFormula = Effect.fnUntraced(function* () {
-          return "opencode"
-        })
-
         const upgradeCurl = Effect.fnUntraced(
           function* (target: string) {
             const response = yield* httpOk.execute(HttpClientRequest.get(install))
@@ -174,9 +170,6 @@ export namespace Installation {
             { name: "yarn", command: () => text(["yarn", "global", "list"]) },
             { name: "pnpm", command: () => text(["pnpm", "list", "-g", "--depth=0"]) },
             { name: "bun", command: () => text(["bun", "pm", "ls", "-g"]) },
-            { name: "brew", command: () => text(["brew", "list", "--formula", "opencode"]) },
-            { name: "scoop", command: () => text(["scoop", "list", "opencode"]) },
-            { name: "choco", command: () => text(["choco", "list", "--limit-output", "opencode"]) },
           ]
 
           checks.sort((a, b) => {
@@ -189,7 +182,7 @@ export namespace Installation {
 
           for (const check of checks) {
             const output = yield* check.command()
-            const installedName = check.name === "brew" || check.name === "choco" || check.name === "scoop" ? "opencode" : pkg
+            const installedName = pkg
             if (output.includes(installedName)) {
               return check.name
             }
@@ -202,14 +195,9 @@ export namespace Installation {
           const detectedMethod = installMethod || (yield* methodImpl())
 
           if (detectedMethod === "brew") {
-            const formula = yield* getBrewFormula()
-            const response = yield* httpOk.execute(
-              HttpClientRequest.get(`https://formulae.brew.sh/api/formula/${formula}.json`).pipe(
-                HttpClientRequest.acceptJson,
-              ),
-            )
-            const data = yield* HttpClientResponse.schemaBodyJson(BrewFormula)(response)
-            return data.versions.stable
+            return yield* new UpgradeFailedError({
+              stderr: "agentswarm-cli is not published to Homebrew. Use npm, yarn, pnpm, bun, or curl instead.",
+            })
           }
 
           if (detectedMethod === "npm" || detectedMethod === "bun" || detectedMethod === "pnpm" || detectedMethod === "yarn") {
@@ -235,13 +223,9 @@ export namespace Installation {
           }
 
           if (detectedMethod === "scoop") {
-            const response = yield* httpOk.execute(
-              HttpClientRequest.get(
-                "https://raw.githubusercontent.com/ScoopInstaller/Main/master/bucket/opencode.json",
-              ).pipe(HttpClientRequest.setHeaders({ Accept: "application/json" })),
-            )
-            const data = yield* HttpClientResponse.schemaBodyJson(ScoopManifest)(response)
-            return data.version
+            return yield* new UpgradeFailedError({
+              stderr: "agentswarm-cli is not published to Scoop. Use npm, yarn, pnpm, bun, or curl instead.",
+            })
           }
 
           const response = yield* httpOk.execute(
@@ -272,16 +256,20 @@ export namespace Installation {
               result = yield* run(["bun", "install", "-g", `agentswarm-cli@${target}`])
               break
             case "brew": {
-              const formula = yield* getBrewFormula()
-              const env = { HOMEBREW_NO_AUTO_UPDATE: "1" }
-              result = yield* run(["brew", "upgrade", formula], { env })
+              return yield* new UpgradeFailedError({
+                stderr: "agentswarm-cli is not published to Homebrew. Use npm, yarn, pnpm, bun, or curl instead.",
+              })
               break
             }
             case "choco":
-              result = yield* run(["choco", "upgrade", "opencode", `--version=${target}`, "-y"])
+              return yield* new UpgradeFailedError({
+                stderr: "agentswarm-cli is not published to Chocolatey. Use npm, yarn, pnpm, bun, or curl instead.",
+              })
               break
             case "scoop":
-              result = yield* run(["scoop", "update", "opencode"])
+              return yield* new UpgradeFailedError({
+                stderr: "agentswarm-cli is not published to Scoop. Use npm, yarn, pnpm, bun, or curl instead.",
+              })
               break
             default:
               return yield* new UpgradeFailedError({ stderr: `Unknown method: ${m}` })
