@@ -44,6 +44,11 @@ interface PythonInfo {
   version: string
 }
 
+interface VenvCanaryResult {
+  healthy: boolean
+  stderr: string
+}
+
 export function shouldRunNpxOnboarding(input: {
   env: NodeJS.ProcessEnv
   argv?: string[]
@@ -633,6 +638,17 @@ async function ensureProjectPython(directory: string) {
     spinner.stop("Dependency install failed")
     throw new Error(install.stderr.trim() || install.stdout.trim() || "Dependency install failed")
   }
+  const canary = await venvCanaryPasses([venvPython], { includeStderr: true })
+  if (!canary.healthy) {
+    spinner.stop("Python environment unhealthy")
+    const summary = summarizeBridgeStderr(canary.stderr)
+    throw new Error(
+      summary
+        ? "Project `.venv` rebuilt successfully, but the Agency Swarm import canary still failed. This usually means your dependency manifest installed an incompatible `agency-swarm` version. Check the pinned version in `requirements.txt` or `pyproject.toml`. Canary stderr: " +
+            summary
+        : "Project `.venv` rebuilt successfully, but the Agency Swarm import canary still failed. This usually means your dependency manifest installed an incompatible `agency-swarm` version. Check the pinned version in `requirements.txt` or `pyproject.toml`.",
+    )
+  }
   spinner.stop("Python environment ready")
   return [venvPython]
 }
@@ -655,12 +671,20 @@ async function installProjectDependencies(directory: string, python: string[]) {
   return runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.1"])
 }
 
-async function venvCanaryPasses(python: string[]) {
+async function venvCanaryPasses(python: string[]): Promise<boolean>
+async function venvCanaryPasses(python: string[], options: { includeStderr: true }): Promise<VenvCanaryResult>
+async function venvCanaryPasses(python: string[], options?: { includeStderr?: boolean }) {
   const result = await runCommand([
     ...python,
     "-c",
     "from agency_swarm.integrations.fastapi import run_fastapi",
   ])
+  if (options?.includeStderr) {
+    return {
+      healthy: result.code === 0,
+      stderr: result.stderr,
+    }
+  }
   return result.code === 0
 }
 

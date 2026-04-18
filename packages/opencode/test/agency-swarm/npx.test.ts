@@ -159,6 +159,102 @@ describe("agency-swarm npx onboarding", () => {
     ])
   })
 
+  test("prepareProjectLaunch reruns the canary after rebuilding `.venv` and surfaces version mismatches", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await Bun.write(path.join(dir.path, "requirements.txt"), "agency-swarm==0.0.0\n")
+    await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
+      recursive: true,
+    })
+    await Bun.write(
+      path.join(
+        dir.path,
+        ".venv",
+        process.platform === "win32" ? "Scripts" : "bin",
+        process.platform === "win32" ? "python.exe" : "python",
+      ),
+      "",
+    )
+
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+
+    const commands: string[][] = []
+    const canaryStderr = [
+      "Traceback (most recent call last):",
+      "ImportError: cannot import name 'LoadFileAttachment' from 'agency_swarm.tools.built_in'",
+    ].join("\n")
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        if (target.endsWith(process.platform === "win32" ? "\\python.exe" : "/python")) {
+          return {
+            exited: Promise.resolve(0),
+            stdout: `${target}\n3.12.7\n`,
+            stderr: "",
+          } as never
+        }
+        if (cmd[0] === "python3.12") {
+          return {
+            exited: Promise.resolve(0),
+            stdout: `/usr/bin/python3.12\n3.12.7\n`,
+            stderr: "",
+          } as never
+        }
+      }
+      if (cmd.includes("from agency_swarm.integrations.fastapi import run_fastapi")) {
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: canaryStderr,
+        } as never
+      }
+      if (cmd.includes("venv")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("pip")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    let error: Error | undefined
+    try {
+      await prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      })
+    } catch (caught) {
+      error = caught as Error
+    }
+
+    expect(error).toBeInstanceOf(Error)
+    if (!error) throw new Error("Expected prepareProjectLaunch to fail")
+    expect(error.message).toContain(
+      "Project `.venv` rebuilt successfully, but the Agency Swarm import canary still failed. This usually means your dependency manifest installed an incompatible `agency-swarm` version.",
+    )
+    expect(error.message).toContain("LoadFileAttachment")
+
+    const canaryCommands = commands.filter((cmd) =>
+      cmd.includes("from agency_swarm.integrations.fastapi import run_fastapi"),
+    )
+    expect(canaryCommands).toHaveLength(2)
+  })
+
   test("detectAgencyProject requires agency.py with create_agency", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
