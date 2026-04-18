@@ -740,13 +740,14 @@ export function Prompt(props: PromptProps) {
 
       sessionID = res.data.id
       createdSessionID = sessionID
+      const newSessionID = sessionID
 
       // temporary hack to make sure the message is sent
       if (!props.sessionID)
         setTimeout(() => {
           route.navigate({
             type: "session",
-            sessionID,
+            sessionID: newSessionID,
           })
         }, 50)
     }
