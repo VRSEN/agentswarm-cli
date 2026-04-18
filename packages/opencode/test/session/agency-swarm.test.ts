@@ -243,7 +243,7 @@ describe("session.agency-swarm", () => {
     }
 
     expect(captured).toEqual({
-      apiKey: "manual-openai",
+      api_key: "manual-openai",
       base_url: "https://proxy.example.com/v1",
       litellm_keys: {
         anthropic: "manual-ant",
@@ -304,6 +304,9 @@ describe("session.agency-swarm", () => {
 
     expect(captured).toEqual({
       api_key: "sk-openai",
+      litellm_keys: {
+        anthropic: "sk-ant",
+      },
     })
   })
 
@@ -419,14 +422,6 @@ describe("session.agency-swarm", () => {
         else chunks.push(Buffer.from(chunk))
       }
       body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
-      const clientConfig = body["client_config"] as Record<string, unknown> | undefined
-      if (clientConfig?.["litellm_keys"]) {
-        response.writeHead(422, {
-          "Content-Type": "application/json",
-        })
-        response.end(JSON.stringify({ detail: "litellm is not installed" }))
-        return
-      }
 
       response.writeHead(200, {
         "Content-Type": "text/event-stream",
@@ -464,6 +459,9 @@ describe("session.agency-swarm", () => {
       expect(text).toEqual(["ok"])
       expect(body?.["client_config"]).toEqual({
         api_key: "stored-openai",
+        litellm_keys: {
+          anthropic: "env-anthropic",
+        },
       })
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
@@ -612,7 +610,7 @@ describe("session.agency-swarm", () => {
     }
   })
 
-  test("stream prefers env OpenAI auth without auto-forwarding other providers", async () => {
+  test("stream prefers env OpenAI auth and forwards stored non-openai keys as litellm_keys", async () => {
     mockHistory()
     Auth.all = (async () => ({
       openai: { type: "api", key: "stored-openai" } as any,
@@ -682,6 +680,11 @@ describe("session.agency-swarm", () => {
 
     expect(captured).toEqual({
       api_key: "env-openai",
+      litellm_keys: {
+        anthropic: "stored-anthropic",
+        azure: "stored-azure",
+        gemini: "env-google",
+      },
     })
   })
 
@@ -786,7 +789,7 @@ describe("session.agency-swarm", () => {
     })
   })
 
-  test("stream skips failing stored OpenAI OAuth refresh when only non-OpenAI local credentials remain", async () => {
+  test("stream skips failing stored OpenAI OAuth refresh but still forwards non-OpenAI litellm keys", async () => {
     mockHistory()
     Auth.all = (async () => ({
       openai: {
@@ -811,7 +814,11 @@ describe("session.agency-swarm", () => {
       // consume
     }
 
-    expect(captured).toBeUndefined()
+    expect(captured).toEqual({
+      litellm_keys: {
+        anthropic: "stored-anthropic",
+      },
+    })
   })
 
   test("stream preserves explicit header-based OpenAI auth without merging stored OAuth", async () => {

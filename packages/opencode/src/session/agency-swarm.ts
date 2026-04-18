@@ -1,6 +1,7 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { hasExplicitOpenAIClientConfig, readStringRecord } from "@/agency-swarm/client-config"
 import { AgencySwarmHistory } from "@/agency-swarm/history"
+import { mapProviderIDToLiteLLMProvider } from "@/agency-swarm/litellm-provider"
 import { Auth } from "@/auth"
 import { Env } from "@/env"
 import { CODEX_API_BASE_URL, extractAccountId, refreshAccessToken } from "@/plugin/codex"
@@ -144,11 +145,10 @@ export namespace SessionAgencySwarm {
 
     const generatedLiteLLMKeys = asRecord(generated["litellm_keys"])
     const explicitLiteLLMKeys = asRecord(explicit["litellm_keys"]) ?? asRecord(explicit["litellmKeys"])
-    if (generatedLiteLLMKeys || explicitLiteLLMKeys) {
-      merged["litellm_keys"] = {
-        ...(generatedLiteLLMKeys ?? {}),
-        ...(explicitLiteLLMKeys ?? {}),
-      }
+    if (explicitLiteLLMKeys !== undefined) {
+      merged["litellm_keys"] = explicitLiteLLMKeys
+    } else if (generatedLiteLLMKeys) {
+      merged["litellm_keys"] = generatedLiteLLMKeys
     }
     delete merged["litellmKeys"]
 
@@ -176,21 +176,25 @@ export namespace SessionAgencySwarm {
     },
   ): Promise<Record<string, unknown> | undefined> {
     const payload: Record<string, unknown> = {}
+    const litellmKeys: Record<string, string> = {}
 
-    // Keep automatic request-scoped auth limited to OpenAI. Local Agency Swarm
-    // backends already inherit process.env, and many do not accept LiteLLM config.
     for (const [providerID, provider] of Object.entries(providers ?? {})) {
       if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
-      if (providerID !== "openai") continue
       const key = getEnvCredential(provider, env)
       if (!key) continue
 
-      if (!options.skipOpenAI) payload["api_key"] = key
+      if (providerID === "openai") {
+        if (!options.skipOpenAI) payload["api_key"] = key
+        continue
+      }
+
+      const litellmProvider = mapProviderIDToLiteLLMProvider(providerID)
+      if (!litellmProvider) continue
+      litellmKeys[litellmProvider] = key
     }
 
     for (const [providerID, auth] of Object.entries(auths)) {
       if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
-      if (providerID !== "openai") continue
       if (hasEnvCredential(providerID, providers, env)) continue
 
       if (providerID === "openai" && auth.type === "oauth") {
@@ -207,7 +211,18 @@ export namespace SessionAgencySwarm {
 
       if (auth.type !== "api") continue
 
-      if (!options.skipOpenAI) payload["api_key"] = auth.key
+      if (providerID === "openai") {
+        if (!options.skipOpenAI) payload["api_key"] = auth.key
+        continue
+      }
+
+      const litellmProvider = mapProviderIDToLiteLLMProvider(providerID)
+      if (!litellmProvider) continue
+      litellmKeys[litellmProvider] = auth.key
+    }
+
+    if (Object.keys(litellmKeys).length > 0) {
+      payload["litellm_keys"] = litellmKeys
     }
 
     return Object.keys(payload).length > 0 ? payload : undefined
