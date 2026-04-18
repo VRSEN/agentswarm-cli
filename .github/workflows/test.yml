@@ -34,9 +34,7 @@ jobs:
             host: ubuntu-latest
           - name: windows
             host: windows-latest
-            skip_on_pr: true
     runs-on: ${{ matrix.settings.host }}
-    if: ${{ github.event_name != 'pull_request' || matrix.settings.skip_on_pr != true }}
     defaults:
       run:
         shell: bash
@@ -98,9 +96,7 @@ jobs:
             host: ubuntu-latest
           - name: windows
             host: windows-latest
-            skip_on_pr: true
     runs-on: ${{ matrix.settings.host }}
-    if: ${{ github.event_name != 'pull_request' || matrix.settings.skip_on_pr != true }}
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
     defaults:
