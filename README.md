@@ -112,6 +112,22 @@ This is used internally and can be invoked using `@general` in messages.
 
 Learn more about [agents](https://opencode.ai/docs/agents).
 
+### App Modes
+
+agentswarm-cli operates in one of three modes depending on how it is launched.
+
+| Mode | When it applies | Provider filtering |
+| --- | --- | --- |
+| **Agent Builder** | Started locally from a project directory (default) | All configured providers available |
+| **Run** | Connected to a live Agency Swarm server | Limited to OpenAI and Anthropic only |
+| **Plan** | Read-only planning and exploration | All configured providers available |
+
+**Run mode** is active whenever the TUI is connected to an Agency Swarm server (via `npx @vrsen/agentswarm` connect flow or `agency.tui()`). In this mode the provider list is filtered down to only the providers that Agency Swarm supports natively: OpenAI and Anthropic. This filtering happens in `packages/opencode/src/provider/provider.ts` and is enforced by the session routing in `packages/opencode/src/session/agency-swarm.ts`.
+
+**Agent Builder** and **Plan** modes run locally without a live agency server connection. All providers configured in your `~/.config/opencode/config.json` (or workspace config) are available — there is no agency-specific filtering.
+
+The mode determines which provider a session is routed through and which auth credentials are required. If you are in Run mode with only an `ANTHROPIC_API_KEY` set (and no OpenAI key), the TUI will still reach the bridge because Anthropic is one of the supported agency providers.
+
 ### Documentation
 
 For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
