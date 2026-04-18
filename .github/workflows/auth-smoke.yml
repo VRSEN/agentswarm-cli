@@ -1,0 +1,40 @@
+name: auth-smoke
+
+# Release-blocking happy-path test.
+# Runs AFTER a PR lands on dev (pre-release gate), never on pull_request itself,
+# to prevent an unreviewed PR from exfiltrating provider secrets via the injected
+# OPENAI_OAUTH_ACCESS_TOKEN / ANTHROPIC_API_KEY.
+on:
+  push:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: auth-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: OAuth + Anthropic happy-path smoke
+    runs-on: ubuntu-latest
+    if: github.repository == 'VRSEN/agentswarm-cli'
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Run auth smoke
+        env:
+          OPENAI_OAUTH_ACCESS_TOKEN: ${{ secrets.OPENAI_OAUTH_ACCESS_TOKEN }}
+          OPENAI_OAUTH_ACCOUNT_ID: ${{ secrets.OPENAI_OAUTH_ACCOUNT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python3 packages/opencode/script/auth-smoke-test.py
