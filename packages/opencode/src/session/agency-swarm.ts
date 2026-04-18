@@ -410,7 +410,6 @@ export namespace SessionAgencySwarm {
 
     const streamAbort = new AbortController()
     const streamSignal = AbortSignal.any([input.abort, streamAbort.signal])
-    const clientConfig = await resolveClientConfig(input.options.baseURL, input.options.clientConfig)
 
     const mergeMeta = (meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
       return {
@@ -1268,6 +1267,8 @@ export namespace SessionAgencySwarm {
       yield { type: "start" }
       yield { type: "start-step" }
       let streamError: Error | undefined
+
+      const clientConfig = await resolveClientConfig(input.options.baseURL, input.options.clientConfig)
 
       try {
         for await (const frame of AgencySwarmAdapter.streamRun({
