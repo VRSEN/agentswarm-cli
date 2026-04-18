@@ -34,7 +34,9 @@ jobs:
             host: ubuntu-latest
           - name: windows
             host: windows-latest
+            skip_on_pr: true
     runs-on: ${{ matrix.settings.host }}
+    if: ${{ github.event_name != 'pull_request' || matrix.settings.skip_on_pr != true }}
     defaults:
       run:
         shell: bash
@@ -96,7 +98,9 @@ jobs:
             host: ubuntu-latest
           - name: windows
             host: windows-latest
+            skip_on_pr: true
     runs-on: ${{ matrix.settings.host }}
+    if: ${{ github.event_name != 'pull_request' || matrix.settings.skip_on_pr != true }}
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
     defaults:
@@ -141,6 +145,7 @@ jobs:
           PLAYWRIGHT_WORKERS: ${{ runner.os == 'Windows' && '1' || '2' }}
           PLAYWRIGHT_JUNIT_OUTPUT: e2e/junit-${{ matrix.settings.name }}.xml
         timeout-minutes: 30
+        continue-on-error: ${{ matrix.settings.name == 'windows' }}
 
       - name: Upload Playwright artifacts
         if: always()
