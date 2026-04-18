@@ -533,8 +533,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       keybind: "model_list",
       suggested: true,
       category: "Agent",
-      enabled: !frameworkMode(),
-      hidden: frameworkMode(),
+      enabled: !frameworkMode() || local.agent.current()?.name === "build",
+      hidden: frameworkMode() && local.agent.current()?.name !== "build",
       slash: {
         name: "models",
       },
