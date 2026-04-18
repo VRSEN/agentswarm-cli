@@ -544,12 +544,35 @@ async function ensureProjectPython(directory: string) {
   let corruptedVenv = false
   const hasVenv = await Filesystem.exists(venvPython)
   if (hasVenv) {
-    const info = await inspectPython([venvPython])
-    prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
-    await ensureLatestAgencySwarm(directory, [venvPython])
-    const healthy = await venvCanaryPasses([venvPython])
-    if (healthy) return [venvPython]
-    corruptedVenv = true
+    // Probing the venv's interpreter can throw if the base Python was removed
+    // or the venv was moved between machines. Treat any failure as corruption so
+    // the self-heal path rebuilds instead of the launcher aborting.
+    let info: PythonInfo | undefined
+    try {
+      info = await inspectPython([venvPython])
+    } catch (error) {
+      prompts.log.warn(`Project Python could not be probed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (!info) {
+      corruptedVenv = true
+    } else {
+      prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
+      try {
+        await ensureLatestAgencySwarm(directory, [venvPython])
+      } catch {
+        corruptedVenv = true
+      }
+      if (!corruptedVenv) {
+        let healthy = false
+        try {
+          healthy = await venvCanaryPasses([venvPython])
+        } catch {
+          healthy = false
+        }
+        if (healthy) return [venvPython]
+        corruptedVenv = true
+      }
+    }
   }
 
   const venvDir = path.resolve(path.join(directory, ".venv"))
@@ -811,6 +834,10 @@ function stripVenvFromEnv(env: NodeJS.ProcessEnv, venvRoot: string): NodeJS.Proc
     .join(sep)
   const next = { ...env, [pathKey]: filtered }
   delete next.VIRTUAL_ENV
+  // macOS's python3 honors __PYVENV_LAUNCHER__ when reporting sys.executable,
+  // so leaving it in would make a healthy system Python lie and report itself
+  // as the broken .venv interpreter, hiding the only valid recovery candidate.
+  delete next.__PYVENV_LAUNCHER__
   return next
 }
 
@@ -864,24 +891,26 @@ async function runCommand(
   cmd: string[],
   options?: { cwd?: string; env?: NodeJS.ProcessEnv },
 ): Promise<CommandResult> {
-  const proc = Bun.spawn({
-    cmd,
-    cwd: options?.cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-    env: options?.env ?? process.env,
-  })
-
-  const [code, stdout, stderr] = await Promise.all([
-    proc.exited,
-    proc.stdout ? new Response(proc.stdout).text() : Promise.resolve(""),
-    proc.stderr ? new Response(proc.stderr).text() : Promise.resolve(""),
-  ])
-
-  return {
-    code,
-    stdout,
-    stderr,
+  try {
+    const proc = Bun.spawn({
+      cmd,
+      cwd: options?.cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: options?.env ?? process.env,
+    })
+    const [code, stdout, stderr] = await Promise.all([
+      proc.exited,
+      proc.stdout ? new Response(proc.stdout).text() : Promise.resolve(""),
+      proc.stderr ? new Response(proc.stderr).text() : Promise.resolve(""),
+    ])
+    return { code, stdout, stderr }
+  } catch (error) {
+    return {
+      code: -1,
+      stdout: "",
+      stderr: error instanceof Error ? error.message : String(error),
+    }
   }
 }
 
