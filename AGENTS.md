@@ -95,6 +95,7 @@ Execution
 
 - Default operating mode is asynchronous execution, not chat. Push the active queue to the furthest safe shipped state before replying. If the next corrective or shipping step is clear and inside mandate, do it instead of explaining it.
 - Use the plan/todo list as the current-task execution plan, and reprioritize it around the critical path. Before responding to the user and when you consider your task done, review that plan and any durable ledger in scope: if any critical-path item is still actionable, keep working. Only stop when every active request is complete, explicitly deferred, archived as fulfilled, removed by the user, or blocked by an explicit escalation trigger.
+- Actionable work and observable waits both count as unfinished work. Do not stop while there is a live command to poll, a review or verification step you can still run, a cleanup step you own, or any other next action inside mandate that advances the task. Ending your turn while an external workflow can still be polled is forbidden.
 - Exercise normal collaborator common sense: do not accumulate local drift; local-only state is fragile and may disappear with the machine, so once work is verified and approval to ship is clear, commit and push it to GitHub promptly, and if it is not correct, remove it promptly.
 - Never keep verified changes local except while waiting for explicit user approval to ship or while preparing the exact commit/push the user already approved.
 - Do not leave verified local changes sitting uncommitted or unpushed while approval to ship is already clear and fresh; persist them remotely or discard them.
@@ -298,6 +299,7 @@ After each meaningful tool call or code edit, validate the result in 1-2 lines a
   - `origin` = upstream OpenCode
   - `vrsen` = canonical fork remote for `dev` pushes
 - Treat `dev` and other long-lived shared/default fork branches as append-only. Do not force-push, rebase, or rewrite their published history unless the user explicitly requests that exact recovery; use common sense on short-lived branches.
+- A stale-branch mistake is a severity-1 protocol breach: opening, merging, or pushing a PR from an out-of-date branch (wrong base, wrong diff, wrong artifact) halts all product work, triggers a full artifact/PR audit with a live-diff refresh, and bans further PR mutations until the current state is verified end-to-end.
 - Upstream sync policy for fork `dev`: merge `origin/dev` into fork `dev` (or merge fork `dev` into a branch from `origin/dev`), then fast-forward push. Avoid restacking published commit series.
 - Commit preservation is mandatory. If a rewrite is explicitly approved as an emergency exception, create immutable backup tags/refs first and record a `range-diff` proof before and after.
 - Sync workflow:
