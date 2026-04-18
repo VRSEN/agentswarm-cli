@@ -250,3 +250,13 @@ export function describeAgencyAuthFailure(message: string) {
   }
   return message
 }
+
+/** Detects a stream-level API key failure (e.g. LiteLLM AuthenticationError) and returns a short
+ *  actionable hint, or null when the message is not an auth error. */
+export function describeStreamAuthError(message: string): string | null {
+  if (!/AuthenticationError|Missing.*API.{0,10}Key|incorrect_api_key|invalid_api_key|api key not found/i.test(message))
+    return null
+  const match = message.match(/call.*?to\s+(\w[\w-]+)|Missing\s+(\w[\w-]+)\s+API/i)
+  const provider = (match?.[1] ?? match?.[2] ?? "").toLowerCase()
+  return provider ? `Missing ${provider} API key — run /auth to add it` : "Missing API key — run /auth to add it"
+}
