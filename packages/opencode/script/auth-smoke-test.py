@@ -153,7 +153,13 @@ def send_probe(port: int, client_config: dict, label: str, recipient: str = "Exa
                     event = json.loads(body)
                 except Exception:
                     continue
-                data = event.get("data") if isinstance(event, dict) else None
+                if not isinstance(event, dict):
+                    continue
+                top_error = event.get("error")
+                if top_error:
+                    log(label, f"TOP-LEVEL ERROR frame: {top_error}")
+                    saw_error = True
+                data = event.get("data")
                 if not isinstance(data, dict):
                     continue
                 if data.get("type") == "error":
@@ -264,9 +270,17 @@ def main() -> int:
     for name in skipped:
         log("summary", f"  {name}: SKIPPED (no credentials in env)")
 
-    if not executed:
-        log("summary", "no auth method had credentials — nothing to prove. exit 0.")
-        return 0
+    if os.environ.get("AUTH_SMOKE_ALLOW_NO_CREDS") == "1":
+        if not executed:
+            log("summary", "no auth method had credentials — AUTH_SMOKE_ALLOW_NO_CREDS=1 set, exiting 0 for local dev.")
+            return 0
+    elif not executed:
+        log(
+            "summary",
+            "no auth method had credentials — release gate requires at least one. "
+            "Set AUTH_SMOKE_ALLOW_NO_CREDS=1 only for local dev without secrets.",
+        )
+        return 1
     if all(executed.values()):
         log("summary", "all executed auth methods PASS")
         return 0

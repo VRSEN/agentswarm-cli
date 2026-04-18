@@ -541,6 +541,7 @@ export async function prepareProjectLaunch(project: AgencyProject): Promise<Prep
 async function ensureProjectPython(directory: string) {
   const venvPython = getVenvPythonPath(directory)
   let selfHealing = false
+  let corruptedVenv = false
   const hasVenv = await Filesystem.exists(venvPython)
   if (hasVenv) {
     const info = await inspectPython([venvPython])
@@ -548,16 +549,25 @@ async function ensureProjectPython(directory: string) {
     await ensureLatestAgencySwarm(directory, [venvPython])
     const healthy = await venvCanaryPasses([venvPython])
     if (healthy) return [venvPython]
-    prompts.log.warn("Project `.venv` is missing module sources (corrupted install). Rebuilding...")
-    await rm(path.join(directory, ".venv"), { recursive: true, force: true })
-    selfHealing = true
+    corruptedVenv = true
   }
 
   const detected = await findPythonExecutable()
   if (!detected) {
+    if (corruptedVenv) {
+      throw new Error(
+        "Project `.venv` appears corrupted, and no replacement Python 3.12+ was found on PATH to rebuild it. Install Python 3.12+ and rerun.",
+      )
+    }
     throw new Error("Python 3.12 or newer was not found. Install Python, then rerun `npx @vrsen/agentswarm`.")
   }
   prompts.log.info(`Detected Python: ${formatPython(detected, detected.cmd)}`)
+
+  if (corruptedVenv) {
+    prompts.log.warn("Project `.venv` is missing module sources (corrupted install). Rebuilding...")
+    await rm(path.join(directory, ".venv"), { recursive: true, force: true })
+    selfHealing = true
+  }
 
   if (!selfHealing) {
     const createVenv = await prompts.confirm({
