@@ -740,6 +740,15 @@ export function Prompt(props: PromptProps) {
 
       sessionID = res.data.id
       createdSessionID = sessionID
+
+      // temporary hack to make sure the message is sent
+      if (!props.sessionID)
+        setTimeout(() => {
+          route.navigate({
+            type: "session",
+            sessionID: createdSessionID!,
+          })
+        }, 50)
     }
 
     const messageID = MessageID.ascending()
@@ -834,15 +843,6 @@ export function Prompt(props: PromptProps) {
       }
     }
     clearSubmittedPrompt(currentMode)
-
-    // temporary hack to make sure the message is sent
-    if (!props.sessionID)
-      setTimeout(() => {
-        route.navigate({
-          type: "session",
-          sessionID,
-        })
-      }, 50)
   }
   const exit = useExit()
 
