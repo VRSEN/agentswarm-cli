@@ -99,13 +99,15 @@ XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
 
 ### Agents
 
-OpenCode includes two built-in agents you can switch between with the `Tab` key.
+agentswarm-cli includes two built-in agents you can switch between with the `Tab` key.
 
-- **build** - Default, full-access agent for development work
-- **plan** - Read-only agent for analysis and code exploration
+- **Agent Builder** - Default, full-access agent for building and testing agents
+- **Plan** - Read-only agent for analysis and code exploration
   - Denies file edits by default
   - Asks permission before running bash commands
   - Ideal for exploring unfamiliar codebases or planning changes
+
+When the TUI connects to a running Agency Swarm server (via `agency.tui()` or the connect flow), it enters **Run mode**. In Run mode, the provider list is filtered to the providers Agency Swarm supports natively (OpenAI and Anthropic) and prompts route through that agency.
 
 Also included is a **general** subagent for complex searches and multistep tasks.
 This is used internally and can be invoked using `@general` in messages.
