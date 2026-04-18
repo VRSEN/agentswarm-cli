@@ -364,27 +364,9 @@ export namespace SessionAgencySwarm {
       sessionID: input.sessionID,
     }
 
-    const history = await AgencySwarmHistory.load(scope)
     const outgoingMessage = buildOutgoingMessage(input.userMessage)
-    const chatHistory = await Session.messages({ sessionID: input.sessionID })
-      .then((msgs) => compactHistory({ msgs, currentID: input.userMessage.info.id }) ?? history.chat_history)
-      .catch((error) => {
-        log.warn("unable to rebuild compacted agency history; falling back to stored history", {
-          sessionID: input.sessionID,
-          error: error instanceof Error ? error.message : String(error),
-        })
-        return history.chat_history
-      })
-    const recipientAgent = await resolveRecipientAgent({
-      sessionID: input.sessionID,
-      baseURL: input.options.baseURL,
-      agency,
-      token: input.options.token,
-      timeoutMs: input.options.discoveryTimeoutMs,
-      mentionedRecipient: findRecipientAgent(input.userMessage),
-      configuredRecipient: input.options.recipientAgent,
-    })
     const fileURLs = collectFileURLs(input.userMessage)
+    const mentionedRecipient = findRecipientAgent(input.userMessage)
 
     const tools = new Map<string, Tool>()
     const callByItem = new Map<string, string>()
@@ -1268,6 +1250,25 @@ export namespace SessionAgencySwarm {
       yield { type: "start-step" }
       let streamError: Error | undefined
 
+      const history = await AgencySwarmHistory.load(scope)
+      const chatHistory = await Session.messages({ sessionID: input.sessionID })
+        .then((msgs) => compactHistory({ msgs, currentID: input.userMessage.info.id }) ?? history.chat_history)
+        .catch((error) => {
+          log.warn("unable to rebuild compacted agency history; falling back to stored history", {
+            sessionID: input.sessionID,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          return history.chat_history
+        })
+      const recipientAgent = await resolveRecipientAgent({
+        sessionID: input.sessionID,
+        baseURL: input.options.baseURL,
+        agency,
+        token: input.options.token,
+        timeoutMs: input.options.discoveryTimeoutMs,
+        mentionedRecipient,
+        configuredRecipient: input.options.recipientAgent,
+      })
       const clientConfig = await resolveClientConfig(input.options.baseURL, input.options.clientConfig)
 
       try {
