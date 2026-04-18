@@ -2510,9 +2510,10 @@ describe("session.agency-swarm", () => {
     expect(deltas).toEqual(["Hi, there!"])
   })
 
-  test("stream does not duplicate text when messages payload replays assistant body with different id after output_text", async () => {
+  test("stream keeps both distinct short assistant messages in the same run (no body-only dedupe)", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
+      yield { type: "meta", runID: "run_1" }
       yield {
         type: "data",
         payload: {
@@ -2520,7 +2521,7 @@ describe("session.agency-swarm", () => {
           data: {
             type: "response.output_item.added",
             output_index: "0",
-            item: { type: "message", id: "msg_stream" },
+            item: { type: "message", id: "msg_a" },
           },
         },
       }
@@ -2530,9 +2531,9 @@ describe("session.agency-swarm", () => {
           type: "raw_response_event",
           data: {
             type: "response.output_text.delta",
-            item_id: "msg_stream",
+            item_id: "msg_a",
             output_index: "0",
-            delta: "Anthropic via stream",
+            delta: "Done",
           },
         },
       }
@@ -2542,22 +2543,45 @@ describe("session.agency-swarm", () => {
           type: "raw_response_event",
           data: {
             type: "response.output_text.done",
-            item_id: "msg_stream",
+            item_id: "msg_a",
             output_index: "0",
-            text: "Anthropic via stream",
+            text: "Done",
           },
         },
       }
       yield {
-        type: "messages",
+        type: "data",
         payload: {
-          new_messages: [
-            {
-              type: "message",
-              id: "msg_from_messages_frame",
-              content: [{ type: "output_text", text: "Anthropic via stream" }],
-            },
-          ],
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: { type: "message", id: "msg_b" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_b",
+            output_index: "1",
+            delta: "Done",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.done",
+            item_id: "msg_b",
+            output_index: "1",
+            text: "Done",
+          },
         },
       }
       yield { type: "end" }
@@ -2572,7 +2596,7 @@ describe("session.agency-swarm", () => {
       }
     }
 
-    expect(deltas).toEqual(["Anthropic via stream"])
+    expect(deltas).toEqual(["Done", "Done"])
   })
 
   test("stream does not duplicate reasoning when reasoning_item_created follows summary events", async () => {

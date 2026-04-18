@@ -1,5 +1,6 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { hasClientConfigCredential } from "@/agency-swarm/client-config"
+import { Flag } from "@/flag/flag"
 import { hasStoredProviderCredential } from "@tui/util/provider-auth"
 import type { Provider, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 
@@ -14,11 +15,7 @@ type AuthProvider = {
   options?: Record<string, unknown>
 }
 
-export function hasUsableProvider(
-  providers: Provider[],
-  credentialed = false,
-  providerAuth: ProviderAuthMap = {},
-) {
+export function hasUsableProvider(providers: Provider[], credentialed = false, providerAuth: ProviderAuthMap = {}) {
   return providers.some((provider) => {
     if (provider.id !== "opencode") return credentialed ? hasCredential(provider, providerAuth) : true
     return Object.values(provider.models).some((model) => model.cost?.input !== 0)
@@ -70,6 +67,19 @@ function usesLocalAgencyProviderAuth(providers: Provider[]) {
   const rawBaseURL = agencyProvider?.options?.["baseURL"] ?? agencyProvider?.options?.["base_url"]
   const baseURL = typeof rawBaseURL === "string" && rawBaseURL.trim() ? rawBaseURL : AgencySwarmAdapter.DEFAULT_BASE_URL
   return isLoopbackBaseURL(baseURL)
+}
+
+/**
+ * Forwarding upstream credentials means the agency-swarm call depends on locally stored OpenAI/Anthropic
+ * credentials even against non-loopback base URLs (e.g. `host.docker.internal`, remote bridges).
+ * Active when the env flag is set, the caller passes the override, or the agency-swarm provider opts in.
+ */
+function isForwardUpstreamCredentialsActive(providers: Provider[], override?: boolean) {
+  if (override === true) return true
+  if (Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS) return true
+  const agency = providers.find((provider) => provider.id === AgencySwarmAdapter.PROVIDER_ID)
+  const opts = agency?.options ?? {}
+  return opts["forwardUpstreamCredentials"] === true || opts["forward_upstream_credentials"] === true
 }
 
 export function isSupportedAgencyAuthProvider(
@@ -131,14 +141,20 @@ export function shouldOpenStartupAuthDialog(input: {
   providers: Provider[]
   providerAuth?: ProviderAuthMap
   frameworkMode: boolean
+  /** Override for the upstream-credential forwarding path; when undefined the value is inferred from env + provider options. */
+  forwardUpstreamCredentials?: boolean
 }) {
   if (!input.frameworkMode) return !hasUsableProvider(input.providers, false, input.providerAuth)
 
   const agencyProvider = input.providers.find((provider) => provider.id === AgencySwarmAdapter.PROVIDER_ID)
-  if (agencyProvider && (hasCredential(agencyProvider, input.providerAuth) || hasExplicitAgencyClientConfig(agencyProvider))) {
+  if (
+    agencyProvider &&
+    (hasCredential(agencyProvider, input.providerAuth) || hasExplicitAgencyClientConfig(agencyProvider))
+  ) {
     return false
   }
-  if (!usesLocalAgencyProviderAuth(input.providers)) return false
+  const forwardingActive = isForwardUpstreamCredentialsActive(input.providers, input.forwardUpstreamCredentials)
+  if (!forwardingActive && !usesLocalAgencyProviderAuth(input.providers)) return false
 
   return !hasSupportedAgencyCredential(input.providers, input.providerAuth)
 }

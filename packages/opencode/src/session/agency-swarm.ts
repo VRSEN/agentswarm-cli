@@ -160,8 +160,7 @@ export namespace SessionAgencySwarm {
       isLocalAgencyUpstreamURL(baseURL) ||
       Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS ||
       forwardUpstreamCredentials === true
-    const skipOpenAIApiKey =
-      hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config)
+    const skipOpenAIApiKey = hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config)
     const generated = forwardGenerated
       ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), getEnvForClientConfig(), {
           skipOpenAIApiKeyInjection: skipOpenAIApiKey,
@@ -476,19 +475,11 @@ export namespace SessionAgencySwarm {
       return `${itemID}:${value}`
     }
 
-    /** Skip when the same body was already finalized from raw_response_event under another item id (stream vs `messages` / run_item ids often differ for Anthropic / LiteLLM). */
+    /** Skip only when the incoming event is a replay of the same `(itemID, index)` that is already closed. Body-only matches would drop legit later messages with a short repeat body like "Done" or "OK". */
     const shouldSkipDuplicateAssistantText = (itemID: string, index: number, text: string) => {
       const key = textKey(itemID, index)
       const current = textBuffer.get(key) || ""
-      if (current === text && !textOpen.has(key)) {
-        return true
-      }
-      for (const [bufferKey, bufferedText] of textBuffer) {
-        if (bufferKey !== key && bufferedText === text && !textOpen.has(bufferKey)) {
-          return true
-        }
-      }
-      return false
+      return current === text && !textOpen.has(key)
     }
 
     const reasoningKey = (itemID: string, index: number) => `${itemID}:${index}`
@@ -1016,6 +1007,13 @@ export namespace SessionAgencySwarm {
     const textItemID = (event: Record<string, unknown>) => asString(event["item_id"]) || lastTextItemID
     const reasoningItemID = (event: Record<string, unknown>) => asString(event["item_id"]) || lastReasoningItemID
 
+    /** Retire closed replay candidates when a new run starts so the dedupe buffer does not grow across runs. */
+    const retireClosedReplayCandidates = () => {
+      for (const key of Array.from(textBuffer.keys())) {
+        if (!textOpen.has(key)) textBuffer.delete(key)
+      }
+    }
+
     const handleMessagesPayload = async function* (payload: Record<string, unknown>) {
       const newMessages = Array.isArray(payload["new_messages"]) ? payload["new_messages"] : []
       await AgencySwarmHistory.appendMessages(scope, newMessages)
@@ -1023,6 +1021,7 @@ export namespace SessionAgencySwarm {
 
       const runFromMessages = asString(payload["run_id"])
       if (runFromMessages) {
+        if (runID && runID !== runFromMessages) retireClosedReplayCandidates()
         runID = runFromMessages
         if (cancelBeforeMetaTimer) {
           clearTimeout(cancelBeforeMetaTimer)
@@ -1387,6 +1386,7 @@ export namespace SessionAgencySwarm {
           abort: streamSignal,
         })) {
           if (frame.type === "meta") {
+            if (runID && runID !== frame.runID) retireClosedReplayCandidates()
             runID = frame.runID
             if (cancelBeforeMetaTimer) {
               clearTimeout(cancelBeforeMetaTimer)
@@ -1423,9 +1423,7 @@ export namespace SessionAgencySwarm {
           const kind = asString(frame.payload["type"])
           if (kind === "error") {
             const content = asString(frame.payload["content"]) ?? ""
-            streamError = new Error(
-              content || "Agency Swarm backend returned an error without a message",
-            )
+            streamError = new Error(content || "Agency Swarm backend returned an error without a message")
             break
           }
           if (kind === "agent_updated_stream_event") {

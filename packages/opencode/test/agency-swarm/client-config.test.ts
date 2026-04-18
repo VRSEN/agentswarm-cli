@@ -6,6 +6,10 @@ import {
   sanitizeClientConfigForTransport,
   sanitizeHeaderLikeString,
 } from "../../src/agency-swarm/client-config"
+import {
+  buildLitellmModelForClientConfig,
+  normalizeExplicitClientConfigModel,
+} from "../../src/agency-swarm/litellm-provider"
 
 describe("agency-swarm client config credentials", () => {
   test("treats api_key and LiteLLM keys as credentials", () => {
@@ -92,5 +96,34 @@ describe("agency-swarm client config credentials", () => {
         },
       }),
     ).toBe(false)
+  })
+})
+
+describe("agency-swarm litellm model routing", () => {
+  test("buildLitellmModelForClientConfig keeps the caller provider for OpenRouter-namespaced ids", () => {
+    expect(buildLitellmModelForClientConfig("openrouter", "openrouter/openai/gpt-5.2")).toBe(
+      "litellm/openrouter/openai/gpt-5.2",
+    )
+    expect(buildLitellmModelForClientConfig("openrouter", "openai/gpt-5.2")).toBe("litellm/openrouter/openai/gpt-5.2")
+  })
+
+  test("buildLitellmModelForClientConfig still strips openai/ prefixes when the provider is openai", () => {
+    expect(buildLitellmModelForClientConfig("openai", "openai/gpt-5")).toBe("gpt-5")
+    expect(buildLitellmModelForClientConfig("openai", "gpt-5")).toBe("gpt-5")
+    expect(buildLitellmModelForClientConfig("openai", "litellm/openai/gpt-5")).toBe("gpt-5")
+  })
+
+  test("buildLitellmModelForClientConfig uses litellm/<provider>/<model> for non-OpenAI providers", () => {
+    expect(buildLitellmModelForClientConfig("anthropic", "claude-3")).toBe("litellm/anthropic/claude-3")
+    expect(buildLitellmModelForClientConfig("anthropic", "anthropic/claude-3")).toBe("litellm/anthropic/claude-3")
+  })
+
+  test("normalizeExplicitClientConfigModel preserves non-OpenAI provider namespaces", () => {
+    expect(normalizeExplicitClientConfigModel("openrouter/openai/gpt-5.2")).toBe("litellm/openrouter/openai/gpt-5.2")
+    expect(normalizeExplicitClientConfigModel("litellm/openrouter/openai/gpt-5.2")).toBe(
+      "litellm/openrouter/openai/gpt-5.2",
+    )
+    expect(normalizeExplicitClientConfigModel("openai/gpt-5")).toBe("gpt-5")
+    expect(normalizeExplicitClientConfigModel("litellm/openai/gpt-5")).toBe("gpt-5")
   })
 })

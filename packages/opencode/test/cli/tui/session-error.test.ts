@@ -161,6 +161,64 @@ describe("agency session errors", () => {
     ).toBe(false)
   })
 
+  test("framework mode opens auth for non-loopback base URL when forwardUpstreamCredentials is on", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {
+              baseURL: "http://host.docker.internal:8000",
+              forwardUpstreamCredentials: true,
+            },
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "config",
+            env: ["OPENAI_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
+  test("framework mode opens auth for remote base URL when forwardUpstreamCredentials override is set", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        forwardUpstreamCredentials: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {
+              baseURL: "https://agency.example.com",
+            },
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "config",
+            env: ["OPENAI_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
   test("framework mode also skips local provider auth for remote agency-swarm backends using base_url", () => {
     expect(
       shouldOpenStartupAuthDialog({
