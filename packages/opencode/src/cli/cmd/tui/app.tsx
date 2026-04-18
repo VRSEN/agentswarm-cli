@@ -460,6 +460,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
           configuredModel: sync.data.config.model,
           agentModel: local.agent.current()?.model,
         }),
+        env: process.env,
       })
 
     if (!needsAuth || dialog.stack.length > 0) return

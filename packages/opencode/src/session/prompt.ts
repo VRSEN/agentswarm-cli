@@ -88,7 +88,6 @@ export namespace SessionPrompt {
     Service,
     Effect.gen(function* () {
       const bus = yield* Bus.Service
-      const config = yield* Config.Service
       const status = yield* SessionStatus.Service
       const sessions = yield* Session.Service
       const agents = yield* Agent.Service
@@ -1401,20 +1400,14 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               }).pipe(Effect.ignore, Effect.forkIn(scope))
 
             const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
-            const mergedCfg = yield* config.get()
-            const defaultModelFromConfig = mergedCfg.model ? Provider.parseModel(mergedCfg.model) : undefined
             // Use the Agency Swarm HTTP bridge when:
-            // - the message model is agency-swarm, or
-            // - the last assistant was from the bridge (see processorModel below), or
-            // - merged config default is still agency-swarm while the UI model is something else.
-            // After /connect, global `model` stays `agency-swarm/...` but the picker often switches to
-            // opencode/anthropic/etc. for upstream credentials — `model.providerID` is then non–agency-swarm
-            // with no prior assistant row yet, so we must key off config as well as lastAssistant.
+            // - the resolved turn model is agency-swarm, or
+            // - the last assistant was from the bridge (continuation of an ongoing agency-swarm session).
+            // Explicit non-agency-swarm overrides (agent/stored/CLI) must run direct — do not coerce based on
+            // config.model alone, since the resolved model already reflects selectCurrentModel's decision.
             const useAgencySwarmBridge =
               model.providerID === SessionAgencySwarm.PROVIDER_ID ||
               (lastAssistant?.providerID === SessionAgencySwarm.PROVIDER_ID &&
-                model.providerID !== SessionAgencySwarm.PROVIDER_ID) ||
-              (defaultModelFromConfig?.providerID === SessionAgencySwarm.PROVIDER_ID &&
                 model.providerID !== SessionAgencySwarm.PROVIDER_ID)
             // Persist assistant rows as agency-swarm when using the HTTP bridge. Otherwise the message would
             // carry the UI/credential model (e.g. opencode/anthropic) and the next turn would not match

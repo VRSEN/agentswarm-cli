@@ -699,6 +699,7 @@ export function Prompt(props: PromptProps) {
         providerAuth: sync.data.provider_auth,
         mode: currentMode,
         isSlashCommand: isServerSlashCommand,
+        env: process.env,
       })
     ) {
       toast.show({

@@ -469,6 +469,46 @@ it.live("loop continues when finish is tool-calls", () =>
   ),
 )
 
+// Regression: config.model = "agency-swarm/default" must not coerce processorModel onto the bridge
+// when the turn is running through an explicit non-agency-swarm override (agent/stored/CLI).
+it.live("loop keeps explicit non-agency-swarm override direct when config default is agency-swarm", () =>
+  provideTmpdirServer(
+    Effect.fnUntraced(function* ({ llm }) {
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "Pinned",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "hello" }],
+      })
+      yield* llm.text("world")
+
+      const result = yield* prompt.loop({ sessionID: session.id })
+      expect(result.info.role).toBe("assistant")
+      if (result.info.role === "assistant") {
+        // If the removed fallback had fired, processorModel would have been coerced to
+        // agency-swarm/default and the assistant row would carry that providerID.
+        expect(result.info.providerID).toBe(ref.providerID)
+        expect(result.info.modelID).toBe(ref.modelID)
+      }
+      expect(yield* llm.hits).toHaveLength(1)
+    }),
+    {
+      git: true,
+      config: (url) => ({
+        ...providerCfg(url),
+        // Pin config.model to agency-swarm while keeping the build agent on the test provider.
+        model: "agency-swarm/default",
+      }),
+    },
+  ),
+)
+
 it.live("loop continues when finish is stop but assistant has tool parts", () =>
   provideTmpdirServer(
     Effect.fnUntraced(function* ({ llm }) {

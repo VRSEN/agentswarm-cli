@@ -219,6 +219,116 @@ describe("agency session errors", () => {
     ).toBe(true)
   })
 
+  test("framework mode skips auth when forwarding is active and OPENAI_API_KEY is set in env", () => {
+    const input = {
+      frameworkMode: true,
+      forwardUpstreamCredentials: true,
+      env: { OPENAI_API_KEY: "sk-from-env" } as Record<string, string | undefined>,
+      providers: [
+        {
+          id: "agency-swarm",
+          name: "Agency Swarm",
+          source: "config",
+          env: [],
+          options: { baseURL: "https://agency.example.com" },
+          models: {},
+        },
+        {
+          id: "openai",
+          name: "OpenAI",
+          source: "config",
+          env: ["OPENAI_API_KEY"],
+          options: {},
+          models: {},
+        },
+      ] satisfies Provider[],
+    }
+
+    expect(shouldOpenStartupAuthDialog(input)).toBe(false)
+    expect(
+      shouldBlockAgencyPromptSubmit({
+        currentProviderID: "agency-swarm",
+        configuredModel: "agency-swarm/default",
+        providers: input.providers,
+        env: input.env,
+        mode: "normal",
+        isSlashCommand: false,
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode skips auth when forwarding is active and ANTHROPIC_API_KEY is set in env", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        forwardUpstreamCredentials: true,
+        env: { ANTHROPIC_API_KEY: "sk-ant-env" },
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: { baseURL: "https://agency.example.com" },
+            models: {},
+          },
+          {
+            id: "anthropic",
+            name: "Anthropic",
+            source: "config",
+            env: ["ANTHROPIC_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode skips auth from env even when the primary provider is filtered out", () => {
+    // Mirrors SessionAgencySwarm.buildAuthClientConfig()'s direct OPENAI_API_KEY read:
+    // the bridge can authenticate via env even when openai is not in the enabled provider list.
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        forwardUpstreamCredentials: true,
+        env: { OPENAI_API_KEY: "sk-from-env" },
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: { baseURL: "https://agency.example.com" },
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode opens auth when forwarding is active and only an agency-swarm bridge token is present", () => {
+    // A bridge token authenticates the call to the bridge, not the upstream OpenAI/Anthropic request.
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        forwardUpstreamCredentials: true,
+        env: {},
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            key: "bridge-token",
+            options: { baseURL: "https://agency.example.com" },
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
   test("framework mode also skips local provider auth for remote agency-swarm backends using base_url", () => {
     expect(
       shouldOpenStartupAuthDialog({
