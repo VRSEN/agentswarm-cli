@@ -746,7 +746,7 @@ export function Prompt(props: PromptProps) {
         setTimeout(() => {
           route.navigate({
             type: "session",
-            sessionID: createdSessionID!,
+            sessionID,
           })
         }, 50)
     }
