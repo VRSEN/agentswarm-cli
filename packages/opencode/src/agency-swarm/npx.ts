@@ -540,12 +540,17 @@ export async function prepareProjectLaunch(project: AgencyProject): Promise<Prep
 
 async function ensureProjectPython(directory: string) {
   const venvPython = getVenvPythonPath(directory)
+  let selfHealing = false
   const hasVenv = await Filesystem.exists(venvPython)
   if (hasVenv) {
     const info = await inspectPython([venvPython])
     prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
     await ensureLatestAgencySwarm(directory, [venvPython])
-    return [venvPython]
+    const healthy = await venvCanaryPasses([venvPython])
+    if (healthy) return [venvPython]
+    prompts.log.warn("Project `.venv` is missing module sources (corrupted install). Rebuilding...")
+    await rm(path.join(directory, ".venv"), { recursive: true, force: true })
+    selfHealing = true
   }
 
   const detected = await findPythonExecutable()
@@ -554,21 +559,23 @@ async function ensureProjectPython(directory: string) {
   }
   prompts.log.info(`Detected Python: ${formatPython(detected, detected.cmd)}`)
 
-  const createVenv = await prompts.confirm({
-    message: "Create a local `.venv` in this project?",
-    initialValue: true,
-  })
-  if (prompts.isCancel(createVenv)) {
-    return
-  }
-  if (!createVenv) {
-    const check = await runCommand([...detected.cmd, "-c", "import agency_swarm"])
-    if (check.code !== 0) {
-      throw new Error(
-        "This project does not have a `.venv` yet, and the selected Python environment cannot import `agency_swarm`.",
-      )
+  if (!selfHealing) {
+    const createVenv = await prompts.confirm({
+      message: "Create a local `.venv` in this project?",
+      initialValue: true,
+    })
+    if (prompts.isCancel(createVenv)) {
+      return
     }
-    return detected.cmd
+    if (!createVenv) {
+      const check = await runCommand([...detected.cmd, "-c", "import agency_swarm"])
+      if (check.code !== 0) {
+        throw new Error(
+          "This project does not have a `.venv` yet, and the selected Python environment cannot import `agency_swarm`.",
+        )
+      }
+      return detected.cmd
+    }
   }
 
   const spinner = prompts.spinner()
@@ -608,6 +615,11 @@ async function installProjectDependencies(directory: string, python: string[]) {
   }
 
   return runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.1"])
+}
+
+async function venvCanaryPasses(python: string[]) {
+  const result = await runCommand([...python, "-c", "import agency_swarm, rich, pygments, pathspec"])
+  return result.code === 0
 }
 
 async function ensureLatestAgencySwarm(directory: string, python: string[]) {
