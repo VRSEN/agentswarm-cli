@@ -458,6 +458,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         frameworkMode: isAgencySwarmFrameworkMode({
           currentProviderID: local.model.current()?.providerID,
           configuredModel: sync.data.config.model,
+          agentModel: local.agent.current()?.model,
         }),
       })
 
@@ -470,6 +471,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     isAgencySwarmFrameworkMode({
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
+      agentModel: local.agent.current()?.model,
     }),
   )
   command.register(() => [

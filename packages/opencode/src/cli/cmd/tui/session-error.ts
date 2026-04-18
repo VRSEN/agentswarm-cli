@@ -101,11 +101,30 @@ function hasExplicitAgencyClientConfig(provider: Provider | undefined) {
   return hasClientConfigCredential(raw as Record<string, unknown>)
 }
 
-export function isAgencySwarmFrameworkMode(input: { currentProviderID?: string; configuredModel?: string }) {
-  if (input.currentProviderID) {
-    return input.currentProviderID === AgencySwarmAdapter.PROVIDER_ID
+/**
+ * True when the app is running in Agent Swarm mode. Session `currentProviderID` may be `openai` or `anthropic`
+ * (upstream LiteLLM) while `config.model` / the agent default still use `agency-swarm` — those must keep framework mode so /auth stays OpenAI+Anthropic only.
+ *
+ * **Precedence (first match wins):** `configuredModel` → `agentModel` → `currentProviderID`.
+ * This differs from checking only `currentProviderID` first: e.g. when the session provider is already `openai`
+ * but the configured or agent model still points at `agency-swarm/...`, framework mode stays on so auth and
+ * provider UI stay aligned with Agent Swarm.
+ */
+export function isAgencySwarmFrameworkMode(input: {
+  currentProviderID?: string
+  configuredModel?: string
+  agentModel?: { providerID: string; modelID: string }
+}) {
+  if (input.configuredModel?.split("/")[0] === AgencySwarmAdapter.PROVIDER_ID) {
+    return true
   }
-  return input.configuredModel?.split("/")[0] === AgencySwarmAdapter.PROVIDER_ID
+  if (input.agentModel?.providerID === AgencySwarmAdapter.PROVIDER_ID) {
+    return true
+  }
+  if (input.currentProviderID === AgencySwarmAdapter.PROVIDER_ID) {
+    return true
+  }
+  return false
 }
 
 export function shouldOpenStartupAuthDialog(input: {
@@ -127,6 +146,7 @@ export function shouldOpenStartupAuthDialog(input: {
 export function shouldBlockAgencyPromptSend(input: {
   currentProviderID?: string
   configuredModel?: string
+  agentModel?: { providerID: string; modelID: string }
   providers: Provider[]
   providerAuth?: ProviderAuthMap
 }) {
@@ -141,6 +161,7 @@ export function shouldBlockAgencyPromptSend(input: {
 export function shouldBlockAgencyPromptSubmit(input: {
   currentProviderID?: string
   configuredModel?: string
+  agentModel?: { providerID: string; modelID: string }
   providers: Provider[]
   providerAuth?: ProviderAuthMap
   mode: "normal" | "shell"

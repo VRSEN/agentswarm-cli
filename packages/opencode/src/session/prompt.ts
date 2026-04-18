@@ -31,6 +31,7 @@ import { ulid } from "ulid"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import * as CrossSpawnSpawner from "@/effect/cross-spawn-spawner"
 import * as Stream from "effect/Stream"
+import { Config } from "../config/config"
 import { Command } from "../command"
 import { pathToFileURL, fileURLToPath } from "url"
 import { ConfigMarkdown } from "../config/markdown"
@@ -50,6 +51,7 @@ import { Process } from "@/util/process"
 import { Cause, Effect, Exit, Layer, Option, Scope, ServiceMap } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { SessionAgencySwarm } from "./agency-swarm"
 import { agentBuilderInstructions } from "./agent-builder"
 import { agentPlannerInstructions } from "./agent-planner"
@@ -86,6 +88,7 @@ export namespace SessionPrompt {
     Service,
     Effect.gen(function* () {
       const bus = yield* Bus.Service
+      const config = yield* Config.Service
       const status = yield* SessionStatus.Service
       const sessions = yield* Session.Service
       const agents = yield* Agent.Service
@@ -1398,6 +1401,31 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               }).pipe(Effect.ignore, Effect.forkIn(scope))
 
             const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
+            const mergedCfg = yield* config.get()
+            const defaultModelFromConfig = mergedCfg.model ? Provider.parseModel(mergedCfg.model) : undefined
+            // Use the Agency Swarm HTTP bridge when:
+            // - the message model is agency-swarm, or
+            // - the last assistant was from the bridge (see processorModel below), or
+            // - merged config default is still agency-swarm while the UI model is something else.
+            // After /connect, global `model` stays `agency-swarm/...` but the picker often switches to
+            // opencode/anthropic/etc. for upstream credentials — `model.providerID` is then non–agency-swarm
+            // with no prior assistant row yet, so we must key off config as well as lastAssistant.
+            const useAgencySwarmBridge =
+              model.providerID === SessionAgencySwarm.PROVIDER_ID ||
+              (lastAssistant?.providerID === SessionAgencySwarm.PROVIDER_ID &&
+                model.providerID !== SessionAgencySwarm.PROVIDER_ID) ||
+              (defaultModelFromConfig?.providerID === SessionAgencySwarm.PROVIDER_ID &&
+                model.providerID !== SessionAgencySwarm.PROVIDER_ID)
+            // Persist assistant rows as agency-swarm when using the HTTP bridge. Otherwise the message would
+            // carry the UI/credential model (e.g. opencode/anthropic) and the next turn would not match
+            // `lastAssistant?.providerID === agency-swarm`, so the bridge would stop after one reply.
+            const processorModel = useAgencySwarmBridge
+              ? yield* getModel(
+                  ProviderID.make(SessionAgencySwarm.PROVIDER_ID),
+                  ModelID.make(AgencySwarmAdapter.DEFAULT_MODEL_ID),
+                  sessionID,
+                )
+              : model
             const task = tasks.pop()
 
             if (task?.type === "subtask") {
@@ -1448,8 +1476,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               path: { cwd: ctx.directory, root: ctx.worktree },
               cost: 0,
               tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-              modelID: model.id,
-              providerID: model.providerID,
+              modelID: processorModel.id,
+              providerID: processorModel.providerID,
               time: { created: Date.now() },
               sessionID,
             }
@@ -1457,7 +1485,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             const handle = yield* processor.create({
               assistantMessage: msg,
               sessionID,
-              model,
+              model: processorModel,
             })
 
             const outcome: "break" | "continue" = yield* Effect.onExit(
@@ -1466,8 +1494,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
                 if (step === 1) SessionSummary.summarize({ sessionID, messageID: lastUser.id })
 
-                if (model.providerID === SessionAgencySwarm.PROVIDER_ID) {
-                  const cfg = yield* provider.getProvider(model.providerID)
+                if (useAgencySwarmBridge) {
+                  const cfg = yield* provider.getProvider(ProviderID.make(SessionAgencySwarm.PROVIDER_ID))
                   const user = msgs.findLast(
                     (item): item is MessageV2.WithParts => item.info.role === "user" && item.info.id === lastUser.id,
                   )
@@ -1482,7 +1510,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                     system: [],
                     messages: [],
                     tools: {},
-                    model,
+                    model: processorModel,
                     createStream: (abort) =>
                       SessionAgencySwarm.stream({
                         sessionID,
@@ -1490,6 +1518,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                         userMessage: user,
                         options: SessionAgencySwarm.optionsFromProvider(cfg),
                         abort,
+                        sessionModel: {
+                          providerID: lastUser.model.providerID,
+                          modelID: lastUser.model.modelID,
+                        },
                       }),
                   })
                   if (result === "stop") return "break" as const
@@ -1781,6 +1813,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         Layer.provide(Agent.defaultLayer),
         Layer.provide(Bus.layer),
         Layer.provide(CrossSpawnSpawner.defaultLayer),
+        Layer.provide(Config.defaultLayer),
       ),
     ),
   )

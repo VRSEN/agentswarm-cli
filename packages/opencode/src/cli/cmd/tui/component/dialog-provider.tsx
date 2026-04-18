@@ -66,6 +66,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
     isAgencySwarmFrameworkMode({
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
+      agentModel: local.agent.current()?.model,
     }),
   )
   const options = createMemo(() => {
@@ -249,6 +250,7 @@ export function DialogAuth() {
     isAgencySwarmFrameworkMode({
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
+      agentModel: local.agent.current()?.model,
     }),
   )
   const providerIDs = frameworkMode()
@@ -284,6 +286,35 @@ export function DialogAuth() {
 
   return (
     <DialogSelect title={frameworkMode() ? "Manage Agent Swarm auth" : "Manage provider auth"} options={options()} />
+  )
+}
+
+/** After auth in Agency Swarm mode, offer model selection (CLI model drives `client_config` for that provider). */
+function DialogPostAuthModelChoice(props: { providerID: string }) {
+  const dialog = useDialog()
+  const sync = useSync()
+  const providerName = createMemo(() => {
+    const p = sync.data.provider_next.all.find((x) => x.id === props.providerID)
+    return p?.name ?? props.providerID
+  })
+  return (
+    <DialogSelect
+      title={`${providerName()} connected`}
+      options={[
+        {
+          title: "Select model",
+          value: "model",
+          description: "Choose which model to use for this session",
+          onSelect: () => dialog.replace(() => <DialogModel providerID={props.providerID} />),
+        },
+        {
+          title: "Done",
+          value: "done",
+          description: "Keep your current model selection",
+          onSelect: () => dialog.clear(),
+        },
+      ]}
+    />
   )
 }
 
@@ -685,6 +716,7 @@ function AutoMethod(props: AutoMethodProps) {
     isAgencySwarmFrameworkMode({
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
+      agentModel: local.agent.current()?.model,
     }),
   )
 
@@ -726,7 +758,7 @@ function AutoMethod(props: AutoMethodProps) {
       await sdk.client.instance.dispose()
       await sync.bootstrap()
       if (frameworkMode()) {
-        dialog.clear()
+        dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
         return
       }
       dialog.replace(() => <DialogModel providerID={props.providerID} />)
@@ -786,6 +818,7 @@ function CodeMethod(props: CodeMethodProps) {
     isAgencySwarmFrameworkMode({
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
+      agentModel: local.agent.current()?.model,
     }),
   )
 
@@ -804,7 +837,7 @@ function CodeMethod(props: CodeMethodProps) {
             await sdk.client.instance.dispose()
             await sync.bootstrap()
             if (frameworkMode()) {
-              dialog.clear()
+              dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
               return
             }
             dialog.replace(() => <DialogModel providerID={props.providerID} />)
@@ -855,6 +888,7 @@ function ApiMethod(props: ApiMethodProps) {
     isAgencySwarmFrameworkMode({
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
+      agentModel: local.agent.current()?.model,
     }),
   )
   const description = () => {
@@ -920,7 +954,7 @@ function ApiMethod(props: ApiMethodProps) {
           await sdk.client.instance.dispose()
           await sync.bootstrap()
           if (frameworkMode()) {
-            dialog.clear()
+            dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
             return
           }
           dialog.replace(() => <DialogModel providerID={props.providerID} />)

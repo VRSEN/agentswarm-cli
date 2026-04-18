@@ -190,7 +190,16 @@ const unix = process.platform !== "win32" ? it.live : it.live.skip
 
 // Config that registers a custom "test" provider with a "test-model" model
 // so Provider.getModel("test", "test-model") succeeds inside the loop.
+// Default `model` + `agent.build.model` pin prompts to the test provider: `createUserMessage`
+// uses `input.model ?? agent.model ?? lastModel`, so without `agent.build.model` the build
+// agent's default (often agency-swarm) would win and the loop would take the Agency Swarm bridge.
 const cfg = {
+  model: "test/test-model",
+  agent: {
+    build: {
+      model: "test/test-model",
+    },
+  },
   provider: {
     test: {
       name: "Test",
@@ -527,14 +536,18 @@ it.live("failed subtask preserves metadata on error tool state", () =>
     }),
     {
       git: true,
-      config: (url) => ({
-        ...providerCfg(url),
-        agent: {
-          general: {
-            model: "test/missing-model",
+      config: (url) => {
+        const base = providerCfg(url)
+        return {
+          ...base,
+          agent: {
+            ...base.agent,
+            general: {
+              model: "test/missing-model",
+            },
           },
-        },
-      }),
+        }
+      },
     },
   ),
 )

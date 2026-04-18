@@ -157,3 +157,69 @@ export function mapProviderIDToLiteLLMProvider(providerID: string): string | und
 
   return undefined
 }
+
+const AGENCY_SWARM_PROVIDER_ID = "agency-swarm"
+
+const OPENAI_LITELLM_ID = "openai"
+
+const LITELLM_OPENAI_PREFIX = "litellm/openai/"
+
+/** Strips `litellm/openai/` and `openai/` prefixes used when routing OpenAI models through LiteLLM. */
+function stripOpenAILiteLLMRoutePrefixes(t: string): string {
+  if (t.startsWith(LITELLM_OPENAI_PREFIX)) {
+    return t.slice(LITELLM_OPENAI_PREFIX.length)
+  }
+  if (t.startsWith(`${OPENAI_LITELLM_ID}/`)) {
+    return t.slice(OPENAI_LITELLM_ID.length + 1)
+  }
+  return t
+}
+
+/**
+ * Normalize optional `client_config.model` from JSON/config (may omit `litellm/`).
+ * OpenAI upstream models are stored as the bare model id only (e.g. `gpt-4o`).
+ * Other `provider/model` paths get a `litellm/` prefix for LiteLLM routing.
+ */
+export function normalizeExplicitClientConfigModel(raw: string): string {
+  const t = raw.trim()
+  if (!t) return t
+  const stripped = stripOpenAILiteLLMRoutePrefixes(t)
+  if (stripped !== t) return stripped
+  if (t.startsWith("litellm/")) return t
+  if (t.includes("/")) return `litellm/${t}`
+  return t
+}
+
+/**
+ * Build `client_config.model` from the CLI session selection.
+ * OpenAI models use the bare model id only (e.g. `gpt-4o`). Other providers use `litellm/<provider>/<model>`.
+ * Skips when the session model is the agency-swarm placeholder (no LLM provider).
+ */
+export function buildLitellmModelForClientConfig(providerID: string, modelID: string): string | undefined {
+  if (providerID === AGENCY_SWARM_PROVIDER_ID) return undefined
+  const t = modelID.trim()
+  if (!t) return undefined
+  const stripped = stripOpenAILiteLLMRoutePrefixes(t)
+  if (stripped !== t) return stripped
+  if (t.startsWith("litellm/")) return t
+
+  const slash = t.indexOf("/")
+  if (slash !== -1) {
+    const prefix = t.slice(0, slash)
+    const rest = t.slice(slash + 1)
+    const mappedPrefix = mapProviderIDToLiteLLMProvider(prefix)
+    if (mappedPrefix && rest) {
+      if (mappedPrefix === OPENAI_LITELLM_ID) {
+        return rest
+      }
+      return `litellm/${mappedPrefix}/${rest}`
+    }
+  }
+
+  const mapped = mapProviderIDToLiteLLMProvider(providerID)
+  if (!mapped) return undefined
+  if (mapped === OPENAI_LITELLM_ID) {
+    return t
+  }
+  return `litellm/${mapped}/${t}`
+}

@@ -84,6 +84,9 @@ export namespace Flag {
   export const OPENCODE_SKIP_MIGRATIONS = truthy("OPENCODE_SKIP_MIGRATIONS")
   export const OPENCODE_STRICT_CONFIG_DEPS = truthy("OPENCODE_STRICT_CONFIG_DEPS")
 
+  /** When set, merge stored/env LLM credentials into Agency Swarm `client_config` for non-loopback base URLs (default: off for safety). */
+  export const AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS = truthy("AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS")
+
   function number(key: string) {
     const value = process.env[key]
     if (!value) return undefined

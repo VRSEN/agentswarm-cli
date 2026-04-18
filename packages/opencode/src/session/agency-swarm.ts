@@ -1,7 +1,17 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import { hasExplicitOpenAIClientConfig, readStringRecord } from "@/agency-swarm/client-config"
+import {
+  hasExplicitOpenAIApiKey,
+  hasExplicitOpenAIClientConfig,
+  readCredentialHeaders,
+  readStringRecord,
+} from "@/agency-swarm/client-config"
+import { Flag } from "@/flag/flag"
 import { AgencySwarmHistory } from "@/agency-swarm/history"
-import { mapProviderIDToLiteLLMProvider } from "@/agency-swarm/litellm-provider"
+import {
+  buildLitellmModelForClientConfig,
+  mapProviderIDToLiteLLMProvider,
+  normalizeExplicitClientConfigModel,
+} from "@/agency-swarm/litellm-provider"
 import { Auth } from "@/auth"
 import { Env } from "@/env"
 import { CODEX_API_BASE_URL, extractAccountId, refreshAccessToken } from "@/plugin/codex"
@@ -41,6 +51,8 @@ export namespace SessionAgencySwarm {
     fileIDs?: string[]
     generateChatName?: boolean
     clientConfig?: Record<string, unknown>
+    /** When true, merge stored/env credentials into client_config for non-local base URLs (see also AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS). */
+    forwardUpstreamCredentials?: boolean
     token?: string
     discoveryTimeoutMs: number
   }
@@ -51,6 +63,8 @@ export namespace SessionAgencySwarm {
     userMessage: MessageV2.WithParts
     options: RuntimeOptions
     abort: AbortSignal
+    /** Session UI model for this turn; forwarded as `client_config.model` (bare id for OpenAI, else `litellm/...`) for server-side override. */
+    sessionModel?: { providerID: string; modelID: string }
   }
 
   type Usage = {
@@ -86,6 +100,9 @@ export namespace SessionAgencySwarm {
       asBoolean(provider?.options?.["generateChatName"]) ?? asBoolean(provider?.options?.["generate_chat_name"])
     const rawClientConfig =
       asRecord(provider?.options?.["clientConfig"]) ?? asRecord(provider?.options?.["client_config"])
+    const opts = provider?.options
+    const rawForwardUpstream =
+      opts?.["forwardUpstreamCredentials"] === true || opts?.["forward_upstream_credentials"] === true
     const rawToken = asString(provider?.key) ?? asString(provider?.options?.["token"])
     const rawTimeout = provider?.options?.["discoveryTimeoutMs"]
 
@@ -98,6 +115,7 @@ export namespace SessionAgencySwarm {
       fileIDs: rawFileIDs.length > 0 ? rawFileIDs : undefined,
       generateChatName: rawGenerateChatName,
       clientConfig: rawClientConfig,
+      forwardUpstreamCredentials: rawForwardUpstream === true ? true : undefined,
       token: rawToken || undefined,
       discoveryTimeoutMs:
         typeof rawTimeout === "number" && Number.isFinite(rawTimeout) && rawTimeout > 0
@@ -106,22 +124,61 @@ export namespace SessionAgencySwarm {
     }
   }
 
+  function finalizeClientConfig(
+    merged: Record<string, unknown> | undefined,
+    explicitForModel: Record<string, unknown> | undefined,
+    sessionLitellmModel: string | undefined,
+  ): Record<string, unknown> | undefined {
+    const explicitModel = explicitForModel && asString(explicitForModel["model"])
+    if (merged && Object.keys(merged).length > 0) {
+      const out = { ...merged }
+      if (explicitModel) {
+        out["model"] = normalizeExplicitClientConfigModel(explicitModel)
+      } else if (sessionLitellmModel) {
+        out["model"] = sessionLitellmModel
+      }
+      return out
+    }
+    if (explicitModel) {
+      return { model: normalizeExplicitClientConfigModel(explicitModel) }
+    }
+    if (sessionLitellmModel) {
+      return { model: sessionLitellmModel }
+    }
+    return undefined
+  }
+
   async function resolveClientConfig(
     baseURL: string,
     config: Record<string, unknown> | undefined,
+    forwardUpstreamCredentials?: boolean,
+    sessionLitellmModel?: string,
   ): Promise<Record<string, unknown> | undefined> {
     const explicit = asRecord(config)
     const explicitUpstreamBaseURL = readConfiguredBaseURL(explicit)
-    const generated = isLoopbackBaseURL(baseURL)
+    const forwardGenerated =
+      isLocalAgencyUpstreamURL(baseURL) ||
+      Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS ||
+      forwardUpstreamCredentials === true
+    const skipOpenAIApiKey =
+      hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config)
+    const generated = forwardGenerated
       ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), getEnvForClientConfig(), {
-          skipOpenAI: hasExplicitOpenAIClientConfig(config),
+          skipOpenAIApiKeyInjection: skipOpenAIApiKey,
+          skipOpenAIOAuthFromStored: hasExplicitOpenAIClientConfig(config),
           allowStoredOpenAIOAuth: !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
         })
       : undefined
-    if (!config) return generated
-    if (!generated) return config
+    if (!config) {
+      return finalizeClientConfig(generated, undefined, sessionLitellmModel)
+    }
+    if (!generated) {
+      return finalizeClientConfig(explicit, explicit, sessionLitellmModel)
+    }
 
-    if (!explicit) return generated
+    if (!explicit) {
+      return finalizeClientConfig(generated, undefined, sessionLitellmModel)
+    }
 
     const merged: Record<string, unknown> = {
       ...generated,
@@ -163,7 +220,7 @@ export namespace SessionAgencySwarm {
     }
     delete merged["defaultHeaders"]
 
-    return merged
+    return finalizeClientConfig(merged, explicit, sessionLitellmModel)
   }
 
   async function buildAuthClientConfig(
@@ -171,7 +228,8 @@ export namespace SessionAgencySwarm {
     providers: Record<string, Provider.Info> | undefined,
     env: Record<string, string | undefined>,
     options: {
-      skipOpenAI: boolean
+      skipOpenAIApiKeyInjection: boolean
+      skipOpenAIOAuthFromStored: boolean
       allowStoredOpenAIOAuth: boolean
     },
   ): Promise<Record<string, unknown> | undefined> {
@@ -184,7 +242,7 @@ export namespace SessionAgencySwarm {
       if (!key) continue
 
       if (providerID === "openai") {
-        if (!options.skipOpenAI) payload["api_key"] = key
+        if (!options.skipOpenAIApiKeyInjection) payload["api_key"] = key
         continue
       }
 
@@ -198,7 +256,7 @@ export namespace SessionAgencySwarm {
       if (hasEnvCredential(providerID, providers, env)) continue
 
       if (providerID === "openai" && auth.type === "oauth") {
-        if (options.skipOpenAI || !options.allowStoredOpenAIOAuth) continue
+        if (options.skipOpenAIOAuthFromStored || !options.allowStoredOpenAIOAuth) continue
         try {
           Object.assign(payload, await buildOpenAIOAuthClientConfig(auth))
         } catch (error) {
@@ -212,7 +270,7 @@ export namespace SessionAgencySwarm {
       if (auth.type !== "api") continue
 
       if (providerID === "openai") {
-        if (!options.skipOpenAI) payload["api_key"] = auth.key
+        if (!options.skipOpenAIApiKeyInjection) payload["api_key"] = auth.key
         continue
       }
 
@@ -223,6 +281,14 @@ export namespace SessionAgencySwarm {
 
     if (Object.keys(litellmKeys).length > 0) {
       payload["litellm_keys"] = litellmKeys
+    }
+
+    if (!options.skipOpenAIApiKeyInjection && !payload["api_key"]) {
+      const fromEnv = env["OPENAI_API_KEY"]
+      if (typeof fromEnv === "string") {
+        const trimmed = fromEnv.trim()
+        if (trimmed) payload["api_key"] = trimmed
+      }
     }
 
     return Object.keys(payload).length > 0 ? payload : undefined
@@ -298,14 +364,19 @@ export namespace SessionAgencySwarm {
     }
   }
 
-  function isLoopbackBaseURL(baseURL: string): boolean {
+  /** Loopback + common dev hostnames (Docker Desktop, etc.) where forwarding upstream API keys to a local bridge is expected. */
+  function isLocalAgencyUpstreamURL(baseURL: string) {
     try {
       const parsed = new URL(baseURL)
+      const h = parsed.hostname.toLowerCase()
       return (
-        parsed.hostname === "127.0.0.1" ||
-        parsed.hostname === "0.0.0.0" ||
-        parsed.hostname === "localhost" ||
-        parsed.hostname === "::1"
+        h === "127.0.0.1" ||
+        h === "0.0.0.0" ||
+        h === "localhost" ||
+        h === "::1" ||
+        h === "[::1]" ||
+        h === "host.docker.internal" ||
+        h === "kubernetes.docker.internal"
       )
     } catch {
       return false
@@ -403,6 +474,21 @@ export namespace SessionAgencySwarm {
     const textKey = (itemID: string, index?: number) => {
       const value = index ?? textIndex.get(itemID) ?? 0
       return `${itemID}:${value}`
+    }
+
+    /** Skip when the same body was already finalized from raw_response_event under another item id (stream vs `messages` / run_item ids often differ for Anthropic / LiteLLM). */
+    const shouldSkipDuplicateAssistantText = (itemID: string, index: number, text: string) => {
+      const key = textKey(itemID, index)
+      const current = textBuffer.get(key) || ""
+      if (current === text && !textOpen.has(key)) {
+        return true
+      }
+      for (const [bufferKey, bufferedText] of textBuffer) {
+        if (bufferKey !== key && bufferedText === text && !textOpen.has(bufferKey)) {
+          return true
+        }
+      }
+      return false
     }
 
     const reasoningKey = (itemID: string, index: number) => `${itemID}:${index}`
@@ -960,6 +1046,7 @@ export namespace SessionAgencySwarm {
         if (!itemID) continue
         const text = extractMessageText(message)
         if (!text) continue
+        if (shouldSkipDuplicateAssistantText(itemID, 0, text)) continue
         yield* finishText(itemID, 0, text, {}, { source: "messages" })
       }
     }
@@ -1139,7 +1226,11 @@ export namespace SessionAgencySwarm {
         if (!itemID) return []
         const text = extractMessageText(rawItem)
         if (!text) return []
-        return finishText(itemID, 0, text, eventMeta, { source: "run_item_stream_event" })
+        const index = 0
+        if (shouldSkipDuplicateAssistantText(itemID, index, text)) {
+          return []
+        }
+        return finishText(itemID, index, text, eventMeta, { source: "run_item_stream_event" })
       }
 
       if (name !== "reasoning_item_created" || itemType !== "reasoning") {
@@ -1269,7 +1360,15 @@ export namespace SessionAgencySwarm {
         mentionedRecipient,
         configuredRecipient: input.options.recipientAgent,
       })
-      const clientConfig = await resolveClientConfig(input.options.baseURL, input.options.clientConfig)
+      const sessionLitellmModel =
+        input.sessionModel &&
+        buildLitellmModelForClientConfig(input.sessionModel.providerID, input.sessionModel.modelID)
+      const clientConfig = await resolveClientConfig(
+        input.options.baseURL,
+        input.options.clientConfig,
+        input.options.forwardUpstreamCredentials,
+        sessionLitellmModel,
+      )
 
       try {
         for await (const frame of AgencySwarmAdapter.streamRun({

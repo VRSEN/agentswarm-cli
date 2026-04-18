@@ -189,13 +189,23 @@ describe("agency session errors", () => {
     ).toBe(false)
   })
 
-  test("framework mode follows the current provider override away from agency-swarm", () => {
+  test("framework mode stays true when config default is agency-swarm even if session uses openai upstream", () => {
     expect(
       isAgencySwarmFrameworkMode({
         currentProviderID: "openai",
         configuredModel: "agency-swarm/default",
       }),
-    ).toBe(false)
+    ).toBe(true)
+  })
+
+  test("framework mode is true when agent default is agency-swarm but session model is openai", () => {
+    expect(
+      isAgencySwarmFrameworkMode({
+        currentProviderID: "openai",
+        configuredModel: undefined,
+        agentModel: { providerID: "agency-swarm", modelID: "default" },
+      }),
+    ).toBe(true)
   })
 
   test("framework mode falls back to the configured agency-swarm model when no current provider is selected", () => {

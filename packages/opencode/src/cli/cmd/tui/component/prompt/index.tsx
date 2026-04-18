@@ -40,7 +40,12 @@ import { DialogSkill } from "../dialog-skill"
 import { CONSOLE_MANAGED_ICON, consoleManagedProviderLabel } from "@tui/util/provider-origin"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencySwarmRunSession } from "@/agency-swarm/run-session"
-import { describeAgencyAuthFailure, shouldBlockAgencyPromptSubmit, shouldOpenAgencyAuthDialog } from "../../session-error"
+import {
+  describeAgencyAuthFailure,
+  isAgencySwarmFrameworkMode,
+  shouldBlockAgencyPromptSubmit,
+  shouldOpenAgencyAuthDialog,
+} from "../../session-error"
 import { errorMessage as toErrorMessage } from "@/util/error"
 
 export type PromptProps = {
@@ -305,6 +310,16 @@ export function Prompt(props: PromptProps) {
         slash: {
           name: "editor",
         },
+        enabled: !isAgencySwarmFrameworkMode({
+          currentProviderID: local.model.current()?.providerID,
+          configuredModel: sync.data.config.model,
+          agentModel: local.agent.current()?.model,
+        }),
+        hidden: isAgencySwarmFrameworkMode({
+          currentProviderID: local.model.current()?.providerID,
+          configuredModel: sync.data.config.model,
+          agentModel: local.agent.current()?.model,
+        }),
         onSelect: async (dialog) => {
           dialog.clear()
 
@@ -679,6 +694,7 @@ export function Prompt(props: PromptProps) {
       shouldBlockAgencyPromptSubmit({
         currentProviderID: selectedModel.providerID,
         configuredModel: sync.data.config.model,
+        agentModel: local.agent.current()?.model,
         providers: sync.data.provider,
         providerAuth: sync.data.provider_auth,
         mode: currentMode,
