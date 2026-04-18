@@ -311,6 +311,7 @@ After each meaningful tool call or code edit, validate the result in 1-2 lines a
 ## Release Gate
 - Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts change.
 - Before any release, build and reinstall the CLI from the fresh local build, then run the documented Agency Swarm terminal end-to-end flow to verify the real auth/onboarding path, the changed behavior, and focused regressions for each touched area.
+- MANDATORY Codex pre-release review: no tag, GitHub release, or npm publish may proceed without a green Codex CLI review (model `gpt-5.4`, reasoning `extra-high`) of the exact commit being released. Run `codex review --base vrsen/dev -c model_reasoning_effort="extra-high"` (or equivalent `codex exec` review when `codex review` is unavailable), save to `/tmp/codex_review_<short_sha>.txt`, and only proceed when the verdict is clean. If Codex flags any P1/P2, stop and surface the findings to the user.
 
 ## Documentation Rules
 - Do not mention upstream fork origins in user-facing docs unless the user explicitly asks for that comparison or attribution.
