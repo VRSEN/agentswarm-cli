@@ -3,7 +3,7 @@ name: auth-smoke
 # Release-blocking happy-path test.
 # Runs AFTER a PR lands on dev (pre-release gate), never on pull_request itself,
 # to prevent an unreviewed PR from exfiltrating provider secrets via the injected
-# OPENAI_OAUTH_ACCESS_TOKEN / ANTHROPIC_API_KEY.
+# OPENAI_OAUTH_ACCESS_TOKEN / OPENAI_API_KEY / ANTHROPIC_API_KEY.
 on:
   push:
     branches:
@@ -35,6 +35,7 @@ jobs:
         env:
           OPENAI_OAUTH_ACCESS_TOKEN: ${{ secrets.OPENAI_OAUTH_ACCESS_TOKEN }}
           OPENAI_OAUTH_ACCOUNT_ID: ${{ secrets.OPENAI_OAUTH_ACCOUNT_ID }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           python3 packages/opencode/script/auth-smoke-test.py

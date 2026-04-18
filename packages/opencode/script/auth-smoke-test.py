@@ -209,6 +209,17 @@ def test_anthropic_key(port: int) -> bool | None:
     return send_probe(port, cfg, "anthropic")
 
 
+def test_openai_api_key(port: int) -> bool | None:
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not key:
+        log("openai-api-key", "OPENAI_API_KEY not set — SKIP")
+        return None
+    cfg = {
+        "api_key": key,
+    }
+    return send_probe(port, cfg, "openai-api-key")
+
+
 def main() -> int:
     workdir = Path(tempfile.mkdtemp(prefix="agentswarm-smoke-"))
     log("setup", f"workdir {workdir}")
@@ -232,6 +243,7 @@ def main() -> int:
         wait_ready(port)
 
         results["openai-oauth"] = test_openai_oauth(port)
+        results["openai-api-key"] = test_openai_api_key(port)
         results["anthropic"] = test_anthropic_key(port)
     finally:
         if bridge is not None:
