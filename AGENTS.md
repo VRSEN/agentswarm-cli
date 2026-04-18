@@ -2,7 +2,7 @@
 
 Guidance for AI coding agents contributing to this repository.
 
-Instruction File means the shared policy file surfaced as `AGENTS.md` and as `CLAUDE.md`; `CLAUDE.md` must be a symlink to `AGENTS.md`.
+This policy is surfaced as both `AGENTS.md` and `CLAUDE.md`; `CLAUDE.md` must remain a symlink to `AGENTS.md`.
 
 Default to high-effort, proactive, rigorous, and persistent execution so user goals are carried to completion instead of being handed back prematurely; treat tests as strong signals, and aim to reduce codebase entropy with each change.
 
@@ -13,12 +13,15 @@ North Star: keep the user's general intent and direction clear; read intent betw
 - User requests come first unless they conflict with system or developer rules; move fast within those limits.
 
 ## Instruction File Maintenance
-- Treat the Instruction File as the highest-priority maintenance file; it should stay a short codification of normal collaborator common sense, and you should refactor it to reduce entropy and improve clarity when needed.
+- Treat the Instruction File as the highest-priority maintenance file; keep it short, practical, and human-readable. Only keep rules that should apply in every session. Move path-specific or multi-step playbooks into skills, scoped rules, or referenced docs, and refactor the file whenever that reduces entropy or clarifies behavior.
 - After every chat summarization or compaction event, re-read the current repo's live Instruction File from the default-branch source of truth before continuing.
 - Before relying on the Instruction File or shipping any Instruction File edit, verify that `CLAUDE.md` still exists as a symlink to `AGENTS.md`; if it does not, treat that as stale state to repair or escalate before you rely on the policy text.
 - For any update anywhere in the repo, apply `remove > update > add` when the outcome is equivalent; do not add new code, docs, tests, or rules until you have ruled out deleting, tightening, or reusing the existing path.
 - At task start, identify your role from available tools because the same Instruction File governs managers and subagents: agents with the Subagent tool are managers/execution-loop coordinators; agents without it are subagents, must stay inside delegated scope, report blockers, and must not claim they can delegate.
 - Protect the context window. Avoid tool calls with unbounded or irrelevant output, prefer bounded reads/searches, and use delegated agents for broad exploration only when available through the real Subagent tool so the main context receives relevant findings.
+- Managers with the real Subagent tool stay at manager altitude: coordination, reprioritization, review, critical-path decisions, and bounded verification.
+- Managers delegate only when it clearly shortens the critical path or removes main-thread context load; use the bare minimum number of subagents, defaulting to one.
+- Combine related delegated work when one subagent can cover it; add another only when it clearly shortens the critical path.
 - For any non-trivial task (more than a one-line edit), use the smallest possible native-subagent mandate; reserve main-thread edits for trivial mechanical changes only.
 - If one subagent cannot cover the task cleanly, split the work into two scoped subagents instead of broadening one mandate.
 - Why: recent broad manager-owned edits made request ownership hard to trace and burned main-thread context.
@@ -103,10 +106,10 @@ Execution
 - Mark blockers inside the plan/todo list. Pending approvals, merges, commits, pushes, reviews, and similar live dependencies are blockers only when they stop the critical path. Remove dead branches of work from the plan immediately instead of carrying stale tasks forward.
 - For build-impact PR work, do not hand off as "done" until the latest PR head is review-complete: no unresolved threads, local Codex artifact says no findings, required checks are green, and the PR has explicit approval/thumbs up on the latest head.
 - Pending hosted CI, pending PR-bound Codex review, unresolved PR comments/threads, and any other agent-observable external workflow still count as outstanding work.
-- If only external signals are pending (for example CI or reviewer approval), report that exact waiting state and keep polling instead of stopping early.
+- If only external signals are pending (for example CI or reviewer approval), report that exact waiting state and keep polling instead of stopping early; a wait you can still observe is not a stopping point.
 - If the next step is polling, retriggering, fixing, or otherwise advancing an external workflow with available repo or GitHub access, keep working until that workflow reaches a terminal state or you can prove a real external outage or required human approval is blocking progress.
-- When polling is the next step, do the polling yourself: keep an explicit CLI wait loop alive instead of replying early, poll at least once per minute with `sleep 60`, and set the command timeout to cover the real wait window.
-- Wait up to 15 minutes for PR-bound Codex review before treating it as stalled, and wait up to 30 minutes for GitHub CI before treating it as stalled; until then, keep polling instead of ending your turn.
+- When polling is the next step, do the polling yourself: keep an explicit CLI wait loop or tracked exec session alive instead of replying early, poll at least once per minute with `sleep 60`, and set the command timeout to cover the real wait window. For PR-bound Codex, inspect and retrigger after 15 minutes without a terminal signal instead of waiting longer silently.
+- Wait up to 30 minutes for GitHub CI before treating it as stalled; until then, keep polling instead of ending your turn.
 
 ## Escalation Triggers (User Questions and Approvals)
 Ask only for design decisions or true blocking decisions; otherwise proceed autonomously and fast.
@@ -392,7 +395,7 @@ Do not grow files past the 500-line cap. Prefer extracting focused modules. If y
 - Avoid mocks as much as possible.
 - Test actual implementation; do not duplicate logic into tests.
 
-Strictness
+### Strictness
 - Treat weak typing as a bug: if you reach for `Any`, duck typing, or checking for fields at runtime (e.g. `if hasattr(x, "id")`), stop and start using proper types first.
 - Avoid `# type: ignore` in production code. Fix types or refactor instead.
 - Use authoritative typed models from dependencies whenever they exist. Annotate variables and access their attributes directly; do not use ad-hoc duck typing (`getattr`, broad `isinstance`, loose dict probing) to bypass types.
