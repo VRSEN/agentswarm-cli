@@ -724,6 +724,7 @@ export function Prompt(props: PromptProps) {
 
     let sessionID = props.sessionID
     let createdSessionID: string | undefined
+    let navigateTimer: ReturnType<typeof setTimeout> | undefined
     if (sessionID == null) {
       const res = await sdk.client.session.create({
         workspaceID: props.workspaceID,
@@ -744,7 +745,8 @@ export function Prompt(props: PromptProps) {
 
       // temporary hack to make sure the message is sent
       if (!props.sessionID)
-        setTimeout(() => {
+        navigateTimer = setTimeout(() => {
+          navigateTimer = undefined
           route.navigate({
             type: "session",
             sessionID: newSessionID,
@@ -823,6 +825,10 @@ export function Prompt(props: PromptProps) {
           providerID: selectedModel.providerID,
           message,
         })
+        if (navigateTimer) {
+          clearTimeout(navigateTimer)
+          navigateTimer = undefined
+        }
         if (createdSessionID) {
           route.navigate({ type: "home" })
           if (shouldReopenAuth) {
