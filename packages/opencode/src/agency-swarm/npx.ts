@@ -562,7 +562,11 @@ async function ensureProjectPython(directory: string) {
     }
     throw new Error("Python 3.12 or newer was not found. Install Python, then rerun `npx @vrsen/agentswarm`.")
   }
-  prompts.log.info(`Detected Python: ${formatPython(detected, detected.cmd)}`)
+  // During self-heal, invoke the resolved interpreter by its absolute path. The alias
+  // (python3 etc.) resolves via PATH and, in an activated broken venv, still points at
+  // the .venv binary we are about to delete.
+  const rebuildCmd = corruptedVenv ? [detected.executable] : detected.cmd
+  prompts.log.info(`Detected Python: ${formatPython(detected, rebuildCmd)}`)
 
   if (corruptedVenv) {
     prompts.log.warn("Project `.venv` is missing module sources (corrupted install). Rebuilding...")
@@ -579,19 +583,19 @@ async function ensureProjectPython(directory: string) {
       return
     }
     if (!createVenv) {
-      const check = await runCommand([...detected.cmd, "-c", "import agency_swarm"])
+      const check = await runCommand([...rebuildCmd, "-c", "import agency_swarm"])
       if (check.code !== 0) {
         throw new Error(
           "This project does not have a `.venv` yet, and the selected Python environment cannot import `agency_swarm`.",
         )
       }
-      return detected.cmd
+      return rebuildCmd
     }
   }
 
   const spinner = prompts.spinner()
   spinner.start("Creating `.venv`")
-  const created = await runCommand([...detected.cmd, "-m", "venv", ".venv"], {
+  const created = await runCommand([...rebuildCmd, "-m", "venv", ".venv"], {
     cwd: directory,
   })
   if (created.code !== 0) {
