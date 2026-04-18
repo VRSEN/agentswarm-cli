@@ -172,10 +172,15 @@ def send_probe(port: int, client_config: dict, label: str, recipient: str = "Exa
                     log(label, f"ERROR event: {data.get('content')}")
                     saw_error = True
                 nested = data.get("data")
-                if isinstance(nested, dict) and nested.get("type") == "response.output_text.delta":
-                    delta = nested.get("delta")
-                    if isinstance(delta, str):
-                        assistant_text.append(delta)
+                if isinstance(nested, dict):
+                    # raw_response_event frames can carry a nested type: 'error' after partial text.
+                    if nested.get("type") == "error":
+                        log(label, f"NESTED ERROR frame: {nested.get('content') or nested.get('message')}")
+                        saw_error = True
+                    elif nested.get("type") == "response.output_text.delta":
+                        delta = nested.get("delta")
+                        if isinstance(delta, str):
+                            assistant_text.append(delta)
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
         log(label, f"HTTPError {e.code}: {body[:300]}")
