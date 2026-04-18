@@ -306,16 +306,14 @@ export function Prompt(props: PromptProps) {
         slash: {
           name: "editor",
         },
-        enabled:
-          !isAgencySwarmFrameworkMode({
-            currentProviderID: local.model.current()?.providerID,
-            configuredModel: sync.data.config.model,
-          }) || local.agent.current()?.name === "build",
-        hidden:
-          isAgencySwarmFrameworkMode({
-            currentProviderID: local.model.current()?.providerID,
-            configuredModel: sync.data.config.model,
-          }) && local.agent.current()?.name !== "build",
+        enabled: !isAgencySwarmFrameworkMode({
+          currentProviderID: local.model.current()?.providerID,
+          configuredModel: sync.data.config.model,
+        }),
+        hidden: isAgencySwarmFrameworkMode({
+          currentProviderID: local.model.current()?.providerID,
+          configuredModel: sync.data.config.model,
+        }),
         onSelect: async (dialog) => {
           dialog.clear()
 
