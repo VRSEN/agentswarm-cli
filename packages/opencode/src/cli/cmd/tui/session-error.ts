@@ -1,5 +1,6 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { hasClientConfigCredential } from "@/agency-swarm/client-config"
+import { Flag } from "@/flag/flag"
 import { hasStoredProviderCredential } from "@tui/util/provider-auth"
 import type { Provider, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 
@@ -14,11 +15,7 @@ type AuthProvider = {
   options?: Record<string, unknown>
 }
 
-export function hasUsableProvider(
-  providers: Provider[],
-  credentialed = false,
-  providerAuth: ProviderAuthMap = {},
-) {
+export function hasUsableProvider(providers: Provider[], credentialed = false, providerAuth: ProviderAuthMap = {}) {
   return providers.some((provider) => {
     if (provider.id !== "opencode") return credentialed ? hasCredential(provider, providerAuth) : true
     return Object.values(provider.models).some((model) => model.cost?.input !== 0)
@@ -72,6 +69,19 @@ function usesLocalAgencyProviderAuth(providers: Provider[]) {
   return isLoopbackBaseURL(baseURL)
 }
 
+/**
+ * Forwarding upstream credentials means the agency-swarm call depends on locally stored OpenAI/Anthropic
+ * credentials even against non-loopback base URLs (e.g. `host.docker.internal`, remote bridges).
+ * Active when the env flag is set, the caller passes the override, or the agency-swarm provider opts in.
+ */
+function isForwardUpstreamCredentialsActive(providers: Provider[], override?: boolean) {
+  if (override === true) return true
+  if (Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS) return true
+  const agency = providers.find((provider) => provider.id === AgencySwarmAdapter.PROVIDER_ID)
+  const opts = agency?.options ?? {}
+  return opts["forwardUpstreamCredentials"] === true || opts["forward_upstream_credentials"] === true
+}
+
 export function isSupportedAgencyAuthProvider(
   providerID: string,
   _provider?: AuthProvider,
@@ -86,13 +96,34 @@ function isAgencyProviderCredentialFailure(message: string) {
   )
 }
 
-function hasSupportedAgencyCredential(providers: Provider[], providerAuth: ProviderAuthMap = {}) {
-  return providers.some((provider) => {
+function hasSupportedAgencyCredential(
+  providers: Provider[],
+  providerAuth: ProviderAuthMap = {},
+  env: Record<string, string | undefined> = {},
+) {
+  const providerMatch = providers.some((provider) => {
     if (provider.id === AgencySwarmAdapter.PROVIDER_ID) return false
     if (!isSupportedAgencyAuthProvider(provider.id, provider, providerAuth[provider.id] ?? [])) return false
+    if (hasEnvCredentialForProvider(provider, env)) return true
     if (provider.id === "openai") return hasCredential(provider, providerAuth)
     return hasConfiguredAPIStyleCredential(provider)
   })
+  if (providerMatch) return true
+  // Mirror the bridge's direct env reads (SessionAgencySwarm.buildAuthClientConfig): primary-provider env vars
+  // are upstream creds even when the provider is filtered out of the enabled list.
+  return AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS.some((id) => isNonEmptyEnv(env[envNameForPrimaryProvider(id)]))
+}
+
+function hasEnvCredentialForProvider(provider: AuthProvider | Provider, env: Record<string, string | undefined>) {
+  return (provider.env ?? []).some((name) => isNonEmptyEnv(env[name]))
+}
+
+function isNonEmptyEnv(value: string | undefined) {
+  return typeof value === "string" && value.trim().length > 0
+}
+
+function envNameForPrimaryProvider(id: (typeof AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS)[number]) {
+  return id === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"
 }
 
 function hasExplicitAgencyClientConfig(provider: Provider | undefined) {
@@ -101,50 +132,85 @@ function hasExplicitAgencyClientConfig(provider: Provider | undefined) {
   return hasClientConfigCredential(raw as Record<string, unknown>)
 }
 
-export function isAgencySwarmFrameworkMode(input: { currentProviderID?: string; configuredModel?: string }) {
-  if (input.currentProviderID) {
-    return input.currentProviderID === AgencySwarmAdapter.PROVIDER_ID
+/**
+ * True when the app is running in Agent Swarm mode. Session `currentProviderID` may be `openai` or `anthropic`
+ * (upstream LiteLLM) while `config.model` / the agent default still use `agency-swarm` — those must keep framework mode so /auth stays OpenAI+Anthropic only.
+ *
+ * **Precedence (first match wins):** `configuredModel` → `agentModel` → `currentProviderID`.
+ * This differs from checking only `currentProviderID` first: e.g. when the session provider is already `openai`
+ * but the configured or agent model still points at `agency-swarm/...`, framework mode stays on so auth and
+ * provider UI stay aligned with Agent Swarm.
+ */
+export function isAgencySwarmFrameworkMode(input: {
+  currentProviderID?: string
+  configuredModel?: string
+  agentModel?: { providerID: string; modelID: string }
+}) {
+  if (input.configuredModel?.split("/")[0] === AgencySwarmAdapter.PROVIDER_ID) {
+    return true
   }
-  return input.configuredModel?.split("/")[0] === AgencySwarmAdapter.PROVIDER_ID
+  if (input.agentModel?.providerID === AgencySwarmAdapter.PROVIDER_ID) {
+    return true
+  }
+  if (input.currentProviderID === AgencySwarmAdapter.PROVIDER_ID) {
+    return true
+  }
+  return false
 }
 
 export function shouldOpenStartupAuthDialog(input: {
   providers: Provider[]
   providerAuth?: ProviderAuthMap
   frameworkMode: boolean
+  /** Override for the upstream-credential forwarding path; when undefined the value is inferred from env + provider options. */
+  forwardUpstreamCredentials?: boolean
+  /** Process env snapshot; production callers pass `process.env`, tests pass a controlled map. */
+  env?: Record<string, string | undefined>
 }) {
   if (!input.frameworkMode) return !hasUsableProvider(input.providers, false, input.providerAuth)
 
+  const env = input.env ?? {}
   const agencyProvider = input.providers.find((provider) => provider.id === AgencySwarmAdapter.PROVIDER_ID)
-  if (agencyProvider && (hasCredential(agencyProvider, input.providerAuth) || hasExplicitAgencyClientConfig(agencyProvider))) {
-    return false
-  }
-  if (!usesLocalAgencyProviderAuth(input.providers)) return false
+  const forwardingActive = isForwardUpstreamCredentialsActive(input.providers, input.forwardUpstreamCredentials)
 
-  return !hasSupportedAgencyCredential(input.providers, input.providerAuth)
+  // Explicit client_config on the agency-swarm provider carries upstream creds and satisfies either mode.
+  if (agencyProvider && hasExplicitAgencyClientConfig(agencyProvider)) return false
+
+  // A bridge token only authenticates the call to the bridge; under forwarding it does NOT stand in
+  // for the upstream OpenAI/Anthropic credential resolveClientConfig() still needs.
+  if (!forwardingActive && agencyProvider && hasCredential(agencyProvider, input.providerAuth)) return false
+
+  if (!forwardingActive && !usesLocalAgencyProviderAuth(input.providers)) return false
+
+  return !hasSupportedAgencyCredential(input.providers, input.providerAuth, env)
 }
 
 export function shouldBlockAgencyPromptSend(input: {
   currentProviderID?: string
   configuredModel?: string
+  agentModel?: { providerID: string; modelID: string }
   providers: Provider[]
   providerAuth?: ProviderAuthMap
+  env?: Record<string, string | undefined>
 }) {
   if (!isAgencySwarmFrameworkMode(input)) return false
   return shouldOpenStartupAuthDialog({
     providers: input.providers,
     providerAuth: input.providerAuth,
     frameworkMode: true,
+    env: input.env,
   })
 }
 
 export function shouldBlockAgencyPromptSubmit(input: {
   currentProviderID?: string
   configuredModel?: string
+  agentModel?: { providerID: string; modelID: string }
   providers: Provider[]
   providerAuth?: ProviderAuthMap
   mode: "normal" | "shell"
   isSlashCommand: boolean
+  env?: Record<string, string | undefined>
 }) {
   if (input.mode === "shell" || input.isSlashCommand) return false
   return shouldBlockAgencyPromptSend(input)

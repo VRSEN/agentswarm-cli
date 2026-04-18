@@ -161,6 +161,174 @@ describe("agency session errors", () => {
     ).toBe(false)
   })
 
+  test("framework mode opens auth for non-loopback base URL when forwardUpstreamCredentials is on", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {
+              baseURL: "http://host.docker.internal:8000",
+              forwardUpstreamCredentials: true,
+            },
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "config",
+            env: ["OPENAI_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
+  test("framework mode opens auth for remote base URL when forwardUpstreamCredentials override is set", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        forwardUpstreamCredentials: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {
+              baseURL: "https://agency.example.com",
+            },
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "config",
+            env: ["OPENAI_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
+  test("framework mode skips auth when forwarding is active and OPENAI_API_KEY is set in env", () => {
+    const input = {
+      frameworkMode: true,
+      forwardUpstreamCredentials: true,
+      env: { OPENAI_API_KEY: "sk-from-env" } as Record<string, string | undefined>,
+      providers: [
+        {
+          id: "agency-swarm",
+          name: "Agency Swarm",
+          source: "config",
+          env: [],
+          options: { baseURL: "https://agency.example.com" },
+          models: {},
+        },
+        {
+          id: "openai",
+          name: "OpenAI",
+          source: "config",
+          env: ["OPENAI_API_KEY"],
+          options: {},
+          models: {},
+        },
+      ] satisfies Provider[],
+    }
+
+    expect(shouldOpenStartupAuthDialog(input)).toBe(false)
+    expect(
+      shouldBlockAgencyPromptSubmit({
+        currentProviderID: "agency-swarm",
+        configuredModel: "agency-swarm/default",
+        providers: input.providers,
+        env: input.env,
+        mode: "normal",
+        isSlashCommand: false,
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode skips auth when forwarding is active and ANTHROPIC_API_KEY is set in env", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        forwardUpstreamCredentials: true,
+        env: { ANTHROPIC_API_KEY: "sk-ant-env" },
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: { baseURL: "https://agency.example.com" },
+            models: {},
+          },
+          {
+            id: "anthropic",
+            name: "Anthropic",
+            source: "config",
+            env: ["ANTHROPIC_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode skips auth from env even when the primary provider is filtered out", () => {
+    // Mirrors SessionAgencySwarm.buildAuthClientConfig()'s direct OPENAI_API_KEY read:
+    // the bridge can authenticate via env even when openai is not in the enabled provider list.
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        forwardUpstreamCredentials: true,
+        env: { OPENAI_API_KEY: "sk-from-env" },
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: { baseURL: "https://agency.example.com" },
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
+  test("framework mode opens auth when forwarding is active and only an agency-swarm bridge token is present", () => {
+    // A bridge token authenticates the call to the bridge, not the upstream OpenAI/Anthropic request.
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        forwardUpstreamCredentials: true,
+        env: {},
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            key: "bridge-token",
+            options: { baseURL: "https://agency.example.com" },
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
   test("framework mode also skips local provider auth for remote agency-swarm backends using base_url", () => {
     expect(
       shouldOpenStartupAuthDialog({
@@ -189,13 +357,23 @@ describe("agency session errors", () => {
     ).toBe(false)
   })
 
-  test("framework mode follows the current provider override away from agency-swarm", () => {
+  test("framework mode stays true when config default is agency-swarm even if session uses openai upstream", () => {
     expect(
       isAgencySwarmFrameworkMode({
         currentProviderID: "openai",
         configuredModel: "agency-swarm/default",
       }),
-    ).toBe(false)
+    ).toBe(true)
+  })
+
+  test("framework mode is true when agent default is agency-swarm but session model is openai", () => {
+    expect(
+      isAgencySwarmFrameworkMode({
+        currentProviderID: "openai",
+        configuredModel: undefined,
+        agentModel: { providerID: "agency-swarm", modelID: "default" },
+      }),
+    ).toBe(true)
   })
 
   test("framework mode falls back to the configured agency-swarm model when no current provider is selected", () => {

@@ -1,4 +1,5 @@
 import { Log } from "@/util/log"
+import { sanitizeClientConfigForTransport } from "./client-config"
 
 export namespace AgencySwarmAdapter {
   const log = Log.create({ service: "agency-swarm.adapter" })
@@ -496,14 +497,17 @@ export namespace AgencySwarmAdapter {
     const apiKey = asString(value["api_key"]) ?? asString(value["apiKey"])
     const litellmKeys = asRecord(value["litellm_keys"]) ?? asRecord(value["litellmKeys"])
     const headers = readStringRecord(value["default_headers"]) ?? readStringRecord(value["defaultHeaders"])
+    const model = asString(value["model"])
 
     const payload: Record<string, unknown> = {}
     if (baseURL) payload["base_url"] = baseURL
     if (apiKey) payload["api_key"] = apiKey
     if (litellmKeys && Object.keys(litellmKeys).length > 0) payload["litellm_keys"] = litellmKeys
     if (headers) payload["default_headers"] = headers
+    if (model) payload["model"] = model
 
-    return Object.keys(payload).length > 0 ? payload : undefined
+    if (Object.keys(payload).length === 0) return undefined
+    return sanitizeClientConfigForTransport(payload)
   }
 
   async function safeJSON(response: Response): Promise<unknown | undefined> {

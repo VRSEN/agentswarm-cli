@@ -89,7 +89,7 @@ describe("session.agency-swarm", () => {
       } as any,
       options,
       abort: abort.signal,
-    } satisfies Parameters<typeof SessionAgencySwarm.stream>[0]
+    } as Parameters<typeof SessionAgencySwarm.stream>[0]
 
     return {
       input,
@@ -187,6 +187,32 @@ describe("session.agency-swarm", () => {
     expect(options.discoveryTimeoutMs).toBe(12000)
   })
 
+  test("optionsFromProvider maps forwardUpstreamCredentials", () => {
+    const on = SessionAgencySwarm.optionsFromProvider({
+      id: "agency-swarm" as any,
+      name: "Agency Swarm",
+      source: "config",
+      env: [],
+      models: {},
+      options: {
+        baseURL: "http://192.168.1.10:8000",
+        forwardUpstreamCredentials: true,
+      },
+    })
+    expect(on.forwardUpstreamCredentials).toBe(true)
+    const off = SessionAgencySwarm.optionsFromProvider({
+      id: "agency-swarm" as any,
+      name: "Agency Swarm",
+      source: "config",
+      env: [],
+      models: {},
+      options: {
+        baseURL: "http://192.168.1.10:8000",
+      },
+    })
+    expect(off.forwardUpstreamCredentials).toBeUndefined()
+  })
+
   test("optionsFromProvider prefers auth key token over config token", () => {
     const options = SessionAgencySwarm.optionsFromProvider({
       id: "agency-swarm" as any,
@@ -281,6 +307,32 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream forwards stored API auth to remote URL when forwardUpstreamCredentials is true", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      openai: { type: "api", key: "sk-openai" } as any,
+    })) as typeof Auth.all
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.baseURL = "https://agency.example.com"
+    input.options.forwardUpstreamCredentials = true
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "sk-openai",
+    })
+  })
+
   test("stream forwards stored API auth to 0.0.0.0 local agency-swarm servers", async () => {
     mockHistory()
     Auth.all = (async () => ({
@@ -307,6 +359,31 @@ describe("session.agency-swarm", () => {
       litellm_keys: {
         anthropic: "sk-ant",
       },
+    })
+  })
+
+  test("stream forwards stored API auth to host.docker.internal (Docker Desktop)", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      openai: { type: "api", key: "sk-openai" } as any,
+    })) as typeof Auth.all
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.baseURL = "http://host.docker.internal:8000"
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "sk-openai",
     })
   })
 
@@ -462,6 +539,195 @@ describe("session.agency-swarm", () => {
         litellm_keys: {
           anthropic: "env-anthropic",
         },
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+    }
+  })
+
+  test("stream forwards session UI model as client_config.model (litellm/ for non-OpenAI)", async () => {
+    mockHistory()
+    Auth.all = (async () => ({})) as typeof Auth.all
+    Env.all = (() => ({})) as typeof Env.all
+    Provider.list = (async () => ({})) as typeof Provider.list
+
+    let body: Record<string, unknown> | undefined
+    const server = createServer(async (request, response) => {
+      if (request.url !== "/builder/get_response_stream") {
+        response.writeHead(404)
+        response.end("not found")
+        return
+      }
+
+      const chunks: Buffer[] = []
+      for await (const chunk of request) {
+        if (Buffer.isBuffer(chunk)) chunks.push(chunk)
+        else chunks.push(Buffer.from(chunk))
+      }
+      body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
+
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream",
+      })
+      response.end(
+        [
+          'data: {"data":{"type":"raw_response_event","data":{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"ok"}}}\n\n',
+          "event: end\ndata: [DONE]\n\n",
+        ].join(""),
+      )
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject)
+        resolve()
+      })
+    })
+
+    const address = server.address()
+    if (!address || typeof address === "string") {
+      server.close()
+      throw new Error("Expected local test server address")
+    }
+
+    try {
+      const { input } = helper()
+      input.options.baseURL = `http://127.0.0.1:${(address as AddressInfo).port}`
+      input.sessionModel = { providerID: "anthropic", modelID: "claude-sonnet-4-5" }
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _ of stream.fullStream) {
+        /* drain */
+      }
+
+      expect(body?.["client_config"]).toEqual({
+        model: "litellm/anthropic/claude-sonnet-4-5",
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+    }
+  })
+
+  test("stream forwards session UI OpenAI model as bare model id", async () => {
+    mockHistory()
+    Auth.all = (async () => ({})) as typeof Auth.all
+    Env.all = (() => ({})) as typeof Env.all
+    Provider.list = (async () => ({})) as typeof Provider.list
+
+    let body: Record<string, unknown> | undefined
+    const server = createServer(async (request, response) => {
+      if (request.url !== "/builder/get_response_stream") {
+        response.writeHead(404)
+        response.end("not found")
+        return
+      }
+
+      const chunks: Buffer[] = []
+      for await (const chunk of request) {
+        if (Buffer.isBuffer(chunk)) chunks.push(chunk)
+        else chunks.push(Buffer.from(chunk))
+      }
+      body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
+
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream",
+      })
+      response.end(
+        [
+          'data: {"data":{"type":"raw_response_event","data":{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"ok"}}}\n\n',
+          "event: end\ndata: [DONE]\n\n",
+        ].join(""),
+      )
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject)
+        resolve()
+      })
+    })
+
+    const address = server.address()
+    if (!address || typeof address === "string") {
+      server.close()
+      throw new Error("Expected local test server address")
+    }
+
+    try {
+      const { input } = helper()
+      input.options.baseURL = `http://127.0.0.1:${(address as AddressInfo).port}`
+      input.sessionModel = { providerID: "openai", modelID: "gpt-4o" }
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _ of stream.fullStream) {
+        /* drain */
+      }
+
+      expect(body?.["client_config"]).toEqual({
+        model: "gpt-4o",
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+    }
+  })
+
+  test("explicit client_config.model overrides session-derived model", async () => {
+    mockHistory()
+    Auth.all = (async () => ({})) as typeof Auth.all
+    Env.all = (() => ({})) as typeof Env.all
+    Provider.list = (async () => ({})) as typeof Provider.list
+
+    let body: Record<string, unknown> | undefined
+    const server = createServer(async (request, response) => {
+      if (request.url !== "/builder/get_response_stream") {
+        response.writeHead(404)
+        response.end("not found")
+        return
+      }
+
+      const chunks: Buffer[] = []
+      for await (const chunk of request) {
+        if (Buffer.isBuffer(chunk)) chunks.push(chunk)
+        else chunks.push(Buffer.from(chunk))
+      }
+      body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
+
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream",
+      })
+      response.end(
+        [
+          'data: {"data":{"type":"raw_response_event","data":{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"ok"}}}\n\n',
+          "event: end\ndata: [DONE]\n\n",
+        ].join(""),
+      )
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject)
+        resolve()
+      })
+    })
+
+    const address = server.address()
+    if (!address || typeof address === "string") {
+      server.close()
+      throw new Error("Expected local test server address")
+    }
+
+    try {
+      const { input } = helper()
+      input.options.baseURL = `http://127.0.0.1:${(address as AddressInfo).port}`
+      input.options.clientConfig = {
+        model: "gpt-4o",
+      }
+      input.sessionModel = { providerID: "anthropic", modelID: "claude-sonnet-4-5" }
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _ of stream.fullStream) {
+        /* drain */
+      }
+
+      expect(body?.["client_config"]).toEqual({
+        model: "gpt-4o",
       })
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
@@ -2242,6 +2508,95 @@ describe("session.agency-swarm", () => {
     }
 
     expect(deltas).toEqual(["Hi, there!"])
+  })
+
+  test("stream keeps both distinct short assistant messages in the same run (no body-only dedupe)", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield { type: "meta", runID: "run_1" }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "message", id: "msg_a" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_a",
+            output_index: "0",
+            delta: "Done",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.done",
+            item_id: "msg_a",
+            output_index: "0",
+            text: "Done",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: { type: "message", id: "msg_b" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_b",
+            output_index: "1",
+            delta: "Done",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.done",
+            item_id: "msg_b",
+            output_index: "1",
+            text: "Done",
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "text-delta") {
+        deltas.push(event.text)
+      }
+    }
+
+    expect(deltas).toEqual(["Done", "Done"])
   })
 
   test("stream does not duplicate reasoning when reasoning_item_created follows summary events", async () => {

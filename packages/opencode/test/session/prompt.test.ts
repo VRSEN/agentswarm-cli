@@ -9,6 +9,7 @@ import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { SessionPrompt } from "../../src/session/prompt"
 import { Log } from "../../src/util/log"
+import { AgencyBrand } from "../../src/agency-swarm/brand"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { tmpdir } from "../fixture/fixture"
 
@@ -320,7 +321,7 @@ describe("session.prompt regression", () => {
         git: true,
         init: async (dir) => {
           await Bun.write(
-            path.join(dir, "opencode.json"),
+            path.join(dir, `${AgencyBrand.config}.json`),
             JSON.stringify({
               $schema: "https://opencode.ai/config.json",
               enabled_providers: ["alibaba"],
@@ -389,7 +390,7 @@ describe("session.prompt regression", () => {
         git: true,
         init: async (dir) => {
           await Bun.write(
-            path.join(dir, "opencode.json"),
+            path.join(dir, `${AgencyBrand.config}.json`),
             JSON.stringify({
               $schema: "https://opencode.ai/config.json",
               enabled_providers: ["alibaba"],
