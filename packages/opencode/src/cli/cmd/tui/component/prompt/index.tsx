@@ -823,8 +823,13 @@ export function Prompt(props: PromptProps) {
           providerID: selectedModel.providerID,
           message,
         })
-        if (createdSessionID && shouldReopenAuth) {
-          void sdk.client.session.delete({ sessionID: createdSessionID })
+        if (createdSessionID) {
+          route.navigate({ type: "home" })
+          if (shouldReopenAuth) {
+            void sdk.client.session.delete({
+              sessionID: createdSessionID,
+            })
+          }
         }
         if (shouldReopenAuth) {
           toast.show({
