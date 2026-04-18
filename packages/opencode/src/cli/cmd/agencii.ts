@@ -9,8 +9,8 @@ import { Config } from "@/config/config"
 import path from "path"
 
 export const AgenciiCommand = cmd({
-  command: "agencii",
-  describe: "Agency Swarm integration commands",
+  command: ["agency", "agencii"],
+  describe: "Agency Swarm backend management: connect, discover agencies, set default agency, Agent Builder helpers",
   builder: (yargs: Argv) =>
     yargs
       .command(AgenciiConnectCommand)
