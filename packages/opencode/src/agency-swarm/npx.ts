@@ -570,7 +570,7 @@ async function ensureProjectPython(directory: string) {
       if (!corruptedVenv) {
         let healthy = false
         try {
-          healthy = await venvCanaryPasses([venvPython])
+          healthy = await venvCanaryPasses([venvPython], { cwd: directory })
         } catch {
           healthy = false
         }
@@ -638,7 +638,7 @@ async function ensureProjectPython(directory: string) {
     spinner.stop("Dependency install failed")
     throw new Error(install.stderr.trim() || install.stdout.trim() || "Dependency install failed")
   }
-  const canary = await venvCanaryPasses([venvPython], { includeStderr: true })
+  const canary = await venvCanaryPasses([venvPython], { cwd: directory, includeStderr: true })
   if (!canary.healthy) {
     spinner.stop("Python environment unhealthy")
     const summary = summarizeBridgeStderr(canary.stderr)
@@ -671,15 +671,14 @@ async function installProjectDependencies(directory: string, python: string[]) {
   return runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.1"])
 }
 
-async function venvCanaryPasses(python: string[]): Promise<boolean>
-async function venvCanaryPasses(python: string[], options: { includeStderr: true }): Promise<VenvCanaryResult>
-async function venvCanaryPasses(python: string[], options?: { includeStderr?: boolean }) {
-  const result = await runCommand([
-    ...python,
-    "-c",
-    "from agency_swarm.integrations.fastapi import run_fastapi",
-  ])
-  if (options?.includeStderr) {
+async function venvCanaryPasses(python: string[], options: { cwd: string }): Promise<boolean>
+async function venvCanaryPasses(python: string[], options: { cwd: string; includeStderr: true }): Promise<VenvCanaryResult>
+async function venvCanaryPasses(python: string[], options: { cwd: string; includeStderr?: boolean }) {
+  const result = await runCommand(
+    [...python, "-c", "from agency_swarm.integrations.fastapi import run_fastapi"],
+    { cwd: options.cwd },
+  )
+  if (options.includeStderr) {
     return {
       healthy: result.code === 0,
       stderr: result.stderr,
