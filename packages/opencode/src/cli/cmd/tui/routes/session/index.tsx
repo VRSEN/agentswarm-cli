@@ -1315,9 +1315,10 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
   const { theme } = useTheme()
   const sync = useSync()
   const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
-  const streamAuthHint = createMemo(() =>
-    props.message.error ? describeStreamAuthError(props.message.error.data.message ?? "") : null,
-  )
+  const streamAuthHint = createMemo(() => {
+    const msg = props.message.error?.data.message
+    return typeof msg === "string" ? describeStreamAuthError(msg) : null
+  })
   const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
 
   const final = createMemo(() => {
@@ -1371,7 +1372,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           borderColor={theme.error}
         >
           <text fg={streamAuthHint() ? theme.warning : theme.textMuted}>
-            {streamAuthHint() ?? props.message.error?.data.message}
+            {streamAuthHint() ?? String(props.message.error?.data.message ?? "")}
           </text>
         </box>
       </Show>
