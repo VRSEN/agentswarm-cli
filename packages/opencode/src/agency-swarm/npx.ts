@@ -770,9 +770,10 @@ async function findPythonExecutable(excludeUnder?: string) {
 
   const excludeRoot = excludeUnder ? path.resolve(excludeUnder) : undefined
   const excludePrefix = excludeRoot ? excludeRoot + path.sep : undefined
+  const spawnEnv = excludeRoot ? stripVenvFromEnv(process.env, excludeRoot) : undefined
 
   for (const candidate of candidates) {
-    const info = await inspectPython(candidate)
+    const info = await inspectPython(candidate, spawnEnv)
     if (!info) continue
     if (excludeRoot && excludePrefix) {
       const resolved = path.resolve(info.executable)
@@ -786,8 +787,34 @@ async function findPythonExecutable(excludeUnder?: string) {
   }
 }
 
-async function inspectPython(cmd: string[]): Promise<PythonInfo | undefined> {
-  const result = await runCommand([...cmd, "-c", "import sys; print(sys.executable); print(sys.version.split()[0])"])
+function stripVenvFromEnv(env: NodeJS.ProcessEnv, venvRoot: string): NodeJS.ProcessEnv {
+  const venvBin = path.join(venvRoot, process.platform === "win32" ? "Scripts" : "bin")
+  const venvBinResolved = path.resolve(venvBin)
+  const pathKey = process.platform === "win32" ? "Path" : "PATH"
+  const rawPath = env[pathKey] ?? env.PATH ?? ""
+  const sep = process.platform === "win32" ? ";" : ":"
+  const filtered = rawPath
+    .split(sep)
+    .filter((entry) => {
+      if (!entry) return false
+      try {
+        const resolved = path.resolve(entry)
+        return resolved !== venvBinResolved && !resolved.startsWith(venvBinResolved + path.sep)
+      } catch {
+        return true
+      }
+    })
+    .join(sep)
+  const next = { ...env, [pathKey]: filtered }
+  delete next.VIRTUAL_ENV
+  return next
+}
+
+async function inspectPython(cmd: string[], env?: NodeJS.ProcessEnv): Promise<PythonInfo | undefined> {
+  const result = await runCommand(
+    [...cmd, "-c", "import sys; print(sys.executable); print(sys.version.split()[0])"],
+    env ? { env } : undefined,
+  )
   if (result.code !== 0) return
   const [executable, version] = result.stdout.trim().split(/\r?\n/)
   if (!executable || !version) return
@@ -829,13 +856,16 @@ async function getFreePort() {
   })
 }
 
-async function runCommand(cmd: string[], options?: { cwd?: string }): Promise<CommandResult> {
+async function runCommand(
+  cmd: string[],
+  options?: { cwd?: string; env?: NodeJS.ProcessEnv },
+): Promise<CommandResult> {
   const proc = Bun.spawn({
     cmd,
     cwd: options?.cwd,
     stdout: "pipe",
     stderr: "pipe",
-    env: process.env,
+    env: options?.env ?? process.env,
   })
 
   const [code, stdout, stderr] = await Promise.all([

@@ -43,6 +43,10 @@ import urllib.request
 from pathlib import Path
 
 TEMPLATE_URL = "https://github.com/agency-ai-solutions/agency-starter-template.git"
+# Pin the starter template to a known-good SHA so unrelated upstream changes cannot
+# flip this release gate red on agentswarm-cli pushes. Bump deliberately when a new
+# template revision is required and re-run this workflow against it.
+TEMPLATE_REV = "c45541fb5ca182dbebca23ddc8bbc933acd83d32"
 DEFAULT_PORT_BASE = 59970
 SPAWN_READY_TIMEOUT_S = 60
 SEND_TIMEOUT_S = 120
@@ -59,8 +63,9 @@ def run(cmd: list[str], cwd: str | None = None, check: bool = True) -> subproces
 
 def clone_template(workdir: Path) -> Path:
     target = workdir / "agency-starter-template"
-    log("clone", f"{TEMPLATE_URL} -> {target}")
-    run(["git", "clone", "--depth", "1", TEMPLATE_URL, str(target)])
+    log("clone", f"{TEMPLATE_URL}@{TEMPLATE_REV} -> {target}")
+    run(["git", "clone", TEMPLATE_URL, str(target)])
+    run(["git", "checkout", TEMPLATE_REV], cwd=str(target))
     return target
 
 

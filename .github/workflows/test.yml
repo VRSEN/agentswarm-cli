@@ -141,7 +141,6 @@ jobs:
           PLAYWRIGHT_WORKERS: ${{ runner.os == 'Windows' && '1' || '2' }}
           PLAYWRIGHT_JUNIT_OUTPUT: e2e/junit-${{ matrix.settings.name }}.xml
         timeout-minutes: 30
-        continue-on-error: ${{ matrix.settings.name == 'windows' }}
 
       - name: Upload Playwright artifacts
         if: always()
