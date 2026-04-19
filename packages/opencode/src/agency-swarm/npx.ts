@@ -264,10 +264,17 @@ export function validateStarterName(base: string, value?: string) {
 }
 
 export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLaunch | undefined> {
+  const project = await detectAgencyProject(directory)
+  // Fork auto-start: when launched inside a detected Agency Swarm project, skip the
+  // onboarding prompt and start the local server immediately. Onboarding only runs
+  // when no project is detected (starter flow) or the user explicitly chooses connect.
+  if (project) {
+    return prepareProjectLaunch(project)
+  }
+
   prompts.intro("Agent Swarm")
 
-  const project = await detectAgencyProject(directory)
-  const choice = await chooseLaunchChoice(project)
+  const choice = await chooseLaunchChoice(undefined)
   if (!choice) {
     prompts.outro("Cancelled")
     return

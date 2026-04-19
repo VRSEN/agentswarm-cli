@@ -624,15 +624,6 @@ export function Prompt(props: PromptProps) {
       exit()
       return
     }
-    if (!local.agent.connected()) {
-      toast.show({
-        variant: "warning",
-        message: "Connect to an Agency Swarm server to send messages.",
-        duration: 4000,
-      })
-      dialog.replace(() => <DialogAgencySwarmConnect />)
-      return
-    }
     let inputText = store.prompt.input
 
     // Expand pasted text inline before submitting
@@ -680,6 +671,16 @@ export function Prompt(props: PromptProps) {
     if (localSlash) {
       localSlash.onSelect()
       clearSubmittedPrompt(store.mode)
+      return
+    }
+
+    if (!local.agent.connected()) {
+      toast.show({
+        variant: "warning",
+        message: "Connect to an Agency Swarm server to send messages.",
+        duration: 4000,
+      })
+      dialog.replace(() => <DialogAgencySwarmConnect />)
       return
     }
 
