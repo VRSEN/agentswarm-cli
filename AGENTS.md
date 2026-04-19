@@ -285,6 +285,14 @@
 
 6.6 If the needed behavior already exists upstream, Agent shall reuse or adapt it rather than build a parallel path.
 
+6.6.1 Before planning or editing any file that also exists in the Upstream Baseline, Agent shall read the upstream version and list every behavioral divergence.
+  - Commentary: This is a pre-edit gate, not a post-edit review. Skipping it produced silent regressions such as changing a fire-and-forget call to `await`.
+
+6.6.2 Every fork-only divergence from the Upstream Baseline shall be substantiated in the commit message or in `FORK_CHANGELOG.md` with the observed motivation and the expected upstream-merge impact.
+  - Commentary: Unsubstantiated divergences are forbidden because they create merge conflicts and silently alter behavior without the User's explicit intent.
+
+6.6.3 When a behavioral divergence is not strictly required to satisfy a fork directive, Agent shall restore the upstream shape instead of carrying the divergence.
+
 6.7 Canonical Checkout shall stay clean and current before it is used as evidence.
 
 6.8 If Canonical Checkout state is stale or unowned, Agent shall escalate before relying on it.
