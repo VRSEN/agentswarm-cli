@@ -624,6 +624,15 @@ export function Prompt(props: PromptProps) {
       exit()
       return
     }
+    if (!local.agent.current()) {
+      toast.show({
+        variant: "warning",
+        message: "Connect to an Agency Swarm server to send messages.",
+        duration: 4000,
+      })
+      dialog.replace(() => <DialogAgencySwarmConnect />)
+      return
+    }
     let inputText = store.prompt.input
 
     // Expand pasted text inline before submitting
@@ -771,8 +780,9 @@ export function Prompt(props: PromptProps) {
           })),
       })
     } else {
-      try {
-        await sdk.client.session.prompt({
+      const savedPrompt = { input: store.prompt.input, parts: [...store.prompt.parts] }
+      sdk.client.session
+        .prompt({
           sessionID,
           ...selectedModel,
           messageID,
@@ -788,35 +798,34 @@ export function Prompt(props: PromptProps) {
             ...nonTextParts.map(assign),
           ],
         })
-      } catch (error) {
-        const message = toErrorMessage(error)
-        const shouldReopenAuth = shouldOpenAgencyAuthDialog({
-          providerID: selectedModel.providerID,
-          message,
-        })
-        if (createdSessionID) {
-          if (shouldReopenAuth) {
-            void sdk.client.session.delete({
-              sessionID: createdSessionID,
-            })
+        .catch((error) => {
+          // Fork-only: surface auth errors via the connect/auth dialog and
+          // restore the composer input so the user can retry.
+          setStore("prompt", savedPrompt)
+          input.setText(savedPrompt.input)
+          const message = toErrorMessage(error)
+          const shouldReopenAuth = shouldOpenAgencyAuthDialog({
+            providerID: selectedModel.providerID,
+            message,
+          })
+          if (createdSessionID && shouldReopenAuth) {
+            void sdk.client.session.delete({ sessionID: createdSessionID })
           }
-        }
-        if (shouldReopenAuth) {
+          if (shouldReopenAuth) {
+            toast.show({
+              variant: "error",
+              message: describeAgencyAuthFailure(message),
+              duration: 5000,
+            })
+            dialog.replace(() => <DialogAuth />)
+            return
+          }
           toast.show({
             variant: "error",
-            message: describeAgencyAuthFailure(message),
+            message,
             duration: 5000,
           })
-          dialog.replace(() => <DialogAuth />)
-          return
-        }
-        toast.show({
-          variant: "error",
-          message,
-          duration: 5000,
         })
-        return
-      }
     }
     clearSubmittedPrompt(currentMode)
 
