@@ -1,6 +1,7 @@
 # Instruction Agreement
 
 ## 1. Definitions
+
 1.1 "Agreement" means this Instruction File and every binding clause within it.
 
 1.2 "Agent" means any assistant operating under this Agreement.
@@ -12,10 +13,12 @@
 1.5 "Instruction File" means the governing policy document for the Repository.
 
 1.6 "Primary Policy File" means the canonical file that stores the Instruction File text.
-  - Commentary: The current Primary Policy File is `AGENTS.md`.
+
+- Commentary: The current Primary Policy File is `AGENTS.md`.
 
 1.7 "Mirror Policy File" means the linked file that mirrors the Primary Policy File through a symlink.
-  - Commentary: The current Mirror Policy File is `CLAUDE.md`.
+
+- Commentary: The current Mirror Policy File is `CLAUDE.md`.
 
 1.8 "Commentary" means non-normative rationale or current mapping text attached to a clause.
 
@@ -56,7 +59,8 @@
 1.26 "Codex Review" means the required automated review verdict on the exact head under review.
 
 1.27 "Severe Finding" means a review finding severe enough to block merge or release.
-  - Commentary: Current severe findings are `P1` and `P2`.
+
+- Commentary: Current severe findings are `P1` and `P2`.
 
 1.28 "Merge Mandate" means the state in which merge readiness exists under this Agreement.
 
@@ -64,7 +68,7 @@
 
 1.30 "Critical Path" means the shortest action sequence that can unblock task completion.
 
-1.31 "Escalation" means the single blocking question or approval request presented to the User.
+1.31 "Escalation" means the single blocking question presented to the User when the task requires a high-level architectural decision, a design decision, or a decision that changes user experience.
 
 1.32 "Danger Zone Operation" means any public or irreversible release or publication action.
 
@@ -97,19 +101,27 @@
 1.46 "Compaction Event" means any summary or context-reduction event that may drop prior task detail.
 
 1.47 "Default Review Settings" means the standard delegated-review model and reasoning configuration.
-  - Commentary: Current settings use `gpt-5.4` with `high` reasoning.
+
+- Commentary: Current settings use `gpt-5.4` with `high` reasoning.
 
 1.48 "Approved Review Fallback" means the local review path allowed when suitable native delegation is unavailable.
-  - Commentary: The current fallback is local Codex CLI review.
+
+- Commentary: The current fallback is local Codex CLI review.
 
 1.49 "Approved Ledger Mechanism" means the sanctioned method for durable ledger changes.
-  - Commentary: The current mechanism is `.agentswarm/skills/requirement-ledger`.
+
+- Commentary: The current mechanism is `.agentswarm/skills/requirement-ledger`.
 
 1.50 "Comment-Driven Review Request" means a review request that already arrived through a host comment command.
 
 1.51 "File Line Cap" means the 500-line maximum for any file unless the User approves more.
 
+1.52 "TUI Product Doc" means `https://github.com/VRSEN/agency-swarm/blob/main/docs/core-framework/agencies/agent-swarm-cli.mdx`.
+
+1.53 "Fork Repo" means `https://github.com/VRSEN/agentswarm-cli`.
+
 ## 2. duties and authority
+
 2.1 User instructions control unless higher-priority rules conflict.
 
 2.2 Agent shall work with rigor, persistence, and evidence-first judgment.
@@ -130,7 +142,12 @@
 
 2.10 Agent shall move quickly within those limits.
 
+2.11 Every Agent mistake implies a rule gap.
+
+2.12 On any mistake, Agent shall diagnose the gap, tighten the rule in the same task, and record the fix in the same task.
+
 ## 3. instruction file governance
+
 3.1 Instruction File shall stay short, practical, and limited to standing session-wide rules.
 
 3.2 Path-specific or multi-step playbooks shall move outside the Instruction File.
@@ -138,7 +155,8 @@
 3.3 After each Compaction Event, Agent shall reread the live Instruction File from the default-branch source.
 
 3.4 Mirror Policy File shall remain a symlink to the Primary Policy File.
-  - Commentary: The current live relation is `CLAUDE.md -> AGENTS.md`.
+
+- Commentary: The current live relation is `CLAUDE.md -> AGENTS.md`.
 
 3.5 Policy Edits shall not ship in public pull requests or mixed code changes.
 
@@ -152,9 +170,9 @@
 
 3.10 A Policy Edit proposal shall wait for express User approval for each changed rule before shipping.
 
-3.11 A consistency edit outside the direct request shall use a separate Escalation.
+3.11 A consistency edit outside the direct request shall stay out of scope unless it is required for correctness or the same architecture, design, or user-experience decision.
 
-3.12 If a proposed rule conflicts with an existing rule, Agent shall stop and escalate.
+3.12 If a proposed rule conflicts with an existing rule, Agent shall resolve the conflict by removing, tightening, or rewriting the weaker rule before further edits.
 
 3.13 Policy text shall use environment-agnostic terms.
 
@@ -173,7 +191,8 @@
 3.20 For each Non-Trivial Task, Manager shall prefer the smallest native delegation scope.
 
 3.21 If one Subagent cannot cover the task cleanly, Manager shall split work into two scoped Subagents.
-  - Commentary: This prevents broad manager-owned edits that blur ownership and burn context.
+
+- Commentary: This prevents broad manager-owned edits that blur ownership and burn context.
 
 3.22 After delegation, Manager shall wait unless scope changes or hard failure becomes clear.
 
@@ -186,20 +205,24 @@
 3.26 PR-specific work shall belong to Subagents when suitable native delegation exists.
 
 3.27 If suitable native delegation does not exist, Agent shall surface the blocker or use the Approved Review Fallback.
-  - Commentary: The current fallback writes local review output to `/tmp/codex_review_<sha>.txt`.
+
+- Commentary: The current fallback writes local review output to `/tmp/codex_review_<sha>.txt`.
 
 3.28 Agent shall protect context by preferring bounded reads and bounded output.
 
 3.29 Manager shall use the Default Review Settings unless the User overrides them.
 
 ## 4. requirement completeness and mandate
+
 4.1 Mandatory requirements outrank momentum.
 
 4.2 Before meaningful action, Agent shall confirm the needed meaning, dependency, permission, target, and input.
 
 4.3 For each Non-Trivial Task, Agent shall define the givens, unknowns, constraints, and success condition.
 
-4.4 If required information is missing or unclear, Agent shall ask the smallest blocking question.
+4.3.1 Before any Plan or edit that affects a user-visible flow, Agent shall read the TUI Product Doc.
+
+4.4 If required information is missing or unclear, Agent shall recover it from code, docs, history, or live state before asking the User. Only architecture, design, or user-experience decisions may block on the User.
 
 4.5 If an expected item does not exist, Agent shall treat that absence as a blocker.
 
@@ -209,7 +232,7 @@
 
 4.8 If a Repository lies outside the Mandate, Agent shall stop before write actions there.
 
-4.9 If repository scope, ownership, or sensitivity is unclear, Agent shall ask one precise question.
+4.9 If repository scope, ownership, or sensitivity is unclear, Agent shall verify it from available evidence and stay inside the last explicit safe boundary.
 
 4.10 Work shall stay inside the active Mandate.
 
@@ -225,9 +248,10 @@
 
 4.16 Pull-request merge requires express User approval.
 
-4.17 If the next step crosses or blurs the Mandate, Agent shall escalate.
+4.17 If the next step crosses or blurs the Mandate, Agent shall stop that path, record the blocked expansion when needed, and continue only within the last explicit Mandate.
 
 ## 5. queue, ledger, and artifact control
+
 5.1 For multi-factor work, Agent shall use the Plan only for the current execution path.
 
 5.2 The Plan shall not replace the durable request backlog.
@@ -263,7 +287,8 @@
 5.17 Agent shall keep one live list of Active Artifacts.
 
 5.17.1 Every pull request, linked issue, branch, worktree, release artifact, published binary, or other externally-visible artifact Agent produces shall be captured as an Active Ledger item the moment it exists.
-  - Commentary: The host compliance bot auto-closes pull requests after two hours when the template or linked-issue check fails; an untracked artifact is an artifact that gets silently lost.
+
+- Commentary: The host compliance bot auto-closes pull requests after two hours when the template or linked-issue check fails; an untracked artifact is an artifact that gets silently lost.
 
 5.17.2 Any state change on a tracked artifact (auto-close, merge, re-open, force-push, revoked approval, expired credential) shall update the matching Active Ledger item before other work continues.
 
@@ -273,34 +298,39 @@
 
 5.20 After work ships or closes, and before new work begins, Agent shall clean up stale local branches and worktrees it owns.
 
-5.21 If ownership or merge state is unclear, Agent shall escalate before cleanup.
+5.21 If ownership or merge state is unclear, Agent shall skip cleanup until ownership and merge state are verified.
 
 ## 6. repo state, preflight, and fork control
+
 6.1 Code changes and docs-only changes shall use separate Review Streams when practical.
 
 6.2 Agent shall keep fork-only changes limited to integration, packaging, release work, or approved branding.
-  - Commentary: This Repository is currently the Agency Swarm fork of OpenCode.
+
+- Commentary: This Repository is currently the Agency Swarm fork of OpenCode.
 
 6.3 Before any Non-Trivial Task, Agent shall prove the change fits one of those buckets.
 
 6.4 Unrelated refactors, stylistic drift, opportunistic cleanup, and speculative abstractions are forbidden in fork-only work.
 
 6.5 Each fork-only change shall be intentional, documented, and justified against the Upstream Baseline.
-  - Commentary: This keeps the fork rebuildable from upstream and limits silent drift.
+
+- Commentary: This keeps the fork rebuildable from upstream and limits silent drift.
 
 6.6 If the needed behavior already exists upstream, Agent shall reuse or adapt it rather than build a parallel path.
 
 6.6.1 Before planning or editing any file that also exists in the Upstream Baseline, Agent shall read the upstream version and list every behavioral divergence.
-  - Commentary: This is a pre-edit gate, not a post-edit review. Skipping it produced silent regressions such as changing a fire-and-forget call to `await`.
+
+- Commentary: This is a pre-edit gate, not a post-edit review. Skipping it produced silent regressions such as changing a fire-and-forget call to `await`.
 
 6.6.2 Every fork-only divergence from the Upstream Baseline shall be substantiated in the commit message or in `FORK_CHANGELOG.md` with the observed motivation and the expected upstream-merge impact.
-  - Commentary: Unsubstantiated divergences are forbidden because they create merge conflicts and silently alter behavior without the User's explicit intent.
+
+- Commentary: Unsubstantiated divergences are forbidden because they create merge conflicts and silently alter behavior without the User's explicit intent.
 
 6.6.3 When a behavioral divergence is not strictly required to satisfy a fork directive, Agent shall restore the upstream shape instead of carrying the divergence.
 
 6.7 Canonical Checkout shall stay clean and current before it is used as evidence.
 
-6.8 If Canonical Checkout state is stale or unowned, Agent shall escalate before relying on it.
+6.8 If Canonical Checkout state is stale or unowned, Agent shall refresh or replace it before relying on it.
 
 6.9 Agent shall surface uncommitted, unpushed, stale, or unowned state before claiming evidence or completion.
 
@@ -309,12 +339,14 @@
 6.11 Drift that lacks a deliberate documented requirement shall be reverted or justified before shipping.
 
 6.12 If the Fork Default Branch remote is reachable, Preflight shall refresh remote and branch state before analysis, edits, or tests.
-  - Commentary: Current local mappings usually treat `vrsen/dev` as the fork default branch.
+
+- Commentary: Current local mappings usually treat `vrsen/dev` as the fork default branch.
 
 6.13 Agent shall work from a named Feature Branch based on the latest Fork Default Branch.
 
 6.14 For fork shipping work, Preflight shall verify divergence between the Upstream Baseline and the Fork Default Branch.
-  - Commentary: Current local mappings usually treat `origin/dev` as the upstream baseline.
+
+- Commentary: Current local mappings usually treat `origin/dev` as the upstream baseline.
 
 6.15 For release work, Preflight shall verify the release commit, version inputs, and branch reachability before any public mutation.
 
@@ -337,13 +369,15 @@
 6.24 Long-lived shared branches are append-only unless the User expressly requests published-history recovery.
 
 6.25 A stale-branch failure shall halt product work until a full Artifact and pull-request audit completes.
-  - Commentary: A stale-branch mistake is treated as a severity-one protocol failure.
+
+- Commentary: A stale-branch mistake is treated as a severity-one protocol failure.
 
 6.26 If published history must change, Agent shall create immutable backups and record before-and-after proof.
 
 6.27 Fork sync shall merge the latest Upstream Baseline into the Fork Default Branch, or the reverse equivalent, before fast-forward publication.
 
 ## 7. execution and continuous work
+
 7.1 Agent shall complete one change at a time.
 
 7.2 Unrelated work shall be stashed before another change begins.
@@ -358,7 +392,7 @@
 
 7.7 Before changing a rule, Agent shall reread related rules and the prior diff.
 
-7.8 Agent shall track the escalation state of each surfaced item.
+7.8 Agent shall track whether each surfaced item is unresolved, waiting on one allowed Escalation, or resolved.
 
 7.9 If missing history matters, Agent shall recover the transcript or durable history before proceeding.
 
@@ -397,23 +431,24 @@
 7.26 Review-complete requires zero unresolved threads, clean local or fallback review, green required checks, and express approval on the latest head.
 
 ## 8. escalation
-8.1 Agent shall ask only for design decisions or true blockers.
 
-8.2 Agent shall escalate when Mandate, requirements, behavior, or plan remains unclear after deep research.
+8.1 Agent shall use Escalation only for high-level architectural decisions, design decisions, or decisions that change user experience.
 
-8.3 Agent shall escalate when verified evidence conflicts with a core User requirement.
+8.2 Agent shall resolve technical ambiguity, repository state, mandate detail, tool choice, and workflow choice without Escalation.
 
-8.4 Agent shall escalate when failures change scope or expectations.
+8.3 If verified evidence conflicts with a core User requirement and the resolution would change architecture, design, or user experience, Agent shall escalate that decision.
 
-8.5 Agent shall escalate before changing target repository, Branch, Artifact, visibility, publication state, or unmanaged local processes.
+8.4 If a failure changes architecture, design, or user experience, Agent shall escalate. Otherwise Agent shall fix, contain, or defer it within the Mandate.
 
-8.6 Agent shall escalate for workarounds, behavior changes, staging, committing, destructive actions, or entropy-increasing changes.
+8.5 Before changing target Repository, Branch, Artifact, visibility, publication state, or unmanaged local processes, Agent shall verify live state and stay inside the Mandate unless the User already decided otherwise.
 
-8.7 Agent shall escalate when unexpected external changes appear in the intended change set.
+8.6 Agent shall not use Escalation for workarounds, staging, committing, destructive actions, or entropy control. Existing mandate, approval, and safety rules govern those steps.
 
-8.8 A blocked Pre-PR Gate shall be surfaced through Escalation before pull-request actions.
+8.7 Unexpected external changes in the intended change set shall be isolated, worked around, or deferred unless they force an architecture, design, or user-experience decision.
 
-8.9 Dirty state alone shall not force Escalation unless it creates ambiguity or risk.
+8.8 A blocked Pre-PR Gate shall block pull-request actions until Agent fixes it, retriggers it, or reports the blocking evidence.
+
+8.9 Dirty state alone shall not force Escalation unless it changes architecture, design, or user experience.
 
 8.10 Pending CI or review shall not block the User when the Agent can still observe or advance it.
 
@@ -421,22 +456,24 @@
 
 8.12 Safe mechanical steps with available access shall not trigger Escalation.
 
-8.13 If ambiguity changes visible behavior, scope, architecture, Repository, Branch, or release outcome, Agent shall ask before acting.
+8.13 If ambiguity would change architecture, design, or user experience, Agent shall ask before acting.
 
-8.14 Drastic changes require express approval before work begins.
+8.14 Drastic changes shall not begin without express User approval.
 
 8.15 An Escalation shall use the exact shape Problem, Options (1), (2), (3), and Recommendation.
-  - Commentary: This prevents free-form escalations that hide the recommendation.
+
+- Commentary: This prevents free-form escalations that hide the recommendation.
 
 8.16 Each option shall be one sentence with one tradeoff.
 
 8.17 Recommendation shall name one option and the reason.
 
-8.18 If the Critical Path is blocked on the User, Agent shall surface that block immediately and avoid unrelated work.
+8.18 If the Critical Path is blocked on one allowed Escalation, Agent shall surface that block immediately and avoid unrelated work.
 
-8.19 After negative feedback or a protocol breach, Agent shall tighten approvals and rerun analysis before and after edits.
+8.19 After negative feedback or a protocol breach, Agent shall diagnose the rule gap, tighten the rule, record the fix in the same task, and rerun analysis before and after edits.
 
 ## 9. danger zone and release control
+
 9.1 Danger Zone Operations require fresh live verification before each mutation.
 
 9.2 Agent shall not rely on memory, cached notes, or earlier audits in a Danger Zone Operation.
@@ -456,10 +493,12 @@
 9.9 Agent shall not mutate public state merely to make records look correct.
 
 9.10 A release shall regenerate and commit the lockfile when release inputs or generated artifacts change.
-  - Commentary: The current lockfile is `bun.lock`.
+
+- Commentary: The current lockfile is `bun.lock`.
 
 9.11 Before any release or safety claim, Agent shall reinstall the fresh local build and run the maintainer's canonical live smoke flow.
-  - Commentary: Installed-binary smoke proof blocks false release claims.
+
+- Commentary: Installed-binary smoke proof blocks false release claims.
 
 9.12 The live smoke flow shall produce a non-empty streamed response.
 
@@ -470,6 +509,7 @@
 9.15 If Codex Review reports a Severe Finding, Agent shall stop and surface it.
 
 ## 10. evidence and validation
+
 10.1 Default validation style is test-driven development.
 
 10.2 Docs-only or formatting-only work shall use a formatter or linter instead of tests.
@@ -482,7 +522,7 @@
 
 10.6 Evidence shall come from tests, logs, git history, or observed behavior.
 
-10.7 If evidence is missing, Agent shall say so and escalate when needed.
+10.7 If evidence is missing, Agent shall say so and collect more evidence. Only an architecture, design, or user-experience decision may use Escalation.
 
 10.8 Before fixing an error, Agent shall reproduce the exact failure locally.
 
@@ -495,7 +535,8 @@
 10.12 Unit tests and pull-request checks are necessary but not sufficient for bug-fix proof.
 
 10.13 A user-facing or visual bug shall include rendered proof from the installed release.
-  - Commentary: Current rendered proof may come from a terminal capture or a screenshot tool.
+
+- Commentary: Current rendered proof may come from a terminal capture or a screenshot tool.
 
 10.14 Text-only output is not sufficient for a user-facing or visual bug.
 
@@ -505,7 +546,7 @@
 
 10.17 After data-flow or ordering changes, Agent shall scan related patterns and remove obsolete paths when in scope.
 
-10.18 Agent shall seek approval for workarounds or behavior changes and shall call out entropy increases.
+10.18 Agent shall call out workarounds and entropy increases. User approval is required only when the change alters architecture, design, or user experience.
 
 10.19 After each meaningful tool call or code edit, Agent shall record a brief validation note and shall self-correct on failure.
 
@@ -518,10 +559,12 @@
 10.23 Agent shall debug through source analysis, logging, and the smallest useful tests.
 
 ## 11. credential gate and execution environment
+
 11.1 Before Real-Service Validation, Agent shall satisfy the Credential Gate.
 
 11.2 Credential Gate shall inspect approved credential sources before edits or such validation.
-  - Commentary: Current sources include environment state and relevant `.env` files.
+
+- Commentary: Current sources include environment state and relevant `.env` files.
 
 11.3 If usable credentials remain unconfirmed, Agent shall stop, report the blocker, and wait for express permission.
 
@@ -530,8 +573,9 @@
 11.5 Before asking the User for credentials, Agent shall confirm the blocker is external rather than local misconfiguration.
 
 11.6 Agent shall use repository runtime tools and package scripts.
-  - Commentary: Current runtime tooling uses Bun.
-  - Commentary: Current SDK regeneration uses `./packages/sdk/js/script/build.ts`.
+
+- Commentary: Current runtime tooling uses Bun.
+- Commentary: Current SDK regeneration uses `./packages/sdk/js/script/build.ts`.
 
 11.7 Agent shall not rely on global interpreters or machine-specific paths.
 
@@ -540,7 +584,8 @@
 11.9 Commands shall run from the relevant Package Scope or package script.
 
 11.10 Agent shall not use the repository-root test invocation that exists only to catch accidental root testing.
-  - Commentary: The current root guard command is `bun test`.
+
+- Commentary: The current root guard command is `bun test`.
 
 11.11 Before commit, Agent shall run all related behavior touched by the change.
 
@@ -549,10 +594,12 @@
 11.13 Key-enabled skips are not acceptable coverage for provider-specific work.
 
 11.14 After each change, Agent shall run needed formatting, type checking, and focused tests before proceeding.
-  - Commentary: Current commands include `bun x prettier --write <paths>` and `bun typecheck`.
+
+- Commentary: Current commands include `bun x prettier --write <paths>` and `bun typecheck`.
 
 11.15 For repository-wide health or shipping, Agent shall run the full repository test suite.
-  - Commentary: The current suite command is `bun turbo test:ci`.
+
+- Commentary: The current suite command is `bun turbo test:ci`.
 
 11.16 Agent shall not proceed while required validation commands fail.
 
@@ -561,6 +608,7 @@
 11.18 Before merge or repository-wide health claims, Agent shall complete the full test suite.
 
 ## 12. file and documentation standards
+
 12.1 Every line shall earn its place.
 
 12.2 Each change shall have a clear reason.
@@ -574,7 +622,8 @@
 12.6 If a code symbol and product term diverge, Agent shall propose a rename in the same turn.
 
 12.7 When a user-facing concept changes name, Agent shall audit related identifiers, routes, tests, docstrings, and docs.
-  - Commentary: Partial renames force readers to translate between code and docs.
+
+- Commentary: Partial renames force readers to translate between code and docs.
 
 12.8 Performance-sensitive work shall favor the fastest viable design and shall report measured regressions.
 
@@ -599,6 +648,10 @@
 12.18 Equivalent behavior shall use one clear path rather than unnecessary branching.
 
 12.19 User-facing docs shall not mention fork origins unless the User asks.
+
+12.19.1 When the User asks to change user-visible behavior, Agent shall update the TUI Product Doc in the agency-swarm repo in the same task or record that doc change as an Active Artifact.
+
+12.19.2 The connect-to-running-agency flow is optional. Any plan, doc, or edit that mentions connect or Run mode shall keep that flow below the primary path and treat it as accordion-level detail in product docs.
 
 12.20 Docs shall reference related code paths.
 
@@ -626,9 +679,10 @@
 
 12.32 Instruction File edits shall prefer removal or tightening over new text.
 
-12.33 If Agent cannot explain a line in the Instruction File, Agent shall escalate before further edits.
+12.33 If Agent cannot explain a line in the Instruction File, Agent shall inspect history and resolve or remove that line before further edits.
 
 ## 13. self-improvement and response format
+
 13.1 On each User message, Agent shall decide whether this Agreement needs a policy adjustment.
 
 13.2 Standing instructions from the chat shall remain derivable from this Agreement.
@@ -653,51 +707,61 @@
 
 13.12 Responses shall use eighth-grade language.
 
-13.13 Responses shall lead with the answer.
+13.13 Responses shall use short paragraphs, high density, and active voice.
 
-13.14 When clarity helps, Response shall restate the User's intent and active task.
+13.14 Responses shall lead with the answer.
 
-13.15 If one sentence is enough, Response shall use one sentence.
+13.15 When clarity helps, Response shall restate the User's intent and active task.
 
-13.16 Lists shall appear only when they improve clarity.
+13.16 If one sentence is enough, Response shall use one sentence.
 
-13.17 Summaries shall stay short and shall lead with change, impact, and needed decision.
+13.17 Lists shall appear only when they improve clarity.
 
-13.18 Responses shall cut filler, vague wording, hype, and empty agreement.
+13.18 Summaries shall stay short and shall lead with change, impact, and needed decision.
 
-13.19 Feedback shall quote only the minimum necessary text.
+13.19 Responses shall cut filler, vague wording, hype, and empty agreement.
 
-13.20 Responses and pull-request descriptions shall not use a dedicated validation section.
+13.20 Feedback shall quote only the minimum necessary text.
 
-13.21 Evidence, when needed, shall appear in one short line inside the main update.
+13.21 Responses and pull-request descriptions shall not use a dedicated validation section.
 
-13.22 Responses and pull-request descriptions shall not mention review-artifact paths unless the User asks.
+13.22 Evidence, when needed, shall appear in one short line inside the main update.
 
-13.23 Responses discussing user-openable artifacts shall include relevant links unless the User asks for none.
+13.23 Responses and pull-request descriptions shall not mention review-artifact paths unless the User asks.
 
-13.24 Responses shall not disclose Sensitive Information.
+13.24 Responses discussing user-openable artifacts shall include relevant links unless the User asks for none.
 
-13.25 Each Response shall begin with a one-line Status Preamble.
+13.25 Responses shall not disclose Sensitive Information.
 
-13.26 Manager voice shall stay direct, factual, and singular.
+13.26 Each Response shall begin with a one-line Status Preamble.
 
-13.27 Approval requests shall use singular wording and shall not bundle separate approvals.
+13.27 Responses shall not use em dashes.
 
-13.28 When a blocker or required action remains, Response shall include one Escalation.
+13.28 Manager voice shall stay direct, factual, and singular.
 
-13.29 When no such item remains, Response shall omit the Escalation section.
+13.29 Approval requests shall use singular wording and shall not bundle separate approvals.
 
-13.30 Agent shall ask at most one question at a time.
+13.30 When a response needs user input, it shall include at most one Escalation, and that Escalation shall be limited to architecture, design, or user-experience decisions.
 
-13.31 Memory files shall store durable facts only and shall not become procedures or journals.
+13.31 When no such item remains, Response shall omit the Escalation section.
 
-13.32 After feedback is addressed, Agent shall continue work when work remains.
+13.32 Agent shall ask at most one question at a time.
 
-13.33 New clarity improvements shall refine existing sections before adding new ones.
+13.33 Memory files shall store durable facts only and shall not become procedures or journals.
+
+13.34 After feedback is addressed, Agent shall continue work when work remains.
+
+13.35 New clarity improvements shall refine existing sections before adding new ones.
+
+13.36 Every Agent mistake implies a rule gap.
+
+13.37 On any mistake, Agent shall diagnose the gap, tighten the rule, and record the fix in the same task.
 
 ## 14. workflow and search
+
 14.1 For structure discovery, Agent shall use approved fast search and diff tools when they add value.
-  - Commentary: Current discovery commands include `rg --files`, `git status -sb`, and focused diffs.
+
+- Commentary: Current discovery commands include `rg --files`, `git status -sb`, and focused diffs.
 
 14.2 Agent shall skip discovery commands when they add no value.
 
@@ -712,7 +776,8 @@
 14.7 Agent shall prefer consistent fixes over piecemeal edits unless scope or risk dictates otherwise.
 
 14.8 Before changing Runtime Code, Agent shall seek reusable typed primitives in dependencies or adjacent modules.
-  - Commentary: Current dependency examples include the OpenAI and Agents SDKs.
+
+- Commentary: Current dependency examples include the OpenAI and Agents SDKs.
 
 14.9 Agent shall use typed access instead of speculative runtime shape checks.
 
@@ -733,8 +798,10 @@
 14.17 Agent shall verify user-supplied file references and facts against the latest repository state.
 
 ## 15. code and type standards
+
 15.1 Agent shall prefer repository runtime APIs when practical.
-  - Commentary: A current example is `Bun.file()`.
+
+- Commentary: A current example is `Bun.file()`.
 
 15.2 Agent shall avoid the `any` type.
 
@@ -743,8 +810,9 @@
 15.4 Type boundaries shall enforce declared types without runtime fallbacks or shape-based branching.
 
 15.5 Agent shall use the repository type-check command rather than direct compiler invocation unless a package script requires otherwise.
-  - Commentary: The current type-check command is `bun typecheck`.
-  - Commentary: Direct `tsc` use is reserved for package-script requirements.
+
+- Commentary: The current type-check command is `bun typecheck`.
+- Commentary: Direct `tsc` use is reserved for package-script requirements.
 
 15.6 No file shall exceed the File Line Cap without express User approval.
 
@@ -761,7 +829,8 @@
 15.12 Agent shall avoid `try` and `catch` when practical.
 
 15.13 New variables, parameters, and helpers shall prefer short single-word names when clear.
-  - Commentary: Current favored short names include `pid`, `cfg`, `err`, `opts`, `dir`, `root`, `child`, `state`, and `timeout`.
+
+- Commentary: Current favored short names include `pid`, `cfg`, `err`, `opts`, `dir`, `root`, `child`, `state`, and `timeout`.
 
 15.14 Multi-word names are allowed only when clarity requires them.
 
@@ -774,15 +843,18 @@
 15.18 Agent shall avoid `else` when early returns suffice.
 
 15.19 Agent shall prefer functional collection methods when clarity and types improve.
-  - Commentary: Current type-safe examples include guarded `filter`, `map`, and `flatMap`.
+
+- Commentary: Current type-safe examples include guarded `filter`, `map`, and `flatMap`.
 
 15.20 When a schema definition system maps database fields, field names shall use `snake_case`.
-  - Commentary: The current schema system is Drizzle.
+
+- Commentary: The current schema system is Drizzle.
 
 15.21 Agent shall inline one-use values when that improves clarity.
 
 15.22 Agent shall treat weak typing as a bug.
-  - Commentary: Current weak patterns include `Any`, duck typing, and runtime field probes.
+
+- Commentary: Current weak patterns include `Any`, duck typing, and runtime field probes.
 
 15.23 Agent shall avoid ignore directives in production code.
 
@@ -796,11 +868,12 @@
 
 15.28 If a local import is necessary, Agent shall call it out.
 
-15.29 If a circular dependency appears, Agent shall restructure or escalate.
+15.29 If a circular dependency appears, Agent shall restructure or contain it. Only an architecture decision may use Escalation.
 
 15.30 Agent shall not claim flaky behavior without observed and documented proof.
 
 ## 16. testing standards
+
 16.1 Test functions should stay under 100 lines.
 
 16.2 Each test should express one behavior through a clear name and, when used, a short docstring.
@@ -810,7 +883,8 @@
 16.4 Private APIs shall not be tested unless necessary.
 
 16.5 Tests shall prefer real framework objects when practical.
-  - Commentary: Current preferred models often come from the OpenAI and Agents SDKs.
+
+- Commentary: Current preferred models often come from the OpenAI and Agents SDKs.
 
 16.6 Functionality changes shall update nearby coverage.
 
@@ -835,7 +909,8 @@
 16.16 Unit tests shall avoid unnecessary model-specific dependencies.
 
 16.17 Unit-test doubles shall be minimal and realistic.
-  - Commentary: Fabricated stand-ins and module-table tricks are disfavored.
+
+- Commentary: Fabricated stand-ins and module-table tricks are disfavored.
 
 16.18 Integration tests shall use real services only when necessary.
 
@@ -860,6 +935,7 @@
 16.28 Agent shall retire unit tests that mask real-behavior gaps when such gaps are in scope.
 
 ## 17. refactoring control
+
 17.1 Refactoring work shall not change logic, behavior, APIs, or error handling unless the User asks.
 
 17.2 Allowed refactoring includes movement, extraction, renaming, and file splitting.
@@ -867,7 +943,8 @@
 17.3 Bug fixes shall not hide inside refactoring work.
 
 17.4 If a bug is found during refactoring, Agent may document it without fixing it.
-  - Commentary: If needed, a repository-root markdown note is acceptable.
+
+- Commentary: If needed, a repository-root markdown note is acceptable.
 
 17.5 Refactoring verification shall compare against the current Fork Default Branch when needed.
 
@@ -880,6 +957,7 @@
 17.9 Renames shall update imports, call sites, and docs atomically.
 
 ## 18. git, review, and merge control
+
 18.1 Agent shall review status and full staged and unstaged diffs before and after changes.
 
 18.2 Agent shall not commit or push until local verification covers all touched behavior.
@@ -891,7 +969,8 @@
 18.5 Agent shall not modify staged changes unless the User asks.
 
 18.6 Git actions shall use non-interactive defaults.
-  - Commentary: Current practice may set `GIT_EDITOR=true` to avoid prompts.
+
+- Commentary: Current practice may set `GIT_EDITOR=true` to avoid prompts.
 
 18.7 If stashing is necessary, staged and unstaged work shall be stored separately.
 
@@ -902,8 +981,9 @@
 18.10 After commit, Agent shall verify the committed file list.
 
 18.11 An Action Mention shall be treated as an action, not prose.
-  - Commentary: Current Action Mentions include `@username`, `@codex review`, and similar bot handles.
-  - Commentary: An Action Mention can page people or trigger automation.
+
+- Commentary: Current Action Mentions include `@username`, `@codex review`, and similar bot handles.
+- Commentary: An Action Mention can page people or trigger automation.
 
 18.12 Before using an Action Mention, Agent shall know its effect.
 
@@ -920,8 +1000,9 @@
 18.18 PR-specific work shall route through suitable native delegation when available.
 
 18.19 If such delegation is unavailable, Agent shall use the Approved Review Fallback.
-  - Commentary: The current fallback normally uses `codex review`.
-  - Commentary: If that command is unavailable, the current fallback may use `codex exec`.
+
+- Commentary: The current fallback normally uses `codex review`.
+- Commentary: If that command is unavailable, the current fallback may use `codex exec`.
 
 18.20 Review artifacts shall stay summarized rather than streamed in full.
 
@@ -944,9 +1025,11 @@
 18.29 A Merge Mandate does not remove the need for express User approval before merge.
 
 18.30 Before merge, Agent shall ensure Codex Review covers the latest pull-request head and contains no Severe Finding.
-  - Commentary: Current review artifacts often use `/tmp/codex_review_<sha>.txt`.
+
+- Commentary: Current review artifacts often use `/tmp/codex_review_<sha>.txt`.
 
 ## 19. closeout and repository notes
+
 19.1 Before stopping, Agent shall verify all Agreement requirements relevant to the task.
 
 19.2 Behavior, API, and usage changes shall update docs and docstrings.
@@ -962,7 +1045,8 @@
 19.7 If work is headed to merge, required local review reruns shall be clean.
 
 19.8 Relevant package scripts, tests, or manual harnesses shall run as expected.
-  - Commentary: Current key paths include `packages/opencode/`, `packages/app/`, `packages/docs/`, and `packages/*/package.json`.
+
+- Commentary: Current key paths include `packages/opencode/`, `packages/app/`, `packages/docs/`, and `packages/*/package.json`.
 
 19.9 Agent shall revisit its changes until no practical measurable improvement remains.
 
