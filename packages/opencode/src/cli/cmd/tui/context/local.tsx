@@ -1,5 +1,6 @@
 import { createStore } from "solid-js/store"
 import { batch, createEffect, createMemo } from "solid-js"
+import type { Agent } from "@opencode-ai/sdk/v2"
 import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
 import { uniqueBy } from "remeda"
@@ -170,19 +171,36 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }
 
     const agent = iife(() => {
-      // Fork-only: hide native 'build' and 'plan' primary agents when an agency is connected,
-      // so the TUI presents only Run-mode agents. Fall back to upstream (keep build/plan visible)
-      // when no agency agents are available, to keep the TUI functional before /connect.
+      // Fork-only: restrict this TUI to Run mode. Native 'build' and 'plan' primary agents are
+      // hidden in all states; the TUI only surfaces agents provided by a connected Agency Swarm
+      // server. When no agency agents are present, a synthetic placeholder keeps consumers safe
+      // and the send path blocks with a connect prompt.
+      const PLACEHOLDER_AGENT_NAME = "disconnected"
+      const placeholderAgent = createMemo(
+        () =>
+          ({
+            name: PLACEHOLDER_AGENT_NAME,
+            description: "Connect to an Agency Swarm server to start.",
+            options: {},
+            mode: "primary",
+            native: false,
+            permission: {},
+          }) as Agent,
+      )
+      const rawAgents = createMemo(() =>
+        sync.data.agent.filter(
+          (x) => x.mode !== "subagent" && !x.hidden && x.name !== "build" && x.name !== "plan",
+        ),
+      )
       const agents = createMemo(() => {
-        const all = sync.data.agent.filter((x) => x.mode !== "subagent" && !x.hidden)
-        const agency = all.filter((x) => x.name !== "build" && x.name !== "plan")
-        return agency.length > 0 ? agency : all
+        const list = rawAgents()
+        return list.length > 0 ? list : [placeholderAgent()]
       })
       const visibleAgents = createMemo(() => {
-        const all = sync.data.agent.filter((x) => !x.hidden)
-        const agency = all.filter((x) => x.name !== "build" && x.name !== "plan")
-        return agency.length > 0 ? agency : all
+        const list = sync.data.agent.filter((x) => !x.hidden && x.name !== "build" && x.name !== "plan")
+        return list.length > 0 ? list : [placeholderAgent()]
       })
+      const isConnected = createMemo(() => rawAgents().length > 0)
       const [agentStore, setAgentStore] = createStore<{
         current: string
       }>({
@@ -201,6 +219,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       return {
         list() {
           return agents()
+        },
+        connected() {
+          return isConnected()
         },
         current() {
           return agents().find((x) => x.name === agentStore.current) ?? agents()[0]
