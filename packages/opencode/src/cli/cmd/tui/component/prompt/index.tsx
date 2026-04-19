@@ -674,16 +674,6 @@ export function Prompt(props: PromptProps) {
       return
     }
 
-    if (!local.agent.connected()) {
-      toast.show({
-        variant: "warning",
-        message: "Connect to an Agency Swarm server to send messages.",
-        duration: 4000,
-      })
-      dialog.replace(() => <DialogAgencySwarmConnect />)
-      return
-    }
-
     const selectedModel = local.model.current()
     if (!selectedModel) {
       promptModelWarning()
