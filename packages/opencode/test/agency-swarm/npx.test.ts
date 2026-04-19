@@ -63,9 +63,12 @@ describe("agency-swarm npx onboarding", () => {
       }),
     ).toBe(true)
 
+    // Fork behavior: the platform binary ships as `agentswarm` only; running this fork's
+    // compiled binary should trigger launcher mode even if argv[0] is rewritten by the
+    // runtime. Setting AGENTSWARM_LAUNCHER=0 is the explicit opt-out.
     expect(
       shouldRunNpxOnboarding({
-        env: process.env,
+        env: { ...process.env, [LAUNCHER_ENTRY_ENV]: "0" },
         argv: ["/usr/local/bin/opencode"],
       }),
     ).toBe(false)

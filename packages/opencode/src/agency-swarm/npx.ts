@@ -116,7 +116,22 @@ async function listResumeSessions(directory: string) {
 }
 
 function isLauncher(input: { env: NodeJS.ProcessEnv; argv?: string[] }) {
-  return input.env[LAUNCHER_ENTRY_ENV] === "1" || isAgentswarmCommand(input.argv ?? process.argv)
+  // The platform binary's argv[0] does not always round-trip as "agentswarm" (Bun single-file
+  // executables rewrite argv to ["bun","/$bunfs/root/src/index.js", ...userArgs]), so basename
+  // detection alone is unreliable. The env var is the canonical opt-out. When neither signal
+  // is set, inspect the user-facing args and default to launcher mode for the default TUI entry.
+  if (input.env[LAUNCHER_ENTRY_ENV] === "0") return false
+  if (input.env[LAUNCHER_ENTRY_ENV] === "1") return true
+  const argv = input.argv ?? process.argv
+  if (isAgentswarmCommand(argv)) return true
+  const userArgs =
+    argv[0] === "bun" && typeof argv[1] === "string" && argv[1].startsWith("/$bunfs")
+      ? argv.slice(2)
+      : argv.slice(1)
+  const firstUserArg = userArgs[0]
+  if (!firstUserArg) return true
+  if (firstUserArg.startsWith("-")) return true
+  return false
 }
 
 async function resolveRunProject(
