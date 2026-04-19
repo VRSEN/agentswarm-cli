@@ -262,6 +262,11 @@
 
 5.17 Agent shall keep one live list of Active Artifacts.
 
+5.17.1 Every pull request, linked issue, branch, worktree, release artifact, published binary, or other externally-visible artifact Agent produces shall be captured as an Active Ledger item the moment it exists.
+  - Commentary: The host compliance bot auto-closes pull requests after two hours when the template or linked-issue check fails; an untracked artifact is an artifact that gets silently lost.
+
+5.17.2 Any state change on a tracked artifact (auto-close, merge, re-open, force-push, revoked approval, expired credential) shall update the matching Active Ledger item before other work continues.
+
 5.18 Each touched Artifact shall stay tracked until shipped, discarded, or clearly handed off.
 
 5.19 Superseded Artifacts created by the Agent shall be cleaned up when no longer needed.
