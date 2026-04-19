@@ -170,14 +170,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }
 
     const agent = iife(() => {
-      const agents = createMemo(() =>
-        sync.data.agent.filter(
-          (x) => x.mode !== "subagent" && !x.hidden && x.name !== "build" && x.name !== "plan",
-        ),
-      )
-      const visibleAgents = createMemo(() =>
-        sync.data.agent.filter((x) => !x.hidden && x.name !== "build" && x.name !== "plan"),
-      )
+      // Fork-only: hide native 'build' and 'plan' primary agents when an agency is connected,
+      // so the TUI presents only Run-mode agents. Fall back to upstream (keep build/plan visible)
+      // when no agency agents are available, to keep the TUI functional before /connect.
+      const agents = createMemo(() => {
+        const all = sync.data.agent.filter((x) => x.mode !== "subagent" && !x.hidden)
+        const agency = all.filter((x) => x.name !== "build" && x.name !== "plan")
+        return agency.length > 0 ? agency : all
+      })
+      const visibleAgents = createMemo(() => {
+        const all = sync.data.agent.filter((x) => !x.hidden)
+        const agency = all.filter((x) => x.name !== "build" && x.name !== "plan")
+        return agency.length > 0 ? agency : all
+      })
       const [agentStore, setAgentStore] = createStore<{
         current: string
       }>({
