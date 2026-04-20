@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Provider } from "@opencode-ai/sdk/v2"
 import {
+  describeAgencyAuthFailure,
   shouldBlockAgencyPromptSubmit,
   shouldBlockAgencyPromptSend,
   shouldOpenAgencyAuthDialog,
@@ -958,5 +959,17 @@ describe("agency session errors", () => {
         message: "Streaming request failed (403): Invalid API key for OpenAI",
       }),
     ).toBe(true)
+  })
+
+  test("describes missing agency provider credentials with /auth add guidance", () => {
+    expect(
+      describeAgencyAuthFailure("Streaming request failed (401): Missing provider credentials in client_config"),
+    ).toBe("No provider credential is configured. Run /auth to add it.")
+  })
+
+  test("describes rejected agency provider credentials with /auth update guidance", () => {
+    expect(describeAgencyAuthFailure("Streaming request failed (403): Invalid API key for OpenAI")).toBe(
+      "The current provider credential was rejected. Run /auth to update it.",
+    )
   })
 })
