@@ -13,7 +13,7 @@ import { useRoute } from "@tui/context/route"
 import { useSync } from "@tui/context/sync"
 import { MessageID, PartID } from "@/session/schema"
 import { displayAgentName } from "@/agent/display"
-import { createStore, produce } from "solid-js/store"
+import { createStore, produce, unwrap } from "solid-js/store"
 import { useKeybind } from "@tui/context/keybind"
 import { usePromptHistory, type PromptInfo } from "./history"
 import { assign } from "./part"
@@ -83,6 +83,31 @@ const money = new Intl.NumberFormat("en-US", {
 function randomIndex(count: number) {
   if (count <= 0) return 0
   return Math.floor(Math.random() * count)
+}
+
+function waitForSessionPromptProgress(sdk: ReturnType<typeof useSDK>, sessionID: string) {
+  let done = false
+  let offMessage = () => {}
+
+  const cleanup = () => {
+    if (done) return
+    done = true
+    offMessage()
+  }
+
+  const promise = new Promise<void>((resolve) => {
+    offMessage = sdk.event.on("message.updated", (evt) => {
+      if (evt.properties.info.sessionID !== sessionID) return
+      if (evt.properties.info.role !== "assistant") return
+      cleanup()
+      resolve()
+    })
+  })
+
+  return {
+    promise,
+    cleanup,
+  }
 }
 
 export function Prompt(props: PromptProps) {
@@ -721,9 +746,12 @@ export function Prompt(props: PromptProps) {
       agencyConnection.openConnectDialog()
       return
     }
-
+    const submittedPrompt = structuredClone(unwrap(store.prompt))
     let sessionID = props.sessionID
     let createdSessionID: string | undefined
+    let navigatedToCreatedSession = false
+    let navigateTimer: ReturnType<typeof setTimeout> | undefined
+    let promptProgress: ReturnType<typeof waitForSessionPromptProgress> | undefined
     if (sessionID == null) {
       const res = await sdk.client.session.create({
         workspaceID: props.workspaceID,
@@ -740,6 +768,7 @@ export function Prompt(props: PromptProps) {
 
       sessionID = res.data.id
       createdSessionID = sessionID
+      promptProgress = waitForSessionPromptProgress(sdk, sessionID)
     }
 
     const messageID = MessageID.ascending()
@@ -784,7 +813,7 @@ export function Prompt(props: PromptProps) {
     } else {
       const savedPrompt = { input: store.prompt.input, parts: [...store.prompt.parts] }
       try {
-        await sdk.client.session.prompt({
+        const promptTask = sdk.client.session.prompt({
           sessionID,
           ...selectedModel,
           messageID,
@@ -800,6 +829,23 @@ export function Prompt(props: PromptProps) {
             ...nonTextParts.map(assign),
           ],
         })
+
+        if (createdSessionID) {
+          const newSessionID = createdSessionID
+          await Promise.race([promptTask, promptProgress!.promise])
+
+          // temporary hack to make sure the message is sent
+          navigateTimer = setTimeout(() => {
+            navigateTimer = undefined
+            navigatedToCreatedSession = true
+            route.navigate({
+              type: "session",
+              sessionID: newSessionID,
+            })
+          }, 50)
+        }
+
+        await promptTask
       } catch (error) {
         // Fork-only: surface auth errors via the connect/auth dialog and restore the
         // composer state so the user can retry. Rebuilding extmarks from the saved parts
@@ -813,8 +859,21 @@ export function Prompt(props: PromptProps) {
           providerID: selectedModel.providerID,
           message,
         })
+        if (navigateTimer) {
+          clearTimeout(navigateTimer)
+          navigateTimer = undefined
+        }
         if (createdSessionID && shouldReopenAuth) {
-          void sdk.client.session.delete({ sessionID: createdSessionID })
+          if (navigatedToCreatedSession) {
+            route.navigate({
+              type: "home",
+              workspaceID: props.workspaceID,
+              initialPrompt: submittedPrompt,
+            })
+          }
+          void sdk.client.session.delete({
+            sessionID: createdSessionID,
+          })
         }
         if (shouldReopenAuth) {
           toast.show({
@@ -831,18 +890,11 @@ export function Prompt(props: PromptProps) {
           duration: 5000,
         })
         return
+      } finally {
+        promptProgress?.cleanup()
       }
     }
     clearSubmittedPrompt(currentMode)
-
-    // temporary hack to make sure the message is sent
-    if (!props.sessionID)
-      setTimeout(() => {
-        route.navigate({
-          type: "session",
-          sessionID,
-        })
-      }, 50)
   }
   const exit = useExit()
 
