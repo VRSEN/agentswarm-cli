@@ -23,7 +23,7 @@ export function DialogModel(props: { providerID?: string }) {
   const keybind = useKeybind()
   const [query, setQuery] = createSignal("")
 
-  const connected = useConnected()
+  const rawConnected = useConnected()
   const frameworkMode = isAgencySwarmFrameworkMode({
     currentProviderID: local.model.current()?.providerID,
     configuredModel: sync.data.config.model,
@@ -45,6 +45,10 @@ export function DialogModel(props: { providerID?: string }) {
       ? sync.data.provider.filter((provider) => isAgencySupportedProvider(provider.id))
       : sync.data.provider,
   )
+  // Treat framework mode as "not connected" when no agency-supported provider is usable,
+  // so the disconnected fallback (filtered popular providers) keeps `/models` actionable
+  // instead of rendering an empty dialog.
+  const connected = createMemo(() => rawConnected() && enabledProviders().length > 0)
 
   const showExtra = createMemo(() => connected() && !props.providerID)
 
