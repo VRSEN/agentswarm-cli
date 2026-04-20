@@ -6,6 +6,7 @@ import { fileURLToPath } from "url"
 import { Filesystem } from "@/util/filesystem"
 import { useLocal } from "@tui/context/local"
 import { useTheme } from "@tui/context/theme"
+import { useAgencySwarmConnection } from "@tui/context/agency-swarm-connection"
 import { EmptyBorder, SplitBorder } from "@tui/component/border"
 import { useSDK } from "@tui/context/sdk"
 import { useRoute } from "@tui/context/route"
@@ -91,6 +92,7 @@ export function Prompt(props: PromptProps) {
 
   const keybind = useKeybind()
   const local = useLocal()
+  const agencyConnection = useAgencySwarmConnection()
   const sdk = useSDK()
   const route = useRoute()
   const sync = useSync()
@@ -194,6 +196,7 @@ export function Prompt(props: PromptProps) {
     extmarkToPartIndex: new Map(),
     interrupt: 0,
   })
+  const showAgencyReconnect = createMemo(() => store.mode === "normal" && agencyConnection.requiresReconnect())
 
   createEffect(
     on(
@@ -709,6 +712,16 @@ export function Prompt(props: PromptProps) {
       return
     }
 
+    if (currentMode !== "shell" && agencyConnection.requiresReconnect()) {
+      toast.show({
+        variant: "warning",
+        message: "Reconnect to a local agency-swarm server before sending a message",
+        duration: 4000,
+      })
+      agencyConnection.openConnectDialog()
+      return
+    }
+
     let sessionID = props.sessionID
     let createdSessionID: string | undefined
     if (sessionID == null) {
@@ -1201,6 +1214,12 @@ export function Prompt(props: PromptProps) {
                       {local.model.parsed().model}
                     </text>
                     <text fg={theme.textMuted}>{currentProviderLabel()}</text>
+                    <Show when={showAgencyReconnect()}>
+                      <text fg={theme.error}>·</text>
+                      <text fg={theme.error} onMouseUp={() => agencyConnection.openConnectDialog()}>
+                        disconnected
+                      </text>
+                    </Show>
                     <Show when={showVariant()}>
                       <text fg={theme.textMuted}>·</text>
                       <text>

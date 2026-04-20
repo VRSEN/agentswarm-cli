@@ -2,7 +2,7 @@ import * as prompts from "@clack/prompts"
 import net from "node:net"
 import os from "node:os"
 import path from "node:path"
-import { existsSync } from "node:fs"
+import { existsSync, statSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { AgencySwarmRunSession } from "./run-session"
@@ -115,8 +115,84 @@ async function listResumeSessions(directory: string) {
   return Array.from(Session.listGlobal({ directory, roots: true, start, limit: 1 }))
 }
 
+const BUNFS_PREFIXES = ["/$bunfs/", "B:/~BUN/", "B:\\~BUN\\"] as const
+const LAUNCHER_SUBCOMMANDS = new Set([
+  "completion",
+  "acp",
+  "mcp",
+  "attach",
+  "run",
+  "generate",
+  "debug",
+  "console",
+  "providers",
+  "agent",
+  "upgrade",
+  "uninstall",
+  "serve",
+  "web",
+  "models",
+  "stats",
+  "export",
+  "import",
+  "github",
+  "pr",
+  "session",
+  "agency",
+  "agencii",
+  "plugin",
+  "db",
+])
+const PROJECT_PATH_PREFIXES = ["./", ".\\", "../", "..\\", "~/", "~\\", "/", "\\\\"] as const
+
+function isBunfsPath(value: string | undefined): value is string {
+  return typeof value === "string" && BUNFS_PREFIXES.some((prefix) => value.startsWith(prefix))
+}
+
+function isExistingDirectory(value: string) {
+  const resolved = path.resolve(value)
+  if (!existsSync(resolved)) return false
+  try {
+    return statSync(resolved).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+function looksLikeProjectPath(value: string) {
+  if (PROJECT_PATH_PREFIXES.some((prefix) => value.startsWith(prefix))) return true
+  if (/^[A-Za-z]:/.test(value)) return true
+  return isExistingDirectory(value)
+}
+
+function looksLikeSubcommand(arg: string) {
+  // Subcommands are bare words. Paths (with separators or dots) and flags are positional/optional.
+  if (arg.startsWith("-")) return false
+  if (arg.includes("/") || arg.includes("\\")) return false
+  if (arg.includes(".")) return false
+  return true
+}
+
 function isLauncher(input: { env: NodeJS.ProcessEnv; argv?: string[] }) {
-  return input.env[LAUNCHER_ENTRY_ENV] === "1" || isAgentswarmCommand(input.argv ?? process.argv)
+  // The platform binary's argv[0] does not always round-trip as "agentswarm" (Bun single-file
+  // executables rewrite argv to ["bun","/$bunfs/root/src/index.js", ...userArgs] on posix and
+  // ["bun","B:/~BUN/root/src/index.js", ...userArgs] on Windows), so basename detection alone
+  // is unreliable. The env var is the canonical opt-out. When neither signal is set, inspect
+  // the user-facing args and default to launcher mode for the default TUI entry, including the
+  // documented `$0 [project]` positional form.
+  if (input.env[LAUNCHER_ENTRY_ENV] === "0") return false
+  if (input.env[LAUNCHER_ENTRY_ENV] === "1") return true
+  const argv = input.argv ?? process.argv
+  if (isAgentswarmCommand(argv)) return true
+  const userArgs = argv[0] === "bun" && isBunfsPath(argv[1]) ? argv.slice(2) : argv.slice(1)
+  const firstUserArg = userArgs[0]
+  if (!firstUserArg) return true
+  if (firstUserArg.startsWith("-")) return true
+  if (!LAUNCHER_SUBCOMMANDS.has(firstUserArg) && looksLikeProjectPath(firstUserArg)) return true
+  // The default command accepts an optional positional `project` path. Treat any arg that does
+  // not look like a subcommand as the project positional, which keeps launcher mode on.
+  if (!looksLikeSubcommand(firstUserArg)) return true
+  return false
 }
 
 async function resolveRunProject(
