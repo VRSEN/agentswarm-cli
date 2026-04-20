@@ -8,6 +8,7 @@ import {
 } from "../../src/agency-swarm/client-config"
 import {
   buildLitellmModelForClientConfig,
+  isOpenAIBasedLitellmModel,
   normalizeExplicitClientConfigModel,
 } from "../../src/agency-swarm/litellm-provider"
 
@@ -125,5 +126,18 @@ describe("agency-swarm litellm model routing", () => {
     )
     expect(normalizeExplicitClientConfigModel("openai/gpt-5")).toBe("gpt-5")
     expect(normalizeExplicitClientConfigModel("litellm/openai/gpt-5")).toBe("gpt-5")
+  })
+
+  test("isOpenAIBasedLitellmModel matches agency-swarm _is_openai_based_litellm_provider", () => {
+    expect(isOpenAIBasedLitellmModel(undefined)).toBe(true)
+    expect(isOpenAIBasedLitellmModel("")).toBe(true)
+    expect(isOpenAIBasedLitellmModel("gpt-4o")).toBe(true)
+    expect(isOpenAIBasedLitellmModel("litellm/openai/gpt-4o")).toBe(true)
+    expect(isOpenAIBasedLitellmModel("litellm/azure/gpt-4o")).toBe(true)
+    expect(isOpenAIBasedLitellmModel("litellm/azure_ai/gpt-4o")).toBe(true)
+    expect(isOpenAIBasedLitellmModel("litellm/openai_compatible/gpt-4o")).toBe(true)
+    expect(isOpenAIBasedLitellmModel("litellm/anthropic/claude-sonnet-4-6")).toBe(false)
+    expect(isOpenAIBasedLitellmModel("litellm/gemini/gemini-2.5-pro")).toBe(false)
+    expect(isOpenAIBasedLitellmModel("anthropic/claude-sonnet-4-6")).toBe(false)
   })
 })
