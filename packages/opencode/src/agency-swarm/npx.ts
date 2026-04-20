@@ -115,22 +115,38 @@ async function listResumeSessions(directory: string) {
   return Array.from(Session.listGlobal({ directory, roots: true, start, limit: 1 }))
 }
 
+const BUNFS_PREFIXES = ["/$bunfs/", "B:/~BUN/", "B:\\~BUN\\"] as const
+
+function isBunfsPath(value: string | undefined): value is string {
+  return typeof value === "string" && BUNFS_PREFIXES.some((prefix) => value.startsWith(prefix))
+}
+
+function looksLikeSubcommand(arg: string) {
+  // Subcommands are bare words. Paths (with separators or dots) and flags are positional/optional.
+  if (arg.startsWith("-")) return false
+  if (arg.includes("/") || arg.includes("\\")) return false
+  if (arg.includes(".")) return false
+  return true
+}
+
 function isLauncher(input: { env: NodeJS.ProcessEnv; argv?: string[] }) {
   // The platform binary's argv[0] does not always round-trip as "agentswarm" (Bun single-file
-  // executables rewrite argv to ["bun","/$bunfs/root/src/index.js", ...userArgs]), so basename
-  // detection alone is unreliable. The env var is the canonical opt-out. When neither signal
-  // is set, inspect the user-facing args and default to launcher mode for the default TUI entry.
+  // executables rewrite argv to ["bun","/$bunfs/root/src/index.js", ...userArgs] on posix and
+  // ["bun","B:/~BUN/root/src/index.js", ...userArgs] on Windows), so basename detection alone
+  // is unreliable. The env var is the canonical opt-out. When neither signal is set, inspect
+  // the user-facing args and default to launcher mode for the default TUI entry, including the
+  // documented `$0 [project]` positional form.
   if (input.env[LAUNCHER_ENTRY_ENV] === "0") return false
   if (input.env[LAUNCHER_ENTRY_ENV] === "1") return true
   const argv = input.argv ?? process.argv
   if (isAgentswarmCommand(argv)) return true
-  const userArgs =
-    argv[0] === "bun" && typeof argv[1] === "string" && argv[1].startsWith("/$bunfs")
-      ? argv.slice(2)
-      : argv.slice(1)
+  const userArgs = argv[0] === "bun" && isBunfsPath(argv[1]) ? argv.slice(2) : argv.slice(1)
   const firstUserArg = userArgs[0]
   if (!firstUserArg) return true
   if (firstUserArg.startsWith("-")) return true
+  // The default command accepts an optional positional `project` path. Treat any arg that does
+  // not look like a subcommand as the project positional, which keeps launcher mode on.
+  if (!looksLikeSubcommand(firstUserArg)) return true
   return false
 }
 
