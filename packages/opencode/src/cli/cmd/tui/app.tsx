@@ -536,8 +536,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       keybind: "model_list",
       suggested: true,
       category: "Agent",
-      enabled: !frameworkMode(),
-      hidden: frameworkMode(),
       slash: {
         name: "models",
       },

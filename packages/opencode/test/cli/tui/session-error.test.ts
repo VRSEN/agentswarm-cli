@@ -5,6 +5,7 @@ import {
   shouldBlockAgencyPromptSend,
   shouldOpenAgencyAuthDialog,
   hasUsableProvider,
+  isAgencySupportedProvider,
   isSupportedAgencyAuthProvider,
   isAgencySwarmFrameworkMode,
   shouldOpenAgencyConnectDialog,
@@ -958,5 +959,34 @@ describe("agency session errors", () => {
         message: "Streaming request failed (403): Invalid API key for OpenAI",
       }),
     ).toBe(true)
+  })
+})
+
+describe("isAgencySupportedProvider (/models filter)", () => {
+  const mixed: Provider[] = [
+    { id: "gemini", name: "Gemini", source: "config", env: [], options: {}, models: {} },
+    { id: "github-copilot", name: "GitHub Copilot", source: "config", env: [], options: {}, models: {} },
+    { id: "openai", name: "OpenAI", source: "config", env: [], options: {}, models: {} },
+    { id: "anthropic", name: "Anthropic", source: "config", env: [], options: {}, models: {} },
+    { id: "agency-swarm", name: "Agent Swarm", source: "config", env: [], options: {}, models: {} },
+  ]
+
+  // Mirrors DialogModel's `enabledProviders` memo: filter in framework mode, passthrough otherwise.
+  function filterForDialog(providers: Provider[], frameworkMode: boolean) {
+    return frameworkMode ? providers.filter((provider) => isAgencySupportedProvider(provider.id)) : providers
+  }
+
+  test("framework mode keeps only openai, anthropic, agency-swarm", () => {
+    expect(filterForDialog(mixed, true).map((provider) => provider.id)).toEqual(["openai", "anthropic", "agency-swarm"])
+  })
+
+  test("non-framework mode passes the full provider list through", () => {
+    expect(filterForDialog(mixed, false).map((provider) => provider.id)).toEqual([
+      "gemini",
+      "github-copilot",
+      "openai",
+      "anthropic",
+      "agency-swarm",
+    ])
   })
 })

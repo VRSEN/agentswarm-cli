@@ -648,9 +648,7 @@ export function Prompt(props: PromptProps) {
     const firstLine = firstLineEnd === -1 ? inputText : inputText.slice(0, firstLineEnd)
     const firstWord = firstLine.split(" ")[0]
     const localSlash = firstWord.startsWith("/")
-      ? command
-          .slashes()
-          .find((item) => [item.display, ...(item.aliases ?? [])].includes(firstWord))
+      ? command.slashes().find((item) => [item.display, ...(item.aliases ?? [])].includes(firstWord))
       : undefined
 
     const clearSubmittedPrompt = (submittedMode: typeof store.mode) => {
@@ -771,6 +769,7 @@ export function Prompt(props: PromptProps) {
           })),
       })
     } else {
+      const savedPrompt = { input: store.prompt.input, parts: [...store.prompt.parts] }
       try {
         await sdk.client.session.prompt({
           sessionID,
@@ -789,17 +788,20 @@ export function Prompt(props: PromptProps) {
           ],
         })
       } catch (error) {
+        // Fork-only: surface auth errors via the connect/auth dialog and restore the
+        // composer state so the user can retry. Rebuilding extmarks from the saved parts
+        // keeps file/agent/paste markers in sync — without this, syncExtmarksWithPromptParts
+        // would drop them on the next keystroke.
+        setStore("prompt", savedPrompt)
+        input.setText(savedPrompt.input)
+        restoreExtmarksFromParts(savedPrompt.parts)
         const message = toErrorMessage(error)
         const shouldReopenAuth = shouldOpenAgencyAuthDialog({
           providerID: selectedModel.providerID,
           message,
         })
-        if (createdSessionID) {
-          if (shouldReopenAuth) {
-            void sdk.client.session.delete({
-              sessionID: createdSessionID,
-            })
-          }
+        if (createdSessionID && shouldReopenAuth) {
+          void sdk.client.session.delete({ sessionID: createdSessionID })
         }
         if (shouldReopenAuth) {
           toast.show({
