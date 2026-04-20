@@ -84,6 +84,7 @@ import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
 import { getScrollAcceleration } from "../../util/scroll"
 import { TuiPluginRuntime } from "../../plugin"
+import { describeStreamAuthError } from "../../session-error"
 
 addDefaultParsers(parsers.parsers)
 
@@ -1314,6 +1315,10 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
   const { theme } = useTheme()
   const sync = useSync()
   const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
+  const streamAuthHint = createMemo(() => {
+    const msg = props.message.error?.data.message
+    return typeof msg === "string" ? describeStreamAuthError(msg) : null
+  })
   const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
 
   const final = createMemo(() => {
@@ -1366,7 +1371,9 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           customBorderChars={SplitBorder.customBorderChars}
           borderColor={theme.error}
         >
-          <text fg={theme.textMuted}>{props.message.error?.data.message}</text>
+          <text fg={streamAuthHint() ? theme.warning : theme.textMuted}>
+            {streamAuthHint() ?? String(props.message.error?.data.message ?? "")}
+          </text>
         </box>
       </Show>
       <Switch>

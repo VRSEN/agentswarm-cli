@@ -11,6 +11,7 @@ import {
   isAgencySwarmFrameworkMode,
   shouldOpenAgencyConnectDialog,
   shouldOpenStartupAuthDialog,
+  describeStreamAuthError,
 } from "../../../src/cli/cmd/tui/session-error"
 
 describe("agency session errors", () => {
@@ -1001,5 +1002,75 @@ describe("isAgencySupportedProvider (/models filter)", () => {
       "anthropic",
       "agency-swarm",
     ])
+  })
+})
+
+describe("describeStreamAuthError", () => {
+  test("returns null for non-auth errors", () => {
+    expect(describeStreamAuthError("Rate limit exceeded")).toBeNull()
+    expect(describeStreamAuthError("Connection refused")).toBeNull()
+  })
+
+  test("returns null for generic AuthenticationError without a key-specific marker", () => {
+    expect(describeStreamAuthError("AuthenticationError: token expired")).toBeNull()
+    expect(describeStreamAuthError("AuthenticationError: oauth failed")).toBeNull()
+  })
+
+  test("detects missing Anthropic key from LiteLLM message", () => {
+    const msg =
+      "litellm.AuthenticationError: Missing Anthropic API Key - A call is being made to anthropic but no key is set either in the environment variables or via params. Please set `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` in your environment vars"
+    expect(describeStreamAuthError(msg)).toBe("anthropic API key required. Run /auth to add it.")
+  })
+
+  test("detects missing OpenAI key", () => {
+    const msg = "AuthenticationError: Missing OpenAI API Key"
+    expect(describeStreamAuthError(msg)).toBe("openai API key required. Run /auth to add it.")
+  })
+
+  test("detects missing provider credential from generic AuthenticationError text", () => {
+    const msg = "AuthenticationError: Missing provider OpenAI credential"
+    expect(describeStreamAuthError(msg)).toBe("openai API key required. Run /auth to add it.")
+  })
+
+  test("detects missing key from env-var hints in error text", () => {
+    const msg = "litellm.AuthenticationError: Please set OPENAI_API_KEY before retrying."
+    expect(describeStreamAuthError(msg)).toBe("openai API key required. Run /auth to add it.")
+  })
+
+  test("detects rejected key via incorrect_api_key code", () => {
+    const msg =
+      'litellm.AuthenticationError: OpenAIException - {"error":{"message":"Incorrect API key","code":"incorrect_api_key"}}'
+    expect(describeStreamAuthError(msg)).toBe("API key rejected. Run /auth to update it.")
+  })
+
+  test("detects rejected key via invalid_api_key code", () => {
+    const msg = 'AuthenticationError: {"error":{"code":"invalid_api_key"}}'
+    expect(describeStreamAuthError(msg)).toBe("API key rejected. Run /auth to update it.")
+  })
+
+  test("detects rejected key via Invalid API key for provider", () => {
+    const msg = "Error: Invalid API key for Anthropic"
+    expect(describeStreamAuthError(msg)).toBe("API key rejected. Run /auth to update it.")
+  })
+
+  test("detects rejected key via LiteLLM AuthenticationError marker", () => {
+    const msg = "litellm.AuthenticationError: API key rejected by upstream"
+    expect(describeStreamAuthError(msg)).toBe("API key rejected. Run /auth to update it.")
+  })
+
+  test("falls back to generic missing hint when provider unknown", () => {
+    const msg = "no key is set"
+    expect(describeStreamAuthError(msg)).toBe("Missing API key. Run /auth to add it.")
+  })
+
+  test("falls back to generic missing hint for any LiteLLM auth error shape", () => {
+    const msg = "litellm.AuthenticationError: oauth failed"
+    expect(describeStreamAuthError(msg)).toBe("Missing API key. Run /auth to add it.")
+  })
+
+  test("prioritizes missing over rejected when both patterns appear", () => {
+    const msg =
+      'litellm.AuthenticationError: Missing Anthropic API Key {"error":{"code":"invalid_api_key"}}'
+    expect(describeStreamAuthError(msg)).toBe("anthropic API key required. Run /auth to add it.")
   })
 })
