@@ -69,7 +69,7 @@ export function resolveAgencySwarmConnectionConfig(input: {
 export function createAgencySwarmConnectionMonitor(input: {
   frameworkMode: () => boolean
   config: () => AgencySwarmConfig | undefined
-  openConnectDialog: () => void
+  openConnectDialog: () => boolean
   fetchImpl?: Fetcher
   failureThreshold?: number
   idleIntervalMs?: number
@@ -100,9 +100,9 @@ export function createAgencySwarmConnectionMonitor(input: {
   }
 
   const openConnectDialog = () => {
+    if (!input.openConnectDialog()) return
     const baseURL = store.baseURL
     if (baseURL) dialogShownForBaseURL = baseURL
-    input.openConnectDialog()
   }
 
   createEffect(() => {
@@ -189,8 +189,7 @@ export function createAgencySwarmConnectionMonitor(input: {
         })
 
         if (disconnected && dialogShownForBaseURL !== config.baseURL) {
-          dialogShownForBaseURL = config.baseURL
-          input.openConnectDialog()
+          openConnectDialog()
         }
       } finally {
         if (currentGeneration !== generation) return
@@ -242,7 +241,11 @@ export const { use: useAgencySwarmConnection, provider: AgencySwarmConnectionPro
     const monitor = createAgencySwarmConnectionMonitor({
       frameworkMode,
       config,
-      openConnectDialog: () => dialog.replace(() => <DialogAgencySwarmConnect />),
+      openConnectDialog: () => {
+        if (dialog.stack.length > 0) return false
+        dialog.replace(() => <DialogAgencySwarmConnect />)
+        return true
+      },
     })
 
     return {

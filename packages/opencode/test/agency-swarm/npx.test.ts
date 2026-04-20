@@ -74,6 +74,47 @@ describe("agency-swarm npx onboarding", () => {
     ).toBe(false)
   })
 
+  test("launcher mode treats bare project directories as positional args under rewritten argv", async () => {
+    await using dir = await tmpdir()
+    await mkdir(path.join(dir.path, "my-agency"))
+    await mkdir(path.join(dir.path, "run"))
+    const originalCwd = process.cwd()
+
+    try {
+      process.chdir(dir.path)
+
+      expect(
+        shouldRunNpxOnboarding({
+          env: process.env,
+          argv: ["/usr/local/bin/opencode", "my-agency"],
+        }),
+      ).toBe(true)
+
+      expect(
+        shouldRunNpxOnboarding({
+          env: process.env,
+          argv: ["bun", "/$bunfs/root/src/index.js", "my-agency"],
+        }),
+      ).toBe(true)
+
+      expect(
+        shouldRunNpxOnboarding({
+          env: process.env,
+          argv: ["/usr/local/bin/opencode", "run"],
+        }),
+      ).toBe(false)
+
+      expect(
+        shouldRunNpxOnboarding({
+          env: process.env,
+          argv: ["bun", "B:/~BUN/root/src/index.js", "session"],
+        }),
+      ).toBe(false)
+    } finally {
+      process.chdir(originalCwd)
+    }
+  })
+
   test("buildAgencyConfig keeps launch config session-scoped", () => {
     const config = JSON.parse(
       buildAgencyConfig({

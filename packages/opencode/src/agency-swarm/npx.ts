@@ -2,7 +2,7 @@ import * as prompts from "@clack/prompts"
 import net from "node:net"
 import os from "node:os"
 import path from "node:path"
-import { existsSync } from "node:fs"
+import { existsSync, statSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { AgencySwarmRunSession } from "./run-session"
@@ -116,9 +116,53 @@ async function listResumeSessions(directory: string) {
 }
 
 const BUNFS_PREFIXES = ["/$bunfs/", "B:/~BUN/", "B:\\~BUN\\"] as const
+const LAUNCHER_SUBCOMMANDS = new Set([
+  "completion",
+  "acp",
+  "mcp",
+  "attach",
+  "run",
+  "generate",
+  "debug",
+  "console",
+  "providers",
+  "agent",
+  "upgrade",
+  "uninstall",
+  "serve",
+  "web",
+  "models",
+  "stats",
+  "export",
+  "import",
+  "github",
+  "pr",
+  "session",
+  "agency",
+  "agencii",
+  "plugin",
+  "db",
+])
+const PROJECT_PATH_PREFIXES = ["./", ".\\", "../", "..\\", "~/", "~\\", "/", "\\\\"] as const
 
 function isBunfsPath(value: string | undefined): value is string {
   return typeof value === "string" && BUNFS_PREFIXES.some((prefix) => value.startsWith(prefix))
+}
+
+function isExistingDirectory(value: string) {
+  const resolved = path.resolve(value)
+  if (!existsSync(resolved)) return false
+  try {
+    return statSync(resolved).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+function looksLikeProjectPath(value: string) {
+  if (PROJECT_PATH_PREFIXES.some((prefix) => value.startsWith(prefix))) return true
+  if (/^[A-Za-z]:/.test(value)) return true
+  return isExistingDirectory(value)
 }
 
 function looksLikeSubcommand(arg: string) {
@@ -144,6 +188,7 @@ function isLauncher(input: { env: NodeJS.ProcessEnv; argv?: string[] }) {
   const firstUserArg = userArgs[0]
   if (!firstUserArg) return true
   if (firstUserArg.startsWith("-")) return true
+  if (!LAUNCHER_SUBCOMMANDS.has(firstUserArg) && looksLikeProjectPath(firstUserArg)) return true
   // The default command accepts an optional positional `project` path. Treat any arg that does
   // not look like a subcommand as the project positional, which keeps launcher mode on.
   if (!looksLikeSubcommand(firstUserArg)) return true
