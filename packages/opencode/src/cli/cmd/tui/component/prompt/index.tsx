@@ -482,6 +482,8 @@ export function Prompt(props: PromptProps) {
     }
   })
 
+  const isDialogBlockingPrompt = () => dialog.stack.length > 0
+
   function restoreExtmarksFromParts(parts: PromptInfo["parts"]) {
     input.extmarks.clear()
     setStore("extmarkToPartIndex", new Map())
@@ -617,6 +619,7 @@ export function Prompt(props: PromptProps) {
 
   async function submit() {
     if (props.disabled) return
+    if (isDialogBlockingPrompt()) return
     if (autocomplete?.visible) return
     if (!store.prompt.input) return
     const trimmed = store.prompt.input.trim()
@@ -1018,6 +1021,10 @@ export function Prompt(props: PromptProps) {
                   e.preventDefault()
                   return
                 }
+                if (isDialogBlockingPrompt()) {
+                  if (e.name !== "escape") e.preventDefault()
+                  return
+                }
                 // Check clipboard for images before terminal-handled paste runs.
                 // This helps terminals that forward Ctrl+V to the app; Windows
                 // Terminal 1.25+ usually handles Ctrl+V before this path.
@@ -1094,6 +1101,10 @@ export function Prompt(props: PromptProps) {
               onSubmit={submit}
               onPaste={async (event: PasteEvent) => {
                 if (props.disabled) {
+                  event.preventDefault()
+                  return
+                }
+                if (isDialogBlockingPrompt()) {
                   event.preventDefault()
                   return
                 }
