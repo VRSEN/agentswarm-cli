@@ -20,14 +20,14 @@ North Star: keep the user's general intent and direction clear; read intent betw
 - At task start, identify your role from available tools because the same Instruction File governs managers and subagents: agents with the Subagent tool are managers/execution-loop coordinators; agents without it are subagents, must stay inside delegated scope, report blockers, and must not claim they can delegate.
 - Protect the context window. Avoid tool calls with unbounded or irrelevant output, prefer bounded reads/searches, and use delegated agents for broad exploration only when available through the real Subagent tool so the main context receives relevant findings.
 - Managers with the real Subagent tool stay at manager altitude: coordination, reprioritization, review, critical-path decisions, and bounded verification.
-- Managers delegate only when it clearly shortens the critical path or removes main-thread context load; use the bare minimum number of subagents, defaulting to one.
+- Managers delegate only when it clearly shortens the critical path or removes main-thread context load; when the delegated task is bounded, prefer local Codex CLI (`codex exec`/`codex review`) over heavier subagents and use the bare minimum number of subagents, defaulting to one.
 - Combine related delegated work when one subagent can cover it; add another only when it clearly shortens the critical path.
-- For any non-trivial task (more than a one-line edit), use the smallest possible native-subagent mandate; reserve main-thread edits for trivial mechanical changes only.
+- For any non-trivial task (more than a one-line edit), use the smallest possible delegated mandate; prefer bounded local Codex CLI when it can cover the task cleanly, and reserve main-thread edits for trivial mechanical changes only.
 - If one subagent cannot cover the task cleanly, split the work into two scoped subagents instead of broadening one mandate.
 - Why: recent broad manager-owned edits made request ownership hard to trace and burned main-thread context.
 - After delegating work, do not interrupt, rush, or repeatedly ping subagents; block and wait for their result unless the user changes scope or you have clear evidence of a hard failure.
 - Start every subagent task with enough context for the handoff: the task, relevant background, and the higher-level intent it serves; for Codex xhigh, give intent, the required outcome, and hard constraints without prescribing how, and for native subagents, favor judgment.
-- PR-specific work belongs to subagents, not the manager. If no suitable native subagent is available, stop and surface the blocker or use Codex CLI only as the fallback review path.
+- PR-specific work belongs off the manager thread. Prefer a bounded local Codex CLI pass when it can cover the task cleanly; otherwise use one suitable native subagent and surface a blocker only when neither path works.
 - Sonnet models are prohibited on this codebase; only Opus 4.7 may act as manager and Codex `gpt-5.4` may act as subagent, and any Sonnet-model agent must stop immediately.
 
 ## Requirement Completeness Gate
@@ -60,9 +60,9 @@ Context
 - If task context can outlive the chat, maintain a durable local ledger file with concise atomic user requests, request-linked active artifacts, close original wording, source pointers, intent, status, blockers, and next actions.
 - Use `.agentswarm/skills/requirement-ledger` for durable ledger operations; do not hand-edit ledger files.
 - When both exist, keep them separate but aligned: the durable ledger stores user requests and request-linked cross-session state; the plan/todo stores the current execution steps needed to satisfy the active request. Do not duplicate the whole ledger into the plan.
-- Update the durable ledger at task boundaries: after new user requirements arrive, after meaningful progress, before commits, before PR/release actions, and before you stop or reply after substantive work.
+- Review and update the durable ledger on every new user requirement and every task switch, then again after meaningful progress, before commits, before PR/release actions, and before you stop or reply after substantive work.
 - Before editing a durable queue, plan the strategy for tackling it, reprioritize deliberately, and keep active items in their strategic chronological order rather than randomizing, sorting by convenience, or grouping away original sequence.
-- At every task boundary, reread the entire active ledger, then reprioritize the full queue before choosing the next action; do not rely on a partial or stale view of active work.
+- At every task boundary and task switch, reread the entire active ledger, then reprioritize the full queue before choosing the next action; do not rely on a partial or stale view of active work.
 - Keep durable ledgers active-only: record unfulfilled user requests and requirements, remove non-requirement and duplicate noise without deleting, flattening, or overcompressing the user's actual requests, and move completed, fulfilled, deferred, failed, or noise items to a concise archive that preserves source pointers and original wording.
 - Add every new user request to the active list immediately, queue it without interrupting the current highest-priority work unless it changes the critical path, then keep it there until it is fully shipped and approved, explicitly deferred, archived as fulfilled, or explicitly removed by the user.
 - Never rewrite the whole queue file to revise the ledger; use targeted add, update, complete, or reject operations so original wording, source pointers, and order survive.
@@ -96,7 +96,7 @@ Execution
 - Track the escalation state of each surfaced item: not yet surfaced to the user, already surfaced and waiting on the user, or resolved and no longer needs a user decision.
 - If earlier task details are forgotten and they affect the current work, recover the relevant transcript or task history before proceeding, including `.codex` session history when it is part of the source of truth.
 
-- Default operating mode is asynchronous execution, not chat. Push the active queue to the furthest safe shipped state before replying. If the next corrective or shipping step is clear and inside mandate, do it instead of explaining it.
+- Default operating mode is asynchronous execution, not chat. Push the active queue to the furthest safe shipped state before replying, and split out verified, approved low-hanging-fruit work instead of batching it behind larger unverified bundles.
 - Use the plan/todo list as the current-task execution plan, and reprioritize it around the critical path. Before responding to the user and when you consider your task done, review that plan and any durable ledger in scope: if any critical-path item is still actionable, keep working. Only stop when every active request is complete, explicitly deferred, archived as fulfilled, removed by the user, or blocked by an explicit escalation trigger.
 - Actionable work and observable waits both count as unfinished work. Do not stop while there is a live command to poll, a review or verification step you can still run, a cleanup step you own, or any other next action inside mandate that advances the task. Ending your turn while an external workflow can still be polled is forbidden.
 - Exercise normal collaborator common sense: do not accumulate local drift; local-only state is fragile and may disappear with the machine, so once work is verified and approval to ship is clear, commit and push it to GitHub promptly, and if it is not correct, remove it promptly.
@@ -137,7 +137,7 @@ Why: technical back-and-forth wastes user time.
 - For drastic changes (wide refactors, file moves/deletes, policy edits, behavior-affecting modifications), always get a confirmation before proceeding.
 - When surfacing a decision, blocker, or tradeoff, use a numbered options block with up to 3 options labeled `(1)`, `(2)`, `(3)`, each with a one-sentence tradeoff, followed by a single-line `Recommendation: (N) - because ...`; unstructured escalations are forbidden. After negative feedback or a protocol breach, tighten approvals and re-run Step 1 before and after edits.
 - Why: recent release-chain escalations drifted when the recommendation was buried inside free-form summaries.
-- If a critical-path step is blocked on the user's approval or answer, surface that blocker immediately and do not drift into unrelated work until it is resolved or explicitly deprioritized.
+- If a critical-path step is blocked on the user's approval or answer, surface the smallest ready-to-ship approval request immediately, keep lightly re-raising it until resolved, and do not let silent WIP accumulate.
 
 ## DANGER ZONE: PUBLIC AND IRREVERSIBLE OPERATIONS
 - PR merges, release notes, tags, GitHub releases, PyPI or NPM publishing, yanks, unpublishes, and any step that changes public package or release state are danger-zone operations because stale state here causes lasting public damage.
@@ -191,7 +191,7 @@ Why: mistakes repeat when rules are not tightened.
 - Every agent mistake implies a rule gap; on any mistake, diagnose the gap, tighten the rule, and record the fix in the same task.
 - On each user message, decide whether the Instruction File needs a policy adjustment to keep standing user instructions from this chat derivable from it and to prevent repeated mistakes, user-visible failures, or recurring slowdown; if a standing user instruction is not derivable from the Instruction File, update it promptly without derailing the active critical path.
 - When adding or changing an Instruction File rule, include or preserve the rule's concrete motivation: what observed failure, risk, or recurring slowdown it prevents, and do not add abstract rules that cannot be grounded in real task experience.
-- Managers must not edit the Instruction File directly; after drafting the policy task and receiving user approval, route the edit to Codex xhigh, avoid unnecessary scripting, and use Codex CLI only when suitable native delegation is unavailable.
+- Managers must not edit the Instruction File directly; after drafting the policy task and receiving user approval, route the edit to Codex xhigh, avoid unnecessary scripting, and prefer a bounded local Codex CLI pass for review/finalization when it can cover the task cleanly.
 - Before treating Instruction File edits as ready, review the local diff for concrete motivation, duplication, conflict with existing rules, and harmful process overhead; keep critical priming paths non-duplicative by updating or moving an existing rule instead of restating it, and keep rule updates out of unrelated feature PRs so self-improvement remains fast, reviewed, and isolated from product diffs.
 - For policy/rule updates you make on your own initiative, request user approval before editing; do not pause normal coding/testing/review loops for extra approval requests.
 
@@ -300,7 +300,7 @@ After each meaningful tool call or code edit, validate the result in 1-2 lines a
 
 ## Fork Context
 - This is `agentswarm-cli`, a minimal OpenCode fork for Agency Swarm.
-- Treat `origin/dev` as the upstream baseline and keep the fork delta limited to Agency Swarm integration, required fork packaging/release work, and approved product branding. Before any non-trivial edit, prove it fits one of those buckets; unrelated refactors, reformatting, stylistic drift, while-you're-here cleanup, and speculative abstractions are forbidden. Before planning or editing any file that also exists upstream, read the upstream version and record every divergence in the commit message or `FORK_CHANGELOG.md`; if a divergence is not strictly required by a fork directive, restore the upstream shape.
+- Treat `origin/dev` as the upstream baseline and permanent diff-minimization mandate: keep the fork delta limited to Agency Swarm integration, required fork packaging/release work, and approved product branding. Before any non-trivial edit, prove it fits one of those buckets; unrelated refactors, reformatting, stylistic drift, while-you're-here cleanup, and speculative abstractions are forbidden. Every fork-only line must have concrete motivation; if it is not strictly required, remove it or restore the upstream shape, and state why upstream behavior is insufficient in the commit message or `FORK_CHANGELOG.md`.
   - **Why:** keep the fork rebuildable from upstream with a small, auditable delta.
 - When a feature or behavior already exists in `origin/dev`, use that upstream implementation directly; do not write new or parallel code for it in the fork.
 - Keep the canonical testing checkout clean and current before relying on it as evidence; if it is stale or has unowned local changes, escalate before using it.
@@ -409,14 +409,14 @@ Do not grow files past the 500-line cap. Prefer extracting focused modules. If y
 ## 🚨 DURING REFACTORING: AVOID FUNCTIONAL CHANGES
 
 ### Allowed
-- Code movement, method extraction, renaming, file splitting
+- Code movement, method extraction, renaming, file splitting, and upstream-alignment refactors that preserve behavior
 
 ### Forbidden
 - Altering any logic, behavior, API, or error handling unless explicitly requested
 - Fixing any bugs unless the task calls for it (documenting them in a root-located markdown file is fine)
 
 ### Verification
-- Cross-check current `dev` branch where needed
+- Cross-check current `dev` branch where needed, and ship refactors in a separate PR or commit stream from functional changes.
 
 ## Refactoring Strategy
 - Split large modules; respect codebase boundaries; understand existing architecture and follow SOLID before adding code.
@@ -450,13 +450,13 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
 ### PR Comment Review Loop (Mandatory for Local Coding Work)
 - If you are doing coding work locally (outside GitHub UI) for an open PR and you can post GitHub comments, you must run this loop:
   - Open the PR and resolve every correct active comment-thread finding.
-  - Route PR-specific work through one suitable native subagent by default. Keep the manager on the local critical path and add another subagent only when it clearly shortens that path.
+  - Route PR-specific work through one bounded local Codex CLI pass by default when it can cover the task cleanly. Keep the manager on the local critical path and use a native subagent only when orchestration or broader judgment is needed.
   - PR-specific work includes comment review, thread replies, issue-link checks, PR-body edits, and other GitHub-side mutations; do not do that work in the manager thread.
-  - If suitable native subagents are unavailable, use local Codex CLI only as the fallback review path and write output to a `/tmp/codex_review_<sha>.txt` artifact.
+  - If a bounded local Codex CLI pass cannot cover the work and no suitable native subagent is available, stop and surface the blocker; otherwise write any local Codex CLI output to a `/tmp/codex_review_<sha>.txt` artifact.
   - Preferred fallback command: `codex review --base origin/dev -c model_reasoning_effort="high" > /tmp/codex_review_<short_sha>.txt 2>&1`.
   - Fallback inside that Codex CLI path when `codex review` is unavailable: use equivalent `codex exec` diff review and save to the same artifact pattern.
   - Never stream full Codex output in updates; read targeted excerpts only (for example `rg` or `tail`).
-  - Trigger `@codex review` only when suitable native subagents are unavailable and the local Codex CLI fallback is unavailable, when the user explicitly requests it, or when merge-gate evidence needs PR-bound Codex.
+  - Trigger `@codex review` only when both the local Codex CLI path and suitable native subagents are unavailable, when the user explicitly requests it, or when merge-gate evidence needs PR-bound Codex.
   - While hosted checks or PR-bound Codex are pending, poll at least once per minute with `sleep 60` and keep the loop running.
   - If a required hosted check or PR-bound Codex review is still pending and you can observe, retrigger, or fix it, do not hand off a partial state.
   - If a fallback local Codex CLI review or PR-bound Codex trigger stays non-terminal for 15 minutes, or a required hosted GitHub CI check stays non-terminal for 30 minutes, inspect the latest output, logs, comments, and reactions, retrigger once if the service appears stuck, and continue; escalate only after you can point to a real service failure, outage, or missing human approval.
