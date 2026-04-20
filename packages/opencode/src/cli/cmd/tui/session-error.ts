@@ -252,22 +252,56 @@ export function describeAgencyAuthFailure(message: string) {
 }
 
 /** Detects an explicit API-key failure from a stream error and returns a short actionable hint,
- *  or null when the message does not name an API-key problem. Only unambiguous API-key signals
- *  are matched: the generic `AuthenticationError` marker is ignored unless LiteLLM or provider
- *  key markers make the API-key failure explicit. */
+ *  or null when the message does not name an API-key problem. Explicit missing/rejected signals
+ *  win first; any remaining LiteLLM auth error falls back to the generic /auth missing-key hint. */
 export function describeStreamAuthError(message: string): string | null {
-  const hasEnvVarHint = /\b(?:ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|OPENAI_API_KEY)\b/i.test(message)
-  const isMissing = /Missing.*API.{0,10}Key|api key not found|no key is set/i.test(message) || hasEnvVarHint
-  const hasLiteLLMAPIKeyHint = /litellm\.AuthenticationError/i.test(message) && /\bapi key\b/i.test(message)
+  const provider = extractStreamAuthErrorProvider(message)
+  const isLiteLLMAuthError = /litellm\.AuthenticationError/i.test(message)
+  const hasEnvVarHint = /\b[A-Z][A-Z0-9]*_(?:API_KEY|AUTH_TOKEN)\b/.test(message)
+  const isMissing =
+    /Missing.*API.{0,10}Key|api key not found|no key is set/i.test(message) ||
+    hasEnvVarHint ||
+    (/\bAuthenticationError\b/i.test(message) && /\bMissing\b/i.test(message) && Boolean(provider))
   const isRejected =
-    (/incorrect_api_key|invalid_api_key|Invalid API key for\s+\w[\w-]+/i.test(message) || hasLiteLLMAPIKeyHint) &&
-    !isMissing
-  if (!isMissing && !isRejected) return null
-  const match = message.match(
-    /call.*?to\s+(\w[\w-]+)|Missing\s+(\w[\w-]+)\s+API|Invalid\s+API\s+key\s+for\s+(\w[\w-]+)|\b(ANTHROPIC|OPENAI)(?:_API_KEY|_AUTH_TOKEN)\b/i,
-  )
-  const provider = (match?.[1] ?? match?.[2] ?? match?.[3] ?? match?.[4] ?? "").toLowerCase()
-  const subject = provider ? `${provider} API key` : "API key"
-  if (isMissing) return `${subject} required. Run /auth to add it.`
-  return `${subject} was rejected. Run /auth to update it.`
+    /incorrect_api_key|invalid_api_key|Invalid API key for\s+\w[\w-]+|api key rejected/i.test(message) && !isMissing
+
+  if (isMissing) {
+    return provider ? `${provider} API key required. Run /auth to add it.` : "Missing API key. Run /auth to add it."
+  }
+  if (isRejected) return "API key rejected. Run /auth to update it."
+  if (isLiteLLMAuthError) return "Missing API key. Run /auth to add it."
+  return null
+}
+
+const STREAM_AUTH_ERROR_PROVIDER_STOP_WORDS = new Set([
+  "api",
+  "key",
+  "keys",
+  "credential",
+  "credentials",
+  "provider",
+  "token",
+])
+
+function extractStreamAuthErrorProvider(message: string) {
+  const patterns = [
+    /\b([A-Z][A-Z0-9]*?)(?:_API_KEY|_AUTH_TOKEN)\b/,
+    /Missing\s+(?:provider\s+)?([a-z][\w-]+)\s+API(?:\s+Key)?/i,
+    /Missing\s+(?:provider\s+)?([a-z][\w-]+)\s+(?:credential|credentials|key|token)\b/i,
+    /Invalid\s+API\s+key\s+for\s+([a-z][\w-]+)/i,
+    /call.*?to\s+([a-z][\w-]+)/i,
+  ]
+
+  for (const pattern of patterns) {
+    const provider = normalizeStreamAuthErrorProvider(message.match(pattern)?.[1] ?? "")
+    if (provider) return provider
+  }
+
+  return null
+}
+
+function normalizeStreamAuthErrorProvider(value: string) {
+  const provider = value.toLowerCase()
+  if (!provider || STREAM_AUTH_ERROR_PROVIDER_STOP_WORDS.has(provider)) return null
+  return provider
 }
