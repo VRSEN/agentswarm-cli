@@ -84,7 +84,8 @@ import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
 import { getScrollAcceleration } from "../../util/scroll"
 import { TuiPluginRuntime } from "../../plugin"
-import { describeStreamAuthError } from "../../session-error"
+import { describeStreamAuthError, isAgencySwarmFrameworkMode } from "../../session-error"
+import { displayRunOnlyModeLabel } from "../../util/agency-target"
 
 addDefaultParsers(parsers.parsers)
 
@@ -97,6 +98,7 @@ const context = createContext<{
   showDetails: () => boolean
   showGenericToolOutput: () => boolean
   diffWrapMode: () => "word" | "none"
+  frameworkMode: () => boolean
   providers: () => ReadonlyMap<string, Provider>
   sync: ReturnType<typeof useSync>
   tui: ReturnType<typeof useTuiConfig>
@@ -202,7 +204,7 @@ export function Session() {
       local.agent.set("build")
       lastSwitch = part.id
     } else if (part.tool === "plan_enter") {
-      local.agent.set("plan")
+      local.agent.set(frameworkMode() ? "build" : "plan")
       lastSwitch = part.id
     }
   })
@@ -300,6 +302,13 @@ export function Session() {
   }
 
   const local = useLocal()
+  const frameworkMode = createMemo(() =>
+    isAgencySwarmFrameworkMode({
+      currentProviderID: local.model.current()?.providerID,
+      configuredModel: sync.data.config.model,
+      agentModel: local.agent.current()?.model,
+    }),
+  )
 
   function moveFirstChild() {
     if (children().length === 1) return
@@ -1019,6 +1028,7 @@ export function Session() {
         showDetails,
         showGenericToolOutput,
         diffWrapMode,
+        frameworkMode,
         providers,
         sync,
         tui: tuiConfig,
@@ -1390,7 +1400,12 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
               >
                 ▣{" "}
               </span>{" "}
-              <span style={{ fg: theme.text }}>{Locale.titlecase(props.message.mode)}</span>
+              <span style={{ fg: theme.text }}>
+                {displayRunOnlyModeLabel({
+                  frameworkMode: ctx.frameworkMode(),
+                  mode: props.message.mode,
+                })}
+              </span>
               <span style={{ fg: theme.textMuted }}> · {model()}</span>
               <Show when={duration()}>
                 <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>

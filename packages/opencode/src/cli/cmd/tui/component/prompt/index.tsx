@@ -12,7 +12,6 @@ import { useSDK } from "@tui/context/sdk"
 import { useRoute } from "@tui/context/route"
 import { useSync } from "@tui/context/sync"
 import { MessageID, PartID } from "@/session/schema"
-import { displayAgentName } from "@/agent/display"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { useKeybind } from "@tui/context/keybind"
 import { usePromptHistory, type PromptInfo } from "./history"
@@ -48,6 +47,7 @@ import {
   shouldOpenAgencyAuthDialog,
 } from "../../session-error"
 import { errorMessage as toErrorMessage } from "@/util/error"
+import { displayRunOnlyAgentLabel } from "../../util/agency-target"
 
 export type PromptProps = {
   sessionID?: string
@@ -135,6 +135,14 @@ export function Prompt(props: PromptProps) {
   const [auto, setAuto] = createSignal<AutocompleteRef>()
   const activeOrgName = createMemo(() => sync.data.console_state.activeOrgName)
   const canSwitchOrgs = createMemo(() => sync.data.console_state.switchableOrgCount > 1)
+  const frameworkMode = createMemo(() =>
+    isAgencySwarmFrameworkMode({
+      currentProviderID: local.model.current()?.providerID,
+      configuredModel: sync.data.config.model,
+      agentModel: local.agent.current()?.model,
+    }),
+  )
+  const effectiveAgentName = createMemo(() => (frameworkMode() ? "build" : local.agent.current().name))
   const currentProviderLabel = createMemo(() => {
     const current = local.model.current()
     const provider = local.model.parsed().provider
@@ -338,16 +346,8 @@ export function Prompt(props: PromptProps) {
         slash: {
           name: "editor",
         },
-        enabled: !isAgencySwarmFrameworkMode({
-          currentProviderID: local.model.current()?.providerID,
-          configuredModel: sync.data.config.model,
-          agentModel: local.agent.current()?.model,
-        }),
-        hidden: isAgencySwarmFrameworkMode({
-          currentProviderID: local.model.current()?.providerID,
-          configuredModel: sync.data.config.model,
-          agentModel: local.agent.current()?.model,
-        }),
+        enabled: !frameworkMode(),
+        hidden: frameworkMode(),
         onSelect: async (dialog) => {
           dialog.clear()
 
@@ -784,7 +784,7 @@ export function Prompt(props: PromptProps) {
     if (store.mode === "shell") {
       sdk.client.session.shell({
         sessionID,
-        agent: local.agent.current().name,
+        agent: effectiveAgentName(),
         model: {
           providerID: selectedModel.providerID,
           modelID: selectedModel.modelID,
@@ -802,7 +802,7 @@ export function Prompt(props: PromptProps) {
         sessionID,
         command: command.slice(1),
         arguments: args,
-        agent: local.agent.current().name,
+        agent: effectiveAgentName(),
         model: `${selectedModel.providerID}/${selectedModel.modelID}`,
         messageID,
         variant,
@@ -820,7 +820,7 @@ export function Prompt(props: PromptProps) {
           sessionID,
           ...selectedModel,
           messageID,
-          agent: local.agent.current().name,
+          agent: effectiveAgentName(),
           model: selectedModel,
           variant,
           parts: [
@@ -1269,7 +1269,12 @@ export function Prompt(props: PromptProps) {
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
               <box flexDirection="row" gap={1}>
                 <text fg={highlight()}>
-                  {store.mode === "shell" ? "Shell" : displayAgentName(local.agent.current().name)}{" "}
+                  {store.mode === "shell"
+                    ? "Shell"
+                    : displayRunOnlyAgentLabel({
+                        frameworkMode: frameworkMode(),
+                        localAgentName: effectiveAgentName(),
+                      })}{" "}
                 </text>
                 <Show when={store.mode === "normal"}>
                   <box flexDirection="row" gap={1}>
@@ -1432,7 +1437,8 @@ export function Prompt(props: PromptProps) {
                     </Match>
                     <Match when={true}>
                       <text fg={theme.text}>
-                        {keybind.print("agent_cycle")} <span style={{ fg: theme.textMuted }}>agents</span>
+                        {keybind.print("agent_cycle")}{" "}
+                        <span style={{ fg: theme.textMuted }}>{frameworkMode() ? "recipients" : "agents"}</span>
                       </text>
                     </Match>
                   </Switch>
