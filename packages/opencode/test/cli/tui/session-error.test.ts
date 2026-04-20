@@ -1006,32 +1006,47 @@ describe("describeStreamAuthError", () => {
   test("detects missing Anthropic key from LiteLLM message", () => {
     const msg =
       "litellm.AuthenticationError: Missing Anthropic API Key - A call is being made to anthropic but no key is set either in the environment variables or via params. Please set `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` in your environment vars"
-    expect(describeStreamAuthError(msg)).toBe("Missing anthropic API key. Run /auth to add it.")
+    expect(describeStreamAuthError(msg)).toBe("anthropic API key required. Run /auth to add it.")
   })
 
   test("detects missing OpenAI key", () => {
     const msg = "AuthenticationError: Missing OpenAI API Key"
-    expect(describeStreamAuthError(msg)).toBe("Missing openai API key. Run /auth to add it.")
+    expect(describeStreamAuthError(msg)).toBe("openai API key required. Run /auth to add it.")
+  })
+
+  test("detects missing key from env-var hints in error text", () => {
+    const msg = "litellm.AuthenticationError: Please set OPENAI_API_KEY before retrying."
+    expect(describeStreamAuthError(msg)).toBe("openai API key required. Run /auth to add it.")
   })
 
   test("detects rejected key via incorrect_api_key code", () => {
     const msg =
       'litellm.AuthenticationError: OpenAIException - {"error":{"message":"Incorrect API key","code":"incorrect_api_key"}}'
-    expect(describeStreamAuthError(msg)).toBe("API key rejected. Run /auth to update it.")
+    expect(describeStreamAuthError(msg)).toBe("API key was rejected. Run /auth to update it.")
   })
 
   test("detects rejected key via invalid_api_key code", () => {
     const msg = 'AuthenticationError: {"error":{"code":"invalid_api_key"}}'
-    expect(describeStreamAuthError(msg)).toBe("API key rejected. Run /auth to update it.")
+    expect(describeStreamAuthError(msg)).toBe("API key was rejected. Run /auth to update it.")
+  })
+
+  test("detects rejected key via Invalid API key for provider", () => {
+    const msg = "Error: Invalid API key for Anthropic"
+    expect(describeStreamAuthError(msg)).toBe("anthropic API key was rejected. Run /auth to update it.")
+  })
+
+  test("detects rejected key via LiteLLM AuthenticationError marker", () => {
+    const msg = "litellm.AuthenticationError: upstream credential rejected the request"
+    expect(describeStreamAuthError(msg)).toBe("API key was rejected. Run /auth to update it.")
   })
 
   test("falls back to generic missing hint when provider unknown", () => {
     const msg = "no key is set"
-    expect(describeStreamAuthError(msg)).toBe("Missing API key. Run /auth to add it.")
+    expect(describeStreamAuthError(msg)).toBe("API key required. Run /auth to add it.")
   })
 
   test("prioritizes missing over rejected when both patterns appear", () => {
-    const msg = "AuthenticationError: Missing Anthropic API Key"
-    expect(describeStreamAuthError(msg)).toBe("Missing anthropic API key. Run /auth to add it.")
+    const msg = "litellm.AuthenticationError: Missing Anthropic API Key"
+    expect(describeStreamAuthError(msg)).toBe("anthropic API key required. Run /auth to add it.")
   })
 })

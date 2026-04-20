@@ -253,15 +253,20 @@ export function describeAgencyAuthFailure(message: string) {
 
 /** Detects an explicit API-key failure from a stream error and returns a short actionable hint,
  *  or null when the message does not name an API-key problem. Only unambiguous API-key signals
- *  are matched: the generic `AuthenticationError` marker is intentionally ignored so that OAuth,
- *  bearer-token, and env-credential failures keep their original backend remediation text. */
+ *  are matched: the generic `AuthenticationError` marker is ignored unless LiteLLM or provider
+ *  key markers make the API-key failure explicit. */
 export function describeStreamAuthError(message: string): string | null {
-  const isMissing = /Missing.*API.{0,10}Key|api key not found|no key is set/i.test(message)
-  const isRejected = /incorrect_api_key|invalid_api_key/i.test(message) && !isMissing
+  const hasEnvVarHint = /\b(?:ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|OPENAI_API_KEY)\b/i.test(message)
+  const isMissing = /Missing.*API.{0,10}Key|api key not found|no key is set/i.test(message) || hasEnvVarHint
+  const isRejected =
+    /incorrect_api_key|invalid_api_key|Invalid API key for\s+\w[\w-]+|litellm\.AuthenticationError/i.test(message) &&
+    !isMissing
   if (!isMissing && !isRejected) return null
-  const match = message.match(/call.*?to\s+(\w[\w-]+)|Missing\s+(\w[\w-]+)\s+API/i)
-  const provider = (match?.[1] ?? match?.[2] ?? "").toLowerCase()
+  const match = message.match(
+    /call.*?to\s+(\w[\w-]+)|Missing\s+(\w[\w-]+)\s+API|Invalid\s+API\s+key\s+for\s+(\w[\w-]+)|\b(ANTHROPIC|OPENAI)(?:_API_KEY|_AUTH_TOKEN)\b/i,
+  )
+  const provider = (match?.[1] ?? match?.[2] ?? match?.[3] ?? match?.[4] ?? "").toLowerCase()
   const subject = provider ? `${provider} API key` : "API key"
-  if (isMissing) return `Missing ${subject}. Run /auth to add it.`
-  return `${subject.charAt(0).toUpperCase()}${subject.slice(1)} rejected. Run /auth to update it.`
+  if (isMissing) return `${subject} required. Run /auth to add it.`
+  return `${subject} was rejected. Run /auth to update it.`
 }
