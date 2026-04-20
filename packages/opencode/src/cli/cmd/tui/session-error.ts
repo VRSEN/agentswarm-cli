@@ -251,15 +251,17 @@ export function describeAgencyAuthFailure(message: string) {
   return message
 }
 
-/** Detects a stream-level API key failure (e.g. LiteLLM AuthenticationError) and returns a short
- *  actionable hint, or null when the message is not an auth error. */
+/** Detects an explicit API-key failure from a stream error and returns a short actionable hint,
+ *  or null when the message does not name an API-key problem. Only unambiguous API-key signals
+ *  are matched: the generic `AuthenticationError` marker is intentionally ignored so that OAuth,
+ *  bearer-token, and env-credential failures keep their original backend remediation text. */
 export function describeStreamAuthError(message: string): string | null {
   const isMissing = /Missing.*API.{0,10}Key|api key not found|no key is set/i.test(message)
-  const isRejected = /incorrect_api_key|invalid_api_key|AuthenticationError/i.test(message) && !isMissing
+  const isRejected = /incorrect_api_key|invalid_api_key/i.test(message) && !isMissing
   if (!isMissing && !isRejected) return null
   const match = message.match(/call.*?to\s+(\w[\w-]+)|Missing\s+(\w[\w-]+)\s+API/i)
   const provider = (match?.[1] ?? match?.[2] ?? "").toLowerCase()
   const subject = provider ? `${provider} API key` : "API key"
-  if (isMissing) return `Missing ${subject} — run /auth to add it`
-  return `${subject.charAt(0).toUpperCase()}${subject.slice(1)} rejected — run /auth to update it`
+  if (isMissing) return `Missing ${subject}. Run /auth to add it.`
+  return `${subject.charAt(0).toUpperCase()}${subject.slice(1)} rejected. Run /auth to update it.`
 }
