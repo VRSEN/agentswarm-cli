@@ -1001,6 +1001,7 @@ describe("describeStreamAuthError", () => {
   test("returns null for generic AuthenticationError without a key-specific marker", () => {
     expect(describeStreamAuthError("AuthenticationError: token expired")).toBeNull()
     expect(describeStreamAuthError("AuthenticationError: oauth failed")).toBeNull()
+    expect(describeStreamAuthError("litellm.AuthenticationError: oauth failed")).toBeNull()
   })
 
   test("detects missing Anthropic key from LiteLLM message", () => {
@@ -1036,7 +1037,7 @@ describe("describeStreamAuthError", () => {
   })
 
   test("detects rejected key via LiteLLM AuthenticationError marker", () => {
-    const msg = "litellm.AuthenticationError: upstream credential rejected the request"
+    const msg = "litellm.AuthenticationError: API key rejected by upstream"
     expect(describeStreamAuthError(msg)).toBe("API key was rejected. Run /auth to update it.")
   })
 

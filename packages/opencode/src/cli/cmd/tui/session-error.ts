@@ -258,8 +258,9 @@ export function describeAgencyAuthFailure(message: string) {
 export function describeStreamAuthError(message: string): string | null {
   const hasEnvVarHint = /\b(?:ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|OPENAI_API_KEY)\b/i.test(message)
   const isMissing = /Missing.*API.{0,10}Key|api key not found|no key is set/i.test(message) || hasEnvVarHint
+  const hasLiteLLMAPIKeyHint = /litellm\.AuthenticationError/i.test(message) && /\bapi key\b/i.test(message)
   const isRejected =
-    /incorrect_api_key|invalid_api_key|Invalid API key for\s+\w[\w-]+|litellm\.AuthenticationError/i.test(message) &&
+    (/incorrect_api_key|invalid_api_key|Invalid API key for\s+\w[\w-]+/i.test(message) || hasLiteLLMAPIKeyHint) &&
     !isMissing
   if (!isMissing && !isRejected) return null
   const match = message.match(
