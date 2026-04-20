@@ -705,7 +705,7 @@ export function Prompt(props: PromptProps) {
     ) {
       toast.show({
         variant: "warning",
-        message: "Add a supported provider credential before sending a message",
+        message: "No provider credential is configured. Run /auth to add it.",
         duration: 4000,
       })
       dialog.replace(() => <DialogAuth />)

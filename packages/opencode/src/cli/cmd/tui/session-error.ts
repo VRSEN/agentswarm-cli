@@ -243,10 +243,10 @@ export function shouldOpenAgencyAuthDialog(input: { providerID?: string; message
 
 export function describeAgencyAuthFailure(message: string) {
   if (/missing provider credentials|client_config/i.test(message)) {
-    return "Add a supported provider credential before sending a message."
+    return "No provider credential is configured. Run /auth to add it."
   }
   if (/unauthori[sz]ed|forbidden|invalid api key|auth failed|\b401\b|\b403\b/i.test(message)) {
-    return "The current provider credential was rejected. Reconnect OpenAI or Anthropic and try again."
+    return "The current provider credential was rejected. Run /auth to update it."
   }
   return message
 }

@@ -203,6 +203,158 @@ describe("agency-swarm npx onboarding", () => {
     ])
   })
 
+  test("prepareProjectLaunch reruns the canary after rebuilding `.venv` and surfaces manifest import mismatches", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await Bun.write(path.join(dir.path, "requirements.txt"), "agency-swarm==0.0.0\n")
+    await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
+      recursive: true,
+    })
+    await Bun.write(
+      path.join(
+        dir.path,
+        ".venv",
+        process.platform === "win32" ? "Scripts" : "bin",
+        process.platform === "win32" ? "python.exe" : "python",
+      ),
+      "",
+    )
+
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+
+    const commands: string[][] = []
+    const canaryStderr = [
+      "Traceback (most recent call last):",
+      "ImportError: cannot import name 'LoadFileAttachment' from 'agency_swarm.tools.built_in'",
+    ].join("\n")
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        if (target.endsWith(process.platform === "win32" ? "\\python.exe" : "/python")) {
+          return {
+            exited: Promise.resolve(0),
+            stdout: `${target}\n3.12.7\n`,
+            stderr: "",
+          } as never
+        }
+        if (cmd[0] === "python3.12") {
+          return {
+            exited: Promise.resolve(0),
+            stdout: `/usr/bin/python3.12\n3.12.7\n`,
+            stderr: "",
+          } as never
+        }
+      }
+      if (cmd.includes("from agency_swarm.integrations.fastapi import run_fastapi")) {
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: canaryStderr,
+        } as never
+      }
+      if (cmd.includes("venv")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("pip")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    let error: Error | undefined
+    try {
+      await prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      })
+    } catch (caught) {
+      error = caught as Error
+    }
+
+    expect(error).toBeInstanceOf(Error)
+    if (!error) throw new Error("Expected prepareProjectLaunch to fail")
+    expect(error.message).toContain("Canary import failed. Check requirements.txt/pyproject.toml for agency-swarm version compatibility.")
+    expect(error.message).not.toContain("Canary import failed on fallback install.")
+    expect(error.message).toContain("LoadFileAttachment")
+
+    const canaryCommands = commands.filter((cmd) =>
+      cmd.includes("from agency_swarm.integrations.fastapi import run_fastapi"),
+    )
+    expect(canaryCommands).toHaveLength(2)
+  })
+
+  test("prepareProjectLaunch avoids manifest remediation after fallback install canary failures", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+
+    const canaryStderr = [
+      "Traceback (most recent call last):",
+      "ImportError: cannot import name 'LoadFileAttachment' from 'agency_swarm.tools.built_in'",
+    ].join("\n")
+
+    mockPrepareProjectLaunchCanaryFailure(canaryStderr)
+
+    await expect(
+      prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      }),
+    ).rejects.toThrow(
+      "Canary import failed on fallback install. Inspect the stderr below and check for project-local fastapi.py/agency_swarm.py that may shadow installed packages.",
+    )
+  })
+
+  test("prepareProjectLaunch names detected shadowing files in the canary remediation", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await Bun.write(path.join(dir.path, "requirements.txt"), "agency-swarm==1.9.1\n")
+    await Bun.write(path.join(dir.path, "fastapi.py"), "print('shadow')\n")
+    await Bun.write(path.join(dir.path, "agency_swarm.py"), "print('shadow')\n")
+
+    spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+
+    const canaryStderr = [
+      "Traceback (most recent call last):",
+      "ModuleNotFoundError: No module named 'agency_swarm.integrations.fastapi'; 'agency_swarm' is not a package",
+    ].join("\n")
+
+    mockPrepareProjectLaunchCanaryFailure(canaryStderr)
+
+    await expect(
+      prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      }),
+    ).rejects.toThrow(
+      "Detected project-local fastapi.py, agency_swarm.py that may shadow installed packages.",
+    )
+  })
+
   test("detectAgencyProject requires agency.py with create_agency", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
@@ -834,4 +986,50 @@ async function writeAgency(dir: string) {
       "    return Agency()",
     ].join("\n"),
   )
+}
+
+function mockPrepareProjectLaunchCanaryFailure(canaryStderr: string) {
+  spyOn(Bun, "spawn").mockImplementation((options: any) => {
+    const cmd = options?.cmd as string[] | undefined
+    if (!cmd) throw new Error("Missing command")
+    if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+      const target = cmd[0] ?? ""
+      if (target.endsWith(process.platform === "win32" ? "\\python.exe" : "/python")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (cmd[0] === "python3.12") {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "/usr/bin/python3.12\n3.12.7\n",
+          stderr: "",
+        } as never
+      }
+    }
+    if (cmd.includes("from agency_swarm.integrations.fastapi import run_fastapi")) {
+      return {
+        exited: Promise.resolve(1),
+        stdout: "",
+        stderr: canaryStderr,
+      } as never
+    }
+    if (cmd.includes("venv")) {
+      return {
+        exited: Promise.resolve(0),
+        stdout: "",
+        stderr: "",
+      } as never
+    }
+    if (cmd.includes("pip")) {
+      return {
+        exited: Promise.resolve(0),
+        stdout: "",
+        stderr: "",
+      } as never
+    }
+    throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+  })
 }

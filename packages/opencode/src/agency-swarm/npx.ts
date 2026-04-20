@@ -44,6 +44,15 @@ interface PythonInfo {
   version: string
 }
 
+interface VenvCanaryResult {
+  healthy: boolean
+  stderr: string
+}
+
+interface DependencyInstallResult extends CommandResult {
+  hadManifests: boolean
+}
+
 export function shouldRunNpxOnboarding(input: {
   env: NodeJS.ProcessEnv
   argv?: string[]
@@ -709,34 +718,90 @@ async function ensureProjectPython(directory: string) {
     spinner.stop("Dependency install failed")
     throw new Error(install.stderr.trim() || install.stdout.trim() || "Dependency install failed")
   }
+  const canary = await venvCanaryPasses([venvPython], { cwd: directory, includeStderr: true })
+  if (!canary.healthy) {
+    spinner.stop("Python environment unhealthy")
+    throw new Error(await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr))
+  }
   spinner.stop("Python environment ready")
   return [venvPython]
 }
 
-async function installProjectDependencies(directory: string, python: string[]) {
+async function installProjectDependencies(directory: string, python: string[]): Promise<DependencyInstallResult> {
   const requirements = path.join(directory, "requirements.txt")
   if (await Filesystem.exists(requirements)) {
-    return runCommand([...python, "-m", "pip", "install", "--upgrade", "-r", "requirements.txt"], {
+    const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "-r", "requirements.txt"], {
       cwd: directory,
     })
+    return { ...result, hadManifests: true }
   }
 
   const pyproject = path.join(directory, "pyproject.toml")
   if (await Filesystem.exists(pyproject)) {
-    return runCommand([...python, "-m", "pip", "install", "--upgrade", "-e", "."], {
+    const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "-e", "."], {
       cwd: directory,
     })
+    return { ...result, hadManifests: true }
   }
 
-  return runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.1"])
+  const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.1"])
+  return { ...result, hadManifests: false }
 }
 
-async function venvCanaryPasses(python: string[]) {
-  const result = await runCommand([
-    ...python,
-    "-c",
-    "from agency_swarm.integrations.fastapi import run_fastapi",
-  ])
+async function formatPostInstallCanaryFailure(directory: string, hadManifests: boolean, stderr: string) {
+  const summary = summarizeBridgeStderr(stderr)
+  const shadowingHint = await formatShadowingHint(directory)
+  if (isImportLikeCanaryFailure(stderr)) {
+    if (hadManifests) {
+      return summary
+        ? `Canary import failed. Check requirements.txt/pyproject.toml for agency-swarm version compatibility.${shadowingHint} Canary stderr: ${summary}`
+        : `Canary import failed. Check requirements.txt/pyproject.toml for agency-swarm version compatibility.${shadowingHint}`
+    }
+    return summary
+      ? `Canary import failed on fallback install. Inspect the stderr below and check for project-local fastapi.py/agency_swarm.py that may shadow installed packages.${shadowingHint} Canary stderr: ${summary}`
+      : `Canary import failed on fallback install. Inspect the stderr below and check for project-local fastapi.py/agency_swarm.py that may shadow installed packages.${shadowingHint}`
+  }
+  return summary
+    ? `Project \`.venv\` rebuilt successfully, but the Agency Swarm import canary still failed.${shadowingHint} Canary stderr: ${summary}`
+    : `Project \`.venv\` rebuilt successfully, but the Agency Swarm import canary still failed.${shadowingHint}`
+}
+
+function isImportLikeCanaryFailure(stderr: string) {
+  return /\b(?:ImportError|ModuleNotFoundError)\b/.test(stderr)
+}
+
+async function formatShadowingHint(directory: string) {
+  const shadowingFiles = await findProjectShadowingFiles(directory)
+  if (shadowingFiles.length === 0) return ""
+  return ` Detected project-local ${shadowingFiles.join(", ")} that may shadow installed packages.`
+}
+
+async function findProjectShadowingFiles(directory: string) {
+  const shadowingFiles = await Promise.all(
+    ["fastapi.py", "agency_swarm.py"].map(async (file) =>
+      (await Filesystem.exists(path.join(directory, file))) ? file : undefined,
+    ),
+  )
+  return shadowingFiles.flatMap((file) => (file ? [file] : []))
+}
+
+async function venvCanaryPasses(python: string[], options?: { cwd?: string }): Promise<boolean>
+async function venvCanaryPasses(python: string[], options: { cwd?: string; includeStderr: true }): Promise<VenvCanaryResult>
+async function venvCanaryPasses(python: string[], options?: { cwd?: string; includeStderr?: boolean }) {
+  // No cwd by default: the canary must not pick up project-local modules (e.g. `fastapi.py`
+  // sitting next to `agency.py`) that shadow installed packages and falsely flag a healthy
+  // .venv as broken. Callers that need the server-launch cwd (post-install verification)
+  // pass it explicitly.
+  const result = await runCommand(
+    [...python, "-c", "from agency_swarm.integrations.fastapi import run_fastapi"],
+    options?.cwd ? { cwd: options.cwd } : undefined,
+  )
+  if (options?.includeStderr) {
+    return {
+      healthy: result.code === 0,
+      stderr: result.stderr,
+    }
+  }
   return result.code === 0
 }
 
