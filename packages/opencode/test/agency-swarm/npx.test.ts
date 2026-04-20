@@ -296,7 +296,7 @@ describe("agency-swarm npx onboarding", () => {
 
     const canaryStderr = [
       "Traceback (most recent call last):",
-      "ImportError: cannot import name 'run_fastapi' from 'agency_swarm.integrations.fastapi'",
+      "ModuleNotFoundError: No module named 'agency_swarm.integrations.fastapi'; 'agency_swarm' is not a package",
     ].join("\n")
 
     mockPrepareProjectLaunchCanaryFailure(canaryStderr)

@@ -675,7 +675,7 @@ async function installProjectDependencies(directory: string, python: string[]): 
 async function formatPostInstallCanaryFailure(directory: string, hadManifests: boolean, stderr: string) {
   const summary = summarizeBridgeStderr(stderr)
   const shadowingHint = await formatShadowingHint(directory)
-  if (/\bImportError\b/.test(stderr)) {
+  if (isImportLikeCanaryFailure(stderr)) {
     if (hadManifests) {
       return summary
         ? `Canary import failed. Check requirements.txt/pyproject.toml for agency-swarm version compatibility.${shadowingHint} Canary stderr: ${summary}`
@@ -688,6 +688,10 @@ async function formatPostInstallCanaryFailure(directory: string, hadManifests: b
   return summary
     ? `Project \`.venv\` rebuilt successfully, but the Agency Swarm import canary still failed.${shadowingHint} Canary stderr: ${summary}`
     : `Project \`.venv\` rebuilt successfully, but the Agency Swarm import canary still failed.${shadowingHint}`
+}
+
+function isImportLikeCanaryFailure(stderr: string) {
+  return /\b(?:ImportError|ModuleNotFoundError)\b/.test(stderr)
 }
 
 async function formatShadowingHint(directory: string) {
