@@ -829,13 +829,10 @@ export function Prompt(props: PromptProps) {
           clearTimeout(navigateTimer)
           navigateTimer = undefined
         }
-        if (createdSessionID) {
-          route.navigate({ type: "home" })
-          if (shouldReopenAuth) {
-            void sdk.client.session.delete({
-              sessionID: createdSessionID,
-            })
-          }
+        if (createdSessionID && shouldReopenAuth) {
+          void sdk.client.session.delete({
+            sessionID: createdSessionID,
+          })
         }
         if (shouldReopenAuth) {
           toast.show({
