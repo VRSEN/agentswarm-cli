@@ -171,7 +171,7 @@ export namespace SessionAgencySwarm {
         })
       : undefined
     const generated =
-      !explicitUpstreamBaseURL && shouldStripCodexOAuth(sessionLitellmModel, rawGenerated)
+      !explicitUpstreamBaseURL && shouldStripCodexOAuth(sessionLitellmModel, rawGenerated, explicit)
         ? stripCodexOAuthForNonOpenAI(rawGenerated)
         : rawGenerated
     if (!config) {
@@ -337,9 +337,9 @@ export namespace SessionAgencySwarm {
    * agency-swarm server will route at least one agent through LiteLLM for a provider where the
    * Codex OAuth `base_url` would break Messages API calls.
    */
-  function hasNonOpenAILitellmKey(generated: Record<string, unknown> | undefined): boolean {
-    if (!generated) return false
-    const keys = asRecord(generated["litellm_keys"])
+  function hasNonOpenAILitellmKey(src: Record<string, unknown> | undefined): boolean {
+    if (!src) return false
+    const keys = asRecord(src["litellm_keys"]) ?? asRecord(src["litellmKeys"])
     if (!keys) return false
     return Object.entries(keys).some(
       ([provider, value]) =>
@@ -350,17 +350,19 @@ export namespace SessionAgencySwarm {
   /**
    * Strip the Codex OAuth triplet when either the session override is non-OpenAI
    * (explicit user intent to route non-OpenAI), or no session override exists and the
-   * generated payload carries a non-OpenAI LiteLLM key (framework mode — agent-level
-   * non-OpenAI routing is possible). A session model that is explicitly OpenAI-based
-   * keeps the OAuth triplet so the forced OpenAI override still authenticates.
+   * generated payload or the user's explicit `client_config.litellm_keys` carries a
+   * non-OpenAI LiteLLM key (framework mode — agent-level non-OpenAI routing is possible).
+   * A session model that is explicitly OpenAI-based keeps the OAuth triplet so the
+   * forced OpenAI override still authenticates.
    */
   function shouldStripCodexOAuth(
     sessionLitellmModel: string | undefined,
     generated: Record<string, unknown> | undefined,
+    explicit: Record<string, unknown> | undefined,
   ): boolean {
     if (!isOpenAIBasedLitellmModel(sessionLitellmModel)) return true
     if (sessionLitellmModel) return false
-    return hasNonOpenAILitellmKey(generated)
+    return hasNonOpenAILitellmKey(generated) || hasNonOpenAILitellmKey(explicit)
   }
 
   /**
