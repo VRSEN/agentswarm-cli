@@ -246,6 +246,9 @@ export function DialogAuth() {
   const dialog = useDialog()
   const sync = useSync()
   const local = useLocal()
+  useKeyboard((evt) => {
+    closeDialogAuthOnEscape(dialog, evt)
+  })
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
       currentProviderID: local.model.current()?.providerID,
@@ -287,6 +290,21 @@ export function DialogAuth() {
   return (
     <DialogSelect title={frameworkMode() ? "Manage Agent Swarm auth" : "Manage provider auth"} options={options()} />
   )
+}
+
+export function closeDialogAuthOnEscape(
+  dialog: Pick<ReturnType<typeof useDialog>, "clear">,
+  evt: {
+    name?: string
+    preventDefault(): void
+    stopPropagation(): void
+  },
+) {
+  if (evt.name !== "escape") return false
+  evt.preventDefault()
+  evt.stopPropagation()
+  dialog.clear()
+  return true
 }
 
 /** After auth in Agency Swarm mode, offer model selection (CLI model drives `client_config` for that provider). */
