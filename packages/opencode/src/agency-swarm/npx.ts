@@ -570,7 +570,7 @@ async function ensureProjectPython(directory: string) {
       if (!corruptedVenv) {
         let healthy = false
         try {
-          healthy = await venvCanaryPasses([venvPython], { cwd: directory })
+          healthy = await venvCanaryPasses([venvPython])
         } catch {
           healthy = false
         }
@@ -671,14 +671,18 @@ async function installProjectDependencies(directory: string, python: string[]) {
   return runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.1"])
 }
 
-async function venvCanaryPasses(python: string[], options: { cwd: string }): Promise<boolean>
-async function venvCanaryPasses(python: string[], options: { cwd: string; includeStderr: true }): Promise<VenvCanaryResult>
-async function venvCanaryPasses(python: string[], options: { cwd: string; includeStderr?: boolean }) {
+async function venvCanaryPasses(python: string[], options?: { cwd?: string }): Promise<boolean>
+async function venvCanaryPasses(python: string[], options: { cwd?: string; includeStderr: true }): Promise<VenvCanaryResult>
+async function venvCanaryPasses(python: string[], options?: { cwd?: string; includeStderr?: boolean }) {
+  // No cwd by default: the canary must not pick up project-local modules (e.g. `fastapi.py`
+  // sitting next to `agency.py`) that shadow installed packages and falsely flag a healthy
+  // .venv as broken. Callers that need the server-launch cwd (post-install verification)
+  // pass it explicitly.
   const result = await runCommand(
     [...python, "-c", "from agency_swarm.integrations.fastapi import run_fastapi"],
-    { cwd: options.cwd },
+    options?.cwd ? { cwd: options.cwd } : undefined,
   )
-  if (options.includeStderr) {
+  if (options?.includeStderr) {
     return {
       healthy: result.code === 0,
       stderr: result.stderr,
