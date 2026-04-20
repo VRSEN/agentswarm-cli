@@ -68,6 +68,7 @@ import {
   shouldOpenAgencyConnectDialog,
   shouldOpenStartupAuthDialog,
 } from "./session-error"
+import { buildAgencyTargetOptions, cycleAgencyTargetSelection, readAgencyProviderOptions } from "./util/agency-target"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
   // can't set raw mode if not a TTY
@@ -478,6 +479,85 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       agentModel: local.agent.current()?.model,
     }),
   )
+  const agencyProviderOptions = createMemo(() =>
+    readAgencyProviderOptions({
+      configuredProvider: sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID],
+      connectedProvider: sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID),
+    }),
+  )
+
+  createEffect(() => {
+    if (!frameworkMode()) return
+    if (local.agent.current().name === "build") return
+    local.agent.set("build")
+  })
+
+  async function setAgencyRunTarget(input: {
+    agency: string
+    recipientAgent?: string | null
+    label: string
+  }) {
+    const nextOptions = buildAgencyTargetOptions({
+      providerOptions: agencyProviderOptions(),
+      agency: input.agency,
+      recipientAgent: input.recipientAgent ?? null,
+    })
+
+    await sdk.client.global.config.update(
+      {
+        config: {
+          model: `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
+          provider: {
+            [AgencySwarmAdapter.PROVIDER_ID]: {
+              name: "agency-swarm",
+              options: nextOptions,
+            },
+          },
+        },
+      },
+      {
+        throwOnError: true,
+      },
+    )
+
+    await sdk.client.instance.dispose()
+    await sync.bootstrap()
+    toast.show({
+      variant: "info",
+      message: `Run target: ${input.label}`,
+      duration: 2000,
+    })
+  }
+
+  async function cycleAgencyRunTarget(direction: 1 | -1) {
+    const providerOptions = agencyProviderOptions()
+    const discovered = await AgencySwarmAdapter.discover({
+      baseURL: providerOptions.baseURL,
+      token: providerOptions.token,
+      timeoutMs: providerOptions.discoveryTimeoutMs,
+    })
+    const next = cycleAgencyTargetSelection({
+      agencies: discovered.agencies,
+      configuredAgency: providerOptions.agency,
+      configuredRecipient: providerOptions.recipientAgent,
+      direction,
+    })
+
+    if (!next) {
+      toast.show({
+        variant: "warning",
+        message:
+          !providerOptions.agency && discovered.agencies.length > 1
+            ? "Select an agency first with /agents"
+            : "No recipient agents are available to cycle",
+        duration: 3000,
+      })
+      return
+    }
+
+    await setAgencyRunTarget(next)
+  }
+
   command.register(() => [
     {
       title: "Switch session",
@@ -587,7 +667,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
     },
     {
-      title: "Switch agent",
+      title: frameworkMode() ? "Switch run target" : "Switch agent",
       value: "agent.list",
       keybind: "agent_list",
       category: "Agent",
@@ -610,12 +690,22 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
     },
     {
-      title: "Agent cycle",
+      title: frameworkMode() ? "Run target cycle" : "Agent cycle",
       value: "agent.cycle",
       keybind: "agent_cycle",
       category: "Agent",
       hidden: true,
       onSelect: () => {
+        if (frameworkMode()) {
+          void cycleAgencyRunTarget(1).catch((error) => {
+            toast.show({
+              variant: "error",
+              message: error instanceof Error ? error.message : String(error),
+              duration: 4000,
+            })
+          })
+          return
+        }
         local.agent.move(1)
       },
     },
@@ -645,12 +735,22 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
     },
     {
-      title: "Agent cycle reverse",
+      title: frameworkMode() ? "Run target cycle reverse" : "Agent cycle reverse",
       value: "agent.cycle.reverse",
       keybind: "agent_cycle_reverse",
       category: "Agent",
       hidden: true,
       onSelect: () => {
+        if (frameworkMode()) {
+          void cycleAgencyRunTarget(-1).catch((error) => {
+            toast.show({
+              variant: "error",
+              message: error instanceof Error ? error.message : String(error),
+              duration: 4000,
+            })
+          })
+          return
+        }
         local.agent.move(-1)
       },
     },

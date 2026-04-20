@@ -9,6 +9,7 @@ import { useToast } from "@tui/ui/toast"
 import { createMemo, createResource } from "solid-js"
 import { DialogAgencySwarmConnect } from "./dialog-provider"
 import { isAgencySwarmFrameworkMode } from "../session-error"
+import { buildAgencyTargetOptions, readAgencyProviderOptions, resolveAgencyTargetSelection } from "../util/agency-target"
 
 type AgentOptionValue =
   | {
@@ -45,29 +46,10 @@ export function DialogAgent() {
   )
 
   const providerOptions = createMemo(() => {
-    const provider = sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID]
-    const connected = sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID)
-    const options = provider?.options
-    const baseURL =
-      readString(options?.["baseURL"]) ?? readString(options?.["base_url"]) ?? AgencySwarmAdapter.DEFAULT_BASE_URL
-    const configToken = readString(options?.["token"])
-    const token = readString(connected?.key) ?? configToken
-    const agency = readString(options?.["agency"])
-    const recipientAgent = readString(options?.["recipientAgent"]) ?? readString(options?.["recipient_agent"])
-    const discoveryTimeoutMs =
-      readPositiveNumber(options?.["discoveryTimeoutMs"]) ??
-      readPositiveNumber(options?.["discovery_timeout_ms"]) ??
-      AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS
-
-    return {
-      baseURL: AgencySwarmAdapter.normalizeBaseURL(baseURL),
-      token,
-      configToken,
-      agency,
-      recipientAgent,
-      discoveryTimeoutMs,
-      rawOptions: (options && typeof options === "object" ? options : {}) as Record<string, unknown>,
-    }
+    return readAgencyProviderOptions({
+      configuredProvider: sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID],
+      connectedProvider: sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID),
+    })
   })
 
   const discoveryInput = createMemo(() => {
@@ -205,21 +187,23 @@ export function DialogAgent() {
       }
     }
 
-    const configuredAgency = providerOptions().agency
-    const configuredRecipient = providerOptions().recipientAgent
-
-    if (configuredAgency && configuredRecipient) {
+    const selected = resolveAgencyTargetSelection({
+      agencies: discovery()?.agencies ?? [],
+      configuredAgency: providerOptions().agency,
+      configuredRecipient: providerOptions().recipientAgent,
+    })
+    if (selected) {
       return {
         kind: "recipient",
-        agency: configuredAgency,
-        recipientAgent: configuredRecipient,
+        agency: selected.agency,
+        recipientAgent: selected.recipientAgent,
       }
     }
 
-    if (configuredAgency) {
+    if (providerOptions().agency) {
       return {
         kind: "agency",
-        agency: configuredAgency,
+        agency: providerOptions().agency!,
       }
     }
 
@@ -256,16 +240,11 @@ export function DialogAgent() {
 
   async function setAgencySwarmTarget(value: Extract<AgentOptionValue, { kind: "agency" | "recipient" }>) {
     const options = providerOptions()
-    const nextOptions: Record<string, unknown> = {
-      ...options.rawOptions,
-      baseURL: options.baseURL,
-      discoveryTimeoutMs: options.discoveryTimeoutMs,
+    const nextOptions = buildAgencyTargetOptions({
+      providerOptions: options,
       agency: value.agency,
       recipientAgent: value.kind === "recipient" ? value.recipientAgent : null,
-    }
-    if (options.configToken) {
-      nextOptions["token"] = options.configToken
-    }
+    })
 
     await sdk.client.global.config.update(
       {
@@ -298,17 +277,4 @@ export function DialogAgent() {
       duration: 3000,
     })
   }
-}
-
-function readString(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined
-  const trimmed = value.trim()
-  return trimmed ? trimmed : undefined
-}
-
-function readPositiveNumber(value: unknown): number | undefined {
-  if (typeof value !== "number") return undefined
-  if (!Number.isFinite(value)) return undefined
-  if (value <= 0) return undefined
-  return value
 }
