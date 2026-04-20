@@ -4,10 +4,10 @@ import { useSync } from "@tui/context/sync"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { useDialog } from "@tui/ui/dialog"
-import { createDialogProviderOptions, DialogProvider } from "./dialog-provider"
+import { createDialogProviderOptions, createDialogProviderOptionsWithFilter, DialogProvider } from "./dialog-provider"
 import { DialogVariant } from "./dialog-variant"
 import { useKeybind } from "../context/keybind"
-import { hasUsableProvider } from "../session-error"
+import { hasUsableProvider, isAgencySupportedProvider, isAgencySwarmFrameworkMode } from "../session-error"
 import * as fuzzysort from "fuzzysort"
 import { consoleManagedProviderLabel } from "@tui/util/provider-origin"
 
@@ -24,7 +24,27 @@ export function DialogModel(props: { providerID?: string }) {
   const [query, setQuery] = createSignal("")
 
   const connected = useConnected()
-  const providers = createDialogProviderOptions()
+  const frameworkMode = isAgencySwarmFrameworkMode({
+    currentProviderID: local.model.current()?.providerID,
+    configuredModel: sync.data.config.model,
+    agentModel: local.agent.current()?.model,
+  })
+  // In Agent Swarm framework mode, restrict `/models` to the agency-supported set
+  // so users cannot pick a provider the send guard (`shouldBlockAgencyPromptSubmit`)
+  // would immediately block.
+  const agencyProviderIDs = frameworkMode
+    ? sync.data.provider_next.all
+        .filter((provider) => isAgencySupportedProvider(provider.id))
+        .map((provider) => provider.id)
+    : undefined
+  const providers = frameworkMode
+    ? createDialogProviderOptionsWithFilter({ providerIDs: agencyProviderIDs })
+    : createDialogProviderOptions()
+  const enabledProviders = createMemo(() =>
+    frameworkMode
+      ? sync.data.provider.filter((provider) => isAgencySupportedProvider(provider.id))
+      : sync.data.provider,
+  )
 
   const showExtra = createMemo(() => connected() && !props.providerID)
 
@@ -37,7 +57,7 @@ export function DialogModel(props: { providerID?: string }) {
     function toOptions(items: typeof favorites, category: string) {
       if (!showSections) return []
       return items.flatMap((item) => {
-        const provider = sync.data.provider.find((x) => x.id === item.providerID)
+        const provider = enabledProviders().find((x) => x.id === item.providerID)
         if (!provider) return []
         const model = provider.models[item.modelID]
         if (!model) return []
@@ -71,7 +91,7 @@ export function DialogModel(props: { providerID?: string }) {
     )
 
     const providerOptions = pipe(
-      sync.data.provider,
+      enabledProviders(),
       sortBy(
         (provider) => provider.id !== "opencode",
         (provider) => provider.name,

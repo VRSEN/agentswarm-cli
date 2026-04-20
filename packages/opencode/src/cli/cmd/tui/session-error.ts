@@ -6,6 +6,18 @@ import type { Provider, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 
 export const AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS = ["openai", "anthropic"] as const
 
+/**
+ * True when a provider id is usable in Agent Swarm framework mode: either the
+ * `agency-swarm` provider itself or one of the primary upstream auth providers
+ * (`AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS`) that `shouldBlockAgencyPromptSubmit`
+ * actually accepts. Surfaces like `/models` use this to avoid dead-end selections
+ * the send guard would immediately block.
+ */
+export function isAgencySupportedProvider(providerID: string) {
+  if (providerID === AgencySwarmAdapter.PROVIDER_ID) return true
+  return (AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS as readonly string[]).includes(providerID)
+}
+
 type ProviderAuthMap = Record<string, ProviderAuthMethod[]>
 type AuthProvider = {
   id: string
