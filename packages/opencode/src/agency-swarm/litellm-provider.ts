@@ -204,9 +204,11 @@ export function normalizeExplicitClientConfigModel(raw: string): string {
   return t
 }
 
+// TODO(agency-swarm#629): remove after upstream scopes config.base_url per-provider.
 /** Mirrors agency-swarm `_is_openai_based_litellm_provider` (endpoint_handlers.py:1384). */
 export const OPENAI_BASED_LITELLM_PROVIDERS = new Set(["openai", "azure", "azure_ai", "openai_compatible"])
 
+// TODO(agency-swarm#629): remove after upstream scopes config.base_url per-provider.
 /**
  * True when `sessionLitellmModel` routes through an OpenAI-compatible LiteLLM provider,
  * matching agency-swarm's `_is_openai_based_litellm_provider`. Bare model ids (no provider segment)

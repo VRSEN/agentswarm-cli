@@ -332,6 +332,7 @@ export namespace SessionAgencySwarm {
     return value.replace(/\/+$/, "") === CODEX_API_BASE_URL
   }
 
+  // TODO(agency-swarm#629): remove after upstream scopes config.base_url per-provider.
   /**
    * True when `litellm_keys` holds a credential for any non-OpenAI-based provider. Signals that the
    * agency-swarm server will route at least one agent through LiteLLM for a provider where the
@@ -347,6 +348,7 @@ export namespace SessionAgencySwarm {
     )
   }
 
+  // TODO(agency-swarm#629): remove after upstream scopes config.base_url per-provider.
   /**
    * Strip the Codex OAuth triplet when either the session override is non-OpenAI
    * (explicit user intent to route non-OpenAI), or no session override exists and the
@@ -365,6 +367,7 @@ export namespace SessionAgencySwarm {
     return hasNonOpenAILitellmKey(generated) || hasNonOpenAILitellmKey(explicit)
   }
 
+  // TODO(agency-swarm#629): remove after upstream scopes config.base_url per-provider.
   /**
    * Drop the Codex OAuth triplet (`base_url` + `api_key` + `ChatGPT-Account-Id`) from the generated payload
    * so a non-OpenAI LiteLLM session (anthropic, gemini, ...) does not inherit ChatGPT's OAuth endpoint.
