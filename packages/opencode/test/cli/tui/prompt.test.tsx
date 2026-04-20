@@ -7,6 +7,7 @@ import * as AutocompleteModule from "../../../src/cli/cmd/tui/component/prompt/a
 import * as CommandDialogModule from "../../../src/cli/cmd/tui/component/dialog-command"
 import type { PromptRef } from "../../../src/cli/cmd/tui/component/prompt"
 import * as ExitContext from "../../../src/cli/cmd/tui/context/exit"
+import * as AgencySwarmConnectionContext from "../../../src/cli/cmd/tui/context/agency-swarm-connection"
 import * as KeybindContext from "../../../src/cli/cmd/tui/context/keybind"
 import * as KVContext from "../../../src/cli/cmd/tui/context/kv"
 import * as LocalContext from "../../../src/cli/cmd/tui/context/local"
@@ -115,6 +116,14 @@ describe("prompt auth rejection handling", () => {
         },
       }) as any,
     )
+    spyOn(AgencySwarmConnectionContext, "useAgencySwarmConnection").mockReturnValue({
+      requiresReconnect: () => false,
+      openConnectDialog: () => false,
+      status: () => "connected",
+      baseURL: () => undefined,
+      failureCount: () => 0,
+      frameworkMode: () => true,
+    } as any)
     spyOn(KeybindContext, "useKeybind").mockReturnValue({
       leader: false,
       match: () => false,
