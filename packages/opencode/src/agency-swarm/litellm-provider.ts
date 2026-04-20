@@ -204,6 +204,24 @@ export function normalizeExplicitClientConfigModel(raw: string): string {
   return t
 }
 
+/** Mirrors agency-swarm `_is_openai_based_litellm_provider` (endpoint_handlers.py:1384). */
+export const OPENAI_BASED_LITELLM_PROVIDERS = new Set(["openai", "azure", "azure_ai", "openai_compatible"])
+
+/**
+ * True when `sessionLitellmModel` routes through an OpenAI-compatible LiteLLM provider,
+ * matching agency-swarm's `_is_openai_based_litellm_provider`. Bare model ids (no provider segment)
+ * are treated as OpenAI upstream. Non-OpenAI providers (anthropic, gemini, bedrock, ...) return false.
+ */
+export function isOpenAIBasedLitellmModel(sessionLitellmModel: string | undefined): boolean {
+  if (!sessionLitellmModel) return true
+  const t = sessionLitellmModel.trim()
+  if (!t) return true
+  const name = t.startsWith("litellm/") ? t.slice("litellm/".length) : t
+  const slash = name.indexOf("/")
+  if (slash === -1) return true
+  return OPENAI_BASED_LITELLM_PROVIDERS.has(name.slice(0, slash))
+}
+
 /**
  * Build `client_config.model` from the CLI session selection.
  * OpenAI models use the bare model id only (e.g. `gpt-4o`). Other providers use `litellm/<provider>/<model>`.

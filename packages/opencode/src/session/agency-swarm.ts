@@ -9,8 +9,10 @@ import { Flag } from "@/flag/flag"
 import { AgencySwarmHistory } from "@/agency-swarm/history"
 import {
   buildLitellmModelForClientConfig,
+  isOpenAIBasedLitellmModel,
   mapProviderIDToLiteLLMProvider,
   normalizeExplicitClientConfigModel,
+  OPENAI_BASED_LITELLM_PROVIDERS,
 } from "@/agency-swarm/litellm-provider"
 import { Auth } from "@/auth"
 import { Env } from "@/env"
@@ -161,13 +163,17 @@ export namespace SessionAgencySwarm {
       Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS ||
       forwardUpstreamCredentials === true
     const skipOpenAIApiKey = hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config)
-    const generated = forwardGenerated
+    const rawGenerated = forwardGenerated
       ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), getEnvForClientConfig(), {
           skipOpenAIApiKeyInjection: skipOpenAIApiKey,
           skipOpenAIOAuthFromStored: hasExplicitOpenAIClientConfig(config),
           allowStoredOpenAIOAuth: !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
         })
       : undefined
+    const generated =
+      !explicitUpstreamBaseURL && shouldStripCodexOAuth(sessionLitellmModel, rawGenerated)
+        ? stripCodexOAuthForNonOpenAI(rawGenerated)
+        : rawGenerated
     if (!config) {
       return finalizeClientConfig(generated, undefined, sessionLitellmModel)
     }
@@ -324,6 +330,61 @@ export namespace SessionAgencySwarm {
 
   function isCodexAPIBaseURL(value: string) {
     return value.replace(/\/+$/, "") === CODEX_API_BASE_URL
+  }
+
+  /**
+   * True when `litellm_keys` holds a credential for any non-OpenAI-based provider. Signals that the
+   * agency-swarm server will route at least one agent through LiteLLM for a provider where the
+   * Codex OAuth `base_url` would break Messages API calls.
+   */
+  function hasNonOpenAILitellmKey(generated: Record<string, unknown> | undefined): boolean {
+    if (!generated) return false
+    const keys = asRecord(generated["litellm_keys"])
+    if (!keys) return false
+    return Object.entries(keys).some(
+      ([provider, value]) =>
+        typeof value === "string" && value.length > 0 && !OPENAI_BASED_LITELLM_PROVIDERS.has(provider),
+    )
+  }
+
+  /**
+   * Strip the Codex OAuth triplet when either the session override is non-OpenAI
+   * (explicit user intent to route non-OpenAI), or no session override exists and the
+   * generated payload carries a non-OpenAI LiteLLM key (framework mode — agent-level
+   * non-OpenAI routing is possible). A session model that is explicitly OpenAI-based
+   * keeps the OAuth triplet so the forced OpenAI override still authenticates.
+   */
+  function shouldStripCodexOAuth(
+    sessionLitellmModel: string | undefined,
+    generated: Record<string, unknown> | undefined,
+  ): boolean {
+    if (!isOpenAIBasedLitellmModel(sessionLitellmModel)) return true
+    if (sessionLitellmModel) return false
+    return hasNonOpenAILitellmKey(generated)
+  }
+
+  /**
+   * Drop the Codex OAuth triplet (`base_url` + `api_key` + `ChatGPT-Account-Id`) from the generated payload
+   * so a non-OpenAI LiteLLM session (anthropic, gemini, ...) does not inherit ChatGPT's OAuth endpoint.
+   * Upstream agency-swarm applies `config.base_url` to all LiteLLM agents regardless of provider
+   * (endpoint_handlers.py:1320), which would route Anthropic Messages through chatgpt.com and 404.
+   */
+  function stripCodexOAuthForNonOpenAI(
+    generated: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined {
+    if (!generated) return generated
+    const base = asString(generated["base_url"])
+    if (!base || !isCodexAPIBaseURL(base)) return generated
+    const out: Record<string, unknown> = { ...generated }
+    delete out["base_url"]
+    delete out["api_key"]
+    const headers = readStringRecord(out["default_headers"])
+    if (headers && "ChatGPT-Account-Id" in headers) {
+      const next = Object.fromEntries(Object.entries(headers).filter(([k]) => k !== "ChatGPT-Account-Id"))
+      if (Object.keys(next).length > 0) out["default_headers"] = next
+      else delete out["default_headers"]
+    }
+    return Object.keys(out).length > 0 ? out : undefined
   }
 
   function hasEnvCredential(

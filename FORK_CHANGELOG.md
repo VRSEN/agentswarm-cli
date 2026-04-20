@@ -36,6 +36,10 @@ This file records the intentional, maintainable fork delta carried on `vrsen/dev
   Motivation: route prompt execution, structured output, cancellation, history compaction, and session resume through Agency Swarm runs instead of only upstream provider flows.
   Upstream-merge impact: `high` because these are hot core paths with frequent upstream edits and non-trivial behavioral divergence.
 
+- `packages/opencode/src/session/agency-swarm.ts` (`resolveClientConfig`) + `packages/opencode/src/agency-swarm/litellm-provider.ts` (`isOpenAIBasedLitellmModel`)
+  Motivation: scope the stored ChatGPT OAuth triplet (`base_url` = `chatgpt.com/backend-api/codex`, matching `api_key`, `ChatGPT-Account-Id` header) to OpenAI-based LiteLLM providers only. Without this, agency-swarm's upstream `_apply_client_to_agent` applies `config.base_url` to every LiteLLM agent regardless of provider, so an Anthropic/Gemini session would route Messages API calls through Codex and 404 with `{"detail":"Not Found"}`.
+  Upstream-merge impact: `low` because the filter is additive and keeps pre-existing OAuth behavior for OpenAI sessions; tracked upstream as the `_is_openai_based_litellm_provider` base_url fix in agency-swarm.
+
 - `packages/opencode/src/installation/index.ts`, `packages/opencode/src/cli/cmd/run.ts`, `packages/opencode/src/cli/cmd/uninstall.ts`, `packages/opencode/src/cli/cmd/upgrade.ts`
   Motivation: manage local Agency Swarm bootstrap, credential forwarding, project venv upgrade and self-heal behavior, and branded startup flows.
   Upstream-merge impact: `high` because install and upgrade code is operationally fragile and the fork adds extra side effects upstream does not want.
