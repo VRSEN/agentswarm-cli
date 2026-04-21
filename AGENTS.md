@@ -16,11 +16,10 @@ Words: `manager` = can delegate; `subagent` = cannot delegate; `mandate` = the e
 - Protect the context window. Prefer bounded reads and searches. Do not pull huge output unless you need it.
 - Managers stay at manager height: coordinate, reprioritize, review, make key calls, and verify the critical path.
 - Managers delegate only when that clearly shortens the critical path or cuts context load. When the delegated work is small and clear, prefer the local `codex` command (`codex exec` or `codex review`) over heavier subagents.
-- Use the fewest subagents that work. Default to one. Combine related delegated work when one subagent can cover it.
-- For any non-trivial task, give the smallest useful delegated scope. Keep trivial mechanical edits on the manager thread. If one subagent cannot cover the task cleanly, split the work into two scoped subagents.
+- Use the fewest subagents that work. Default to one. Keep trivial mechanical edits on the manager thread, and split scope only when one subagent cannot cover the task cleanly.
 - Why: recent broad manager-owned edits made request ownership hard to trace and burned main-thread context.
-- After you delegate, do not interrupt, rush, or keep pinging subagents unless the user changes scope or you have clear proof of failure.
-- Start each delegated task with enough context: the task, the needed background, and the higher goal. For Codex xhigh, give intent, the required result, and hard limits. For other subagents, leave room for judgment.
+- After you delegate, give enough context, then let the subagent work. For Codex xhigh, give intent, the required result, and hard limits. For other subagents, leave room for judgment. Do not interrupt, rush, or keep pinging subagents unless the user changes scope or you have clear proof of failure.
+- You own delegated results and every subprocess, background shell, tmux session, Codex resume, and polling loop spawned directly or through a subagent, including stale ones from prior turns. Reclaim or clean them up proactively at every task boundary; never ask the user to do that housekeeping.
 - Keep pull request work off the manager thread when possible. Prefer a bounded local Codex pass when it cleanly covers the task. Otherwise use one fitting subagent. Only surface a blocker if neither path works.
 - Sonnet models are not allowed here. Only Opus 4.7 may manage. Only Codex `gpt-5.4` may act as a subagent. A Sonnet-model agent must stop at once.
 ## Requirement Completeness Gate
@@ -97,9 +96,8 @@ Execution
 - Push the active queue as far as you safely can before you reply. Split out small approved wins instead of hiding them behind larger unfinished work.
 - Use the plan as the current-task execution plan. Reprioritize it around the critical path.
 - Before you reply or decide you are done, review the plan and any active ledger. If a critical next step is still possible, keep working.
-- Stop only when every active request is complete, clearly deferred, archived as fulfilled, removed by the user, or blocked by an explicit escalation trigger.
-- A wait you can still observe or act on is still unfinished work.
-- Do not stop while there is a live command to poll, a verification step you can still run, a cleanup step you own, or another next action inside the mandate.
+- Stop only when every active request is complete, clearly deferred, archived as fulfilled, removed by the user, or blocked by a real escalation trigger. A wait, poll, cleanup, or verification you can still run is still unfinished work.
+- At every task boundary, reclaim or close any subprocess, background shell, tmux session, Codex resume, or polling loop you or delegated subagents spawned. Do not leave stale agent-owned processes behind or ask the user to clean them up.
 - Do not let verified local drift pile up.
 - Once work is verified and approval to ship is clear, commit and push it promptly. If it is wrong, remove it promptly.
 - Do not keep verified changes local except while waiting for explicit ship approval or while preparing the exact approved ship step.
@@ -107,15 +105,15 @@ Execution
 - Mark blockers in the plan only when they truly block the critical path. Remove dead branches of work from the plan right away.
 - For build-impact pull-request work, do not hand off as done until the latest head is review-complete.
 - Review-complete means zero unresolved threads, a clean local Codex review artifact, green required checks, and explicit approval or thumbs up on the latest head.
-- Pending GitHub checks, pending pull-request Codex review, unresolved pull-request comments, and other agent-visible outside workflows still count as open work.
-- If only outside signals are pending, report the exact waiting state and keep polling.
-- If the next step is polling, retriggering, fixing, or otherwise moving an outside workflow you can observe, keep doing that until it ends or you can prove a real outside block.
+- Pending GitHub checks, pending pull-request Codex review, unresolved pull-request comments, and other agent-visible outside workflows still count as open work. If only outside signals are pending, report the exact waiting state and keep polling, retriggering, fixing, or otherwise moving the workflow while you can.
 - When polling is next, keep a live wait loop or session and poll at least once a minute with `sleep 60`.
 - If pull-request Codex stays non-terminal for 15 minutes, inspect the latest state and retrigger once if needed.
 - Wait up to 30 minutes for GitHub CI, which means automated GitHub checks, before you call it stalled.
 ## Escalation Triggers (User Questions and Approvals)
 Why: technical back-and-forth wastes user time.
-- Escalate only for architecture, design, or user-experience choices. Solve other technical questions yourself.
+- Proactivity is the most important agent skill. Resolve everything inside mandate that you can safely execute, verify, or clean up yourself.
+- Escalate only for decisions that genuinely need the user: architecture, design, UX, destructive or cross-boundary moves, unresolved ambiguity after research, or explicit approvals required by this file.
+- Administrative housekeeping, predictable cleanup, stale agent-owned process cleanup, and mechanical verification are never escalations.
 - Pause and ask the user when:
   - there is no active mandate for the next step, the mandate is unclear, or a mandate precondition is still missing.
   - requirements or behavior stay unclear after deep research.
@@ -126,16 +124,14 @@ Why: technical back-and-forth wastes user time.
   - you find failures or root causes that change scope or expectations.
   - the next step would change the repo, branch, remote, artifact, visibility, or would create a repo, fork, release, or public artifact.
   - you need explicit approval for workarounds, behavior changes, staging, committing, destructive commands, or mess-increasing changes.
-  - you would need to stop, start, restart, kill, unload, or otherwise change a local process or service you did not create in this task.
+  - you would need to stop, start, restart, kill, unload, or otherwise change a local process or service you do not own and cannot attribute to agent work.
   - you hit unexpected changes outside the intended change set or cannot tell who made them.
   - tooling or sandbox limits block an essential command.
   - preflight shows you are on the wrong repo or branch for the task; explain the correction plan before you escalate.
 - Before any destructive command, like checkout, stash, reset, rebase, force operations, file deletion, or mass edits, verify that the mandate clearly allows it. If not, explain the impact and get explicit approval.
 - Before you merge any pull request, verify that the live GitHub diff still matches the intended change. If the diff is empty or wrong, stop and escalate.
 - A dirty tree alone is not a reason to ask the user. Keep going unless it creates real ambiguity or risk.
-- Pending checks or pending Codex review are not user blockers when you can still poll, retrigger, inspect, or fix them.
 - When the user directly asks for a fix, use expert judgment and do not ask for clarification unless a real contradiction remains after research.
-- Do not ask about mechanical steps you can safely do yourself.
 - If ambiguity changes user-visible behavior, scope, architecture, repo or branch, or release outcome, ask before acting. If only mechanics are unclear and the safe path is clear, proceed.
 - For drastic changes, like wide refactors, file moves, deletes, policy edits, or behavior changes, get confirmation before you start.
 - When you surface a decision, blocker, or tradeoff, use numbered options `(1)`, `(2)`, `(3)`. Give one sentence per option. End with `Recommendation: (N) - because ...`.
