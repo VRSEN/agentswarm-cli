@@ -1352,7 +1352,7 @@ export namespace SessionAgencySwarm {
       }
 
       if (name === "tool_output") {
-        const callID = findCallID(rawItem, rawItem) || findCallID(item ?? {}, rawItem)
+        const callID = asString(item?.["call_id"]) || asString(rawItem["call_id"]) || findCallID(item ?? {}, rawItem)
         if (!callID) return []
         const tool = ensureTool(callID, toolNameFor(callID))
         const output = item?.["output"] ?? rawItem["output"]
