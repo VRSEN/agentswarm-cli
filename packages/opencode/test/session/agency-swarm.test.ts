@@ -3269,6 +3269,155 @@ describe("session.agency-swarm", () => {
     expect(events.find((event) => event.type === "tool-result")?.output?.output).toBe("hi there")
   })
 
+  test("stream resolves tool_output events from prior tool item ids when call_id is omitted", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: {
+              type: "function_call",
+              id: "call_item_litellm_tool_output",
+              call_id: "call_litellm_tool_output",
+              name: "ExampleTool",
+              arguments: '{"name":"hi","greeting_type":"Hello"}',
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: {
+              type: "function_call",
+              id: "call_item_litellm_tool_output",
+              call_id: "call_litellm_tool_output",
+              name: "ExampleTool",
+              arguments: '{"name":"hi","greeting_type":"Hello"}',
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "tool_called",
+          item: {
+            raw_item: {
+              type: "function_call",
+              id: "call_item_litellm_tool_output",
+              call_id: "call_litellm_tool_output",
+              name: "ExampleTool",
+              arguments: '{"name":"hi","greeting_type":"Hello"}',
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "tool_output",
+          item: {
+            raw_item: {
+              type: "function_call_output",
+              id: "call_item_litellm_tool_output",
+              output: "Hello, hi!",
+            },
+            output: "Hello, hi!",
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    expect(events.map((event) => event.type)).toEqual([
+      "start",
+      "start-step",
+      "tool-input-start",
+      "tool-input-delta",
+      "tool-call",
+      "tool-result",
+      "finish-step",
+      "finish",
+    ])
+    expect(events.some((event) => event.type === "error")).toBeFalse()
+    expect(events.find((event) => event.type === "tool-result")?.output?.output).toBe("Hello, hi!")
+  })
+
+  test("stream prefers wrapper call_id before raw_item.id for tool_output after argument deltas", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.function_call_arguments.delta",
+            call_id: "call_wrapper_preferred",
+            name: "ExampleTool",
+            delta: '{"name":"hi","greeting_type":"Hello"}',
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "tool_output",
+          item: {
+            call_id: "call_wrapper_preferred",
+            raw_item: {
+              type: "function_call_output",
+              id: "call_item_wrapper_preferred",
+              output: "Hello, hi!",
+            },
+            output: "Hello, hi!",
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    expect(events.map((event) => event.type)).toEqual([
+      "start",
+      "start-step",
+      "tool-input-start",
+      "tool-input-delta",
+      "tool-call",
+      "tool-result",
+      "finish-step",
+      "finish",
+    ])
+    expect(events.some((event) => event.type === "tool-error")).toBeFalse()
+    expect(events.find((event) => event.type === "tool-call")?.toolCallId).toBe("call_wrapper_preferred")
+    expect(events.find((event) => event.type === "tool-result")?.toolCallId).toBe("call_wrapper_preferred")
+    expect(events.find((event) => event.type === "tool-result")?.output?.output).toBe("Hello, hi!")
+  })
+
   test("stream closes prior text part before switching content_index", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
