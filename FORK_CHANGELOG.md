@@ -121,3 +121,8 @@ This file records the intentional, maintainable fork delta carried on `vrsen/dev
 3. If the edit creates or preserves a fork-only divergence, add or update the matching entry in this file with files/features, observed motivation, and upstream-merge impact, satisfying AGENTS.md §6.6.2.
 4. If the divergence is no longer strictly required for the fork directive, remove it and restore the upstream shape instead of documenting more drift, per AGENTS.md §6.6.3.
 5. Keep entries feature-level and human-readable; use raw `git diff --name-status origin/dev..vrsen/dev` only when a reviewer needs the full file inventory.
+
+## Bootstrap audit: 2026-04-14 .. 2026-04-21
+
+- PR #109 (`1c09fbfd070376334b42a6f972480325bdf82ebf`): during the `v1.4.20` QA/release thread (`"v1.4.20 shipped the same way at commit 1c09fbfd0"`), regenerate `bun.lock` to repair the `ghostty-web` hash drift that was breaking frozen-lockfile publish and release CI for `v1.4.20`.
+- PR #98 (`3a70eb6c76e35c24331cfd3201ace64bff26dd28`): after the user said `"after installProjectDependencies completes, re-run the same canary test"`, re-run the `.venv` canary after dependency install so rebuilt environments do not silently stay broken on version skew.
