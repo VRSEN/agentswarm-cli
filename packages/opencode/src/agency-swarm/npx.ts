@@ -2,13 +2,14 @@ import * as prompts from "@clack/prompts"
 import net from "node:net"
 import os from "node:os"
 import path from "node:path"
-import { existsSync, statSync } from "node:fs"
-import { mkdtemp, rm } from "node:fs/promises"
+import { createWriteStream, existsSync, statSync } from "node:fs"
+import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { AgencySwarmRunSession } from "./run-session"
 import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
 import { Storage } from "@/storage/storage"
 import { Filesystem } from "@/util/filesystem"
+import * as Which from "@/util/which"
 import type { Session } from "@/session"
 import { SessionID } from "@/session/schema"
 
@@ -36,6 +37,8 @@ interface CommandResult {
   code: number
   stdout: string
   stderr: string
+  timedOut?: boolean
+  logFile?: string
 }
 
 interface PythonInfo {
@@ -52,6 +55,25 @@ interface VenvCanaryResult {
 interface DependencyInstallResult extends CommandResult {
   hadManifests: boolean
 }
+
+const VENV_CANARY_SCRIPT = ["import agency_swarm", "import agency_swarm.integrations.fastapi"].join("\n")
+const REBUILD_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
+
+interface PythonPackageInstaller {
+  tool: "uv" | "pip"
+  cmd: string[]
+  env: NodeJS.ProcessEnv
+}
+
+interface RunCommandOptions {
+  cwd?: string
+  env?: NodeJS.ProcessEnv
+  logFile?: string
+  streamOutputToStderr?: boolean
+  timeoutMs?: number
+}
+
+const UV_INSTALLER_URL = "https://astral.sh/uv/install.sh"
 
 export function shouldRunNpxOnboarding(input: {
   env: NodeJS.ProcessEnv
@@ -712,39 +734,67 @@ async function ensureProjectPython(directory: string) {
   }
 
   spinner.stop("`.venv` created")
-  spinner.start("Installing project dependencies")
-  const install = await installProjectDependencies(directory, [venvPython])
+  const installLogFile = await createProjectCommandLogFile(directory, "launcher-rebuild")
+  prompts.log.info(`Installing project dependencies. Streaming output to stderr. Full log: ${installLogFile}`)
+  const install = await installProjectDependencies(directory, [venvPython], {
+    logFile: installLogFile,
+    timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+  })
+  if (install.timedOut) {
+    throw new Error(
+      `Dependency install timed out after ${formatDuration(REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${installLogFile}.`,
+    )
+  }
   if (install.code !== 0) {
-    spinner.stop("Dependency install failed")
-    throw new Error(install.stderr.trim() || install.stdout.trim() || "Dependency install failed")
+    throw new Error(formatCommandFailure(install, "Dependency install failed"))
   }
   const canary = await venvCanaryPasses([venvPython], { cwd: directory, includeStderr: true })
   if (!canary.healthy) {
-    spinner.stop("Python environment unhealthy")
     throw new Error(await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr))
   }
-  spinner.stop("Python environment ready")
+  prompts.log.success("Python environment ready")
   return [venvPython]
 }
 
-async function installProjectDependencies(directory: string, python: string[]): Promise<DependencyInstallResult> {
+async function installProjectDependencies(
+  directory: string,
+  python: string[],
+  options: {
+    logFile: string
+    timeoutMs: number
+  },
+): Promise<DependencyInstallResult> {
+  const installer = await resolvePythonPackageInstaller(python)
   const requirements = path.join(directory, "requirements.txt")
   if (await Filesystem.exists(requirements)) {
-    const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "-r", "requirements.txt"], {
+    const result = await runCommand([...installer.cmd, "--upgrade", "-r", "requirements.txt"], {
       cwd: directory,
+      env: installer.env,
+      logFile: options.logFile,
+      streamOutputToStderr: true,
+      timeoutMs: options.timeoutMs,
     })
     return { ...result, hadManifests: true }
   }
 
   const pyproject = path.join(directory, "pyproject.toml")
   if (await Filesystem.exists(pyproject)) {
-    const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "-e", "."], {
+    const result = await runCommand([...installer.cmd, "--upgrade", "-e", "."], {
       cwd: directory,
+      env: installer.env,
+      logFile: options.logFile,
+      streamOutputToStderr: true,
+      timeoutMs: options.timeoutMs,
     })
     return { ...result, hadManifests: true }
   }
 
-  const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.1"])
+  const result = await runCommand([...installer.cmd, "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.1"], {
+    env: installer.env,
+    logFile: options.logFile,
+    streamOutputToStderr: true,
+    timeoutMs: options.timeoutMs,
+  })
   return { ...result, hadManifests: false }
 }
 
@@ -785,15 +835,18 @@ async function findProjectShadowingFiles(directory: string) {
   return shadowingFiles.flatMap((file) => (file ? [file] : []))
 }
 
-async function venvCanaryPasses(python: string[], options?: { cwd?: string }): Promise<boolean>
-async function venvCanaryPasses(python: string[], options: { cwd?: string; includeStderr: true }): Promise<VenvCanaryResult>
-async function venvCanaryPasses(python: string[], options?: { cwd?: string; includeStderr?: boolean }) {
+export async function venvCanaryPasses(python: string[], options?: { cwd?: string }): Promise<boolean>
+export async function venvCanaryPasses(
+  python: string[],
+  options: { cwd?: string; includeStderr: true },
+): Promise<VenvCanaryResult>
+export async function venvCanaryPasses(python: string[], options?: { cwd?: string; includeStderr?: boolean }) {
   // No cwd by default: the canary must not pick up project-local modules (e.g. `fastapi.py`
   // sitting next to `agency.py`) that shadow installed packages and falsely flag a healthy
   // .venv as broken. Callers that need the server-launch cwd (post-install verification)
   // pass it explicitly.
   const result = await runCommand(
-    [...python, "-c", "from agency_swarm.integrations.fastapi import run_fastapi"],
+    [...python, "-c", VENV_CANARY_SCRIPT],
     options?.cwd ? { cwd: options.cwd } : undefined,
   )
   if (options?.includeStderr) {
@@ -807,20 +860,128 @@ async function venvCanaryPasses(python: string[], options?: { cwd?: string; incl
 
 async function ensureLatestAgencySwarm(directory: string, python: string[]) {
   try {
-    const result = await runCommand(
-      [...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]"],
-      { cwd: directory },
-    )
+    const installer = await resolvePythonPackageInstaller(python)
+    const result = await runCommand([...installer.cmd, "--upgrade", "agency-swarm[fastapi,litellm]"], {
+      cwd: directory,
+      env: installer.env,
+    })
     if (result.code !== 0) {
+      const summary = summarizeCommandOutput(result)
       prompts.log.warn(
-        "Could not refresh agency-swarm to the latest version. The current venv package will be used as-is.",
+        summary
+          ? `Could not refresh agency-swarm to the latest version. Installer output: ${summary}. The current venv package will be used as-is.`
+          : "Could not refresh agency-swarm to the latest version. The current venv package will be used as-is.",
       )
     }
-  } catch {
+  } catch (error) {
     prompts.log.warn(
-      "Could not refresh agency-swarm to the latest version. The current venv package will be used as-is.",
+      `Could not refresh agency-swarm to the latest version. ${
+        error instanceof Error ? error.message : String(error)
+      }. The current venv package will be used as-is.`,
     )
   }
+}
+
+async function resolvePythonPackageInstaller(python: string[]): Promise<PythonPackageInstaller> {
+  const uvEnv = withUserLocalBinPath(process.env)
+  const uv = findUvExecutable(uvEnv)
+  if (uv) {
+    return {
+      tool: "uv",
+      cmd: [uv, "pip", "install", "--python", getPythonExecutable(python)],
+      env: uvEnv,
+    }
+  }
+
+  const sh = process.platform === "win32" ? null : Which.which("sh", uvEnv)
+  const curl = process.platform === "win32" ? null : Which.which("curl", uvEnv)
+  if (sh && curl) {
+    prompts.log.info("uv not found. Installing uv for faster Python dependency setup...")
+    const result = await runCommand([sh, "-c", `curl -LsSf ${UV_INSTALLER_URL} | sh`], {
+      env: uvEnv,
+      streamOutputToStderr: true,
+    })
+    const installedUv = findUvExecutable(uvEnv)
+    if (installedUv) {
+      return {
+        tool: "uv",
+        cmd: [installedUv, "pip", "install", "--python", getPythonExecutable(python)],
+        env: uvEnv,
+      }
+    }
+    if (result.code !== 0) {
+      prompts.log.warn("uv install failed. Falling back to pip for Python dependency setup.")
+    } else {
+      prompts.log.warn("uv install completed without a usable binary. Falling back to pip for Python dependency setup.")
+    }
+  } else {
+    prompts.log.warn(
+      "uv not found and the shell installer is unavailable. Falling back to pip for Python dependency setup.",
+    )
+  }
+
+  return {
+    tool: "pip",
+    cmd: [...python, "-m", "pip", "install"],
+    env: process.env,
+  }
+}
+
+function getPythonExecutable(python: string[]) {
+  const executable = python[0]
+  if (!executable) {
+    throw new Error("Python executable path is required for uv installs.")
+  }
+  return executable
+}
+
+function findUvExecutable(env: NodeJS.ProcessEnv) {
+  return Which.which("uv", env)
+}
+
+function withUserLocalBinPath(env: NodeJS.ProcessEnv) {
+  const current = env.PATH ?? env.Path ?? process.env.PATH ?? process.env.Path ?? ""
+  const entries = [
+    path.join(os.homedir(), ".local", "bin"),
+    path.join(os.homedir(), ".cargo", "bin"),
+    ...current.split(path.delimiter).filter(Boolean),
+  ]
+  const merged = entries.filter((entry, index) => entries.indexOf(entry) === index).join(path.delimiter)
+  const next: NodeJS.ProcessEnv & { PATH: string; Path?: string } = {
+    ...env,
+    PATH: merged,
+  }
+  if (env.Path !== undefined || process.env.Path !== undefined) next.Path = merged
+  return next
+}
+
+async function createProjectCommandLogFile(directory: string, stem: string) {
+  const logDirectory = path.join(directory, "activity-logs")
+  await mkdir(logDirectory, { recursive: true })
+  return path.join(logDirectory, `${new Date().toISOString().replaceAll(":", "").replaceAll(".", "")}-${stem}.log`)
+}
+
+function summarizeCommandOutput(result: Pick<CommandResult, "stdout" | "stderr">) {
+  return summarizeBridgeStderr(result.stderr) || summarizeBridgeStderr(result.stdout)
+}
+
+function formatCommandFailure(result: CommandResult, fallback: string) {
+  const summary = summarizeCommandOutput(result)
+  const logHint = result.logFile ? ` Check the log file at ${result.logFile}.` : ""
+  if (summary) return `${fallback}: ${summary}.${logHint}`
+  return `${fallback}.${logHint}`.trim()
+}
+
+function formatDuration(ms: number) {
+  if (ms % 60000 === 0) {
+    const minutes = ms / 60000
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`
+  }
+  if (ms % 1000 === 0) {
+    const seconds = ms / 1000
+    return `${seconds} second${seconds === 1 ? "" : "s"}`
+  }
+  return `${ms}ms`
 }
 
 async function startProjectServer(directory: string, python: string[]) {
@@ -1028,10 +1189,13 @@ async function getFreePort() {
   })
 }
 
-async function runCommand(
-  cmd: string[],
-  options?: { cwd?: string; env?: NodeJS.ProcessEnv },
-): Promise<CommandResult> {
+async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<CommandResult> {
+  const logStream = options?.logFile ? createWriteStream(options.logFile, { flags: "a" }) : undefined
+  const writeChunk = (chunk: string) => {
+    if (options?.streamOutputToStderr) process.stderr.write(chunk)
+    logStream?.write(chunk)
+  }
+
   try {
     const proc = Bun.spawn({
       cmd,
@@ -1040,19 +1204,70 @@ async function runCommand(
       stderr: "pipe",
       env: options?.env ?? process.env,
     })
+    let timedOut = false
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    if (options?.timeoutMs) {
+      timeout = setTimeout(() => {
+        timedOut = true
+        proc.kill()
+      }, options.timeoutMs)
+    }
     const [code, stdout, stderr] = await Promise.all([
       proc.exited,
-      proc.stdout ? new Response(proc.stdout).text() : Promise.resolve(""),
-      proc.stderr ? new Response(proc.stderr).text() : Promise.resolve(""),
+      readCommandOutput(proc.stdout, writeChunk),
+      readCommandOutput(proc.stderr, writeChunk),
     ])
-    return { code, stdout, stderr }
+    if (timeout) clearTimeout(timeout)
+    await closeCommandLog(logStream)
+    return { code: timedOut ? -1 : code, stdout, stderr, timedOut, logFile: options?.logFile }
   } catch (error) {
+    await closeCommandLog(logStream)
     return {
       code: -1,
       stdout: "",
       stderr: error instanceof Error ? error.message : String(error),
+      logFile: options?.logFile,
     }
   }
+}
+
+async function closeCommandLog(stream?: ReturnType<typeof createWriteStream>) {
+  if (!stream) return
+  await new Promise<void>((resolve, reject) => {
+    stream.end((error?: Error | null) => {
+      if (error) reject(error)
+      else resolve()
+    })
+  }).catch(() => undefined)
+}
+
+async function readCommandOutput(
+  output: string | ReadableStream<Uint8Array> | null | undefined,
+  writer?: (chunk: string) => void,
+) {
+  if (typeof output === "string") {
+    if (output && writer) writer(output)
+    return output
+  }
+  if (!output) return ""
+
+  const reader = output.getReader()
+  const decoder = new TextDecoder()
+  let text = ""
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value || value.length === 0) continue
+    const chunk = decoder.decode(value, { stream: true })
+    if (writer) writer(chunk)
+    text += chunk
+  }
+  const tail = decoder.decode()
+  if (tail) {
+    if (writer) writer(tail)
+    text += tail
+  }
+  return text
 }
 
 function sleep(ms: number) {
