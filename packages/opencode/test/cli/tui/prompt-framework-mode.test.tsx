@@ -18,6 +18,7 @@ import * as TextareaKeybindingsModule from "../../../src/cli/cmd/tui/component/t
 import * as ToastModule from "../../../src/cli/cmd/tui/ui/toast"
 import * as AutocompleteModule from "../../../src/cli/cmd/tui/component/prompt/autocomplete"
 import { DialogProvider } from "../../../src/cli/cmd/tui/ui/dialog"
+import { AgencySwarmAdapter } from "../../../src/agency-swarm/adapter"
 
 function flushEffects() {
   return Promise.resolve().then(() => Promise.resolve())
@@ -28,7 +29,24 @@ describe("prompt framework-mode footer", () => {
     mock.restore()
   })
 
-  test("shows the configured agency recipient instead of the local Agent Builder label", async () => {
+  test("shows the agency recipient display name instead of the configured id or local Agent Builder label", async () => {
+    spyOn(AgencySwarmAdapter, "discover").mockResolvedValue({
+      agencies: [
+        {
+          id: "demo",
+          name: "Demo Agency",
+          agents: [
+            {
+              id: "orchestrator-slug",
+              name: "Orchestrator",
+              isEntryPoint: true,
+            },
+          ],
+          metadata: {},
+        },
+      ],
+      rawOpenAPI: {},
+    })
     spyOn(AutocompleteModule, "Autocomplete").mockImplementation((props: any) => {
       props.ref?.({
         onInput() {},
@@ -114,7 +132,7 @@ describe("prompt framework-mode footer", () => {
             "agency-swarm": {
               options: {
                 agency: "demo",
-                recipientAgent: "Orchestrator",
+                recipientAgent: "orchestrator-slug",
                 baseURL: "http://127.0.0.1:8000",
               },
             },
@@ -201,6 +219,7 @@ describe("prompt framework-mode footer", () => {
 
     const frame = rendered.captureCharFrame()
     expect(frame).toContain("Orchestrator")
+    expect(frame).not.toContain("orchestrator-slug")
     expect(frame).not.toContain("Agent Builder")
   })
 })
