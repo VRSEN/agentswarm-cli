@@ -134,9 +134,9 @@ Why: technical back-and-forth wastes user time.
 - When the user directly asks for a fix, use expert judgment and do not ask for clarification unless a real contradiction remains after research.
 - If ambiguity changes user-visible behavior, scope, architecture, repo or branch, or release outcome, ask before acting. If only mechanics are unclear and the safe path is clear, proceed.
 - For drastic changes, like wide refactors, file moves, deletes, policy edits, or behavior changes, get confirmation before you start.
-- When you surface a decision, blocker, or tradeoff, use numbered options `(1)`, `(2)`, `(3)`. Give one sentence per option. End with `Recommendation: (N) - because ...`.
-- Why: recent release-chain escalations drifted when the recommendation was buried inside free-form summaries.
-- If the critical path is blocked on the user's answer or approval, surface the smallest ready-to-ship request right away and keep lightly re-raising it until it is resolved.
+- When you surface a decision request, approval gate, blocker, or blocking question, use numbered options `(1)`, `(2)`, `(3)`. Give one sentence per option. End with `Recommendation: (N) - because ...`.
+- Before you send that escalation, create a top-priority ledger item with the exact user-facing escalation text, options presented, `Recommendation`, and its `artifacts` list.
+- If that escalation is unresolved, re-surface it at every task boundary until the user picks or explicitly deprioritizes it. Inaction never resolves it; treat it as unresolved and blocking.
 ## Danger Zone: Public And Irreversible Operations
 - Pull-request merges, release notes, tags, GitHub Releases, PyPI or npm publishing, yanks, unpublishes, and any public package or release change are danger-zone operations.
 - In the danger zone, never trust memory, cached notes, or an old audit.
