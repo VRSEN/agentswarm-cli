@@ -16,11 +16,11 @@ Words: `manager` = can delegate; `subagent` = cannot delegate; `mandate` = the e
 - Protect the context window. Prefer bounded reads and searches. Do not pull huge output unless you need it.
 - Managers stay at manager height: coordinate, reprioritize, review, make key calls, and verify the critical path.
 - Managers delegate only when that clearly shortens the critical path or cuts context load. When the delegated work is small and clear, prefer the local `codex` command (`codex exec` or `codex review`) over heavier subagents.
-- Use the fewest subagents that work. Default to one. Combine related delegated work when one subagent can cover it.
-- For any non-trivial task, give the smallest useful delegated scope. Keep trivial mechanical edits on the manager thread. If one subagent cannot cover the task cleanly, split the work into two scoped subagents.
+- Use the smallest useful delegated scope that still cleanly covers the task. Default to one subagent, but use multiple focused subagents when that clearly shortens the critical path. Keep trivial mechanical edits on the manager thread.
 - Why: recent broad manager-owned edits made request ownership hard to trace and burned main-thread context.
 - After you delegate, do not interrupt, rush, or keep pinging subagents unless the user changes scope or you have clear proof of failure.
-- Start each delegated task with enough context: the task, the needed background, and the higher goal. For Codex xhigh, give intent, the required result, and hard limits. For other subagents, leave room for judgment.
+- Start each delegated task with enough context: the exact user ask, needed background, directly related artifacts, and the higher goal. For Codex xhigh, give intent, the required result, and hard limits. For other subagents, leave room for judgment.
+- You own clearly agent-owned shells, tmux sessions, Codex resume sessions, and polling loops you or delegated subagents spawned in this or prior turns, tracked by session IDs or `ps` tree markers. Reclaim or close them at task boundaries. Do not hunt processes you cannot attribute.
 - Keep pull request work off the manager thread when possible. Prefer a bounded local Codex pass when it cleanly covers the task. Otherwise use one fitting subagent. Only surface a blocker if neither path works.
 - Sonnet models are not allowed here. Only Opus 4.7 may manage. Only Codex `gpt-5.4` may act as a subagent. A Sonnet-model agent must stop at once.
 ## Requirement Completeness Gate
@@ -31,8 +31,8 @@ Why: voice-transcribed input is homophone-prone.
   - `Do I have everything required to solve this correctly and safely without wasting the user's time?`
   - `Did I actually use everything the user already provided that is necessary for this task?`
 - Never work without fully understanding the context.
-- Before any non-trivial task, list every prior pull request, commit, issue, or branch tied to the same area. Read each one enough to say in one sentence how it connects to the current change. If a prior change was reverted or partly reverted, state exactly what it undid.
-- If you cannot write that one-sentence link for every related prior artifact, stop and ask the user one short question before you edit.
+- Before a non-trivial edit in a shared or upstream-mirrored area, identify directly related pull requests, commits, issues, or branches with a bounded search such as `git log --follow` or targeted `gh pr list` filters. Stop when the next layer is clearly unrelated. If a prior change was reverted or partly reverted, state exactly what it undid.
+- If you cannot write a one-sentence link for every directly related artifact, stop and ask the user one short question before you edit.
 - If either answer above is `no` or `unclear`, or if something you expected does not exist, stop and clear the blocker before you continue.
 - Expect speech-to-text mistakes. Use context to sort out homophones. If two meanings still fit, escalate with numbered options.
 ## Repository Mandate Boundary
@@ -67,19 +67,19 @@ Context
 - If checked evidence fights a core user requirement, stop, ask one short question, and wait.
 - If the user asks for evidence, run the relevant code, examples, or commands and cite what you saw.
 Repo State
-- Keep one live list of the artifacts you own.
-- Track every pull request, linked issue, branch, worktree, file, temp asset, release artifact, published binary, open GitHub issue you filed, review artifact such as a local Codex review `.txt` file, pyte screenshot, temp QA directory, and any other open work artifact whether it is named here or not.
+- Keep one live list of the artifacts you own, and give every ledger item an `artifacts` list even when it is empty.
+- Track every pull request, linked issue, branch, local commit not yet on the canonical remote branch, worktree, file, temp asset, release artifact, published binary, open GitHub issue you filed, review artifact such as a local Codex review `.txt` file, pyte screenshot, temp QA directory, and any other open work artifact whether it is named here or not.
 - The moment one of those artifacts exists, it becomes a ledger item. Any state change on a tracked artifact must update the ledger before other work continues.
 - Keep each tracked artifact open in the ledger until it is shipped, clearly handed off, or clearly discarded.
-- A pull request or branch you created is still an open task. Never forget it.
+- A pull request, branch, or local-only commit you created is still an open task. Never forget it.
 - Clean up old artifacts you created when a newer artifact fully replaces them and the older one is no longer needed for rollback or proof.
 - After your work lands on `vrsen/dev`, or is otherwise closed, clean up stale local branches and worktrees you own before you start new work. If ownership or merge state is unclear, escalate before cleanup.
-- Keep code changes and docs-only changes in separate review lanes when practical.
+- Docs-only and `FORK_CHANGELOG.md` edits go straight to `vrsen/dev`. Policy stays in the rolling draft PR unless the user says otherwise.
 - If `origin/dev` is reachable, run `git fetch --all --prune` and work from a named branch based on `origin/dev` before analysis, edits, or tests. `origin/dev` is the upstream branch. `vrsen/dev` is the shared fork branch.
 - For pushes to `vrsen/dev`, verify the `origin/dev...vrsen/dev` counts before you push.
 - For public release work, also verify that the exact release commit is already reachable from `vrsen/dev` and that the target version is already present in the release input files on that commit, such as `package.json`, package manifests, generated artifacts, and `bun.lock`.
 - If the remote is unavailable, you may continue, but say that you are assuming the branch is already synced.
-- If the task spans more than one repo or worktree, run the same remote checks in each one and confirm the active branch before you edit.
+- If the task spans more than one repo or worktree, run `git fetch origin`, `git status -sb`, and `git rev-parse --short HEAD`, or the repo-tooling equivalent, in each one and confirm the active branch before you edit.
 - If the target branch has an open pull request, read the latest comments, reviews, unresolved threads, and head SHA first. GitHub is the source of truth for live pull-request state.
 - If there is already an open pull request for the same work, reuse it unless it was clearly discarded or reuse is truly impossible.
 - Before you open, update, or merge a pull request, verify the source branch, base branch, head SHA, and live diff.
@@ -88,7 +88,7 @@ Execution
 - If a change breaks these rules, fix it right away with the smallest safe edit.
 - Think hard before you edit. Choose the smallest coherent diff.
 - Prefer repo tooling such as `bun`, package scripts, `turbo`, and the plan tool over ad-hoc commands.
-- If sandbox limits block an essential write, ask for the needed permission path.
+- If a non-readonly command is blocked by sandboxing, rerun with escalated permissions when the mandate already covers it. Ask only when the escalation would cross the mandate or no allowed path exists.
 - Before you add or change a rule, reread the related rules and the prior diff. Make sure you did not drop anything valuable. Use `remove > update > add`. Never append blindly.
 ## Continuous Work Rule
 - Track the state of each surfaced item: not yet shown to the user, already shown and waiting on the user, or resolved.
@@ -97,9 +97,8 @@ Execution
 - Push the active queue as far as you safely can before you reply. Split out small approved wins instead of hiding them behind larger unfinished work.
 - Use the plan as the current-task execution plan. Reprioritize it around the critical path.
 - Before you reply or decide you are done, review the plan and any active ledger. If a critical next step is still possible, keep working.
-- Stop only when every active request is complete, clearly deferred, archived as fulfilled, removed by the user, or blocked by an explicit escalation trigger.
-- A wait you can still observe or act on is still unfinished work.
-- Do not stop while there is a live command to poll, a verification step you can still run, a cleanup step you own, or another next action inside the mandate.
+- Stop only when every active request is complete, clearly deferred, archived as fulfilled, removed by the user, or blocked by an explicit escalation trigger. A wait, poll, cleanup, or verification you can still run is still unfinished work.
+- Reclaim or close clearly agent-owned shells, tmux sessions, Codex resume sessions, and polling loops you or delegated subagents spawned in this or prior turns, using session IDs or `ps` tree markers. Do not hunt processes you cannot attribute.
 - Do not let verified local drift pile up.
 - Once work is verified and approval to ship is clear, commit and push it promptly. If it is wrong, remove it promptly.
 - Do not keep verified changes local except while waiting for explicit ship approval or while preparing the exact approved ship step.
@@ -115,7 +114,7 @@ Execution
 - Wait up to 30 minutes for GitHub CI, which means automated GitHub checks, before you call it stalled.
 ## Escalation Triggers (User Questions and Approvals)
 Why: technical back-and-forth wastes user time.
-- Escalate only for architecture, design, or user-experience choices. Solve other technical questions yourself.
+- Escalate only for architecture, design, or user-experience choices. Resolve everything else inside the mandate yourself.
 - Pause and ask the user when:
   - there is no active mandate for the next step, the mandate is unclear, or a mandate precondition is still missing.
   - requirements or behavior stay unclear after deep research.
@@ -126,9 +125,9 @@ Why: technical back-and-forth wastes user time.
   - you find failures or root causes that change scope or expectations.
   - the next step would change the repo, branch, remote, artifact, visibility, or would create a repo, fork, release, or public artifact.
   - you need explicit approval for workarounds, behavior changes, staging, committing, destructive commands, or mess-increasing changes.
-  - you would need to stop, start, restart, kill, unload, or otherwise change a local process or service you did not create in this task.
+  - you would need to stop, start, restart, kill, unload, or otherwise change a local process or service you cannot attribute to your own work by session ID or `ps` tree.
   - you hit unexpected changes outside the intended change set or cannot tell who made them.
-  - tooling or sandbox limits block an essential command.
+  - tooling or sandbox limits block an essential command and no allowed escalation path exists inside the mandate.
   - preflight shows you are on the wrong repo or branch for the task; explain the correction plan before you escalate.
 - Before any destructive command, like checkout, stash, reset, rebase, force operations, file deletion, or mass edits, verify that the mandate clearly allows it. If not, explain the impact and get explicit approval.
 - Before you merge any pull request, verify that the live GitHub diff still matches the intended change. If the diff is empty or wrong, stop and escalate.
@@ -140,7 +139,7 @@ Why: technical back-and-forth wastes user time.
 - For drastic changes, like wide refactors, file moves, deletes, policy edits, or behavior changes, get confirmation before you start.
 - When you surface a decision, blocker, or tradeoff, use numbered options `(1)`, `(2)`, `(3)`. Give one sentence per option. End with `Recommendation: (N) - because ...`.
 - Why: recent release-chain escalations drifted when the recommendation was buried inside free-form summaries.
-- If the critical path is blocked on the user's answer or approval, surface the smallest ready-to-ship request right away and keep lightly re-raising it until it is resolved.
+- If the critical path is blocked on the user's answer or approval, add the exact user-facing escalation and its `artifacts` list to the ledger, surface the smallest ready-to-ship request right away, and keep lightly re-raising it until it is resolved.
 ## Danger Zone: Public And Irreversible Operations
 - Pull-request merges, release notes, tags, GitHub Releases, PyPI or npm publishing, yanks, unpublishes, and any public package or release change are danger-zone operations.
 - In the danger zone, never trust memory, cached notes, or an old audit.
@@ -310,8 +309,8 @@ Why: mistakes repeat when rules are not tightened.
 - Before any release or safety claim, build and reinstall the CLI from the fresh local build, launch it against the maintainer's canonical local test agency, send a real first message through the connected conversation, and verify that a non-empty streaming assistant response renders.
 - Auth-smoke CI alone never passes this gate. Any launch failure, including environment, credential, dependency, or TUI transition issues, blocks the release until you reproduce it and find the root cause.
 - Why: release claims were repeated while the installed binary still failed before a usable conversation.
-- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit.
-- Run `codex review --base vrsen/dev -c model_reasoning_effort="extra-high"` or an equivalent `codex exec` review if `codex review` is unavailable.
+- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit using `gpt-5.4` with `extra-high` reasoning.
+- Example: `codex review --base vrsen/dev -c model_reasoning_effort="extra-high"`. Run it only when the CLI default is already `gpt-5.4`, or add `-m gpt-5.4`; do not rely on unknown defaults.
 - Save that review to `/tmp/codex_review_<short_sha>.txt`.
 - If Codex finds a blocking issue (`P1` or `P2`), stop and surface it to the user.
 ## Documentation Rules
@@ -365,8 +364,8 @@ Why: mistakes repeat when rules are not tightened.
 - Use isolated file systems and temp directories.
 - Avoid slow or hanging tests. If you must skip one, leave a clear `FIXME`.
 - Follow existing package-local test structure and naming. Do not run tests from the repo root. Use package directories like `packages/opencode`.
-- Avoid tests that give false confidence. Retire unit tests that hide gaps in real behavior.
-- For high-level runtime behavior, prefer integration or end-to-end coverage over unit tests.
+- Avoid tests that give false confidence. Startup auth, CLI/app wiring, streaming, persistence, and workspace flow need integration or end-to-end coverage, not unit-only proof.
+- Retire unit tests that hide gaps in real behavior.
 - Remove dead code when it is in scope.
 - Avoid mocks as much as you can.
 - Test the real implementation. Do not copy production logic into tests.
@@ -423,8 +422,8 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
   - Pull-request-specific work includes comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations.
   - If a bounded local Codex pass cannot cover the task and no good subagent is available, stop and surface the blocker.
   - Save local Codex review output to `/tmp/codex_review_<sha>.txt`.
-  - Preferred fallback command: `codex review --base origin/dev -c model_reasoning_effort="high" > /tmp/codex_review_<short_sha>.txt 2>&1`.
-  - If `codex review` is unavailable, use an equivalent `codex exec` diff review and save it to the same artifact pattern.
+  - Preferred fallback command: `codex review --base origin/dev -m gpt-5.4 -c model_reasoning_effort="extra-high" > /tmp/codex_review_<short_sha>.txt 2>&1`.
+  - If `codex review` is unavailable, use an equivalent `codex exec` diff review and save it to the same artifact pattern. Do not rely on unknown model defaults.
   - Do not stream the full Codex output in updates. Read only the needed excerpts.
   - Trigger `@codex review` only when both the local Codex path and suitable subagents are unavailable, when the user asked for it, or when merge-gate proof needs pull-request-bound Codex.
   - While hosted checks or pull-request Codex are pending, poll at least once a minute with `sleep 60`.
