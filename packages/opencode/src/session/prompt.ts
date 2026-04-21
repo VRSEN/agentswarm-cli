@@ -52,7 +52,7 @@ import { Cause, Effect, Exit, Layer, Option, Scope, ServiceMap } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import * as SessionAgencySwarm from "./agency-swarm"
+import { SessionAgencySwarm } from "./agency-swarm"
 import { agentBuilderInstructions } from "./agent-builder"
 import { agentPlannerInstructions } from "./agent-planner"
 

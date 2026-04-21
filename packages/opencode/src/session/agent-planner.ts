@@ -1,5 +1,5 @@
 import PROMPT_AGENT_PLANNER from "./prompt/agent-planner.txt"
-import * as SessionAgencySwarm from "./agency-swarm"
+import { SessionAgencySwarm } from "./agency-swarm"
 
 export function agentPlannerInstructions(agent: string, providerID: string, enabled = true) {
   if (!enabled) return []

@@ -1,5 +1,5 @@
 import PROMPT_AGENT_BUILDER from "./prompt/agent-builder.txt"
-import * as SessionAgencySwarm from "./agency-swarm"
+import { SessionAgencySwarm } from "./agency-swarm"
 
 export function agentBuilderInstructions(agent: string, providerID: string) {
   if (agent !== "build") return []
