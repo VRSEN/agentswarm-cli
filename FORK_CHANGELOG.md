@@ -33,7 +33,7 @@ This file records the intentional, maintainable fork delta carried on `vrsen/dev
   Upstream-merge impact: `high` because upstream core has no equivalent Agency Swarm abstraction, so these files carry fork-only concepts.
 
 - `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/session/agency-swarm-utils.ts`, `packages/opencode/src/session/prompt.ts`, `packages/opencode/src/session/processor.ts`, `packages/opencode/src/provider/provider.ts`
-  Motivation: route prompt execution, structured output, cancellation, history compaction, and session resume through Agency Swarm runs instead of only upstream provider flows.
+  Motivation: route prompt execution, structured output, cancellation, and session resume through Agency Swarm runs instead of only upstream provider flows. History compaction stays client-side: the fork summarizes in `compactHistory()` and sends the already-compacted `chat_history` to Agency Swarm (the backend does not expose a compaction endpoint). End-to-end `/compact` behavior in framework mode is tracked for verification (ledger).
   Upstream-merge impact: `high` because these are hot core paths with frequent upstream edits and non-trivial behavioral divergence.
 
 - `packages/opencode/src/session/agency-swarm.ts` (`resolveClientConfig`) + `packages/opencode/src/agency-swarm/litellm-provider.ts` (`isOpenAIBasedLitellmModel`)
