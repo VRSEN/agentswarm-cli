@@ -67,10 +67,10 @@ Context
 - If the user asks for evidence, run the relevant code, examples, or commands and cite what you saw.
 Repo State
 - Keep one live list of the artifacts you own, and make sure every ledger item includes an `artifacts` list even when it is empty.
-- Track every pull request, linked issue, branch, worktree, file, temp asset, release artifact, published binary, open GitHub issue you filed, review artifact such as a local Codex review `.txt` file, pyte screenshot, temp QA directory, and any other open work artifact whether it is named here or not.
+- Track every pull request, linked issue, branch, worktree, local commit not yet on the canonical remote branch, file, temp asset, release artifact, published binary, open GitHub issue you filed, review artifact such as a local Codex review `.txt` file, pyte screenshot, temp QA directory, and any other open work artifact whether it is named here or not.
 - The moment one of those artifacts exists, it becomes a ledger item. Any state change on a tracked artifact must update the ledger before other work continues.
-- Keep each tracked artifact open in the ledger until it is shipped, clearly handed off, or clearly discarded.
-- A pull request or branch you created is still an open task. Never forget it.
+- Keep each tracked artifact open in the ledger, and on the related `artifacts` list, until it reaches canonical completion, is clearly handed off, or is clearly discarded.
+- A pull request, branch, or local-only commit you created is still an open task. Never forget it.
 - Clean up old artifacts you created when a newer artifact fully replaces them and the older one is no longer needed for rollback or proof.
 - After your work lands on `vrsen/dev`, or is otherwise closed, clean up stale local branches and worktrees you own before you start new work. If ownership or merge state is unclear, escalate before cleanup.
 - Docs-only and `FORK_CHANGELOG.md` edits go straight to `vrsen/dev`; open a docs pull request only when the user explicitly wants iterative polish work or CI must validate the change.
@@ -93,7 +93,7 @@ Execution
 - Track the state of each surfaced item: not yet shown to the user, already shown and waiting on the user, or resolved.
 - If missing old task details matter, recover the transcript or task history before you continue, including `.codex` session history when it is part of the source of truth.
 - Default mode is execution, not chat.
-- Push the active queue as far as you safely can before you reply. Split out small approved wins instead of hiding them behind larger unfinished work.
+- Push the active queue toward canonical completion as far as you safely can before you reply. Split out small approved wins instead of hiding them behind larger unfinished work.
 - Use the plan as the current-task execution plan. Reprioritize it around the critical path.
 - Before you reply or decide you are done, review the plan and any active ledger. If a critical next step is still possible, keep working.
 - Stop only when every active request is complete, clearly deferred, archived as fulfilled, removed by the user, or blocked by a real escalation trigger. A wait, poll, cleanup, or verification you can still run is still unfinished work.
@@ -101,9 +101,9 @@ Execution
 - Record why each background session exists. Poll long-running sessions on purpose instead of abandoning them mid-task.
 - At every task boundary, reclaim or close any subprocess, background shell, tmux session, Codex resume, or polling loop you or delegated subagents spawned. Background sessions and subagent runs are runtime state, not ledger artifacts unless they create a tracked artifact.
 - Do not let verified local drift pile up.
-- Once work is verified and approval to ship is clear, commit and push it promptly. If it is wrong, remove it promptly.
+- Once work is verified and approval to ship is clear, push the ledger task to canonical completion right away: release tasks end at tag + GitHub Release + npm, fork-only tasks at a pushed commit on `vrsen/dev`, and pull-request tasks at a closed PR plus merged commit. If it is wrong, remove it promptly.
 - Do not keep verified changes local except while waiting for explicit ship approval or while preparing the exact approved ship step.
-- Do not leave verified changes uncommitted or unpushed when approval to ship is already clear.
+- Treat every verified but unpushed artifact, including a local-only commit, as blocking unfinished work.
 - Mark blockers in the plan only when they truly block the critical path. Remove dead branches of work from the plan right away.
 - For build-impact pull-request work, do not hand off as done until the latest head is review-complete.
 - Review-complete means zero unresolved threads, a clean local Codex review artifact, green required checks, and explicit approval or thumbs up on the latest head.
