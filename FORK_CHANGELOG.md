@@ -1,123 +1,267 @@
-# Fork Divergence Changelog
+# FORK_CHANGELOG
 
-This file records the intentional, maintainable fork delta carried on `vrsen/dev` relative to the local `origin/dev` baseline. It is a feature-level substantiation log for AGENTS.md §6.6.2, built from the current `git log --oneline origin/dev..vrsen/dev` and `git diff --stat origin/dev..vrsen/dev` snapshot rather than a raw per-file dump.
+This file records the live fork-only features in `vrsen/dev` relative to `origin/dev`.
+Each entry below covers one current fork feature, what it does, where it lives, and what added it.
 
 ## Upstream Baseline Anchor
 
-- `origin/dev`: `a26d53151b11151a5580f11790b768ac334fa6a8`
-- `vrsen/dev`: `27e661224`
-- `git rev-list --left-right --count origin/dev...vrsen/dev`: `639 173`
-- Interpretation: local `vrsen/dev` is 639 commits behind upstream and 173 commits ahead with fork-only changes
-- Snapshot sources: `git log --oneline origin/dev..vrsen/dev` and `git diff --stat origin/dev..vrsen/dev`
+- Upstream baseline: `origin/dev` at `caaddf096424193ef3cba4bf2a8f9ae6876915bc`
+- Fork baseline: `vrsen/dev` at `e0259d7fd`
+- Ahead/behind count: `origin/dev...vrsen/dev` = `746 247`
 
-## Divergence Categories
+## Branding/Packaging
 
-### Branding/Packaging
+- **Agent Swarm CLI name and `agentswarm` command**
+  - Intent: make the fork install and launch under the Agent Swarm name instead of the upstream OpenCode name.
+  - Behavior: users install `@agentswarm/agentswarm-cli` and run it with the `agentswarm` command.
+  - Implementation: `bin.agentswarm` in `packages/opencode/package.json` and `AgencyProduct.cmd` in `packages/opencode/src/agency-swarm/product.ts` define the shipped package name and CLI command.
+  - Added by: `95a39a7e`
 
-- `README.md`, `install`, `package.json`, `packages/opencode/package.json`, `packages/web/package.json`, `packages/opencode/src/cli/logo.ts`
-  Motivation: rename the distributed product from OpenCode to Agent Swarm CLI, rename the primary command to `agentswarm`, and point install/docs flows at fork-owned repo and docs URLs.
-  Upstream-merge impact: `high` because upstream release/version metadata and public docs change often, so these files conflict on most merges.
+- **One-command launcher npm package**
+  - Intent: let users start the fork with one npm package instead of setting up the Python side by hand first.
+  - Behavior: installing the package also ships the launcher entry that boots the fork-specific Agency Swarm flow.
+  - Implementation: `roots` in `packages/opencode/script/publish.ts` publishes the fork package set that includes the launcher package.
+  - Added by: `772db106`
 
-- `packages/opencode/script/build.ts`, `packages/opencode/script/postinstall.mjs`, `packages/opencode/script/publish.ts`, `packages/opencode/bin/agency`, `script/publish.ts`, `script/version.ts`, `nix/opencode.nix`, `nix/hashes.json`, `nix/node_modules.nix`
-  Motivation: publish fork-owned binaries and npm packages, including scoped platform packages and the fork launcher layout that upstream does not ship.
-  Upstream-merge impact: `high` because build and release plumbing is operationally sensitive and upstream packaging changes regularly.
+- **Scoped platform wrapper for shipped binaries**
+  - Intent: make postinstall binary setup use the fork package layout instead of the upstream package layout.
+  - Behavior: installs resolve the right packaged binary from the fork's scoped npm artifacts.
+  - Implementation: `findBinary` in `packages/opencode/script/postinstall.mjs` maps the current platform to the fork binary package names.
+  - Added by: `725ac8ec`
 
-- `packages/util/**`, removed `packages/shared/**`, workspace manifest updates in `package.json`, `packages/app/package.json`, `packages/opencode/package.json`, `packages/ui/package.json`
-  Motivation: keep the fork buildable on its current dependency graph while Agency Swarm-specific patches and imports are carried locally.
-  Upstream-merge impact: `high` because package-graph changes ripple across many imports and create broad textual conflicts.
+## Agency Swarm Integration
 
-### Agency Swarm Integration
+- **Agency Swarm backend adapter**
+  - Intent: connect the fork runtime to Agency Swarm agents instead of only upstream model providers.
+  - Behavior: the app can discover agents, read their metadata, stream their runs, and cancel active work through the Agency Swarm bridge.
+  - Implementation: `AgencySwarmAdapter.discover`, `getMetadata`, `streamRun`, and `cancel` in `packages/opencode/src/agency-swarm/adapter.ts` implement the bridge to the Agency Swarm backend.
+  - Added by: `fd2f678b`
 
-- `packages/opencode/src/agency-swarm/*`, `packages/opencode/src/index.ts`, `packages/opencode/src/config/config.ts`
-  Motivation: add a first-class Agency Swarm adapter layer for backend discovery, metadata parsing, stream transport, branded config discovery, and fork product identity.
-  Upstream-merge impact: `high` because upstream core has no equivalent Agency Swarm abstraction, so these files carry fork-only concepts.
+- **Upstream credential bridge for agency runs**
+  - Intent: reuse provider credentials the user already set in the fork when an Agency Swarm run needs them.
+  - Behavior: agency runs can inherit configured provider keys instead of asking for a separate second setup path.
+  - Implementation: `resolveClientConfig` and `buildAuthClientConfig` in `packages/opencode/src/session/agency-swarm.ts` translate fork provider auth into the Agency Swarm client config.
+  - Added by: `79b55ab8`
 
-- `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/session/agency-swarm-utils.ts`, `packages/opencode/src/session/prompt.ts`, `packages/opencode/src/session/processor.ts`, `packages/opencode/src/provider/provider.ts`
-  Motivation: route prompt execution, structured output, cancellation, history compaction, and session resume through Agency Swarm runs instead of only upstream provider flows.
-  Upstream-merge impact: `high` because these are hot core paths with frequent upstream edits and non-trivial behavioral divergence.
+- **Respect explicit Agency Swarm base URL**
+  - Intent: let users point the fork at a chosen Agency Swarm server instead of always using the default loopback address.
+  - Behavior: when a base URL is configured, agency requests use that URL for session and run traffic.
+  - Implementation: `optionsFromProvider` and `readConfiguredBaseURL` in `packages/opencode/src/session/agency-swarm.ts` load the configured Agency Swarm base URL into each client request.
+  - Added by: `635833ef`
 
-- `packages/opencode/src/session/agency-swarm.ts` (`resolveClientConfig`) + `packages/opencode/src/agency-swarm/litellm-provider.ts` (`isOpenAIBasedLitellmModel`)
-  Motivation: scope the stored ChatGPT OAuth triplet (`base_url` = `chatgpt.com/backend-api/codex`, matching `api_key`, `ChatGPT-Account-Id` header) to OpenAI-based LiteLLM providers only. Without this, agency-swarm's upstream `_apply_client_to_agent` applies `config.base_url` to every LiteLLM agent regardless of provider, so an Anthropic/Gemini session would route Messages API calls through Codex and 404 with `{"detail":"Not Found"}`.
-  Upstream-merge impact: `low` because the filter is additive and keeps pre-existing OAuth behavior for OpenAI sessions; tracked upstream as the `_is_openai_based_litellm_provider` base_url fix in agency-swarm.
-  Known tradeoff: until upstream agency-swarm scopes `client_config.base_url` per-provider (tracked separately), an OpenAI-only agency run may lose its Codex OAuth `base_url`/`api_key` if the user also has a non-OpenAI LiteLLM credential stored (anthropic/gemini/etc.). Workaround: clear the unused credential from `~/.local/share/agentswarm/auth.json`, or configure an explicit OpenAI-based `client_config.base_url`.
+- **Persist handed-off recipient across turns**
+  - Intent: keep a handoff target active on the next turn so the user does not have to reopen agent selection after each handoff.
+  - Behavior: the most recent assistant agent in the session is reused as a recipient candidate on later turns, which can also keep a stale handoff target alive.
+  - Implementation: `resolveSessionRecipient` in `packages/opencode/src/session/agency-swarm.ts` scans `Session.messages` and inserts the result into the priority array used by `resolveRecipientAgent`.
+  - Added by: `708545a4`
 
-- `packages/opencode/src/installation/index.ts`, `packages/opencode/src/cli/cmd/run.ts`, `packages/opencode/src/cli/cmd/uninstall.ts`, `packages/opencode/src/cli/cmd/upgrade.ts`
-  Motivation: manage local Agency Swarm bootstrap, credential forwarding, project venv upgrade and self-heal behavior, and branded startup flows.
-  Upstream-merge impact: `high` because install and upgrade code is operationally fragile and the fork adds extra side effects upstream does not want.
+- **Preserve caller agent during history compaction**
+  - Intent: keep agency caller context intact when long sessions are compacted.
+  - Behavior: after compaction, the session keeps the caller agent identity needed for later routing and display.
+  - Implementation: `compactHistory` and `extractCallerAgent` in `packages/opencode/src/session/agency-swarm.ts` copy caller metadata into the compacted history payload.
+  - Added by: `06ad1be4`
 
-### CLI/TUI UX
+- **Recover loopback agency history across port changes**
+  - Intent: stop local loopback history from disappearing when the Agency Swarm server comes back on a new port.
+  - Behavior: session history is recovered from prior loopback state even after the local server address changes.
+  - Implementation: `loadRecoveredLoopback` in `packages/opencode/src/agency-swarm/history.ts` reloads saved loopback history by workspace and project identity instead of only by one port.
+  - Added by: `d82126c2`
 
-- `packages/opencode/src/cli/cmd/agencii.ts`, `packages/opencode/src/cli/cmd/serve.ts`, `packages/opencode/src/cli/cmd/run.ts`
-  Motivation: add `agency` / `agencii` management commands, fork-specific server text, and launcher behaviors needed to discover and drive Agency Swarm backends.
-  Upstream-merge impact: `medium` because the command surface is clearly scoped, but it sits in files upstream also edits.
+- **Bridge error frames surface as real session errors**
+  - Intent: show backend bridge failures as real session errors instead of hiding them inside a broken stream.
+  - Behavior: when the bridge emits an error frame, the session fails with a visible error state that the UI can surface.
+  - Implementation: the `kind === "error"` branches inside `fullStream` in `packages/opencode/src/session/agency-swarm.ts` convert bridge error frames into thrown session errors.
+  - Added by: `ad0cc2c1`
 
-- `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `packages/opencode/src/cli/cmd/tui/session-error.ts`, `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`, `packages/opencode/src/cli/cmd/tui/routes/session/sidebar.tsx`
-  Motivation: add Run mode connect and auth flows, agency selection, startup recovery, and framework-vs-run command gating for daily Agency Swarm use.
-  Upstream-merge impact: `high` because upstream TUI routing, dialogs, and session flows are active areas with repeated churn.
+- **Filter Codex OAuth to OpenAI-based LiteLLM runs**
+  - Intent: avoid sending Codex OAuth credentials to non-OpenAI agency backends that cannot use them.
+  - Behavior: LiteLLM agency runs only keep Codex OAuth auth when the target model is OpenAI-based.
+  - Implementation: `shouldStripCodexOAuth` and `stripCodexOAuthForNonOpenAI` in `packages/opencode/src/session/agency-swarm.ts` remove Codex OAuth auth from unsupported agency requests.
+  - Added by: `6e36ccac`
 
-- `packages/opencode/src/cli/cmd/tui/context/theme.tsx`, `packages/opencode/src/config/tui.ts`, `packages/opencode/src/config/tui-migrate.ts`, `packages/opencode/src/config/tui-schema.ts`
-  Motivation: force the Agent Swarm palette and dark-theme defaults, including Apple Terminal fallback handling and migration out of legacy config keys.
-  Upstream-merge impact: `medium` because the forked behavior is contained, but it intentionally diverges from upstream theme policy.
+- **Tool outputs follow wrapper `call_id`**
+  - Intent: keep tool result events tied to the correct wrapper call when Agency Swarm wraps tool traffic.
+  - Behavior: tool outputs land on the right tool call instead of attaching to the wrong item or going missing.
+  - Implementation: `findCallID` and the `tool_output` branch in `handleRunItemEvent` in `packages/opencode/src/session/agency-swarm.ts` resolve wrapper `call_id` values before the fork records tool results.
+  - Added by: `e28e3a02`
 
-- `packages/ui/src/components/*`, `packages/opencode/src/cli/cmd/tui/component/prompt/*`, `packages/opencode/src/cli/cmd/tui/feature-plugins/sidebar/footer.tsx`
-  Motivation: keep tool rendering, reasoning text, footer/status affordances, and session transitions aligned with Agent Builder and Run mode expectations.
-  Upstream-merge impact: `medium` because the changes are mostly presentation-level, but they span shared UI components that upstream also evolves.
+## CLI/TUI UX
 
-### Tests
+- **`/auth` is separate from `/connect`**
+  - Intent: split provider authentication from Agency Swarm server connection so each flow is clearer.
+  - Behavior: `/auth` opens provider login and key setup, while `/connect` stays focused on Agency Swarm server connection.
+  - Implementation: slash command registration in `packages/opencode/src/cli/cmd/tui/app.tsx` routes provider auth to `DialogAuth` and server connection to `DialogAgencySwarmConnect`.
+  - Added by: `42bda058`
 
-- `packages/opencode/test/agency-swarm/*`, `packages/opencode/test/session/agency-swarm*.test.ts`, `packages/opencode/test/provider/agency-swarm-provider.test.ts`, `packages/opencode/test/cli/agencii.test.ts`, `packages/opencode/test/cli/tui/session-error.test.ts`
-  Motivation: lock down Agency Swarm transport, auth, session resume, and CLI/TUI bridge behavior that upstream tests do not cover.
-  Upstream-merge impact: `medium` because these tests mirror fork-only APIs and will need updates whenever the integration layer moves.
+- **Startup auth gating only checks Agency-supported providers**
+  - Intent: stop startup auth prompts from blocking runs because of providers that the current Agency Swarm setup does not support.
+  - Behavior: the startup auth dialog only blocks for providers that matter to the active Agency Swarm flow.
+  - Implementation: `isSupportedAgencyAuthProvider`, `shouldOpenStartupAuthDialog`, and `shouldBlockAgencyPromptSubmit` in `packages/opencode/src/cli/cmd/tui/session-error.ts` filter auth gating to Agency-supported providers.
+  - Added by: `804d1806`
 
-- `packages/app/e2e/**`, `packages/app/src/testing/*`, `packages/app/test/e2e/*`, `packages/app/script/e2e-local.ts`
-  Motivation: add a dedicated browser E2E harness for branded app/session flows, prompt controls, sidebar behavior, and regression reproduction.
-  Upstream-merge impact: `medium` because the harness is large and app testing is changing upstream, but the risk is mostly maintenance overhead.
+- **Auth hints say missing vs rejected key**
+  - Intent: help users tell the difference between a missing credential and a bad credential.
+  - Behavior: auth error copy explains whether a key was not set or was rejected by the backend.
+  - Implementation: `describeStreamAuthError` in `packages/opencode/src/cli/cmd/tui/session-error.ts` maps auth failures to the fork's user-facing error text.
+  - Added by: `662654b6`
 
-- Broad test refactors across `packages/opencode/test/**`, including new utility coverage such as `packages/opencode/test/util/flock.test.ts`
-  Motivation: keep the forked core refactors and package-graph changes covered instead of relying on upstream test layout and imports.
-  Upstream-merge impact: `medium` because the changes follow code movement, but they widen the fork diff in already-busy test directories.
+- **Auth modal blocks prompt input and closes on Esc**
+  - Intent: stop users from typing into the main prompt while an auth blocker is still open.
+  - Behavior: the auth modal owns input focus until it closes, and pressing Esc closes it cleanly.
+  - Implementation: `closeDialogAuthOnEscape` in `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx` and the auth guard in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx` keep prompt input behind the modal.
+  - Added by: `2cc6e94a`
 
-### Web/App Surface
+- **Dead agency server detection opens reconnect**
+  - Intent: recover faster when the local Agency Swarm server dies during a fork session.
+  - Behavior: the TUI notices a dead server and opens the reconnect flow instead of leaving the user in a broken session.
+  - Implementation: `createAgencySwarmConnectionMonitor` in `packages/opencode/src/cli/cmd/tui/context/agency-swarm-connection.tsx` watches the bridge health and opens reconnect handling when it fails.
+  - Added by: `92ef7ee2`
 
-- `packages/app/src/app.tsx`, `packages/app/src/pages/layout.tsx`, `packages/app/src/pages/session.tsx`, `packages/app/src/components/prompt-input.tsx`, `packages/app/src/components/session/session-header.tsx`, `packages/app/src/context/global-sync/bootstrap.ts`, `packages/app/src/context/local.tsx`, `packages/ui/src/components/*`
-  Motivation: support Agent Builder and Run mode, session review variants, prompt/model controls, project/workspace management, and stability fixes required by the fork’s daily workflow.
-  Upstream-merge impact: `high` because upstream app shell and session work is active and these files are frequently touched.
+- **Agency backend management commands**
+  - Intent: give users a direct CLI for installing, starting, and maintaining the Agency Swarm backend.
+  - Behavior: the fork exposes `agencii` subcommands for backend setup and management tasks.
+  - Implementation: `AgenciiCommand` in `packages/opencode/src/cli/cmd/agencii.ts` defines the fork-only backend management command tree.
+  - Added by: `14abd070`
 
-- `packages/web/src/components/Share.tsx`, `packages/web/src/components/share/part.tsx`, `packages/web/src/pages/s/[id].astro`, `packages/web/src/content/docs/**`, `README.md`
-  Motivation: rebrand public docs and share pages, document Agent Builder / Plan / Run mode, and describe the fork’s supported providers and tools.
-  Upstream-merge impact: `medium` because docs are easier to refresh than runtime code, but the localization footprint is large.
+- **Tab cycles recipient agents in Run mode**
+  - Intent: speed up agent switching during run sessions without reopening a picker.
+  - Behavior: pressing Tab in Run mode cycles through available recipient agents.
+  - Implementation: `cycleAgencyRunTarget` in `packages/opencode/src/cli/cmd/tui/app.tsx` and `cycleAgencyTargetSelection` in `packages/opencode/src/cli/cmd/tui/util/agency-target.ts` advance the active recipient target.
+  - Added by: `d6b9ed38`
 
-- `packages/console/app/**`, `packages/console/core/**`, `packages/enterprise/**`, `packages/desktop-electron/**`, `packages/desktop/**`, `sdks/vscode/**`
-  Motivation: carry fork-specific naming, download paths, provider assumptions, and launch behavior through every shipped surface that still presents or launches the product.
-  Upstream-merge impact: `high` because this spreads the fork delta across multiple products with independent upstream churn.
+- **Framework-mode `/models` only shows Agency-supported providers**
+  - Intent: keep the model picker from advertising provider choices that the Agency Swarm flow cannot use.
+  - Behavior: `/models` in framework mode only lists providers that the active Agency path supports.
+  - Implementation: `DialogModel` in `packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx` filters provider choices against the Agency-supported set.
+  - Added by: `828986fb`
 
-### Release/CI
+- **First prompt reaches the conversation screen without freezing**
+  - Intent: stop the first submitted prompt from hanging before the conversation view opens.
+  - Behavior: the first prompt transitions into the live conversation screen instead of freezing the TUI.
+  - Implementation: `onSubmit` in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx` sequences the first-run state update so the conversation screen can render.
+  - Added by: `adab6532`
 
-- `.github/workflows/publish-npm-on-release.yml`, `.github/workflows/publish.yml`, `.github/workflows/deploy.yml`, `.github/workflows/test.yml`, `.github/workflows/typecheck.yml`, `.github/workflows/nix-eval.yml`, `.github/workflows/pr-management.yml`
-  Motivation: route release and CI through fork-owned repos, runners, secrets, and guardrails instead of anomalyco infrastructure.
-  Upstream-merge impact: `medium` because workflow files are isolated, but they conflict whenever upstream CI policy changes.
+- **Run-target labels use live agency names**
+  - Intent: show the names users know from Agency Swarm instead of stale or generic labels.
+  - Behavior: agent pickers and run-target labels reflect the current live agency names.
+  - Implementation: `resolveAgencyTargetSelection` in `packages/opencode/src/cli/cmd/tui/util/agency-target.ts` and `DialogAgent` in `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx` render live agency names in the UI.
+  - Added by: `a798a402`
 
-- `.github/workflows/auth-smoke.yml`, `packages/opencode/script/auth-smoke-test.py`, related auth-smoke wiring in CI
-  Motivation: add a release-blocking real-auth smoke gate for OpenAI and Anthropic happy paths before shipping fork releases.
-  Upstream-merge impact: `medium` because the workflow is intentionally fork-specific and secret-sensitive, but the touched surface is limited.
+- **Agent Swarm palette is the safe default**
+  - Intent: keep the fork on its own supported theme instead of a default that may not match the fork UX.
+  - Behavior: new sessions default to the Agent Swarm palette when the selected theme is missing or not allowed.
+  - Implementation: `defaultThemeName` and `canSelectBuiltInThemeName` in `packages/opencode/src/cli/cmd/tui/context/theme.tsx` choose the fork-safe built-in theme.
+  - Added by: `ad05ec8b`
 
-- `AGENTS.md`, `CLAUDE.md`, `.agentswarm/skills/requirement-ledger/*`, `FORK_CHANGELOG.md`
-  Motivation: enforce clean-fork operating rules, symlinked policy distribution, durable requirement tracking, and explicit divergence substantiation.
-  Upstream-merge impact: `medium` because these files are mostly fork-local, but policy churn is continuous and must stay synchronized inside the fork.
+## Install/Upgrade
 
-## Future Reconciliation Targets
+- **One-command launcher onboarding and project detection**
+  - Intent: let `npx` users start inside the right Agency Swarm project with less setup guesswork.
+  - Behavior: the launcher can detect the target project and run its onboarding flow before starting the fork.
+  - Implementation: `shouldRunNpxOnboarding` and `resolveNpxAutoProject` in `packages/opencode/src/agency-swarm/npx.ts` decide when to onboard and which project to open.
+  - Added by: `772db106`
 
-- Collapse packaging drift back toward upstream once Agency Swarm naming and publish needs can be expressed as configuration instead of hard-forked manifests and scripts.
-- Reduce core-path Agency Swarm hooks by upstreaming generic provider and session extension points; keep only the Agency Swarm adapter layer fork-local.
-- Shrink the dark-palette and theme fork to a branded preset if upstream theme APIs can express the same behavior.
-- Upstream or neutralize the large app E2E harness pieces that are not inherently brand-specific.
-- Replace repeated web/docs/console brand edits with shared brand tokens or templating so new upstream docs do not require mass manual merges.
-- Revisit the `packages/util` / `packages/shared` graph drift and dependency pins; restore upstream layout where Agency Swarm behavior does not depend on the forked shape.
+- **Launcher bootstraps or repairs the project Python env**
+  - Intent: make the launcher fix missing or broken project Python setup instead of failing early.
+  - Behavior: startup can create or repair the project `.venv` and install the Python side before the fork continues.
+  - Implementation: `ensureProjectPython`, `installProjectDependencies`, and `venvCanaryPasses` in `packages/opencode/src/agency-swarm/npx.ts` rebuild the project Python environment when needed.
+  - Added by: `f10d9d84`
+
+- **Launcher refreshes `agency-swarm` inside the project `.venv`**
+  - Intent: keep the project backend package fresh enough for the launcher path to work.
+  - Behavior: the launcher upgrades the project `agency-swarm` install inside `.venv` before running when it is too old.
+  - Implementation: `ensureLatestAgencySwarm` in `packages/opencode/src/agency-swarm/npx.ts` checks and upgrades the project `agency-swarm` package inside the selected virtualenv.
+  - Added by: `a77de00c`
+
+- **Upgrade command rejects unsupported package-manager channels**
+  - Intent: stop the upgrade flow from pretending it can update installs that were done through unsupported package-manager paths.
+  - Behavior: `upgrade` exits with a clear message when the current install channel is not one the fork knows how to update safely.
+  - Implementation: `latestImpl` and `upgradeImpl` in `packages/opencode/src/installation/index.ts` with `UpgradeCommand` in `packages/opencode/src/cli/cmd/upgrade.ts` gate upgrade support by install channel.
+  - Added by: `9d86d959`
+
+## Web/App Surface
+
+- **README mode overview for Agent Builder, Plan, and Run**
+  - Intent: explain the fork's main working modes in the top-level docs instead of leaving users to infer them from the UI.
+  - Behavior: the README describes Agent Builder, Plan, and Run as the fork's main user-facing modes.
+  - Implementation: the `### Agents` section in `README.md` documents the fork-specific mode model.
+  - Added by: `1df2f455`
+
+- **Canonical flow map for fork entry points**
+  - Intent: give users one place to see the fork's supported paths through the product.
+  - Behavior: `USER_FLOWS.md` lays out the main fork flows for onboarding, auth, agency runs, and related entry points.
+  - Implementation: the named flow sections in `USER_FLOWS.md` define the fork's canonical user-flow map.
+  - Added by: `b591c478`
+
+## Tests
+
+- **Agency Swarm integration regression suite**
+  - Intent: keep fork-only Agency Swarm behavior covered by tests instead of relying on manual checks.
+  - Behavior: the repo has regression tests for session and provider behavior that upstream does not ship.
+  - Implementation: `packages/opencode/test/session/agency-swarm.test.ts` and `packages/opencode/test/provider/agency-swarm-provider.test.ts` hold the fork's Agency Swarm integration coverage.
+  - Added by: `fd2f678b`
+
+## Release/CI
+
+- **Release-blocking auth smoke workflow**
+  - Intent: stop broken auth releases before fork packages are published.
+  - Behavior: GitHub Actions runs an auth smoke check as a release gate.
+  - Implementation: `jobs.smoke` in `.github/workflows/auth-smoke.yml` runs `packages/opencode/script/auth-smoke-test.py` as the fork's auth release gate.
+  - Added by: `4acd5f33`
+
+- **GitHub release publishes fork npm packages**
+  - Intent: publish the fork package set from the fork release workflow instead of the upstream package set.
+  - Behavior: release automation pushes the fork npm packages when a GitHub release runs.
+  - Implementation: `jobs.publish` in `.github/workflows/publish-npm-on-release.yml` runs `packages/opencode/script/publish.ts` to publish the fork package set.
+  - Added by: `fd2f678b`
+
+## Policy
+
+- **Artifact-aware requirement ledger**
+  - Intent: keep active work tied to the branches, PRs, files, and other artifacts it creates.
+  - Behavior: the ledger workflow records artifact lists on active requirements instead of leaving them implicit.
+  - Implementation: `command_add` and `command_update` in `.agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py` enforce artifact tracking in the ledger data.
+  - Added by: `41f624ab`
+
+- **Fork divergence substantiation log**
+  - Intent: keep a durable proof list of why the fork is different from upstream.
+  - Behavior: `FORK_CHANGELOG.md` tracks the current fork-only feature set against the upstream baseline.
+  - Implementation: `## Upstream Baseline Anchor` and the category sections in `FORK_CHANGELOG.md` define the fork divergence record.
+  - Added by: `0e9d311d`
+
+- **Upstream comparison before fork edits**
+  - Intent: force fork edits to justify themselves against upstream before they land.
+  - Behavior: the standing rules require an upstream read before non-trivial edits to shared files.
+  - Implementation: `## Fork Context` in `AGENTS.md` defines the required upstream comparison step for fork edits.
+  - Added by: `27e66122`
+
+- **End-user proof gate for bug fixes**
+  - Intent: stop bug fixes from being marked done without proof from the real user flow.
+  - Behavior: bug-fix work is not complete until the same user-visible flow is rerun and checked.
+  - Implementation: the proof rules under `## Safety Protocols` in `AGENTS.md` require end-user reproduction and end-user verification for bug fixes.
+  - Added by: `537df24c`
+
+- **Screenshot proof gate for TUI and visual fixes**
+  - Intent: stop visual and TUI fixes from closing without a real image check.
+  - Behavior: TUI and visual bug fixes need screenshot proof from the installed or user-visible build.
+  - Implementation: the TUI proof rule under `## Safety Protocols` in `AGENTS.md` requires screenshot evidence for TUI and visual fixes.
+  - Added by: `80f8fa36`
+
+- **Codex pre-release review gate**
+  - Intent: stop release work from shipping before the fork's required Codex review is complete.
+  - Behavior: release work stays open until the release gate has a clean Codex review and no unresolved PR state.
+  - Implementation: the release-gate rules in `AGENTS.md` require a clean Codex review artifact and resolved PR state before release-complete status.
+  - Added by: `f143e53d`
+
+## Review for Removal
+
+- None.
 
 ## Maintenance Protocol
 
-1. Refresh the anchor block with `git rev-parse origin/dev`, `git rev-parse --short vrsen/dev`, `git rev-list --left-right --count origin/dev...vrsen/dev`, `git log --oneline origin/dev..vrsen/dev`, and `git diff --stat origin/dev..vrsen/dev`.
-2. Before editing any file that also exists in `origin/dev`, compare the upstream version first and record the intended behavior delta, per AGENTS.md §6.6.1.
-3. If the edit creates or preserves a fork-only divergence, add or update the matching entry in this file with files/features, observed motivation, and upstream-merge impact, satisfying AGENTS.md §6.6.2.
-4. If the divergence is no longer strictly required for the fork directive, remove it and restore the upstream shape instead of documenting more drift, per AGENTS.md §6.6.3.
-5. Keep entries feature-level and human-readable; use raw `git diff --name-status origin/dev..vrsen/dev` only when a reviewer needs the full file inventory.
+1. Refresh the upstream anchor with fresh `git rev-parse` and `git rev-list --left-right --count` output before you edit this file.
+2. Rebuild the live fork delta from fresh `git log` and `git diff` output before you add, remove, or rewrite entries.
+3. Record exactly one live fork feature per entry, and never bundle separate user-visible behaviors or separate technical mechanisms into one entry.
+4. Keep each `Implementation` line to one sentence that names the file path and the key function or symbol that a rebuilder would need on top of upstream.
+5. If a feature no longer exists on `vrsen/dev` HEAD, remove it instead of keeping historical noise here.
+6. If you cannot prove a concrete commit SHA, PR number, or release tag for a live feature, move it to `## Review for Removal` with a one-line reason.
