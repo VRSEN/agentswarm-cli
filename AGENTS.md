@@ -15,8 +15,8 @@ Words: `manager` = can delegate; `subagent` = cannot delegate; `mandate` = the e
 - At task start, identify your role. A manager can delegate. A subagent cannot.
 - Protect the context window. Prefer bounded reads and searches. Do not pull huge output unless you need it.
 - Managers stay at manager height: coordinate, reprioritize, review, make key calls, and verify the critical path.
-- Managers delegate only when that clearly shortens the critical path or cuts context load. When the delegated work is small and clear, prefer the local `codex` command (`codex exec` or `codex review`) over heavier subagents.
-- Use the smallest useful delegated scope that still cleanly covers the task. Default to one subagent, but use multiple focused subagents when that clearly shortens the critical path. Keep trivial mechanical edits on the manager thread.
+- Managers delegate only when that clearly shortens the critical path or cuts context load. Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
+- When the delegated work is small and clear, prefer the local `codex` command (`codex exec` or `codex review`) over heavier subagents. Use the smallest useful delegated scope that still cleanly covers the task. Default to one subagent, but use multiple focused subagents when that clearly shortens the critical path.
 - Why: recent broad manager-owned edits made request ownership hard to trace and burned main-thread context.
 - After you delegate, do not interrupt, rush, or keep pinging subagents unless the user changes scope or you have clear proof of failure.
 - Start each delegated task with enough context: the exact user ask, needed background, directly related artifacts, and the higher goal. For Codex xhigh, give intent, the required result, and hard limits. For other subagents, leave room for judgment.
@@ -82,7 +82,7 @@ Repo State
 - If the task spans more than one repo or worktree, run `git fetch origin`, `git status -sb`, and `git rev-parse --short HEAD`, or the repo-tooling equivalent, in each one and confirm the active branch before you edit.
 - If the target branch has an open pull request, read the latest comments, reviews, unresolved threads, and head SHA first. GitHub is the source of truth for live pull-request state.
 - If there is already an open pull request for the same work, reuse it unless it was clearly discarded or reuse is truly impossible.
-- Before you open, update, or merge a pull request, verify the source branch, base branch, head SHA, and live diff.
+- Before you open, update, or merge a pull request, verify the source branch, base branch, head SHA, live diff, and PR-body compliance. On first push, the body must already include `Closes #<ID>` or the tracked REQ; the compliance bot auto-closes non-compliant PRs after 2 hours.
 Execution
 - Complete one change at a time. Stash unrelated work before you start another change.
 - If a change breaks these rules, fix it right away with the smallest safe edit.
@@ -99,16 +99,14 @@ Execution
 - Before you reply or decide you are done, review the plan and any active ledger. If a critical next step is still possible, keep working.
 - Stop only when every active request is complete, clearly deferred, archived as fulfilled, removed by the user, or blocked by an explicit escalation trigger. A wait, poll, cleanup, or verification you can still run is still unfinished work.
 - Reclaim or close clearly agent-owned shells, tmux sessions, Codex resume sessions, and polling loops you or delegated subagents spawned in this or prior turns, using session IDs or `ps` tree markers. Do not hunt processes you cannot attribute.
-- Do not let verified local drift pile up.
 - Once work is verified and approval to ship is clear, commit and push it promptly. If it is wrong, remove it promptly.
-- Do not keep verified changes local except while waiting for explicit ship approval or while preparing the exact approved ship step.
-- Do not leave verified changes uncommitted or unpushed when approval to ship is already clear.
+- Do not keep verified changes local or unpushed once approval to ship is clear, except while preparing the exact approved ship step.
 - Mark blockers in the plan only when they truly block the critical path. Remove dead branches of work from the plan right away.
 - For build-impact pull-request work, do not hand off as done until the latest head is review-complete.
 - Review-complete means zero unresolved threads, a clean local Codex review artifact, green required checks, and explicit approval or thumbs up on the latest head.
 - Pending GitHub checks, pending pull-request Codex review, unresolved pull-request comments, and other agent-visible outside workflows still count as open work.
 - If only outside signals are pending, report the exact waiting state and keep polling.
-- If the next step is polling, retriggering, fixing, or otherwise moving an outside workflow you can observe, keep doing that until it ends or you can prove a real outside block.
+- If the next step is polling, keep doing it until the workflow ends or you can prove a real outside block. For delegated subagents, check every 3 minutes; if two checks in a row show no meaningful new log content, take over on the manager thread or escalate instead of firing a replacement subagent for the same concept.
 - When polling is next, keep a live wait loop or session and poll at least once a minute with `sleep 60`.
 - If pull-request Codex stays non-terminal for 15 minutes, inspect the latest state and retrigger once if needed.
 - Wait up to 30 minutes for GitHub CI, which means automated GitHub checks, before you call it stalled.
@@ -306,8 +304,10 @@ Why: mistakes repeat when rules are not tightened.
   3. The user tests that local build by hand and gives explicit approval.
   4. Only then tag the release, create the GitHub Release, and publish to npm.
 - Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts changed.
+- Before any `agentswarm --version` check against a published npm release, remove any `bun link` symlink at `/Users/nick/.bun/bin/<name>` that would mask the npm-installed binary.
 - Before any release or safety claim, build and reinstall the CLI from the fresh local build, launch it against the maintainer's canonical local test agency, send a real first message through the connected conversation, and verify that a non-empty streaming assistant response renders.
-- Auth-smoke CI alone never passes this gate. Any launch failure, including environment, credential, dependency, or TUI transition issues, blocks the release until you reproduce it and find the root cause.
+- Auth-smoke CI alone never passes this gate. For patch releases only, a missing live-LLM round caused by exhausted credits, corrupted local env, or network does not block ship when the latest Codex review is clean (0 P1 / 0 P2), unit tests pass, and a real-frame capture fixture already exists; log the QA skip in the ledger.
+- Otherwise any launch failure, including environment, credential, dependency, or TUI transition issues, blocks the release until you reproduce it and find the root cause.
 - Why: release claims were repeated while the installed binary still failed before a usable conversation.
 - No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit using `gpt-5.4` with `extra-high` reasoning.
 - Example: `codex review --base vrsen/dev -c model_reasoning_effort="extra-high"`. Run it only when the CLI default is already `gpt-5.4`, or add `-m gpt-5.4`; do not rely on unknown defaults.
