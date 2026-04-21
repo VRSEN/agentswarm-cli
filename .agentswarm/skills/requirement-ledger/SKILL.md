@@ -1,6 +1,6 @@
 ---
 name: requirement-ledger
-description: Use when a task needs a durable active requirement queue and archive workflow. Captures only real user requests or requirements with close original wording, source pointers, category, intent, status, and next action; avoids noisy transcript dumps without erasing user intent.
+description: Use when a task needs a durable active requirement queue and archive workflow. Captures only real user requests or requirements with close original wording, source pointers, category, intent, status, next action, and linked artifacts; avoids noisy transcript dumps without erasing user intent.
 ---
 
 # Requirement Ledger
@@ -36,6 +36,8 @@ Default files:
 
 Use `--ledger-dir <path>` for a temporary or task-specific ledger.
 
+Each item may carry an optional `artifacts` list for the live handles that already cover the work, such as `PR#123`, `branch:vrsen/dev`, `tag:v1.2.3`, `release:v1.2.3`, or `gist:abc123`. Use it to point the next agent at the right workspace before they create anything new.
+
 ## Commands
 
 Add an item:
@@ -47,7 +49,15 @@ python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py add \
   --original "build a durable active requirement queue and archive workflow" \
   --intent "Future agents need a compact active queue and archive workflow." \
   --next-action "Create the skill files and run a CLI smoke test." \
-  --source-pointer "chat:2026-04-15 user#2"
+  --source-pointer "chat:2026-04-15 user#2" \
+  --artifact "branch:vrsen/dev"
+```
+
+Append or clear linked artifacts on an existing item:
+
+```bash
+python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py update REQ-20260415-001 \
+  --artifact "PR#123"
 ```
 
 Update active state:

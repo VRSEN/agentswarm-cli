@@ -51,6 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("--intent", required=True)
     add_parser.add_argument("--next-action", required=True)
     add_parser.add_argument("--source-pointer", action="append", required=True, help="Repeat for multiple sources.")
+    add_parser.add_argument("--artifact", action="append", help="Repeat for multiple artifacts like PRs or branches.")
     add_parser.set_defaults(func=command_add)
 
     update_parser = subparsers.add_parser(
@@ -65,6 +66,8 @@ def build_parser() -> argparse.ArgumentParser:
     update_parser.add_argument("--intent")
     update_parser.add_argument("--next-action")
     update_parser.add_argument("--source-pointer", action="append", help="Append one or more source pointers.")
+    update_parser.add_argument("--artifact", action="append", help="Append one or more artifacts if missing.")
+    update_parser.add_argument("--artifacts-clear", action="store_true", help="Clear the artifacts list.")
     update_parser.set_defaults(func=command_update)
 
     complete_parser = subparsers.add_parser("complete", help="Move an active item to the archive.")
@@ -117,6 +120,7 @@ def command_add(args: argparse.Namespace) -> None:
         "intent": _required_text("intent", args.intent),
         "next_action": _required_text("next_action", args.next_action),
         "source_pointers": [_required_text("source_pointer", source) for source in args.source_pointer],
+        "artifacts": _merge_unique_texts([], _optional_texts("artifact", args.artifact)),
     }
     active["items"].append(item)
     _write_active(paths["active"], active)
@@ -136,13 +140,24 @@ def command_update(args: argparse.Namespace) -> None:
         "intent": args.intent,
         "next_action": args.next_action,
     }
-    if not any(value is not None for value in updates.values()) and not args.source_pointer:
+    if args.artifacts_clear and args.artifact:
+        raise LedgerError("cannot combine --artifact with --artifacts-clear")
+    if (
+        not any(value is not None for value in updates.values())
+        and not args.source_pointer
+        and not args.artifact
+        and not args.artifacts_clear
+    ):
         raise LedgerError("update needs at least one field to change")
     for field, value in updates.items():
         if value is not None:
             item[field] = _required_text(field, value)
     if args.source_pointer:
         item["source_pointers"].extend(_required_text("source_pointer", source) for source in args.source_pointer)
+    if args.artifacts_clear:
+        item["artifacts"] = []
+    if args.artifact:
+        item["artifacts"] = _merge_unique_texts(_read_artifacts(item), _optional_texts("artifact", args.artifact))
     item["updated_at"] = _now()
 
     _write_active(paths["active"], active)
@@ -175,6 +190,7 @@ def _archive_active_item(args: argparse.Namespace, status: str) -> None:
     archived_item = dict(item)
     archived_item["status"] = status
     archived_item["resolution"] = _required_text("resolution", args.resolution)
+    archived_item["artifacts"] = _read_artifacts(item)
     archived_item["updated_at"] = now
     archived_item["archived_at"] = now
 
@@ -285,6 +301,19 @@ def _validate_item(item: dict[str, Any], location: str, allowed_statuses: tuple[
         raise LedgerError(f"{location} is missing source pointers")
     if not all(isinstance(source, str) and source.strip() for source in source_pointers):
         raise LedgerError(f"{location} has invalid source pointers")
+    artifacts = item.get("artifacts")
+    if artifacts is not None:
+        if not isinstance(artifacts, list):
+            raise LedgerError(f"{location} has invalid artifacts")
+        if not all(isinstance(artifact, str) and artifact.strip() for artifact in artifacts):
+            raise LedgerError(f"{location} has invalid artifacts")
+
+
+def _read_artifacts(item: dict[str, Any]) -> list[str]:
+    artifacts = item.get("artifacts")
+    if artifacts is None:
+        return []
+    return list(artifacts)
 
 
 def _next_item_id(*item_groups: list[dict[str, Any]]) -> str:
@@ -309,6 +338,23 @@ def _required_text(field: str, value: str) -> str:
     return text
 
 
+def _optional_texts(field: str, values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    return [_required_text(field, value) for value in values]
+
+
+def _merge_unique_texts(current: list[str], incoming: list[str]) -> list[str]:
+    merged = list(current)
+    seen = set(current)
+    for value in incoming:
+        if value in seen:
+            continue
+        merged.append(value)
+        seen.add(value)
+    return merged
+
+
 def _print_items(label: str, items: list[dict[str, Any]]) -> None:
     print(f"{label} ({len(items)})")
     for item in items:
@@ -317,6 +363,8 @@ def _print_items(label: str, items: list[dict[str, Any]]) -> None:
         print(f"  intent: {item['intent']}")
         print(f"  next: {item.get('next_action', 'none')}")
         print(f"  source: {', '.join(item.get('source_pointers', []))}")
+        if artifacts := _read_artifacts(item):
+            print(f"  artifacts: {', '.join(artifacts)}")
         if item.get("resolution"):
             print(f"  resolution: {item['resolution']}")
 
