@@ -47,7 +47,7 @@ import {
   shouldOpenAgencyAuthDialog,
 } from "../../session-error"
 import { errorMessage as toErrorMessage } from "@/util/error"
-import { displayRunOnlyAgentLabel } from "../../util/agency-target"
+import { displayRunOnlyAgentLabel, readAgencyProviderOptions } from "../../util/agency-target"
 
 export type PromptProps = {
   sessionID?: string
@@ -143,6 +143,13 @@ export function Prompt(props: PromptProps) {
     }),
   )
   const effectiveAgentName = createMemo(() => (frameworkMode() ? "build" : local.agent.current().name))
+  const frameworkRecipientLabel = createMemo(() => {
+    if (!frameworkMode()) return undefined
+    return readAgencyProviderOptions({
+      configuredProvider: sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID],
+      connectedProvider: sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID),
+    }).recipientAgent
+  })
   const currentProviderLabel = createMemo(() => {
     const current = local.model.current()
     const provider = local.model.parsed().provider
@@ -1273,6 +1280,7 @@ export function Prompt(props: PromptProps) {
                     ? "Shell"
                     : displayRunOnlyAgentLabel({
                         frameworkMode: frameworkMode(),
+                        recipientLabel: frameworkRecipientLabel(),
                         localAgentName: effectiveAgentName(),
                       })}{" "}
                 </text>
