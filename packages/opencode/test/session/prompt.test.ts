@@ -230,6 +230,33 @@ describe("session.prompt special characters", () => {
 })
 
 describe("session.prompt regression", () => {
+  test("uses the agency-swarm bridge on the first send after auth when the agent stays in framework mode", () => {
+    expect(
+      SessionPrompt.shouldUseAgencySwarmBridge({
+        resolvedProviderID: "openai",
+        agentProviderID: "agency-swarm",
+      }),
+    ).toBe(true)
+  })
+
+  test("keeps the agency-swarm bridge active for follow-up turns after an agency response", () => {
+    expect(
+      SessionPrompt.shouldUseAgencySwarmBridge({
+        resolvedProviderID: "openai",
+        lastAssistantProviderID: "agency-swarm",
+      }),
+    ).toBe(true)
+  })
+
+  test("does not use the agency-swarm bridge outside framework mode", () => {
+    expect(
+      SessionPrompt.shouldUseAgencySwarmBridge({
+        resolvedProviderID: "openai",
+        agentProviderID: "openai",
+      }),
+    ).toBe(false)
+  })
+
   test("skips fallback title generation for agency-swarm sessions", async () => {
     const originalStreamRun = AgencySwarmAdapter.streamRun
     const originalLLMStream = LLM.stream

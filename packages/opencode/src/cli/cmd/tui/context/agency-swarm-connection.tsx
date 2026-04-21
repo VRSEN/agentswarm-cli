@@ -1,6 +1,7 @@
 import { createMemo, createEffect, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { Log } from "@/util/log"
 import { createSimpleContext } from "./helper"
 import { useLocal } from "./local"
 import { useSync } from "./sync"
@@ -11,6 +12,8 @@ import { isAgencySwarmFrameworkMode } from "../session-error"
 export const AGENCY_SWARM_HEALTH_FAILURE_THRESHOLD = 2
 export const AGENCY_SWARM_HEALTH_IDLE_INTERVAL_MS = 5_000
 export const AGENCY_SWARM_HEALTH_RECOVERED_INTERVAL_MS = 15_000
+
+const log = Log.create({ service: "tui.agency-swarm-connection" })
 
 type AgencySwarmConfig = {
   baseURL: string
@@ -100,7 +103,14 @@ export function createAgencySwarmConnectionMonitor(input: {
   }
 
   const openConnectDialog = () => {
-    if (!input.openConnectDialog()) return
+    if (!input.openConnectDialog()) {
+      log.error("agency-swarm reconnect dialog could not open while the bridge was unhealthy", {
+        baseURL: store.baseURL,
+        failureCount: store.failureCount,
+        lastError: store.lastError,
+      })
+      return
+    }
     const baseURL = store.baseURL
     if (baseURL) dialogShownForBaseURL = baseURL
   }
@@ -114,6 +124,11 @@ export function createAgencySwarmConnectionMonitor(input: {
     clearTimer()
 
     if (!enabled || !config) {
+      if (enabled && !config) {
+        log.error("agency-swarm framework mode is active but no bridge config is available", {
+          baseURL: store.baseURL,
+        })
+      }
       dialogShownForBaseURL = undefined
       setStore({
         active: false,
@@ -189,6 +204,11 @@ export function createAgencySwarmConnectionMonitor(input: {
         })
 
         if (disconnected && dialogShownForBaseURL !== config.baseURL) {
+          log.error("agency-swarm bridge marked disconnected after repeated health-check failures", {
+            baseURL: config.baseURL,
+            failureCount,
+            lastError,
+          })
           openConnectDialog()
         }
       } finally {

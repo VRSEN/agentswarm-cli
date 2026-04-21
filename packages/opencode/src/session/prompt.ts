@@ -72,6 +72,18 @@ const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested struc
 export namespace SessionPrompt {
   const log = Log.create({ service: "session.prompt" })
 
+  export function shouldUseAgencySwarmBridge(input: {
+    resolvedProviderID: string
+    agentProviderID?: string
+    lastAssistantProviderID?: string
+  }) {
+    return (
+      input.resolvedProviderID === SessionAgencySwarm.PROVIDER_ID ||
+      input.agentProviderID === SessionAgencySwarm.PROVIDER_ID ||
+      input.lastAssistantProviderID === SessionAgencySwarm.PROVIDER_ID
+    )
+  }
+
   export interface Interface {
     readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
     readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
@@ -1400,25 +1412,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               }).pipe(Effect.ignore, Effect.forkIn(scope))
 
             const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
-            // Use the Agency Swarm HTTP bridge when:
-            // - the resolved turn model is agency-swarm, or
-            // - the last assistant was from the bridge (continuation of an ongoing agency-swarm session).
-            // Explicit non-agency-swarm overrides (agent/stored/CLI) must run direct — do not coerce based on
-            // config.model alone, since the resolved model already reflects selectCurrentModel's decision.
-            const useAgencySwarmBridge =
-              model.providerID === SessionAgencySwarm.PROVIDER_ID ||
-              (lastAssistant?.providerID === SessionAgencySwarm.PROVIDER_ID &&
-                model.providerID !== SessionAgencySwarm.PROVIDER_ID)
-            // Persist assistant rows as agency-swarm when using the HTTP bridge. Otherwise the message would
-            // carry the UI/credential model (e.g. opencode/anthropic) and the next turn would not match
-            // `lastAssistant?.providerID === agency-swarm`, so the bridge would stop after one reply.
-            const processorModel = useAgencySwarmBridge
-              ? yield* getModel(
-                  ProviderID.make(SessionAgencySwarm.PROVIDER_ID),
-                  ModelID.make(AgencySwarmAdapter.DEFAULT_MODEL_ID),
-                  sessionID,
-                )
-              : model
             const task = tasks.pop()
 
             if (task?.type === "subtask") {
@@ -1455,6 +1448,21 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
               throw error
             }
+            const useAgencySwarmBridge = shouldUseAgencySwarmBridge({
+              resolvedProviderID: model.providerID,
+              agentProviderID: agent.model?.providerID,
+              lastAssistantProviderID: lastAssistant?.providerID,
+            })
+            // Persist assistant rows as agency-swarm when using the HTTP bridge. Otherwise the message would
+            // carry the UI/credential model (e.g. opencode/anthropic) and the next turn would not match
+            // `lastAssistant?.providerID === agency-swarm`, so the bridge would stop after one reply.
+            const processorModel = useAgencySwarmBridge
+              ? yield* getModel(
+                  ProviderID.make(SessionAgencySwarm.PROVIDER_ID),
+                  ModelID.make(AgencySwarmAdapter.DEFAULT_MODEL_ID),
+                  sessionID,
+                )
+              : model
             const maxSteps = agent.steps ?? Infinity
             const isLastStep = step >= maxSteps
             msgs = yield* insertReminders({ messages: msgs, agent, session })

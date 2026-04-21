@@ -1,3 +1,7 @@
+import { Log } from "@/util/log"
+
+const log = Log.create({ service: "agency-swarm.tui" })
+
 function read(input: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = input[key]
@@ -10,7 +14,10 @@ function read(input: Record<string, unknown>, keys: string[]) {
 function parse(raw: string) {
   try {
     return JSON.parse(raw) as unknown
-  } catch {
+  } catch (error) {
+    log.error("failed to parse agency-swarm TUI payload; ignoring malformed value", {
+      error: error instanceof Error ? error.message : String(error),
+    })
     return
   }
 }

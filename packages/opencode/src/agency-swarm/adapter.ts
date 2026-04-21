@@ -240,6 +240,10 @@ export namespace AgencySwarmAdapter {
       )
     } catch (error) {
       if (isAbortError(error)) throw error
+      log.error("agency-swarm stream request failed before the backend responded", {
+        url,
+        error: toErrorMessage(error),
+      })
       yield {
         type: "error",
         error: toErrorMessage(error),
@@ -250,6 +254,11 @@ export namespace AgencySwarmAdapter {
 
     if (!response.ok) {
       const body = await response.text().catch(() => "")
+      log.error("agency-swarm stream request failed", {
+        url,
+        status: response.status,
+        body: body || "No response body",
+      })
       yield {
         type: "error",
         error: `Streaming request failed (${response.status}): ${body || "No response body"}`,
@@ -273,6 +282,10 @@ export namespace AgencySwarmAdapter {
         if (event.event === "messages") {
           const payload = parseJSON(event.data)
           if (!payload) {
+            log.error("received malformed messages payload from agency-swarm stream", {
+              url,
+              data: event.data,
+            })
             yield {
               type: "error",
               error: "Received malformed messages payload from agency-swarm stream",
@@ -291,6 +304,10 @@ export namespace AgencySwarmAdapter {
 
         const payload = parseJSON(event.data)
         if (!payload) {
+          log.error("received malformed stream payload from agency-swarm", {
+            url,
+            data: event.data,
+          })
           yield {
             type: "error",
             error: "Received malformed stream payload from agency-swarm",
@@ -321,6 +338,10 @@ export namespace AgencySwarmAdapter {
       }
     } catch (error) {
       if (isAbortError(error)) throw error
+      log.error("agency-swarm stream parser failed", {
+        url,
+        error: toErrorMessage(error),
+      })
       yield {
         type: "error",
         error: toErrorMessage(error),

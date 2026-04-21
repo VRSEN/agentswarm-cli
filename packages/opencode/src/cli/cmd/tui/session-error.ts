@@ -1,10 +1,12 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { hasClientConfigCredential } from "@/agency-swarm/client-config"
 import { Flag } from "@/flag/flag"
+import { Log } from "@/util/log"
 import { hasStoredProviderCredential } from "@tui/util/provider-auth"
 import type { Provider, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 
 export const AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS = ["openai", "anthropic"] as const
+const log = Log.create({ service: "tui.session-error" })
 
 /**
  * True when a provider id is usable in Agent Swarm framework mode: either the
@@ -69,7 +71,11 @@ function isLoopbackBaseURL(baseURL: string) {
       parsed.hostname === "::1" ||
       parsed.hostname === "[::1]"
     )
-  } catch {
+  } catch (error) {
+    log.error("failed to parse agency-swarm base URL while checking local-provider auth policy", {
+      baseURL,
+      error: error instanceof Error ? error.message : String(error),
+    })
     return false
   }
 }
@@ -230,15 +236,32 @@ export function shouldBlockAgencyPromptSubmit(input: {
 
 export function shouldOpenAgencyConnectDialog(input: { providerID?: string; message: string }) {
   if (input.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
-  if (/cannot reach agency-swarm backend/i.test(input.message)) return true
+  if (/cannot reach agency-swarm backend/i.test(input.message)) {
+    log.error("agency-swarm bridge failure requires reconnect dialog", {
+      message: input.message,
+    })
+    return true
+  }
   if (isAgencyProviderCredentialFailure(input.message)) return false
-  return /unauthori[sz]ed|forbidden|\b401\b|\b403\b/i.test(input.message)
+  const shouldOpen = /unauthori[sz]ed|forbidden|\b401\b|\b403\b/i.test(input.message)
+  if (shouldOpen) {
+    log.error("agency-swarm bridge authz failure requires reconnect dialog", {
+      message: input.message,
+    })
+  }
+  return shouldOpen
 }
 
 export function shouldOpenAgencyAuthDialog(input: { providerID?: string; message: string }) {
   if (input.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
   if (shouldOpenAgencyConnectDialog(input)) return false
-  return isAgencyProviderCredentialFailure(input.message)
+  const shouldOpen = isAgencyProviderCredentialFailure(input.message)
+  if (shouldOpen) {
+    log.error("agency-swarm upstream credential failure requires auth dialog", {
+      message: input.message,
+    })
+  }
+  return shouldOpen
 }
 
 export function describeAgencyAuthFailure(message: string) {
