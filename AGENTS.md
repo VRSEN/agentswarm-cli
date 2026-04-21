@@ -50,9 +50,9 @@ Why: voice-transcribed input is homophone-prone.
 Begin each task with this readiness check:
 Context
 - If a request has several parts, or needs more than one simple step, use the plan tool only for the short execution plan for the current task. Do not use it as the durable backlog.
-- If the task can outlive the chat, keep a durable local ledger.
+- For every non-trivial turn, keep a durable local ledger. The ledger is required; chat memory is not the durable record.
 - Use `.agentswarm/skills/requirement-ledger` for durable ledger changes. Do not hand-edit ledger files.
-- Keep the plan and the ledger separate but aligned.
+- Keep the plan and the ledger separate but aligned. The plan is for the current task. The ledger is the sole durable task record.
 - Review and update the ledger on every new user requirement, every task switch, after meaningful progress, before commits, before pull-request or release actions, and before you stop or send a substantive reply.
 - Before you edit a durable queue, choose the strategy on purpose and keep active items in their real strategic order. At every task boundary and task switch, reread the whole active ledger before you pick the next step.
 - Keep the ledger active-only. Move done, deferred, failed, and noise items into a short archive that keeps wording and source pointers.
@@ -97,7 +97,9 @@ Execution
 - Use the plan as the current-task execution plan. Reprioritize it around the critical path.
 - Before you reply or decide you are done, review the plan and any active ledger. If a critical next step is still possible, keep working.
 - Stop only when every active request is complete, clearly deferred, archived as fulfilled, removed by the user, or blocked by a real escalation trigger. A wait, poll, cleanup, or verification you can still run is still unfinished work.
-- At every task boundary, reclaim or close any subprocess, background shell, tmux session, Codex resume, or polling loop you or delegated subagents spawned. Do not leave stale agent-owned processes behind or ask the user to clean them up.
+- Reuse an existing background session when it still covers the need. Do not spawn duplicate background shells, tmux sessions, Codex resumes, or polling loops.
+- Record why each background session exists. Poll long-running sessions on purpose instead of abandoning them mid-task.
+- At every task boundary, reclaim or close any subprocess, background shell, tmux session, Codex resume, or polling loop you or delegated subagents spawned. Background sessions and subagent runs are runtime state, not ledger artifacts unless they create a tracked artifact.
 - Do not let verified local drift pile up.
 - Once work is verified and approval to ship is clear, commit and push it promptly. If it is wrong, remove it promptly.
 - Do not keep verified changes local except while waiting for explicit ship approval or while preparing the exact approved ship step.
@@ -184,19 +186,25 @@ Why: mistakes repeat when rules are not tightened.
 - Every agent mistake means there is a rule gap.
 - When you make a mistake, diagnose the gap, tighten the rule, and record the fix in the same task.
 - On each user message, decide whether this file needs an update so the standing instruction can be derived from it next time.
-- When you add or change a rule, keep or add the concrete reason it exists. Review the local diff for duplication, conflict, and extra process cost. Tighten or move an old rule before you restate it. Keep rule edits out of unrelated feature pull requests.
+- When you add or change a rule, keep or add the concrete reason it exists. Review the local diff for duplication, conflict, and extra process cost. Tighten or move an old rule before you restate it.
+- No policy edit ships inside a public pull request. Keep rule edits out of feature pull requests and user-facing bugfix releases.
 - Managers must not edit this file directly. After drafting the policy task and getting user approval, route the edit to Codex xhigh. Avoid needless scripting. Prefer a bounded local Codex pass for review or finalization when it works cleanly.
 - For policy edits you start on your own, ask the user before you change the file. Do not stop normal coding or test work for extra approval requests.
 ### Writing Style (User Responses Only)
-- Use 8th-grade language in user replies. Lead with the answer. If one sentence is enough, use one sentence.
+- Start each manager reply with a one-line status preamble. Lead with the answer.
+- Use 8th-grade language in user replies. If one sentence is enough, use one sentence.
 - Use bullets or numbers only when they make things clearer.
 - Cut filler, vague wording, hype, and empty agreement words.
 - When giving feedback, quote or restate only the minimum text needed.
+- Ask at most one question at a time.
+- Use singular approval wording. Ask for one approval or one answer, not a bundled list.
+- Each reply may contain at most one `Escalations:` block.
+- If user action is needed, use one `Escalations:` block in the required problem, numbered options, and recommendation format. If nothing is needed, omit the block.
+- If work is blocked, say exactly what the user must supply.
 - Do not add a `Validation` section to user replies or pull-request descriptions. Fold key proof into the main update.
 - Do not mention review-artifact file paths or artifact inventories in user-facing replies unless the user asks.
 - When you talk about pull requests, branches, issues, docs pages, or other user-openable artifacts, include links unless the user asked for no links.
 - Never put sensitive information in deliverables.
-- Add an `Escalations:` block when user action is still needed. If nothing is needed, omit the block.
 ## Safety Protocols
 ### Mandatory Workflow
 #### Step 0: Build Full Codebase Structure And Review Change Scope
@@ -435,7 +443,6 @@ Why: without a hardcoded source of truth, agents re-derive behavior from code ea
 - Local package map: `packages/opencode/` for CLI core, `packages/app/` for app UI, `packages/docs/` for docs, and `packages/*/package.json` for package-local commands and entry points.
 ## Memory & Expectations
 - The user expects clear status updates, a test-first mindset, and directness.
-- Ask at most one question at a time.
 - After negative feedback or a protocol breach, tighten approvals, present minimal options, and wait for explicit approval before you change files.
 - Re-run Step 1 before and after edits in that stricter mode.
 - Memory files are for durable facts only. Do not use them as SOPs, run logs, journals, or transcripts.
