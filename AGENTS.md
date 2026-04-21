@@ -67,21 +67,21 @@ Context
 - If checked evidence fights a core user requirement, stop, ask one short question, and wait.
 - If the user asks for evidence, run the relevant code, examples, or commands and cite what you saw.
 Repo State
-- Keep one live list of the artifacts you own.
+- Keep one live list of the artifacts you own, and make sure every ledger item includes an `artifacts` list even when it is empty.
 - Track every pull request, linked issue, branch, worktree, file, temp asset, release artifact, published binary, open GitHub issue you filed, review artifact such as a local Codex review `.txt` file, pyte screenshot, temp QA directory, and any other open work artifact whether it is named here or not.
 - The moment one of those artifacts exists, it becomes a ledger item. Any state change on a tracked artifact must update the ledger before other work continues.
 - Keep each tracked artifact open in the ledger until it is shipped, clearly handed off, or clearly discarded.
 - A pull request or branch you created is still an open task. Never forget it.
 - Clean up old artifacts you created when a newer artifact fully replaces them and the older one is no longer needed for rollback or proof.
 - After your work lands on `vrsen/dev`, or is otherwise closed, clean up stale local branches and worktrees you own before you start new work. If ownership or merge state is unclear, escalate before cleanup.
-- Keep code changes and docs-only changes in separate review lanes when practical.
+- Docs-only and `FORK_CHANGELOG.md` edits go straight to `vrsen/dev`; open a docs pull request only when the user explicitly wants iterative polish work or CI must validate the change.
 - If `origin/dev` is reachable, run `git fetch --all --prune` and work from a named branch based on `origin/dev` before analysis, edits, or tests. `origin/dev` is the upstream branch. `vrsen/dev` is the shared fork branch.
 - For pushes to `vrsen/dev`, verify the `origin/dev...vrsen/dev` counts before you push.
 - For public release work, also verify that the exact release commit is already reachable from `vrsen/dev` and that the target version is already present in the release input files on that commit, such as `package.json`, package manifests, generated artifacts, and `bun.lock`.
 - If the remote is unavailable, you may continue, but say that you are assuming the branch is already synced.
 - If the task spans more than one repo or worktree, run the same remote checks in each one and confirm the active branch before you edit.
 - If the target branch has an open pull request, read the latest comments, reviews, unresolved threads, and head SHA first. GitHub is the source of truth for live pull-request state.
-- If there is already an open pull request for the same work, reuse it unless it was clearly discarded or reuse is truly impossible.
+- If there is already an open pull request for the same work, reuse it unless it was already merged, the user explicitly discarded it, or the work is under the docs-only direct-to-`vrsen/dev` rule.
 - Before you open, update, or merge a pull request, verify the source branch, base branch, head SHA, and live diff.
 Execution
 - Complete one change at a time. Stash unrelated work before you start another change.
@@ -205,6 +205,7 @@ Why: mistakes repeat when rules are not tightened.
 ### Mandatory Workflow
 #### Step 0: Build Full Codebase Structure And Review Change Scope
 `rg --files`
+- First classify the request by category and list every existing artifact that already covers it; if one exists, extend it instead of creating a new artifact.
 - Use `rg --files`, `git status -sb`, and focused diffs when you need structure discovery. Skip them when they do not help.
 - Keep the plan aligned with the latest diff. Update it when the diff changes.
 - If the user changes the working tree, never reapply those changes unless they ask.
