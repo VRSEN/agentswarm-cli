@@ -744,7 +744,14 @@ async function installProjectDependencies(directory: string, python: string[]): 
     return { ...result, hadManifests: true }
   }
 
-  const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.3"])
+  const result = await runCommand([
+    ...python,
+    "-m",
+    "pip",
+    "install",
+    "--upgrade",
+    "agency-swarm[fastapi,litellm]>=1.9.3",
+  ])
   return { ...result, hadManifests: false }
 }
 
@@ -786,7 +793,10 @@ async function findProjectShadowingFiles(directory: string) {
 }
 
 async function venvCanaryPasses(python: string[], options?: { cwd?: string }): Promise<boolean>
-async function venvCanaryPasses(python: string[], options: { cwd?: string; includeStderr: true }): Promise<VenvCanaryResult>
+async function venvCanaryPasses(
+  python: string[],
+  options: { cwd?: string; includeStderr: true },
+): Promise<VenvCanaryResult>
 async function venvCanaryPasses(python: string[], options?: { cwd?: string; includeStderr?: boolean }) {
   // No cwd by default: the canary must not pick up project-local modules (e.g. `fastapi.py`
   // sitting next to `agency.py`) that shadow installed packages and falsely flag a healthy
@@ -807,10 +817,9 @@ async function venvCanaryPasses(python: string[], options?: { cwd?: string; incl
 
 async function ensureLatestAgencySwarm(directory: string, python: string[]) {
   try {
-    const result = await runCommand(
-      [...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]"],
-      { cwd: directory },
-    )
+    const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]"], {
+      cwd: directory,
+    })
     if (result.code !== 0) {
       prompts.log.warn(
         "Could not refresh agency-swarm to the latest version. The current venv package will be used as-is.",
@@ -1028,10 +1037,7 @@ async function getFreePort() {
   })
 }
 
-async function runCommand(
-  cmd: string[],
-  options?: { cwd?: string; env?: NodeJS.ProcessEnv },
-): Promise<CommandResult> {
+async function runCommand(cmd: string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv }): Promise<CommandResult> {
   try {
     const proc = Bun.spawn({
       cmd,

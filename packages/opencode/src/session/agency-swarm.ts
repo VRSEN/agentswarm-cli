@@ -36,1906 +36,1917 @@ import {
   type AgencySwarmEventMeta,
 } from "./agency-swarm-utils"
 
-const log = Log.create({ service: "session.agency-swarm" })
-export const PROVIDER_ID = AgencySwarmAdapter.PROVIDER_ID
+export namespace SessionAgencySwarm {
+  const log = Log.create({ service: "session.agency-swarm" })
+  export const PROVIDER_ID = AgencySwarmAdapter.PROVIDER_ID
 
-const CANCEL_BEFORE_META_ABORT_MS = 3000
+  const CANCEL_BEFORE_META_ABORT_MS = 3000
 
-export type RuntimeOptions = {
-  baseURL: string
-  agency?: string
-  recipientAgent?: string
-  additionalInstructions?: string
-  userContext?: Record<string, unknown>
-  fileIDs?: string[]
-  generateChatName?: boolean
-  clientConfig?: Record<string, unknown>
-  /** When true, merge stored/env credentials into client_config for non-local base URLs (see also AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS). */
-  forwardUpstreamCredentials?: boolean
-  token?: string
-  discoveryTimeoutMs: number
-}
-
-export type StreamInput = {
-  sessionID: SessionID
-  assistantMessage: MessageV2.Assistant
-  userMessage: MessageV2.WithParts
-  options: RuntimeOptions
-  abort: AbortSignal
-  /** Session UI model for this turn; forwarded as `client_config.model` (bare id for OpenAI, else `litellm/...`) for server-side override. */
-  sessionModel?: { providerID: string; modelID: string }
-}
-
-type Usage = {
-  inputTokens: number
-  outputTokens: number
-  totalTokens: number
-  reasoningTokens: number
-  cachedInputTokens: number
-  cacheWriteInputTokens: number
-  cost?: number
-}
-
-type Tool = {
-  callID: string
-  tool: string
-  raw: string
-  started: boolean
-  running: boolean
-  done: boolean
-}
-
-export function optionsFromProvider(provider: Provider.Info | undefined): RuntimeOptions {
-  const rawBaseURL = asString(provider?.options?.["baseURL"])
-  const rawAgency = asString(provider?.options?.["agency"])
-  const rawRecipientAgent =
-    asString(provider?.options?.["recipientAgent"]) ?? asString(provider?.options?.["recipient_agent"])
-  const rawAdditionalInstructions =
-    asString(provider?.options?.["additionalInstructions"]) ?? asString(provider?.options?.["additional_instructions"])
-  const rawUserContext = asRecord(provider?.options?.["userContext"]) ?? asRecord(provider?.options?.["user_context"])
-  const rawFileIDs = asStringArray(provider?.options?.["fileIDs"] ?? provider?.options?.["file_ids"])
-  const rawGenerateChatName =
-    asBoolean(provider?.options?.["generateChatName"]) ?? asBoolean(provider?.options?.["generate_chat_name"])
-  const rawClientConfig =
-    asRecord(provider?.options?.["clientConfig"]) ?? asRecord(provider?.options?.["client_config"])
-  const opts = provider?.options
-  const rawForwardUpstream =
-    opts?.["forwardUpstreamCredentials"] === true || opts?.["forward_upstream_credentials"] === true
-  const rawToken = asString(provider?.key) ?? asString(provider?.options?.["token"])
-  const rawTimeout = provider?.options?.["discoveryTimeoutMs"]
-
-  return {
-    baseURL: AgencySwarmAdapter.normalizeBaseURL(rawBaseURL || AgencySwarmAdapter.DEFAULT_BASE_URL),
-    agency: rawAgency || undefined,
-    recipientAgent: rawRecipientAgent || undefined,
-    additionalInstructions: rawAdditionalInstructions || undefined,
-    userContext: rawUserContext,
-    fileIDs: rawFileIDs.length > 0 ? rawFileIDs : undefined,
-    generateChatName: rawGenerateChatName,
-    clientConfig: rawClientConfig,
-    forwardUpstreamCredentials: rawForwardUpstream === true ? true : undefined,
-    token: rawToken || undefined,
-    discoveryTimeoutMs:
-      typeof rawTimeout === "number" && Number.isFinite(rawTimeout) && rawTimeout > 0
-        ? rawTimeout
-        : AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS,
-  }
-}
-
-function finalizeClientConfig(
-  merged: Record<string, unknown> | undefined,
-  explicitForModel: Record<string, unknown> | undefined,
-  sessionLitellmModel: string | undefined,
-): Record<string, unknown> | undefined {
-  const explicitModel = explicitForModel && asString(explicitForModel["model"])
-  if (merged && Object.keys(merged).length > 0) {
-    const out = { ...merged }
-    if (explicitModel) {
-      out["model"] = normalizeExplicitClientConfigModel(explicitModel)
-    } else if (sessionLitellmModel) {
-      out["model"] = sessionLitellmModel
-    }
-    return out
-  }
-  if (explicitModel) {
-    return { model: normalizeExplicitClientConfigModel(explicitModel) }
-  }
-  if (sessionLitellmModel) {
-    return { model: sessionLitellmModel }
-  }
-  return undefined
-}
-
-async function resolveClientConfig(
-  baseURL: string,
-  config: Record<string, unknown> | undefined,
-  forwardUpstreamCredentials?: boolean,
-  sessionLitellmModel?: string,
-): Promise<Record<string, unknown> | undefined> {
-  const explicit = asRecord(config)
-  const explicitUpstreamBaseURL = readConfiguredBaseURL(explicit)
-  const forwardGenerated =
-    isLocalAgencyUpstreamURL(baseURL) ||
-    Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS ||
-    forwardUpstreamCredentials === true
-  const skipOpenAIApiKey = hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config)
-  const rawGenerated = forwardGenerated
-    ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), getEnvForClientConfig(), {
-        skipOpenAIApiKeyInjection: skipOpenAIApiKey,
-        skipOpenAIOAuthFromStored: hasExplicitOpenAIClientConfig(config),
-        allowStoredOpenAIOAuth: !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
-      })
-    : undefined
-  const generated = rawGenerated
-  if (!config) {
-    return finalizeClientConfig(generated, undefined, sessionLitellmModel)
-  }
-  if (!generated) {
-    return finalizeClientConfig(explicit, explicit, sessionLitellmModel)
+  export type RuntimeOptions = {
+    baseURL: string
+    agency?: string
+    recipientAgent?: string
+    additionalInstructions?: string
+    userContext?: Record<string, unknown>
+    fileIDs?: string[]
+    generateChatName?: boolean
+    clientConfig?: Record<string, unknown>
+    /** When true, merge stored/env credentials into client_config for non-local base URLs (see also AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS). */
+    forwardUpstreamCredentials?: boolean
+    token?: string
+    discoveryTimeoutMs: number
   }
 
-  if (!explicit) {
-    return finalizeClientConfig(generated, undefined, sessionLitellmModel)
+  export type StreamInput = {
+    sessionID: SessionID
+    assistantMessage: MessageV2.Assistant
+    userMessage: MessageV2.WithParts
+    options: RuntimeOptions
+    abort: AbortSignal
+    /** Session UI model for this turn; forwarded as `client_config.model` (bare id for OpenAI, else `litellm/...`) for server-side override. */
+    sessionModel?: { providerID: string; modelID: string }
   }
 
-  const merged: Record<string, unknown> = {
-    ...generated,
-    ...explicit,
+  type Usage = {
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    reasoningTokens: number
+    cachedInputTokens: number
+    cacheWriteInputTokens: number
+    cost?: number
   }
 
-  const explicitAPIKey = asString(explicit["api_key"]) ?? asString(explicit["apiKey"])
-  if (explicitAPIKey) {
-    merged["api_key"] = explicitAPIKey
+  type Tool = {
+    callID: string
+    tool: string
+    raw: string
+    started: boolean
+    running: boolean
+    done: boolean
   }
-  delete merged["apiKey"]
 
-  const explicitBaseURL = asString(explicit["base_url"]) ?? asString(explicit["baseURL"])
-  const generatedBaseURL = asString(generated["base_url"])
-  if (explicitBaseURL) {
-    merged["base_url"] = explicitBaseURL
-  } else if (generatedBaseURL) {
-    merged["base_url"] = generatedBaseURL
-  }
-  delete merged["baseURL"]
+  export function optionsFromProvider(provider: Provider.Info | undefined): RuntimeOptions {
+    const rawBaseURL = asString(provider?.options?.["baseURL"])
+    const rawAgency = asString(provider?.options?.["agency"])
+    const rawRecipientAgent =
+      asString(provider?.options?.["recipientAgent"]) ?? asString(provider?.options?.["recipient_agent"])
+    const rawAdditionalInstructions =
+      asString(provider?.options?.["additionalInstructions"]) ??
+      asString(provider?.options?.["additional_instructions"])
+    const rawUserContext = asRecord(provider?.options?.["userContext"]) ?? asRecord(provider?.options?.["user_context"])
+    const rawFileIDs = asStringArray(provider?.options?.["fileIDs"] ?? provider?.options?.["file_ids"])
+    const rawGenerateChatName =
+      asBoolean(provider?.options?.["generateChatName"]) ?? asBoolean(provider?.options?.["generate_chat_name"])
+    const rawClientConfig =
+      asRecord(provider?.options?.["clientConfig"]) ?? asRecord(provider?.options?.["client_config"])
+    const opts = provider?.options
+    const rawForwardUpstream =
+      opts?.["forwardUpstreamCredentials"] === true || opts?.["forward_upstream_credentials"] === true
+    const rawToken = asString(provider?.key) ?? asString(provider?.options?.["token"])
+    const rawTimeout = provider?.options?.["discoveryTimeoutMs"]
 
-  const generatedLiteLLMKeys = asRecord(generated["litellm_keys"])
-  const explicitLiteLLMKeys = asRecord(explicit["litellm_keys"]) ?? asRecord(explicit["litellmKeys"])
-  if (explicitLiteLLMKeys !== undefined) {
-    merged["litellm_keys"] = explicitLiteLLMKeys
-  } else if (generatedLiteLLMKeys) {
-    merged["litellm_keys"] = generatedLiteLLMKeys
-  }
-  delete merged["litellmKeys"]
-
-  const generatedHeaders = readStringRecord(generated["default_headers"])
-  const explicitHeaders = readStringRecord(explicit["default_headers"]) ?? readStringRecord(explicit["defaultHeaders"])
-  if (generatedHeaders || explicitHeaders) {
-    merged["default_headers"] = {
-      ...(generatedHeaders ?? {}),
-      ...(explicitHeaders ?? {}),
+    return {
+      baseURL: AgencySwarmAdapter.normalizeBaseURL(rawBaseURL || AgencySwarmAdapter.DEFAULT_BASE_URL),
+      agency: rawAgency || undefined,
+      recipientAgent: rawRecipientAgent || undefined,
+      additionalInstructions: rawAdditionalInstructions || undefined,
+      userContext: rawUserContext,
+      fileIDs: rawFileIDs.length > 0 ? rawFileIDs : undefined,
+      generateChatName: rawGenerateChatName,
+      clientConfig: rawClientConfig,
+      forwardUpstreamCredentials: rawForwardUpstream === true ? true : undefined,
+      token: rawToken || undefined,
+      discoveryTimeoutMs:
+        typeof rawTimeout === "number" && Number.isFinite(rawTimeout) && rawTimeout > 0
+          ? rawTimeout
+          : AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS,
     }
   }
-  delete merged["defaultHeaders"]
 
-  return finalizeClientConfig(merged, explicit, sessionLitellmModel)
-}
-
-async function buildAuthClientConfig(
-  auths: Record<string, Auth.Info>,
-  providers: Record<string, Provider.Info> | undefined,
-  env: Record<string, string | undefined>,
-  options: {
-    skipOpenAIApiKeyInjection: boolean
-    skipOpenAIOAuthFromStored: boolean
-    allowStoredOpenAIOAuth: boolean
-  },
-): Promise<Record<string, unknown> | undefined> {
-  const payload: Record<string, unknown> = {}
-  const litellmKeys: Record<string, string> = {}
-
-  for (const [providerID, provider] of Object.entries(providers ?? {})) {
-    if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
-    const key = getEnvCredential(provider, env)
-    if (!key) continue
-
-    if (providerID === "openai") {
-      if (!options.skipOpenAIApiKeyInjection) payload["api_key"] = key
-      continue
-    }
-
-    const litellmProvider = mapProviderIDToLiteLLMProvider(providerID)
-    if (!litellmProvider) continue
-    litellmKeys[litellmProvider] = key
-  }
-
-  for (const [providerID, auth] of Object.entries(auths)) {
-    if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
-    if (hasEnvCredential(providerID, providers, env)) continue
-
-    if (providerID === "openai" && auth.type === "oauth") {
-      if (options.skipOpenAIOAuthFromStored || !options.allowStoredOpenAIOAuth) continue
-      try {
-        Object.assign(payload, await buildOpenAIOAuthClientConfig(auth))
-      } catch (error) {
-        log.warn("failed to refresh stored OpenAI OAuth for local agency run; skipping it", {
-          error: error instanceof Error ? error.message : String(error),
-        })
+  function finalizeClientConfig(
+    merged: Record<string, unknown> | undefined,
+    explicitForModel: Record<string, unknown> | undefined,
+    sessionLitellmModel: string | undefined,
+  ): Record<string, unknown> | undefined {
+    const explicitModel = explicitForModel && asString(explicitForModel["model"])
+    if (merged && Object.keys(merged).length > 0) {
+      const out = { ...merged }
+      if (explicitModel) {
+        out["model"] = normalizeExplicitClientConfigModel(explicitModel)
+      } else if (sessionLitellmModel) {
+        out["model"] = sessionLitellmModel
       }
-      continue
+      return out
     }
-
-    if (auth.type !== "api") continue
-
-    if (providerID === "openai") {
-      if (!options.skipOpenAIApiKeyInjection) payload["api_key"] = auth.key
-      continue
+    if (explicitModel) {
+      return { model: normalizeExplicitClientConfigModel(explicitModel) }
     }
-
-    const litellmProvider = mapProviderIDToLiteLLMProvider(providerID)
-    if (!litellmProvider) continue
-    litellmKeys[litellmProvider] = auth.key
-  }
-
-  if (Object.keys(litellmKeys).length > 0) {
-    payload["litellm_keys"] = litellmKeys
-  }
-
-  if (!options.skipOpenAIApiKeyInjection && !payload["api_key"]) {
-    const fromEnv = env["OPENAI_API_KEY"]
-    if (typeof fromEnv === "string") {
-      const trimmed = fromEnv.trim()
-      if (trimmed) payload["api_key"] = trimmed
+    if (sessionLitellmModel) {
+      return { model: sessionLitellmModel }
     }
-  }
-
-  return Object.keys(payload).length > 0 ? payload : undefined
-}
-
-async function buildOpenAIOAuthClientConfig(auth: Auth.Oauth): Promise<Record<string, unknown>> {
-  const current =
-    auth.expires < Date.now()
-      ? await refreshAccessToken(auth.refresh).then(async (tokens) => {
-          const accountID = extractAccountId(tokens) ?? auth.accountId
-          const next = {
-            type: "oauth" as const,
-            refresh: tokens.refresh_token,
-            access: tokens.access_token,
-            expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
-            ...(accountID ? { accountId: accountID } : {}),
-          }
-          await Auth.set("openai", next)
-          return next
-        })
-      : auth
-  const headers: Record<string, string> = {}
-  if (current.accountId) headers["ChatGPT-Account-Id"] = current.accountId
-  return {
-    api_key: current.access,
-    base_url: CODEX_API_BASE_URL,
-    ...(Object.keys(headers).length > 0 ? { default_headers: headers } : {}),
-  }
-}
-
-function readConfiguredBaseURL(config: Record<string, unknown> | undefined) {
-  return asString(config?.["base_url"]) ?? asString(config?.["baseURL"])
-}
-
-function isCodexAPIBaseURL(value: string) {
-  return value.replace(/\/+$/, "") === CODEX_API_BASE_URL
-}
-
-function hasEnvCredential(
-  providerID: string,
-  providers: Record<string, Provider.Info> | undefined,
-  env: Record<string, string | undefined>,
-): boolean {
-  if (!providers) return false
-  const provider = providers[providerID]
-  if (!provider) return false
-  return !!getEnvCredential(provider, env)
-}
-
-function getEnvCredential(provider: Provider.Info, env: Record<string, string | undefined>) {
-  if (provider.env.length === 0) return undefined
-  if (!provider.env.every(isAPIKeyEnvName)) return undefined
-  return provider.env.map((key) => env[key]).find(Boolean)
-}
-
-function isAPIKeyEnvName(name: string) {
-  return /(^|_)(API_KEY|API_TOKEN|PAT|TOKEN)$/.test(name)
-}
-
-async function listProvidersForEnvCheck(): Promise<Record<string, Provider.Info> | undefined> {
-  try {
-    return await Provider.list()
-  } catch (error) {
-    log.error(
-      "failed to list providers while building agency-swarm client_config; continuing without provider env inspection",
-      {
-        error: error instanceof Error ? error.message : String(error),
-      },
-    )
     return undefined
   }
-}
 
-function getEnvForClientConfig(): Record<string, string | undefined> {
-  try {
-    return Env.all()
-  } catch (error) {
-    log.error("failed to read Env service while building agency-swarm client_config; falling back to process.env", {
-      error: error instanceof Error ? error.message : String(error),
+  async function resolveClientConfig(
+    baseURL: string,
+    config: Record<string, unknown> | undefined,
+    forwardUpstreamCredentials?: boolean,
+    sessionLitellmModel?: string,
+  ): Promise<Record<string, unknown> | undefined> {
+    const explicit = asRecord(config)
+    const explicitUpstreamBaseURL = readConfiguredBaseURL(explicit)
+    const forwardGenerated =
+      isLocalAgencyUpstreamURL(baseURL) ||
+      Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS ||
+      forwardUpstreamCredentials === true
+    const skipOpenAIApiKey = hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config)
+    const rawGenerated = forwardGenerated
+      ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), getEnvForClientConfig(), {
+          skipOpenAIApiKeyInjection: skipOpenAIApiKey,
+          skipOpenAIOAuthFromStored: hasExplicitOpenAIClientConfig(config),
+          allowStoredOpenAIOAuth: !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
+        })
+      : undefined
+    const generated = rawGenerated
+    if (!config) {
+      return finalizeClientConfig(generated, undefined, sessionLitellmModel)
+    }
+    if (!generated) {
+      return finalizeClientConfig(explicit, explicit, sessionLitellmModel)
+    }
+
+    if (!explicit) {
+      return finalizeClientConfig(generated, undefined, sessionLitellmModel)
+    }
+
+    const merged: Record<string, unknown> = {
+      ...generated,
+      ...explicit,
+    }
+
+    const explicitAPIKey = asString(explicit["api_key"]) ?? asString(explicit["apiKey"])
+    if (explicitAPIKey) {
+      merged["api_key"] = explicitAPIKey
+    }
+    delete merged["apiKey"]
+
+    const explicitBaseURL = asString(explicit["base_url"]) ?? asString(explicit["baseURL"])
+    const generatedBaseURL = asString(generated["base_url"])
+    if (explicitBaseURL) {
+      merged["base_url"] = explicitBaseURL
+    } else if (generatedBaseURL) {
+      merged["base_url"] = generatedBaseURL
+    }
+    delete merged["baseURL"]
+
+    const generatedLiteLLMKeys = asRecord(generated["litellm_keys"])
+    const explicitLiteLLMKeys = asRecord(explicit["litellm_keys"]) ?? asRecord(explicit["litellmKeys"])
+    if (explicitLiteLLMKeys !== undefined) {
+      merged["litellm_keys"] = explicitLiteLLMKeys
+    } else if (generatedLiteLLMKeys) {
+      merged["litellm_keys"] = generatedLiteLLMKeys
+    }
+    delete merged["litellmKeys"]
+
+    const generatedHeaders = readStringRecord(generated["default_headers"])
+    const explicitHeaders =
+      readStringRecord(explicit["default_headers"]) ?? readStringRecord(explicit["defaultHeaders"])
+    if (generatedHeaders || explicitHeaders) {
+      merged["default_headers"] = {
+        ...(generatedHeaders ?? {}),
+        ...(explicitHeaders ?? {}),
+      }
+    }
+    delete merged["defaultHeaders"]
+
+    return finalizeClientConfig(merged, explicit, sessionLitellmModel)
+  }
+
+  async function buildAuthClientConfig(
+    auths: Record<string, Auth.Info>,
+    providers: Record<string, Provider.Info> | undefined,
+    env: Record<string, string | undefined>,
+    options: {
+      skipOpenAIApiKeyInjection: boolean
+      skipOpenAIOAuthFromStored: boolean
+      allowStoredOpenAIOAuth: boolean
+    },
+  ): Promise<Record<string, unknown> | undefined> {
+    const payload: Record<string, unknown> = {}
+    const litellmKeys: Record<string, string> = {}
+
+    for (const [providerID, provider] of Object.entries(providers ?? {})) {
+      if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
+      const key = getEnvCredential(provider, env)
+      if (!key) continue
+
+      if (providerID === "openai") {
+        if (!options.skipOpenAIApiKeyInjection) payload["api_key"] = key
+        continue
+      }
+
+      const litellmProvider = mapProviderIDToLiteLLMProvider(providerID)
+      if (!litellmProvider) continue
+      litellmKeys[litellmProvider] = key
+    }
+
+    for (const [providerID, auth] of Object.entries(auths)) {
+      if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
+      if (hasEnvCredential(providerID, providers, env)) continue
+
+      if (providerID === "openai" && auth.type === "oauth") {
+        if (options.skipOpenAIOAuthFromStored || !options.allowStoredOpenAIOAuth) continue
+        try {
+          Object.assign(payload, await buildOpenAIOAuthClientConfig(auth))
+        } catch (error) {
+          log.warn("failed to refresh stored OpenAI OAuth for local agency run; skipping it", {
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+        continue
+      }
+
+      if (auth.type !== "api") continue
+
+      if (providerID === "openai") {
+        if (!options.skipOpenAIApiKeyInjection) payload["api_key"] = auth.key
+        continue
+      }
+
+      const litellmProvider = mapProviderIDToLiteLLMProvider(providerID)
+      if (!litellmProvider) continue
+      litellmKeys[litellmProvider] = auth.key
+    }
+
+    if (Object.keys(litellmKeys).length > 0) {
+      payload["litellm_keys"] = litellmKeys
+    }
+
+    if (!options.skipOpenAIApiKeyInjection && !payload["api_key"]) {
+      const fromEnv = env["OPENAI_API_KEY"]
+      if (typeof fromEnv === "string") {
+        const trimmed = fromEnv.trim()
+        if (trimmed) payload["api_key"] = trimmed
+      }
+    }
+
+    return Object.keys(payload).length > 0 ? payload : undefined
+  }
+
+  async function buildOpenAIOAuthClientConfig(auth: Auth.Oauth): Promise<Record<string, unknown>> {
+    const current =
+      auth.expires < Date.now()
+        ? await refreshAccessToken(auth.refresh).then(async (tokens) => {
+            const accountID = extractAccountId(tokens) ?? auth.accountId
+            const next = {
+              type: "oauth" as const,
+              refresh: tokens.refresh_token,
+              access: tokens.access_token,
+              expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
+              ...(accountID ? { accountId: accountID } : {}),
+            }
+            await Auth.set("openai", next)
+            return next
+          })
+        : auth
+    const headers: Record<string, string> = {}
+    if (current.accountId) headers["ChatGPT-Account-Id"] = current.accountId
+    return {
+      api_key: current.access,
+      base_url: CODEX_API_BASE_URL,
+      ...(Object.keys(headers).length > 0 ? { default_headers: headers } : {}),
+    }
+  }
+
+  function readConfiguredBaseURL(config: Record<string, unknown> | undefined) {
+    return asString(config?.["base_url"]) ?? asString(config?.["baseURL"])
+  }
+
+  function isCodexAPIBaseURL(value: string) {
+    return value.replace(/\/+$/, "") === CODEX_API_BASE_URL
+  }
+
+  function hasEnvCredential(
+    providerID: string,
+    providers: Record<string, Provider.Info> | undefined,
+    env: Record<string, string | undefined>,
+  ): boolean {
+    if (!providers) return false
+    const provider = providers[providerID]
+    if (!provider) return false
+    return !!getEnvCredential(provider, env)
+  }
+
+  function getEnvCredential(provider: Provider.Info, env: Record<string, string | undefined>) {
+    if (provider.env.length === 0) return undefined
+    if (!provider.env.every(isAPIKeyEnvName)) return undefined
+    return provider.env.map((key) => env[key]).find(Boolean)
+  }
+
+  function isAPIKeyEnvName(name: string) {
+    return /(^|_)(API_KEY|API_TOKEN|PAT|TOKEN)$/.test(name)
+  }
+
+  async function listProvidersForEnvCheck(): Promise<Record<string, Provider.Info> | undefined> {
+    try {
+      return await Provider.list()
+    } catch (error) {
+      log.error(
+        "failed to list providers while building agency-swarm client_config; continuing without provider env inspection",
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      )
+      return undefined
+    }
+  }
+
+  function getEnvForClientConfig(): Record<string, string | undefined> {
+    try {
+      return Env.all()
+    } catch (error) {
+      log.error("failed to read Env service while building agency-swarm client_config; falling back to process.env", {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return { ...process.env }
+    }
+  }
+
+  /** Loopback + common dev hostnames (Docker Desktop, etc.) where forwarding upstream API keys to a local bridge is expected. */
+  function isLocalAgencyUpstreamURL(baseURL: string) {
+    try {
+      const parsed = new URL(baseURL)
+      const h = parsed.hostname.toLowerCase()
+      return (
+        h === "127.0.0.1" ||
+        h === "0.0.0.0" ||
+        h === "localhost" ||
+        h === "::1" ||
+        h === "[::1]" ||
+        h === "host.docker.internal" ||
+        h === "kubernetes.docker.internal"
+      )
+    } catch {
+      return false
+    }
+  }
+
+  export async function resolveAgency(options: RuntimeOptions): Promise<string> {
+    if (options.agency) {
+      return options.agency
+    }
+
+    const discovered = await AgencySwarmAdapter.discover({
+      baseURL: options.baseURL,
+      token: options.token,
+      timeoutMs: options.discoveryTimeoutMs,
     })
-    return { ...process.env }
-  }
-}
+    const fallbackAgencyIDs = AgencySwarmAdapter.parseAgencyIDsFromOpenAPI(discovered.rawOpenAPI)
+    const availableAgencies =
+      discovered.agencies.length > 0 ? discovered.agencies.map((agency) => agency.id) : fallbackAgencyIDs
 
-/** Loopback + common dev hostnames (Docker Desktop, etc.) where forwarding upstream API keys to a local bridge is expected. */
-function isLocalAgencyUpstreamURL(baseURL: string) {
-  try {
-    const parsed = new URL(baseURL)
-    const h = parsed.hostname.toLowerCase()
-    return (
-      h === "127.0.0.1" ||
-      h === "0.0.0.0" ||
-      h === "localhost" ||
-      h === "::1" ||
-      h === "[::1]" ||
-      h === "host.docker.internal" ||
-      h === "kubernetes.docker.internal"
-    )
-  } catch {
-    return false
-  }
-}
+    if (availableAgencies.length === 1) {
+      return availableAgencies[0]
+    }
 
-export async function resolveAgency(options: RuntimeOptions): Promise<string> {
-  if (options.agency) {
-    return options.agency
-  }
+    if (availableAgencies.length === 0) {
+      throw new Error(
+        [
+          "No agencies were discovered from agency-swarm OpenAPI metadata.",
+          "Configure provider.options.agency in your config, or run `agentswarm agencii use <agency-id>`.",
+        ].join(" "),
+      )
+    }
 
-  const discovered = await AgencySwarmAdapter.discover({
-    baseURL: options.baseURL,
-    token: options.token,
-    timeoutMs: options.discoveryTimeoutMs,
-  })
-  const fallbackAgencyIDs = AgencySwarmAdapter.parseAgencyIDsFromOpenAPI(discovered.rawOpenAPI)
-  const availableAgencies =
-    discovered.agencies.length > 0 ? discovered.agencies.map((agency) => agency.id) : fallbackAgencyIDs
-
-  if (availableAgencies.length === 1) {
-    return availableAgencies[0]
-  }
-
-  if (availableAgencies.length === 0) {
     throw new Error(
       [
-        "No agencies were discovered from agency-swarm OpenAPI metadata.",
-        "Configure provider.options.agency in your config, or run `agentswarm agencii use <agency-id>`.",
+        "Multiple agencies were discovered but no default agency is configured.",
+        `Available agencies: ${availableAgencies.join(", ")}.`,
+        "Set provider.options.agency or run `agentswarm agencii use <agency-id>`.",
       ].join(" "),
     )
   }
 
-  throw new Error(
-    [
-      "Multiple agencies were discovered but no default agency is configured.",
-      `Available agencies: ${availableAgencies.join(", ")}.`,
-      "Set provider.options.agency or run `agentswarm agencii use <agency-id>`.",
-    ].join(" "),
-  )
-}
-
-export function normalizeCallerAgent(value: string | undefined): string | null | undefined {
-  return normalizeCallerAgentValue(value)
-}
-
-export function extractFunctionCallOutputs(newMessages: unknown[]): Array<{ callID: string; output: string }> {
-  return extractFunctionCallOutputsFromMessages(newMessages)
-}
-
-export async function stream(input: StreamInput): Promise<{ fullStream: AsyncGenerator<any> }> {
-  const agency = await resolveAgency(input.options)
-  const scope = {
-    baseURL: input.options.baseURL,
-    agency,
-    sessionID: input.sessionID,
+  export function normalizeCallerAgent(value: string | undefined): string | null | undefined {
+    return normalizeCallerAgentValue(value)
   }
 
-  const outgoingMessage = buildOutgoingMessage(input.userMessage)
-  const fileURLs = collectFileURLs(input.userMessage)
-  const mentionedRecipient = findRecipientAgent(input.userMessage)
-
-  const tools = new Map<string, Tool>()
-  const callByItem = new Map<string, string>()
-  const callByOutput = new Map<number, string>()
-
-  const textBuffer = new Map<string, string>()
-  const textOpen = new Set<string>()
-  const textIndex = new Map<string, number>()
-
-  const reasoningBuffer = new Map<string, string>()
-  const reasoningOpen = new Set<string>()
-  const reasoningByItem = new Map<string, Set<string>>()
-
-  let usage: Usage | undefined
-  let runID: string | undefined
-  let lastTextItemID: string | undefined
-  let lastReasoningItemID: string | undefined
-  let cancelRequested = false
-  let cancelInFlight = false
-  let cancelBeforeMetaTimer: ReturnType<typeof setTimeout> | undefined
-  let streamAborted = false
-  let hadDanglingTool = false
-
-  const streamAbort = new AbortController()
-  const streamSignal = AbortSignal.any([input.abort, streamAbort.signal])
-
-  const mergeMeta = (meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
-    return {
-      ...compactMetadata(meta),
-      ...(extra ?? {}),
-    }
+  export function extractFunctionCallOutputs(newMessages: unknown[]): Array<{ callID: string; output: string }> {
+    return extractFunctionCallOutputsFromMessages(newMessages)
   }
 
-  const textKey = (itemID: string, index?: number) => {
-    const value = index ?? textIndex.get(itemID) ?? 0
-    return `${itemID}:${value}`
-  }
-
-  /** Skip only when the incoming event is a replay of the same `(itemID, index)` that is already closed. Body-only matches would drop legit later messages with a short repeat body like "Done" or "OK". */
-  const shouldSkipDuplicateAssistantText = (itemID: string, index: number, text: string) => {
-    const key = textKey(itemID, index)
-    const current = textBuffer.get(key) || ""
-    return current === text && !textOpen.has(key)
-  }
-
-  const reasoningKey = (itemID: string, index: number) => `${itemID}:${index}`
-
-  const setUsage = (value: Record<string, unknown> | undefined) => {
-    if (!value) return
-    const rawInput = asNumber(value["input_tokens"] ?? value["inputTokens"])
-    const rawOutput = asNumber(value["output_tokens"] ?? value["outputTokens"])
-    const rawTotal = asNumber(value["total_tokens"] ?? value["totalTokens"])
-    const details = asRecord(value["output_tokens_details"] ?? value["outputTokensDetails"])
-    const inputDetails = asRecord(value["input_tokens_details"] ?? value["inputTokensDetails"])
-    const rawReasoning = asNumber(
-      details?.["reasoning_tokens"] ?? value["reasoning_tokens"] ?? value["reasoningTokens"],
-    )
-    const rawCacheRead = asNumber(
-      inputDetails?.["cached_tokens"] ?? value["cached_tokens"] ?? value["cachedInputTokens"],
-    )
-    const rawCacheWrite = asNumber(value["cache_write_input_tokens"] ?? value["cacheWriteInputTokens"])
-    const rawCost = asNumber(value["total_cost"] ?? value["totalCost"] ?? value["cost"])
-
-    const inputTokens = rawInput ?? usage?.inputTokens ?? 0
-    const outputTokens = rawOutput ?? usage?.outputTokens ?? 0
-    const reasoningTokens = rawReasoning ?? usage?.reasoningTokens ?? 0
-    const cachedInputTokens = rawCacheRead ?? usage?.cachedInputTokens ?? 0
-    const cacheWriteInputTokens = rawCacheWrite ?? usage?.cacheWriteInputTokens ?? 0
-    const totalTokens = rawTotal ?? inputTokens + outputTokens
-
-    usage = {
-      inputTokens,
-      outputTokens,
-      totalTokens,
-      reasoningTokens,
-      cachedInputTokens,
-      cacheWriteInputTokens,
-      cost: rawCost ?? usage?.cost,
-    }
-  }
-
-  const ensureTool = (callID: string, toolName: string) => {
-    const existing = tools.get(callID)
-    if (existing) {
-      existing.tool = toolName || existing.tool
-      return existing
-    }
-    const created = {
-      callID,
-      tool: toolName || "tool",
-      raw: "",
-      started: false,
-      running: false,
-      done: false,
-    } satisfies Tool
-    tools.set(callID, created)
-    return created
-  }
-
-  const normalizeToolName = (itemType: string, item: Record<string, unknown> | undefined) => {
-    if (itemType === "function_call") return asString(item?.["name"]) || "tool"
-    if (itemType === "computer_call") return "computer_use"
-    return itemType.replace(/_call$/, "")
-  }
-
-  const toolRawInput = (itemType: string, item: Record<string, unknown> | undefined) => {
-    if (!item) return ""
-    if (itemType === "function_call") return asRawString(item["arguments"]) || ""
-    if (itemType === "mcp_call") return asRawString(item["arguments"]) || stringifyToolOutput(item["arguments"])
-    if (itemType === "code_interpreter_call") {
-      return asRawString(item["code"]) || stringifyToolOutput(asRecord(item["input"]) ?? asRecord(item["action"]) ?? {})
-    }
-    if (itemType === "file_search_call") {
-      return stringifyToolOutput({
-        queries: Array.isArray(item["queries"]) ? item["queries"] : [],
-      })
-    }
-    if (itemType === "web_search_call") {
-      const clean = (value: unknown) => {
-        const text = asString(value)
-        if (!text) return
-        if (text.toLowerCase() === "none") return
-        return text
-      }
-      const action = asRecord(item["action"])
-      const query = clean(item["query"]) || clean(action?.["query"])
-      const queries = Array.from(
-        new Set(
-          [
-            ...(Array.isArray(item["queries"]) ? item["queries"] : []),
-            ...(Array.isArray(action?.["queries"]) ? action["queries"] : []),
-            query,
-          ]
-            .map(clean)
-            .filter((value): value is string => !!value),
-        ),
-      )
-      return stringifyToolOutput({
-        query,
-        queries,
-        action: item["action"] ?? null,
-      })
-    }
-    return stringifyToolOutput(asRecord(item["input"]) ?? asRecord(item["action"]) ?? {})
-  }
-
-  const toolOutput = (itemType: string, item: Record<string, unknown> | undefined) => {
-    if (!item) return ""
-    if (item["output"] !== undefined) return stringifyToolOutput(item["output"])
-    if (itemType === "file_search_call") return stringifyToolOutput(item["results"] ?? item)
-    if (itemType === "mcp_call") return stringifyToolOutput(item["result"] ?? item)
-    return stringifyToolOutput(item)
-  }
-
-  const findCallID = (event: Record<string, unknown>, item: Record<string, unknown> | undefined) => {
-    const direct = asString(event["call_id"])
-    if (direct) return direct
-
-    const itemID = asString(event["item_id"])
-    if (itemID && callByItem.has(itemID)) return callByItem.get(itemID)
-    if (itemID && tools.has(itemID)) return itemID
-
-    const outputIndex = asNumber(event["output_index"])
-    if (outputIndex !== undefined && callByOutput.has(outputIndex)) {
-      return callByOutput.get(outputIndex)
+  export async function stream(input: StreamInput): Promise<{ fullStream: AsyncGenerator<any> }> {
+    const agency = await resolveAgency(input.options)
+    const scope = {
+      baseURL: input.options.baseURL,
+      agency,
+      sessionID: input.sessionID,
     }
 
-    if (item) {
-      const fromItem = asString(item["call_id"]) || asString(item["id"])
-      if (fromItem) return fromItem
-    }
+    const outgoingMessage = buildOutgoingMessage(input.userMessage)
+    const fileURLs = collectFileURLs(input.userMessage)
+    const mentionedRecipient = findRecipientAgent(input.userMessage)
 
-    return undefined
-  }
+    const tools = new Map<string, Tool>()
+    const callByItem = new Map<string, string>()
+    const callByOutput = new Map<number, string>()
 
-  const closeText = (key: string, meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
-    if (!textOpen.has(key)) return []
-    textOpen.delete(key)
-    if (lastTextItemID) {
-      const active = textKey(lastTextItemID)
-      if (active === key) {
-        lastTextItemID = undefined
+    const textBuffer = new Map<string, string>()
+    const textOpen = new Set<string>()
+    const textIndex = new Map<string, number>()
+
+    const reasoningBuffer = new Map<string, string>()
+    const reasoningOpen = new Set<string>()
+    const reasoningByItem = new Map<string, Set<string>>()
+
+    let usage: Usage | undefined
+    let runID: string | undefined
+    let lastTextItemID: string | undefined
+    let lastReasoningItemID: string | undefined
+    let cancelRequested = false
+    let cancelInFlight = false
+    let cancelBeforeMetaTimer: ReturnType<typeof setTimeout> | undefined
+    let streamAborted = false
+    let hadDanglingTool = false
+
+    const streamAbort = new AbortController()
+    const streamSignal = AbortSignal.any([input.abort, streamAbort.signal])
+
+    const mergeMeta = (meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
+      return {
+        ...compactMetadata(meta),
+        ...(extra ?? {}),
       }
     }
-    return [
-      {
-        type: "text-end",
-        providerMetadata: mergeMeta(meta, extra),
-      },
-    ]
-  }
 
-  const ensureText = (itemID: string, index: number, meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
-    const parts: any[] = []
-    const key = textKey(itemID, index)
-    const activeItemID = lastTextItemID
-    const activeIndex = activeItemID ? (textIndex.get(activeItemID) ?? 0) : undefined
-    const activeKey = activeItemID !== undefined ? textKey(activeItemID, activeIndex) : undefined
-    if (activeKey && activeKey !== key) {
-      parts.push(
-        ...closeText(activeKey, meta, {
-          ...(extra?.["output_index"] !== undefined ? { output_index: extra["output_index"] } : {}),
-          ...(extra?.["source"] !== undefined ? { source: extra["source"] } : {}),
-          item_id: activeItemID,
-          content_index: activeIndex,
-        }),
+    const textKey = (itemID: string, index?: number) => {
+      const value = index ?? textIndex.get(itemID) ?? 0
+      return `${itemID}:${value}`
+    }
+
+    /** Skip only when the incoming event is a replay of the same `(itemID, index)` that is already closed. Body-only matches would drop legit later messages with a short repeat body like "Done" or "OK". */
+    const shouldSkipDuplicateAssistantText = (itemID: string, index: number, text: string) => {
+      const key = textKey(itemID, index)
+      const current = textBuffer.get(key) || ""
+      return current === text && !textOpen.has(key)
+    }
+
+    const reasoningKey = (itemID: string, index: number) => `${itemID}:${index}`
+
+    const setUsage = (value: Record<string, unknown> | undefined) => {
+      if (!value) return
+      const rawInput = asNumber(value["input_tokens"] ?? value["inputTokens"])
+      const rawOutput = asNumber(value["output_tokens"] ?? value["outputTokens"])
+      const rawTotal = asNumber(value["total_tokens"] ?? value["totalTokens"])
+      const details = asRecord(value["output_tokens_details"] ?? value["outputTokensDetails"])
+      const inputDetails = asRecord(value["input_tokens_details"] ?? value["inputTokensDetails"])
+      const rawReasoning = asNumber(
+        details?.["reasoning_tokens"] ?? value["reasoning_tokens"] ?? value["reasoningTokens"],
       )
-    }
-    if (!textOpen.has(key)) {
-      textOpen.add(key)
-      parts.push({
-        type: "text-start",
-        providerMetadata: mergeMeta(meta, {
-          item_id: itemID,
-          content_index: index,
-          ...(extra ?? {}),
-        }),
-      })
-    }
-    lastTextItemID = itemID
-    textIndex.set(itemID, index)
-    return parts
-  }
+      const rawCacheRead = asNumber(
+        inputDetails?.["cached_tokens"] ?? value["cached_tokens"] ?? value["cachedInputTokens"],
+      )
+      const rawCacheWrite = asNumber(value["cache_write_input_tokens"] ?? value["cacheWriteInputTokens"])
+      const rawCost = asNumber(value["total_cost"] ?? value["totalCost"] ?? value["cost"])
 
-  const textDelta = (
-    itemID: string,
-    index: number,
-    delta: string,
-    meta: AgencySwarmEventMeta,
-    extra?: Record<string, unknown>,
-  ) => {
-    if (!delta) return []
-    const key = textKey(itemID, index)
-    const existing = textBuffer.get(key) || ""
-    textBuffer.set(key, existing + delta)
-    return [
-      {
-        type: "text-delta",
-        text: delta,
-        providerMetadata: mergeMeta(meta, {
-          item_id: itemID,
-          content_index: index,
-          ...(extra ?? {}),
-        }),
-      },
-    ]
-  }
+      const inputTokens = rawInput ?? usage?.inputTokens ?? 0
+      const outputTokens = rawOutput ?? usage?.outputTokens ?? 0
+      const reasoningTokens = rawReasoning ?? usage?.reasoningTokens ?? 0
+      const cachedInputTokens = rawCacheRead ?? usage?.cachedInputTokens ?? 0
+      const cacheWriteInputTokens = rawCacheWrite ?? usage?.cacheWriteInputTokens ?? 0
+      const totalTokens = rawTotal ?? inputTokens + outputTokens
 
-  const finishText = (
-    itemID: string,
-    index: number,
-    final: string | undefined,
-    meta: AgencySwarmEventMeta,
-    extra?: Record<string, unknown>,
-  ) => {
-    const key = textKey(itemID, index)
-    const isOpen = textOpen.has(key)
-    const raw = textBuffer.get(key) || ""
-    if (!isOpen && final !== undefined && raw && !final.startsWith(raw)) {
-      textBuffer.delete(key)
+      usage = {
+        inputTokens,
+        outputTokens,
+        totalTokens,
+        reasoningTokens,
+        cachedInputTokens,
+        cacheWriteInputTokens,
+        cost: rawCost ?? usage?.cost,
+      }
     }
-    const current = textBuffer.get(key) || ""
-    if (!isOpen && (final === undefined || final === current)) {
-      return []
-    }
-    if (final !== undefined && final === current) {
-      return closeText(key, meta, extra)
-    }
-    const parts = isOpen ? [] : ensureText(itemID, index, meta, extra)
-    const suffix = final ? (final.startsWith(current) ? final.slice(current.length) : current ? "" : final) : ""
-    if (suffix) {
-      parts.push(...textDelta(itemID, index, suffix, meta, extra))
-    }
-    if (!suffix && final !== undefined && current && !final.startsWith(current) && !textOpen.has(key)) {
-      return []
-    }
-    parts.push(...closeText(key, meta, extra))
-    return parts
-  }
 
-  const ensureReasoning = (
-    itemID: string,
-    index: number,
-    meta: AgencySwarmEventMeta,
-    extra?: Record<string, unknown>,
-  ) => {
-    const key = reasoningKey(itemID, index)
-    if (reasoningOpen.has(key)) {
-      lastReasoningItemID = itemID
-      return []
+    const ensureTool = (callID: string, toolName: string) => {
+      const existing = tools.get(callID)
+      if (existing) {
+        existing.tool = toolName || existing.tool
+        return existing
+      }
+      const created = {
+        callID,
+        tool: toolName || "tool",
+        raw: "",
+        started: false,
+        running: false,
+        done: false,
+      } satisfies Tool
+      tools.set(callID, created)
+      return created
     }
-    reasoningOpen.add(key)
-    lastReasoningItemID = itemID
-    const set = reasoningByItem.get(itemID)
-    if (set) {
-      set.add(key)
-    } else {
-      reasoningByItem.set(itemID, new Set([key]))
-    }
-    return [
-      {
-        type: "reasoning-start",
-        id: key,
-        providerMetadata: mergeMeta(meta, {
-          item_id: itemID,
-          summary_index: index,
-          ...(extra ?? {}),
-        }),
-      },
-    ]
-  }
 
-  const reasoningDelta = (
-    itemID: string,
-    index: number,
-    delta: string,
-    meta: AgencySwarmEventMeta,
-    extra?: Record<string, unknown>,
-  ) => {
-    if (!delta) return []
-    const key = reasoningKey(itemID, index)
-    const existing = reasoningBuffer.get(key) || ""
-    reasoningBuffer.set(key, existing + delta)
-    return [
-      {
-        type: "reasoning-delta",
-        id: key,
-        text: delta,
-        providerMetadata: mergeMeta(meta, {
-          item_id: itemID,
-          summary_index: index,
-          ...(extra ?? {}),
-        }),
-      },
-    ]
-  }
+    const normalizeToolName = (itemType: string, item: Record<string, unknown> | undefined) => {
+      if (itemType === "function_call") return asString(item?.["name"]) || "tool"
+      if (itemType === "computer_call") return "computer_use"
+      return itemType.replace(/_call$/, "")
+    }
 
-  const finishReasoning = (
-    itemID: string,
-    index: number,
-    text: string | undefined,
-    meta: AgencySwarmEventMeta,
-    extra?: Record<string, unknown>,
-  ) => {
-    const key = reasoningKey(itemID, index)
-    const isOpen = reasoningOpen.has(key)
-    const raw = reasoningBuffer.get(key) || ""
-    if (!isOpen && text !== undefined && raw && !text.startsWith(raw)) {
-      reasoningBuffer.delete(key)
+    const toolRawInput = (itemType: string, item: Record<string, unknown> | undefined) => {
+      if (!item) return ""
+      if (itemType === "function_call") return asRawString(item["arguments"]) || ""
+      if (itemType === "mcp_call") return asRawString(item["arguments"]) || stringifyToolOutput(item["arguments"])
+      if (itemType === "code_interpreter_call") {
+        return (
+          asRawString(item["code"]) || stringifyToolOutput(asRecord(item["input"]) ?? asRecord(item["action"]) ?? {})
+        )
+      }
+      if (itemType === "file_search_call") {
+        return stringifyToolOutput({
+          queries: Array.isArray(item["queries"]) ? item["queries"] : [],
+        })
+      }
+      if (itemType === "web_search_call") {
+        const clean = (value: unknown) => {
+          const text = asString(value)
+          if (!text) return
+          if (text.toLowerCase() === "none") return
+          return text
+        }
+        const action = asRecord(item["action"])
+        const query = clean(item["query"]) || clean(action?.["query"])
+        const queries = Array.from(
+          new Set(
+            [
+              ...(Array.isArray(item["queries"]) ? item["queries"] : []),
+              ...(Array.isArray(action?.["queries"]) ? action["queries"] : []),
+              query,
+            ]
+              .map(clean)
+              .filter((value): value is string => !!value),
+          ),
+        )
+        return stringifyToolOutput({
+          query,
+          queries,
+          action: item["action"] ?? null,
+        })
+      }
+      return stringifyToolOutput(asRecord(item["input"]) ?? asRecord(item["action"]) ?? {})
     }
-    const current = reasoningBuffer.get(key) || ""
-    if (!isOpen && (text === undefined || text === current)) {
-      return []
+
+    const toolOutput = (itemType: string, item: Record<string, unknown> | undefined) => {
+      if (!item) return ""
+      if (item["output"] !== undefined) return stringifyToolOutput(item["output"])
+      if (itemType === "file_search_call") return stringifyToolOutput(item["results"] ?? item)
+      if (itemType === "mcp_call") return stringifyToolOutput(item["result"] ?? item)
+      return stringifyToolOutput(item)
     }
-    const parts = isOpen ? [] : ensureReasoning(itemID, index, meta, extra)
-    const suffix = text ? (text.startsWith(current) ? text.slice(current.length) : current ? "" : text) : ""
-    if (suffix) {
-      parts.push(...reasoningDelta(itemID, index, suffix, meta, extra))
+
+    const findCallID = (event: Record<string, unknown>, item: Record<string, unknown> | undefined) => {
+      const direct = asString(event["call_id"])
+      if (direct) return direct
+
+      const itemID = asString(event["item_id"])
+      if (itemID && callByItem.has(itemID)) return callByItem.get(itemID)
+      if (itemID && tools.has(itemID)) return itemID
+
+      const outputIndex = asNumber(event["output_index"])
+      if (outputIndex !== undefined && callByOutput.has(outputIndex)) {
+        return callByOutput.get(outputIndex)
+      }
+
+      if (item) {
+        const fromItemID = asString(item["id"])
+        if (fromItemID && callByItem.has(fromItemID)) return callByItem.get(fromItemID)
+        if (fromItemID && tools.has(fromItemID)) return fromItemID
+        const fromItem = asString(item["call_id"]) || fromItemID
+        if (fromItem) return fromItem
+      }
+
+      return undefined
     }
-    if (reasoningOpen.has(key)) {
-      reasoningOpen.delete(key)
-      const set = reasoningByItem.get(itemID)
-      if (set) {
-        set.delete(key)
-        if (set.size === 0) {
-          reasoningByItem.delete(itemID)
+
+    const closeText = (key: string, meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
+      if (!textOpen.has(key)) return []
+      textOpen.delete(key)
+      if (lastTextItemID) {
+        const active = textKey(lastTextItemID)
+        if (active === key) {
+          lastTextItemID = undefined
         }
       }
-      parts.push({
-        type: "reasoning-end",
-        id: key,
-        providerMetadata: mergeMeta(meta, {
-          item_id: itemID,
-          summary_index: index,
-          ...(extra ?? {}),
-        }),
-      })
-    }
-    return parts
-  }
-
-  const ensureToolInput = (
-    callID: string,
-    toolName: string,
-    rawInput: string,
-    meta: AgencySwarmEventMeta,
-    extra?: Record<string, unknown>,
-  ) => {
-    const parts: any[] = []
-    const tool = ensureTool(callID, toolName)
-    if (!tool.started) {
-      tool.started = true
-      parts.push({
-        type: "tool-input-start",
-        id: callID,
-        toolName: tool.tool,
-        providerMetadata: mergeMeta(meta, {
-          call_id: callID,
-          ...(extra ?? {}),
-        }),
-      })
-    }
-    if (rawInput) {
-      tool.raw = rawInput
-      parts.push({
-        type: "tool-input-delta",
-        id: callID,
-        delta: rawInput,
-        providerMetadata: mergeMeta(meta, {
-          call_id: callID,
-          ...(extra ?? {}),
-        }),
-      })
-    }
-    return parts
-  }
-
-  const appendToolInput = (
-    callID: string,
-    toolName: string,
-    delta: string,
-    meta: AgencySwarmEventMeta,
-    extra?: Record<string, unknown>,
-  ) => {
-    const parts = ensureToolInput(callID, toolName, "", meta, extra)
-    const tool = ensureTool(callID, toolName)
-    tool.raw += delta
-    if (delta) {
-      parts.push({
-        type: "tool-input-delta",
-        id: callID,
-        delta,
-        providerMetadata: mergeMeta(meta, {
-          call_id: callID,
-          ...(extra ?? {}),
-        }),
-      })
-    }
-    return parts
-  }
-
-  const finalizeToolInput = (
-    callID: string,
-    toolName: string,
-    rawInput: string,
-    meta: AgencySwarmEventMeta,
-    extra?: Record<string, unknown>,
-  ) => {
-    const parts = ensureToolInput(callID, toolName, "", meta, extra)
-    const tool = ensureTool(callID, toolName)
-    const current = tool.raw
-    const suffix = rawInput.startsWith(current) ? rawInput.slice(current.length) : current ? "" : rawInput
-    if (suffix) {
-      parts.push(...appendToolInput(callID, toolName, suffix, meta, extra))
-    }
-    parts.push({
-      type: "tool-input-end",
-      id: callID,
-      providerMetadata: mergeMeta(meta, {
-        call_id: callID,
-        ...(extra ?? {}),
-      }),
-    })
-    return parts
-  }
-
-  const runTool = (callID: string, toolName: string, meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
-    const parts = ensureToolInput(callID, toolName, "", meta, extra)
-    const tool = ensureTool(callID, toolName)
-    if (tool.running || tool.done) {
-      return parts
-    }
-    tool.running = true
-    parts.push({
-      type: "tool-call",
-      toolCallId: callID,
-      toolName: tool.tool,
-      input: parseToolInput(tool.raw),
-      providerMetadata: mergeMeta(meta, {
-        call_id: callID,
-        ...(extra ?? {}),
-      }),
-    })
-    return parts
-  }
-
-  const completeTool = (
-    callID: string,
-    toolName: string,
-    output: string,
-    meta: AgencySwarmEventMeta,
-    extra?: Record<string, unknown>,
-  ) => {
-    const parts = runTool(callID, toolName, meta, extra)
-    const tool = ensureTool(callID, toolName)
-    if (tool.done) {
-      return parts
-    }
-    tool.done = true
-    parts.push({
-      type: "tool-result",
-      toolCallId: callID,
-      input: parseToolInput(tool.raw),
-      output: {
-        output,
-        title: "",
-        metadata: mergeMeta(meta, {
-          call_id: callID,
-          ...(extra ?? {}),
-        }),
-      },
-    })
-    return parts
-  }
-
-  const failTool = (
-    callID: string,
-    toolName: string,
-    message: string,
-    meta: AgencySwarmEventMeta,
-    extra?: Record<string, unknown>,
-  ) => {
-    const parts = runTool(callID, toolName, meta, extra)
-    const tool = ensureTool(callID, toolName)
-    if (tool.done) {
-      return parts
-    }
-    tool.done = true
-    parts.push({
-      type: "tool-error",
-      toolCallId: callID,
-      input: parseToolInput(tool.raw),
-      error: new Error(message),
-      providerMetadata: mergeMeta(meta, {
-        call_id: callID,
-        ...(extra ?? {}),
-      }),
-    })
-    return parts
-  }
-
-  const extractMessageText = (message: Record<string, unknown>) => {
-    const content = Array.isArray(message["content"]) ? message["content"] : []
-    return content
-      .map((entry) => {
-        const part = asRecord(entry)
-        if (!part) return ""
-        const type = asString(part["type"])
-        if (type === "output_text") return asString(part["text"]) || ""
-        if (type === "refusal") return asString(part["refusal"]) || ""
-        return ""
-      })
-      .filter(Boolean)
-      .join("\n")
-  }
-
-  const toolNameFor = (callID: string) => tools.get(callID)?.tool || "tool"
-
-  const outputMeta = (outputIndex: number | undefined, extra?: Record<string, unknown>) => {
-    return {
-      output_index: outputIndex,
-      ...(extra ?? {}),
-    }
-  }
-
-  const textItemID = (event: Record<string, unknown>) => asString(event["item_id"]) || lastTextItemID
-  const reasoningItemID = (event: Record<string, unknown>) => asString(event["item_id"]) || lastReasoningItemID
-
-  /** Retire closed replay candidates when a new run starts so the dedupe buffer does not grow across runs. */
-  const retireClosedReplayCandidates = () => {
-    for (const key of Array.from(textBuffer.keys())) {
-      if (!textOpen.has(key)) textBuffer.delete(key)
-    }
-  }
-
-  const handleMessagesPayload = async function* (payload: Record<string, unknown>) {
-    const newMessages = Array.isArray(payload["new_messages"]) ? payload["new_messages"] : []
-    await AgencySwarmHistory.appendMessages(scope, newMessages)
-    setUsage(asRecord(payload["usage"]))
-
-    const runFromMessages = asString(payload["run_id"])
-    if (runFromMessages) {
-      if (runID && runID !== runFromMessages) retireClosedReplayCandidates()
-      runID = runFromMessages
-      if (cancelBeforeMetaTimer) {
-        clearTimeout(cancelBeforeMetaTimer)
-        cancelBeforeMetaTimer = undefined
-      }
-      await AgencySwarmHistory.setLastRunID(scope, runID)
-      if (cancelRequested) {
-        await sendCancel()
-      }
-    }
-
-    for (const output of extractFunctionCallOutputsFromMessages(newMessages)) {
-      const tool = ensureTool(output.callID, toolNameFor(output.callID))
-      yield* completeTool(output.callID, tool.tool, output.output, {})
-    }
-
-    for (const raw of newMessages) {
-      const message = asRecord(raw)
-      if (!message || asString(message["type"]) !== "message") continue
-      const itemID = asString(message["id"])
-      if (!itemID) continue
-      const text = extractMessageText(message)
-      if (!text) continue
-      if (shouldSkipDuplicateAssistantText(itemID, 0, text)) continue
-      yield* finishText(itemID, 0, text, {}, { source: "messages" })
-    }
-  }
-
-  const handleOutputItemAdded = (
-    item: Record<string, unknown>,
-    outputIndex: number | undefined,
-    eventMeta: AgencySwarmEventMeta,
-  ) => {
-    const itemType = asString(item["type"]) || ""
-    const itemID = asString(item["id"])
-
-    if (itemID && outputIndex !== undefined) {
-      callByOutput.set(outputIndex, itemID)
-    }
-
-    if (itemType === "message") {
-      if (!itemID) return []
-      return ensureText(itemID, 0, eventMeta, outputMeta(outputIndex))
-    }
-
-    if (itemType === "reasoning") {
-      if (!itemID) return []
-      return ensureReasoning(
-        itemID,
-        0,
-        eventMeta,
-        outputMeta(outputIndex, { encrypted_content: item["encrypted_content"] ?? null }),
-      )
-    }
-
-    if (itemType.endsWith("_call")) {
-      const callID = asString(item["call_id"]) || itemID
-      if (!callID) return []
-      const toolName = normalizeToolName(itemType, item)
-      const raw = toolRawInput(itemType, item)
-      if (itemID) callByItem.set(itemID, callID)
-      if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
-      return ensureToolInput(
-        callID,
-        toolName,
-        raw,
-        eventMeta,
-        outputMeta(outputIndex, {
-          item_id: itemID,
-          item_type: itemType,
-        }),
-      )
-    }
-
-    if (itemType.endsWith("_output")) {
-      const callID = asString(item["call_id"])
-      if (!callID) return []
-      const tool = ensureTool(callID, toolNameFor(callID))
-      return completeTool(
-        callID,
-        tool.tool,
-        toolOutput(itemType, item),
-        eventMeta,
-        outputMeta(outputIndex, {
-          item_id: itemID,
-          item_type: itemType,
-        }),
-      )
-    }
-
-    return []
-  }
-
-  const handleOutputItemDone = (
-    item: Record<string, unknown>,
-    outputIndex: number | undefined,
-    eventMeta: AgencySwarmEventMeta,
-  ) => {
-    const itemType = asString(item["type"]) || ""
-
-    if (itemType === "message") {
-      const itemID = asString(item["id"]) || lastTextItemID
-      if (!itemID) return []
-      return finishText(itemID, textIndex.get(itemID) ?? 0, undefined, eventMeta, outputMeta(outputIndex))
-    }
-
-    if (itemType === "reasoning") {
-      const itemID = asString(item["id"]) || lastReasoningItemID
-      if (!itemID) return []
-      return Array.from(reasoningByItem.get(itemID) ?? [])
-        .filter((value) => reasoningOpen.has(value))
-        .flatMap((key) => {
-          const index = Number(key.split(":")[1] || "0")
-          return finishReasoning(
-            itemID,
-            Number.isFinite(index) ? index : 0,
-            undefined,
-            eventMeta,
-            outputMeta(outputIndex, { encrypted_content: item["encrypted_content"] ?? null }),
-          )
-        })
-    }
-
-    if (itemType.endsWith("_output")) {
-      const callID = asString(item["call_id"])
-      if (!callID) return []
-      const tool = ensureTool(callID, toolNameFor(callID))
-      return completeTool(
-        callID,
-        tool.tool,
-        toolOutput(itemType, item),
-        eventMeta,
-        outputMeta(outputIndex, { item_type: itemType }),
-      )
-    }
-
-    if (itemType.endsWith("_call")) {
-      const callID = asString(item["call_id"]) || asString(item["id"])
-      if (!callID) return []
-      const itemID = asString(item["id"])
-      const toolName = normalizeToolName(itemType, item)
-      const metadata = outputMeta(outputIndex, {
-        item_type: itemType,
-      })
-      if (itemID) callByItem.set(itemID, callID)
-      if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
-      const rawInput = toolRawInput(itemType, item)
-      const knownRaw = tools.get(callID)?.raw ?? ""
-      const reconciled =
-        rawInput && rawInput !== knownRaw ? ensureToolInput(callID, toolName, rawInput, eventMeta, metadata) : []
-      const parts = [...reconciled, ...runTool(callID, toolName, eventMeta, metadata)]
-      if (itemType === "function_call") {
-        return parts
-      }
-      return [...parts, ...completeTool(callID, toolName, toolOutput(itemType, item), eventMeta, metadata)]
-    }
-
-    return []
-  }
-
-  const handleRunItemEvent = (payload: Record<string, unknown>, eventMeta: AgencySwarmEventMeta) => {
-    const name = asString(payload["name"])
-    const item = asRecord(payload["item"])
-    const rawItem = asRecord(item?.["raw_item"])
-    if (!name || !rawItem) return []
-
-    const itemType = asString(rawItem["type"]) || ""
-    if (name === "tool_called" && itemType.endsWith("_call")) {
-      const callID = asString(rawItem["call_id"]) || asString(rawItem["id"])
-      if (!callID) return []
-      const toolName = normalizeToolName(itemType, rawItem)
-      const itemID = asString(rawItem["id"])
-      const rawInput = toolRawInput(itemType, rawItem)
-      const knownRaw = tools.get(callID)?.raw ?? ""
-      if (itemID) callByItem.set(itemID, callID)
       return [
-        ...(rawInput && rawInput !== knownRaw
-          ? ensureToolInput(callID, toolName, rawInput, eventMeta, {
-              item_id: itemID,
-              source: "run_item_stream_event",
-            })
-          : []),
-        ...runTool(callID, toolName, eventMeta, {
-          item_id: itemID,
-          source: "run_item_stream_event",
-        }),
+        {
+          type: "text-end",
+          providerMetadata: mergeMeta(meta, extra),
+        },
       ]
     }
 
-    if (name === "tool_output") {
-      const callID = asString(rawItem["call_id"]) || asString(item?.["call_id"])
-      if (!callID) return []
-      const tool = ensureTool(callID, toolNameFor(callID))
-      const output = item?.["output"] ?? rawItem["output"]
-      if (output === undefined) return []
-      return completeTool(callID, tool.tool, stringifyToolOutput(output), eventMeta, {
-        item_type: itemType || undefined,
-        source: "run_item_stream_event",
-      })
+    const ensureText = (itemID: string, index: number, meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
+      const parts: any[] = []
+      const key = textKey(itemID, index)
+      const activeItemID = lastTextItemID
+      const activeIndex = activeItemID ? (textIndex.get(activeItemID) ?? 0) : undefined
+      const activeKey = activeItemID !== undefined ? textKey(activeItemID, activeIndex) : undefined
+      if (activeKey && activeKey !== key) {
+        parts.push(
+          ...closeText(activeKey, meta, {
+            ...(extra?.["output_index"] !== undefined ? { output_index: extra["output_index"] } : {}),
+            ...(extra?.["source"] !== undefined ? { source: extra["source"] } : {}),
+            item_id: activeItemID,
+            content_index: activeIndex,
+          }),
+        )
+      }
+      if (!textOpen.has(key)) {
+        textOpen.add(key)
+        parts.push({
+          type: "text-start",
+          providerMetadata: mergeMeta(meta, {
+            item_id: itemID,
+            content_index: index,
+            ...(extra ?? {}),
+          }),
+        })
+      }
+      lastTextItemID = itemID
+      textIndex.set(itemID, index)
+      return parts
     }
 
-    if (name === "message_output_created" && itemType === "message") {
-      const itemID = asString(rawItem["id"]) || lastTextItemID
-      if (!itemID) return []
-      const text = extractMessageText(rawItem)
-      if (!text) return []
-      const index = 0
-      if (shouldSkipDuplicateAssistantText(itemID, index, text)) {
+    const textDelta = (
+      itemID: string,
+      index: number,
+      delta: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      if (!delta) return []
+      const key = textKey(itemID, index)
+      const existing = textBuffer.get(key) || ""
+      textBuffer.set(key, existing + delta)
+      return [
+        {
+          type: "text-delta",
+          text: delta,
+          providerMetadata: mergeMeta(meta, {
+            item_id: itemID,
+            content_index: index,
+            ...(extra ?? {}),
+          }),
+        },
+      ]
+    }
+
+    const finishText = (
+      itemID: string,
+      index: number,
+      final: string | undefined,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const key = textKey(itemID, index)
+      const isOpen = textOpen.has(key)
+      const raw = textBuffer.get(key) || ""
+      if (!isOpen && final !== undefined && raw && !final.startsWith(raw)) {
+        textBuffer.delete(key)
+      }
+      const current = textBuffer.get(key) || ""
+      if (!isOpen && (final === undefined || final === current)) {
         return []
       }
-      return finishText(itemID, index, text, eventMeta, { source: "run_item_stream_event" })
+      if (final !== undefined && final === current) {
+        return closeText(key, meta, extra)
+      }
+      const parts = isOpen ? [] : ensureText(itemID, index, meta, extra)
+      const suffix = final ? (final.startsWith(current) ? final.slice(current.length) : current ? "" : final) : ""
+      if (suffix) {
+        parts.push(...textDelta(itemID, index, suffix, meta, extra))
+      }
+      if (!suffix && final !== undefined && current && !final.startsWith(current) && !textOpen.has(key)) {
+        return []
+      }
+      parts.push(...closeText(key, meta, extra))
+      return parts
     }
 
-    if (name !== "reasoning_item_created" || itemType !== "reasoning") {
-      return []
-    }
-
-    const itemID = asString(rawItem["id"])
-    if (!itemID) return []
-    const summary = Array.isArray(rawItem["summary"]) ? rawItem["summary"] : []
-    if (summary.length === 0) {
+    const ensureReasoning = (
+      itemID: string,
+      index: number,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const key = reasoningKey(itemID, index)
+      if (reasoningOpen.has(key)) {
+        lastReasoningItemID = itemID
+        return []
+      }
+      reasoningOpen.add(key)
+      lastReasoningItemID = itemID
+      const set = reasoningByItem.get(itemID)
+      if (set) {
+        set.add(key)
+      } else {
+        reasoningByItem.set(itemID, new Set([key]))
+      }
       return [
-        ...ensureReasoning(itemID, 0, eventMeta, { source: "run_item_stream_event" }),
-        ...finishReasoning(itemID, 0, undefined, eventMeta, { source: "run_item_stream_event" }),
+        {
+          type: "reasoning-start",
+          id: key,
+          providerMetadata: mergeMeta(meta, {
+            item_id: itemID,
+            summary_index: index,
+            ...(extra ?? {}),
+          }),
+        },
       ]
     }
 
-    return summary.flatMap((raw, index) => {
-      const record = asRecord(raw)
-      const text = asString(record?.["text"]) || undefined
-      return finishReasoning(itemID, index, text, eventMeta, { source: "run_item_stream_event" })
-    })
-  }
-
-  const flushOpen = () => {
-    const parts: any[] = []
-
-    for (const key of Array.from(textOpen.values())) {
-      textOpen.delete(key)
-      parts.push({ type: "text-end", providerMetadata: {} })
+    const reasoningDelta = (
+      itemID: string,
+      index: number,
+      delta: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      if (!delta) return []
+      const key = reasoningKey(itemID, index)
+      const existing = reasoningBuffer.get(key) || ""
+      reasoningBuffer.set(key, existing + delta)
+      return [
+        {
+          type: "reasoning-delta",
+          id: key,
+          text: delta,
+          providerMetadata: mergeMeta(meta, {
+            item_id: itemID,
+            summary_index: index,
+            ...(extra ?? {}),
+          }),
+        },
+      ]
     }
 
-    for (const key of Array.from(reasoningOpen.values())) {
-      reasoningOpen.delete(key)
-      parts.push({ type: "reasoning-end", id: key, providerMetadata: {} })
-    }
-
-    for (const tool of Array.from(tools.values())) {
-      if (tool.done) continue
-      hadDanglingTool = true
-      parts.push(
-        ...failTool(
-          tool.callID,
-          tool.tool,
-          cancelRequested || streamAborted ? "Cancelled" : "Tool stream ended before output was received",
-          {},
-        ),
-      )
-    }
-
-    return parts
-  }
-
-  const sendCancel = async () => {
-    if (!runID || cancelInFlight) return
-    cancelInFlight = true
-
-    const result = await AgencySwarmAdapter.cancel({
-      baseURL: input.options.baseURL,
-      agency,
-      runID,
-      cancelMode: "immediate",
-      token: input.options.token,
-    }).catch((error) => {
-      log.error("cancel request failed", {
-        error: error instanceof Error ? error.message : String(error),
-      })
-      return {
-        ok: false,
-        status: 0,
-        cancelled: false,
-        notFound: false,
-        error: error instanceof Error ? error.message : String(error),
-      } satisfies AgencySwarmAdapter.CancelResult
-    })
-
-    if (!result.ok && !result.notFound) {
-      log.warn("cancel did not complete cleanly", {
-        runID,
-        status: result.status,
-        error: result.error,
-      })
-    }
-
-    streamAbort.abort(new DOMException("Aborted", "AbortError"))
-  }
-
-  const onAbort = () => {
-    cancelRequested = true
-    if (runID) {
-      void sendCancel()
-      return
-    }
-    if (!cancelBeforeMetaTimer) {
-      cancelBeforeMetaTimer = setTimeout(() => {
-        streamAbort.abort(new DOMException("Aborted", "AbortError"))
-      }, CANCEL_BEFORE_META_ABORT_MS)
-    }
-  }
-
-  if (input.abort.aborted) {
-    onAbort()
-  } else {
-    input.abort.addEventListener("abort", onAbort, { once: true })
-  }
-
-  const fullStream = (async function* () {
-    yield { type: "start" }
-    yield { type: "start-step" }
-    let streamError: Error | undefined
-
-    const history = await AgencySwarmHistory.load(scope)
-    const chatHistory = await Session.messages({ sessionID: input.sessionID })
-      .then((msgs) => compactHistory({ msgs, currentID: input.userMessage.info.id }) ?? history.chat_history)
-      .catch((error) => {
-        log.warn("unable to rebuild compacted agency history; falling back to stored history", {
-          sessionID: input.sessionID,
-          error: error instanceof Error ? error.message : String(error),
+    const finishReasoning = (
+      itemID: string,
+      index: number,
+      text: string | undefined,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const key = reasoningKey(itemID, index)
+      const isOpen = reasoningOpen.has(key)
+      const raw = reasoningBuffer.get(key) || ""
+      if (!isOpen && text !== undefined && raw && !text.startsWith(raw)) {
+        reasoningBuffer.delete(key)
+      }
+      const current = reasoningBuffer.get(key) || ""
+      if (!isOpen && (text === undefined || text === current)) {
+        return []
+      }
+      const parts = isOpen ? [] : ensureReasoning(itemID, index, meta, extra)
+      const suffix = text ? (text.startsWith(current) ? text.slice(current.length) : current ? "" : text) : ""
+      if (suffix) {
+        parts.push(...reasoningDelta(itemID, index, suffix, meta, extra))
+      }
+      if (reasoningOpen.has(key)) {
+        reasoningOpen.delete(key)
+        const set = reasoningByItem.get(itemID)
+        if (set) {
+          set.delete(key)
+          if (set.size === 0) {
+            reasoningByItem.delete(itemID)
+          }
+        }
+        parts.push({
+          type: "reasoning-end",
+          id: key,
+          providerMetadata: mergeMeta(meta, {
+            item_id: itemID,
+            summary_index: index,
+            ...(extra ?? {}),
+          }),
         })
-        return history.chat_history
-      })
-    const recipientAgent = await resolveRecipientAgent({
-      sessionID: input.sessionID,
-      baseURL: input.options.baseURL,
-      agency,
-      token: input.options.token,
-      timeoutMs: input.options.discoveryTimeoutMs,
-      mentionedRecipient,
-      configuredRecipient: input.options.recipientAgent,
-    })
-    const sessionLitellmModel =
-      input.sessionModel && buildLitellmModelForClientConfig(input.sessionModel.providerID, input.sessionModel.modelID)
-    const clientConfig = await resolveClientConfig(
-      input.options.baseURL,
-      input.options.clientConfig,
-      input.options.forwardUpstreamCredentials,
-      sessionLitellmModel,
-    )
+      }
+      return parts
+    }
 
-    try {
-      for await (const frame of AgencySwarmAdapter.streamRun({
+    const ensureToolInput = (
+      callID: string,
+      toolName: string,
+      rawInput: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const parts: any[] = []
+      const tool = ensureTool(callID, toolName)
+      if (!tool.started) {
+        tool.started = true
+        parts.push({
+          type: "tool-input-start",
+          id: callID,
+          toolName: tool.tool,
+          providerMetadata: mergeMeta(meta, {
+            call_id: callID,
+            ...(extra ?? {}),
+          }),
+        })
+      }
+      if (rawInput) {
+        tool.raw = rawInput
+        parts.push({
+          type: "tool-input-delta",
+          id: callID,
+          delta: rawInput,
+          providerMetadata: mergeMeta(meta, {
+            call_id: callID,
+            ...(extra ?? {}),
+          }),
+        })
+      }
+      return parts
+    }
+
+    const appendToolInput = (
+      callID: string,
+      toolName: string,
+      delta: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const parts = ensureToolInput(callID, toolName, "", meta, extra)
+      const tool = ensureTool(callID, toolName)
+      tool.raw += delta
+      if (delta) {
+        parts.push({
+          type: "tool-input-delta",
+          id: callID,
+          delta,
+          providerMetadata: mergeMeta(meta, {
+            call_id: callID,
+            ...(extra ?? {}),
+          }),
+        })
+      }
+      return parts
+    }
+
+    const finalizeToolInput = (
+      callID: string,
+      toolName: string,
+      rawInput: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const parts = ensureToolInput(callID, toolName, "", meta, extra)
+      const tool = ensureTool(callID, toolName)
+      const current = tool.raw
+      const suffix = rawInput.startsWith(current) ? rawInput.slice(current.length) : current ? "" : rawInput
+      if (suffix) {
+        parts.push(...appendToolInput(callID, toolName, suffix, meta, extra))
+      }
+      parts.push({
+        type: "tool-input-end",
+        id: callID,
+        providerMetadata: mergeMeta(meta, {
+          call_id: callID,
+          ...(extra ?? {}),
+        }),
+      })
+      return parts
+    }
+
+    const runTool = (callID: string, toolName: string, meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
+      const parts = ensureToolInput(callID, toolName, "", meta, extra)
+      const tool = ensureTool(callID, toolName)
+      if (tool.running || tool.done) {
+        return parts
+      }
+      tool.running = true
+      parts.push({
+        type: "tool-call",
+        toolCallId: callID,
+        toolName: tool.tool,
+        input: parseToolInput(tool.raw),
+        providerMetadata: mergeMeta(meta, {
+          call_id: callID,
+          ...(extra ?? {}),
+        }),
+      })
+      return parts
+    }
+
+    const completeTool = (
+      callID: string,
+      toolName: string,
+      output: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const parts = runTool(callID, toolName, meta, extra)
+      const tool = ensureTool(callID, toolName)
+      if (tool.done) {
+        return parts
+      }
+      tool.done = true
+      parts.push({
+        type: "tool-result",
+        toolCallId: callID,
+        input: parseToolInput(tool.raw),
+        output: {
+          output,
+          title: "",
+          metadata: mergeMeta(meta, {
+            call_id: callID,
+            ...(extra ?? {}),
+          }),
+        },
+      })
+      return parts
+    }
+
+    const failTool = (
+      callID: string,
+      toolName: string,
+      message: string,
+      meta: AgencySwarmEventMeta,
+      extra?: Record<string, unknown>,
+    ) => {
+      const parts = runTool(callID, toolName, meta, extra)
+      const tool = ensureTool(callID, toolName)
+      if (tool.done) {
+        return parts
+      }
+      tool.done = true
+      parts.push({
+        type: "tool-error",
+        toolCallId: callID,
+        input: parseToolInput(tool.raw),
+        error: new Error(message),
+        providerMetadata: mergeMeta(meta, {
+          call_id: callID,
+          ...(extra ?? {}),
+        }),
+      })
+      return parts
+    }
+
+    const extractMessageText = (message: Record<string, unknown>) => {
+      const content = Array.isArray(message["content"]) ? message["content"] : []
+      return content
+        .map((entry) => {
+          const part = asRecord(entry)
+          if (!part) return ""
+          const type = asString(part["type"])
+          if (type === "output_text") return asString(part["text"]) || ""
+          if (type === "refusal") return asString(part["refusal"]) || ""
+          return ""
+        })
+        .filter(Boolean)
+        .join("\n")
+    }
+
+    const toolNameFor = (callID: string) => tools.get(callID)?.tool || "tool"
+
+    const outputMeta = (outputIndex: number | undefined, extra?: Record<string, unknown>) => {
+      return {
+        output_index: outputIndex,
+        ...(extra ?? {}),
+      }
+    }
+
+    const textItemID = (event: Record<string, unknown>) => asString(event["item_id"]) || lastTextItemID
+    const reasoningItemID = (event: Record<string, unknown>) => asString(event["item_id"]) || lastReasoningItemID
+
+    /** Retire closed replay candidates when a new run starts so the dedupe buffer does not grow across runs. */
+    const retireClosedReplayCandidates = () => {
+      for (const key of Array.from(textBuffer.keys())) {
+        if (!textOpen.has(key)) textBuffer.delete(key)
+      }
+    }
+
+    const handleMessagesPayload = async function* (payload: Record<string, unknown>) {
+      const newMessages = Array.isArray(payload["new_messages"]) ? payload["new_messages"] : []
+      await AgencySwarmHistory.appendMessages(scope, newMessages)
+      setUsage(asRecord(payload["usage"]))
+
+      const runFromMessages = asString(payload["run_id"])
+      if (runFromMessages) {
+        if (runID && runID !== runFromMessages) retireClosedReplayCandidates()
+        runID = runFromMessages
+        if (cancelBeforeMetaTimer) {
+          clearTimeout(cancelBeforeMetaTimer)
+          cancelBeforeMetaTimer = undefined
+        }
+        await AgencySwarmHistory.setLastRunID(scope, runID)
+        if (cancelRequested) {
+          await sendCancel()
+        }
+      }
+
+      for (const output of extractFunctionCallOutputsFromMessages(newMessages)) {
+        const tool = ensureTool(output.callID, toolNameFor(output.callID))
+        yield* completeTool(output.callID, tool.tool, output.output, {})
+      }
+
+      for (const raw of newMessages) {
+        const message = asRecord(raw)
+        if (!message || asString(message["type"]) !== "message") continue
+        const itemID = asString(message["id"])
+        if (!itemID) continue
+        const text = extractMessageText(message)
+        if (!text) continue
+        if (shouldSkipDuplicateAssistantText(itemID, 0, text)) continue
+        yield* finishText(itemID, 0, text, {}, { source: "messages" })
+      }
+    }
+
+    const handleOutputItemAdded = (
+      item: Record<string, unknown>,
+      outputIndex: number | undefined,
+      eventMeta: AgencySwarmEventMeta,
+    ) => {
+      const itemType = asString(item["type"]) || ""
+      const itemID = asString(item["id"])
+
+      if (itemID && outputIndex !== undefined) {
+        callByOutput.set(outputIndex, itemID)
+      }
+
+      if (itemType === "message") {
+        if (!itemID) return []
+        return ensureText(itemID, 0, eventMeta, outputMeta(outputIndex))
+      }
+
+      if (itemType === "reasoning") {
+        if (!itemID) return []
+        return ensureReasoning(
+          itemID,
+          0,
+          eventMeta,
+          outputMeta(outputIndex, { encrypted_content: item["encrypted_content"] ?? null }),
+        )
+      }
+
+      if (itemType.endsWith("_call")) {
+        const callID = asString(item["call_id"]) || itemID
+        if (!callID) return []
+        const toolName = normalizeToolName(itemType, item)
+        const raw = toolRawInput(itemType, item)
+        if (itemID) callByItem.set(itemID, callID)
+        if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
+        return ensureToolInput(
+          callID,
+          toolName,
+          raw,
+          eventMeta,
+          outputMeta(outputIndex, {
+            item_id: itemID,
+            item_type: itemType,
+          }),
+        )
+      }
+
+      if (itemType.endsWith("_output")) {
+        const callID = asString(item["call_id"])
+        if (!callID) return []
+        const tool = ensureTool(callID, toolNameFor(callID))
+        return completeTool(
+          callID,
+          tool.tool,
+          toolOutput(itemType, item),
+          eventMeta,
+          outputMeta(outputIndex, {
+            item_id: itemID,
+            item_type: itemType,
+          }),
+        )
+      }
+
+      return []
+    }
+
+    const handleOutputItemDone = (
+      item: Record<string, unknown>,
+      outputIndex: number | undefined,
+      eventMeta: AgencySwarmEventMeta,
+    ) => {
+      const itemType = asString(item["type"]) || ""
+
+      if (itemType === "message") {
+        const itemID = asString(item["id"]) || lastTextItemID
+        if (!itemID) return []
+        return finishText(itemID, textIndex.get(itemID) ?? 0, undefined, eventMeta, outputMeta(outputIndex))
+      }
+
+      if (itemType === "reasoning") {
+        const itemID = asString(item["id"]) || lastReasoningItemID
+        if (!itemID) return []
+        return Array.from(reasoningByItem.get(itemID) ?? [])
+          .filter((value) => reasoningOpen.has(value))
+          .flatMap((key) => {
+            const index = Number(key.split(":")[1] || "0")
+            return finishReasoning(
+              itemID,
+              Number.isFinite(index) ? index : 0,
+              undefined,
+              eventMeta,
+              outputMeta(outputIndex, { encrypted_content: item["encrypted_content"] ?? null }),
+            )
+          })
+      }
+
+      if (itemType.endsWith("_output")) {
+        const callID = asString(item["call_id"])
+        if (!callID) return []
+        const tool = ensureTool(callID, toolNameFor(callID))
+        return completeTool(
+          callID,
+          tool.tool,
+          toolOutput(itemType, item),
+          eventMeta,
+          outputMeta(outputIndex, { item_type: itemType }),
+        )
+      }
+
+      if (itemType.endsWith("_call")) {
+        const callID = asString(item["call_id"]) || asString(item["id"])
+        if (!callID) return []
+        const itemID = asString(item["id"])
+        const toolName = normalizeToolName(itemType, item)
+        const metadata = outputMeta(outputIndex, {
+          item_type: itemType,
+        })
+        if (itemID) callByItem.set(itemID, callID)
+        if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
+        const rawInput = toolRawInput(itemType, item)
+        const knownRaw = tools.get(callID)?.raw ?? ""
+        const reconciled =
+          rawInput && rawInput !== knownRaw ? ensureToolInput(callID, toolName, rawInput, eventMeta, metadata) : []
+        const parts = [...reconciled, ...runTool(callID, toolName, eventMeta, metadata)]
+        if (itemType === "function_call") {
+          return parts
+        }
+        return [...parts, ...completeTool(callID, toolName, toolOutput(itemType, item), eventMeta, metadata)]
+      }
+
+      return []
+    }
+
+    const handleRunItemEvent = (payload: Record<string, unknown>, eventMeta: AgencySwarmEventMeta) => {
+      const name = asString(payload["name"])
+      const item = asRecord(payload["item"])
+      const rawItem = asRecord(item?.["raw_item"])
+      if (!name || !rawItem) return []
+
+      const itemType = asString(rawItem["type"]) || ""
+      if (name === "tool_called" && itemType.endsWith("_call")) {
+        const callID = asString(rawItem["call_id"]) || asString(rawItem["id"])
+        if (!callID) return []
+        const toolName = normalizeToolName(itemType, rawItem)
+        const itemID = asString(rawItem["id"])
+        const rawInput = toolRawInput(itemType, rawItem)
+        const knownRaw = tools.get(callID)?.raw ?? ""
+        if (itemID) callByItem.set(itemID, callID)
+        return [
+          ...(rawInput && rawInput !== knownRaw
+            ? ensureToolInput(callID, toolName, rawInput, eventMeta, {
+                item_id: itemID,
+                source: "run_item_stream_event",
+              })
+            : []),
+          ...runTool(callID, toolName, eventMeta, {
+            item_id: itemID,
+            source: "run_item_stream_event",
+          }),
+        ]
+      }
+
+      if (name === "tool_output") {
+        const callID = asString(item?.["call_id"]) || asString(rawItem["call_id"]) || findCallID(item ?? {}, rawItem)
+        if (!callID) return []
+        const tool = ensureTool(callID, toolNameFor(callID))
+        const output = item?.["output"] ?? rawItem["output"]
+        if (output === undefined) return []
+        return completeTool(callID, tool.tool, stringifyToolOutput(output), eventMeta, {
+          item_type: itemType || undefined,
+          source: "run_item_stream_event",
+        })
+      }
+
+      if (name === "message_output_created" && itemType === "message") {
+        const itemID = asString(rawItem["id"]) || lastTextItemID
+        if (!itemID) return []
+        const text = extractMessageText(rawItem)
+        if (!text) return []
+        const index = 0
+        if (shouldSkipDuplicateAssistantText(itemID, index, text)) {
+          return []
+        }
+        return finishText(itemID, index, text, eventMeta, { source: "run_item_stream_event" })
+      }
+
+      if (name !== "reasoning_item_created" || itemType !== "reasoning") {
+        return []
+      }
+
+      const itemID = asString(rawItem["id"])
+      if (!itemID) return []
+      const summary = Array.isArray(rawItem["summary"]) ? rawItem["summary"] : []
+      if (summary.length === 0) {
+        return [
+          ...ensureReasoning(itemID, 0, eventMeta, { source: "run_item_stream_event" }),
+          ...finishReasoning(itemID, 0, undefined, eventMeta, { source: "run_item_stream_event" }),
+        ]
+      }
+
+      return summary.flatMap((raw, index) => {
+        const record = asRecord(raw)
+        const text = asString(record?.["text"]) || undefined
+        return finishReasoning(itemID, index, text, eventMeta, { source: "run_item_stream_event" })
+      })
+    }
+
+    const flushOpen = () => {
+      const parts: any[] = []
+
+      for (const key of Array.from(textOpen.values())) {
+        textOpen.delete(key)
+        parts.push({ type: "text-end", providerMetadata: {} })
+      }
+
+      for (const key of Array.from(reasoningOpen.values())) {
+        reasoningOpen.delete(key)
+        parts.push({ type: "reasoning-end", id: key, providerMetadata: {} })
+      }
+
+      for (const tool of Array.from(tools.values())) {
+        if (tool.done) continue
+        hadDanglingTool = true
+        parts.push(
+          ...failTool(
+            tool.callID,
+            tool.tool,
+            cancelRequested || streamAborted ? "Cancelled" : "Tool stream ended before output was received",
+            {},
+          ),
+        )
+      }
+
+      return parts
+    }
+
+    const sendCancel = async () => {
+      if (!runID || cancelInFlight) return
+      cancelInFlight = true
+
+      const result = await AgencySwarmAdapter.cancel({
         baseURL: input.options.baseURL,
         agency,
-        message: outgoingMessage,
-        chatHistory,
-        recipientAgent,
-        additionalInstructions: input.options.additionalInstructions,
-        userContext: input.options.userContext,
-        fileIDs: input.options.fileIDs,
+        runID,
+        cancelMode: "immediate",
         token: input.options.token,
-        fileURLs,
-        generateChatName: input.options.generateChatName,
-        clientConfig,
-        abort: streamSignal,
-      })) {
-        if (frame.type === "meta") {
-          if (runID && runID !== frame.runID) retireClosedReplayCandidates()
-          runID = frame.runID
-          if (cancelBeforeMetaTimer) {
-            clearTimeout(cancelBeforeMetaTimer)
-            cancelBeforeMetaTimer = undefined
-          }
-          await AgencySwarmHistory.setLastRunID(scope, runID)
-          if (cancelRequested) {
-            await sendCancel()
-          }
-          continue
-        }
+      }).catch((error) => {
+        log.error("cancel request failed", {
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return {
+          ok: false,
+          status: 0,
+          cancelled: false,
+          notFound: false,
+          error: error instanceof Error ? error.message : String(error),
+        } satisfies AgencySwarmAdapter.CancelResult
+      })
 
-        if (frame.type === "messages") {
-          yield* handleMessagesPayload(frame.payload)
-          continue
-        }
+      if (!result.ok && !result.notFound) {
+        log.warn("cancel did not complete cleanly", {
+          runID,
+          status: result.status,
+          error: result.error,
+        })
+      }
 
-        if (frame.type === "error") {
-          streamError = new Error(frame.error)
-          break
-        }
+      streamAbort.abort(new DOMException("Aborted", "AbortError"))
+    }
 
-        if (frame.type === "end") {
-          break
-        }
+    const onAbort = () => {
+      cancelRequested = true
+      if (runID) {
+        void sendCancel()
+        return
+      }
+      if (!cancelBeforeMetaTimer) {
+        cancelBeforeMetaTimer = setTimeout(() => {
+          streamAbort.abort(new DOMException("Aborted", "AbortError"))
+        }, CANCEL_BEFORE_META_ABORT_MS)
+      }
+    }
 
-        if (frame.type !== "data") {
-          continue
-        }
+    if (input.abort.aborted) {
+      onAbort()
+    } else {
+      input.abort.addEventListener("abort", onAbort, { once: true })
+    }
 
-        const eventMeta = extractEventMeta(frame.payload)
-        await applyAssistantLabel(input.assistantMessage, eventMeta)
+    const fullStream = (async function* () {
+      yield { type: "start" }
+      yield { type: "start-step" }
+      let streamError: Error | undefined
 
-        const kind = asString(frame.payload["type"])
-        if (kind === "error") {
-          const content = asString(frame.payload["content"]) ?? ""
-          streamError = new Error(content || "Agency Swarm backend returned an error without a message")
-          break
-        }
-        if (kind === "agent_updated_stream_event") {
-          const next = asRecord(frame.payload["new_agent"])
-          const maybeName = next ? asString(next["name"]) : undefined
-          if (maybeName) {
-            input.assistantMessage.agent = maybeName
-            input.assistantMessage.mode = maybeName
-            await Session.updateMessage(input.assistantMessage)
-          }
-          continue
-        }
+      const history = await AgencySwarmHistory.load(scope)
+      const chatHistory = await Session.messages({ sessionID: input.sessionID })
+        .then((msgs) => compactHistory({ msgs, currentID: input.userMessage.info.id }) ?? history.chat_history)
+        .catch((error) => {
+          log.warn("unable to rebuild compacted agency history; falling back to stored history", {
+            sessionID: input.sessionID,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          return history.chat_history
+        })
+      const recipientAgent = await resolveRecipientAgent({
+        sessionID: input.sessionID,
+        baseURL: input.options.baseURL,
+        agency,
+        token: input.options.token,
+        timeoutMs: input.options.discoveryTimeoutMs,
+        mentionedRecipient,
+        configuredRecipient: input.options.recipientAgent,
+      })
+      const sessionLitellmModel =
+        input.sessionModel &&
+        buildLitellmModelForClientConfig(input.sessionModel.providerID, input.sessionModel.modelID)
+      const clientConfig = await resolveClientConfig(
+        input.options.baseURL,
+        input.options.clientConfig,
+        input.options.forwardUpstreamCredentials,
+        sessionLitellmModel,
+      )
 
-        if (kind === "raw_response_event") {
-          const nested = asRecord(frame.payload["data"])
-          if (!nested) continue
-          const responseType = asString(nested["type"])
-          const outputIndex = asNumber(nested["output_index"])
-          const item = asRecord(nested["item"])
-
-          if (!responseType) {
-            continue
-          }
-
-          if (
-            responseType === "response.created" ||
-            responseType === "response.in_progress" ||
-            responseType === "response.completed" ||
-            responseType === "response.incomplete"
-          ) {
-            setUsage(asRecord(asRecord(nested["response"])?.["usage"]))
-            continue
-          }
-
-          if (responseType === "response.output_item.added" && item) {
-            yield* handleOutputItemAdded(item, outputIndex, eventMeta)
-            continue
-          }
-
-          if (responseType === "response.output_item.done" && item) {
-            yield* handleOutputItemDone(item, outputIndex, eventMeta)
-            continue
-          }
-
-          if (responseType === "response.content_part.added") {
-            const itemID = textItemID(nested)
-            if (!itemID) continue
-            const part = asRecord(nested["part"])
-            const partType = asString(part?.["type"]) || ""
-            if (partType === "output_text" || partType === "refusal") {
-              const contentIndex = asNumber(nested["content_index"]) ?? 0
-              yield* ensureText(
-                itemID,
-                contentIndex,
-                eventMeta,
-                outputMeta(outputIndex, { content_index: contentIndex, content_type: partType }),
-              )
+      try {
+        for await (const frame of AgencySwarmAdapter.streamRun({
+          baseURL: input.options.baseURL,
+          agency,
+          message: outgoingMessage,
+          chatHistory,
+          recipientAgent,
+          additionalInstructions: input.options.additionalInstructions,
+          userContext: input.options.userContext,
+          fileIDs: input.options.fileIDs,
+          token: input.options.token,
+          fileURLs,
+          generateChatName: input.options.generateChatName,
+          clientConfig,
+          abort: streamSignal,
+        })) {
+          if (frame.type === "meta") {
+            if (runID && runID !== frame.runID) retireClosedReplayCandidates()
+            runID = frame.runID
+            if (cancelBeforeMetaTimer) {
+              clearTimeout(cancelBeforeMetaTimer)
+              cancelBeforeMetaTimer = undefined
+            }
+            await AgencySwarmHistory.setLastRunID(scope, runID)
+            if (cancelRequested) {
+              await sendCancel()
             }
             continue
           }
 
-          if (responseType === "response.output_text.delta" || responseType === "response.refusal.delta") {
-            const delta = asRawString(nested["delta"])
-            if (delta === undefined) continue
-            const itemID = textItemID(nested)
-            if (!itemID) continue
-            const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
-            const textMeta = outputMeta(outputIndex, { content_index: contentIndex })
-            yield* ensureText(itemID, contentIndex, eventMeta, textMeta)
-            yield* textDelta(itemID, contentIndex, delta, eventMeta, textMeta)
+          if (frame.type === "messages") {
+            yield* handleMessagesPayload(frame.payload)
             continue
           }
 
-          if (responseType === "response.output_text.done" || responseType === "response.content_part.done") {
-            const itemID = textItemID(nested)
-            if (!itemID) continue
-            const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
-            const part = asRecord(nested["part"])
-            const final =
-              asRawString(nested["text"]) ??
-              asRawString(part?.["text"]) ??
-              asRawString(part?.["refusal"]) ??
-              asRawString(nested["delta"])
-            yield* finishText(
-              itemID,
-              contentIndex,
-              final,
-              eventMeta,
-              outputMeta(outputIndex, { content_index: contentIndex }),
-            )
-            continue
-          }
-
-          if (responseType === "response.reasoning_summary_part.added") {
-            const itemID = reasoningItemID(nested)
-            if (!itemID) continue
-            const summaryIndex = asNumber(nested["summary_index"]) ?? 0
-            yield* ensureReasoning(itemID, summaryIndex, eventMeta, outputMeta(outputIndex))
-            continue
-          }
-
-          if (
-            responseType === "response.reasoning_summary_text.delta" ||
-            responseType === "response.reasoning_text.delta"
-          ) {
-            const itemID = reasoningItemID(nested)
-            if (!itemID) continue
-            const summaryIndex = asNumber(nested["summary_index"] ?? nested["content_index"]) ?? 0
-            const delta = asRawString(nested["delta"])
-            if (delta === undefined) continue
-            yield* ensureReasoning(itemID, summaryIndex, eventMeta, outputMeta(outputIndex))
-            yield* reasoningDelta(itemID, summaryIndex, delta, eventMeta, outputMeta(outputIndex))
-            continue
-          }
-
-          if (
-            responseType === "response.reasoning_summary_text.done" ||
-            responseType === "response.reasoning_text.done" ||
-            responseType === "response.reasoning_summary_part.done"
-          ) {
-            const itemID = reasoningItemID(nested)
-            if (!itemID) continue
-            const summaryIndex = asNumber(nested["summary_index"] ?? nested["content_index"]) ?? 0
-            const part = asRecord(nested["part"])
-            const text = asRawString(nested["text"])
-            const final = text ?? asRawString(part?.["text"])
-            yield* finishReasoning(itemID, summaryIndex, final, eventMeta, outputMeta(outputIndex))
-            continue
-          }
-
-          if (
-            responseType === "response.function_call_arguments.delta" ||
-            responseType === "response.mcp_call_arguments.delta" ||
-            responseType === "response.code_interpreter_call_code.delta"
-          ) {
-            const callID = findCallID(nested, item)
-            if (!callID) continue
-            const delta = asRawString(nested["delta"]) ?? ""
-            const toolName =
-              responseType === "response.code_interpreter_call_code.delta"
-                ? "code_interpreter"
-                : asString(nested["name"]) || toolNameFor(callID)
-            yield* appendToolInput(callID, toolName, delta, eventMeta, {
-              item_id: asString(nested["item_id"]),
-              output_index: outputIndex,
-            })
-            continue
-          }
-
-          if (
-            responseType === "response.function_call_arguments.done" ||
-            responseType === "response.mcp_call_arguments.done" ||
-            responseType === "response.code_interpreter_call_code.done"
-          ) {
-            const callID = findCallID(nested, item)
-            if (!callID) continue
-            const toolName =
-              responseType === "response.code_interpreter_call_code.done"
-                ? "code_interpreter"
-                : asString(nested["name"]) || toolNameFor(callID)
-            const raw = asRawString(nested["arguments"]) ?? asRawString(nested["code"]) ?? tools.get(callID)?.raw ?? ""
-            yield* finalizeToolInput(callID, toolName, raw, eventMeta, {
-              item_id: asString(nested["item_id"]),
-              output_index: outputIndex,
-            })
-            continue
-          }
-
-          const callMatch = /^response\.([a-z_]+_call)\.(in_progress|searching|running|completed|failed)$/.exec(
-            responseType,
-          )
-          if (callMatch) {
-            const itemType = callMatch[1]
-            const phase = callMatch[2]
-            const callID = findCallID(nested, item) || asString(nested["item_id"])
-            if (!callID) continue
-            const toolName = normalizeToolName(itemType, item)
-            const itemID = asString(nested["item_id"]) || asString(item?.["id"])
-            if (itemID) callByItem.set(itemID, callID)
-            if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
-
-            if (phase === "in_progress" || phase === "searching" || phase === "running") {
-              yield* runTool(callID, toolName, eventMeta, {
-                item_id: itemID,
-                output_index: outputIndex,
-                item_type: itemType,
-                phase,
-              })
-              continue
-            }
-
-            if (phase === "completed") {
-              // Keep completion sourced from output_item.done/messages/tool_output.
-              // completed phase events can precede final payload and should not finalize output.
-              yield* runTool(callID, toolName, eventMeta, {
-                item_id: itemID,
-                output_index: outputIndex,
-                item_type: itemType,
-                phase,
-              })
-              continue
-            }
-
-            const message = asString(nested["error"]) || asString(nested["message"]) || `${toolName} failed`
-            yield* failTool(callID, toolName, message, eventMeta, {
-              item_id: itemID,
-              output_index: outputIndex,
-              item_type: itemType,
-              phase,
-            })
-            continue
-          }
-
-          if (responseType === "error") {
-            const message = asString(nested["message"]) || asString(nested["error"]) || "Unknown stream error"
-            streamError = new Error(message)
+          if (frame.type === "error") {
+            streamError = new Error(frame.error)
             break
           }
 
-          continue
+          if (frame.type === "end") {
+            break
+          }
+
+          if (frame.type !== "data") {
+            continue
+          }
+
+          const eventMeta = extractEventMeta(frame.payload)
+          await applyAssistantLabel(input.assistantMessage, eventMeta)
+
+          const kind = asString(frame.payload["type"])
+          if (kind === "error") {
+            const content = asString(frame.payload["content"]) ?? ""
+            streamError = new Error(content || "Agency Swarm backend returned an error without a message")
+            break
+          }
+          if (kind === "agent_updated_stream_event") {
+            const next = asRecord(frame.payload["new_agent"])
+            const maybeName = next ? asString(next["name"]) : undefined
+            if (maybeName) {
+              input.assistantMessage.agent = maybeName
+              input.assistantMessage.mode = maybeName
+              await Session.updateMessage(input.assistantMessage)
+            }
+            continue
+          }
+
+          if (kind === "raw_response_event") {
+            const nested = asRecord(frame.payload["data"])
+            if (!nested) continue
+            const responseType = asString(nested["type"])
+            const outputIndex = asNumber(nested["output_index"])
+            const item = asRecord(nested["item"])
+
+            if (!responseType) {
+              continue
+            }
+
+            if (
+              responseType === "response.created" ||
+              responseType === "response.in_progress" ||
+              responseType === "response.completed" ||
+              responseType === "response.incomplete"
+            ) {
+              setUsage(asRecord(asRecord(nested["response"])?.["usage"]))
+              continue
+            }
+
+            if (responseType === "response.output_item.added" && item) {
+              yield* handleOutputItemAdded(item, outputIndex, eventMeta)
+              continue
+            }
+
+            if (responseType === "response.output_item.done" && item) {
+              yield* handleOutputItemDone(item, outputIndex, eventMeta)
+              continue
+            }
+
+            if (responseType === "response.content_part.added") {
+              const itemID = textItemID(nested)
+              if (!itemID) continue
+              const part = asRecord(nested["part"])
+              const partType = asString(part?.["type"]) || ""
+              if (partType === "output_text" || partType === "refusal") {
+                const contentIndex = asNumber(nested["content_index"]) ?? 0
+                yield* ensureText(
+                  itemID,
+                  contentIndex,
+                  eventMeta,
+                  outputMeta(outputIndex, { content_index: contentIndex, content_type: partType }),
+                )
+              }
+              continue
+            }
+
+            if (responseType === "response.output_text.delta" || responseType === "response.refusal.delta") {
+              const delta = asRawString(nested["delta"])
+              if (delta === undefined) continue
+              const itemID = textItemID(nested)
+              if (!itemID) continue
+              const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
+              const textMeta = outputMeta(outputIndex, { content_index: contentIndex })
+              yield* ensureText(itemID, contentIndex, eventMeta, textMeta)
+              yield* textDelta(itemID, contentIndex, delta, eventMeta, textMeta)
+              continue
+            }
+
+            if (responseType === "response.output_text.done" || responseType === "response.content_part.done") {
+              const itemID = textItemID(nested)
+              if (!itemID) continue
+              const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
+              const part = asRecord(nested["part"])
+              const final =
+                asRawString(nested["text"]) ??
+                asRawString(part?.["text"]) ??
+                asRawString(part?.["refusal"]) ??
+                asRawString(nested["delta"])
+              yield* finishText(
+                itemID,
+                contentIndex,
+                final,
+                eventMeta,
+                outputMeta(outputIndex, { content_index: contentIndex }),
+              )
+              continue
+            }
+
+            if (responseType === "response.reasoning_summary_part.added") {
+              const itemID = reasoningItemID(nested)
+              if (!itemID) continue
+              const summaryIndex = asNumber(nested["summary_index"]) ?? 0
+              yield* ensureReasoning(itemID, summaryIndex, eventMeta, outputMeta(outputIndex))
+              continue
+            }
+
+            if (
+              responseType === "response.reasoning_summary_text.delta" ||
+              responseType === "response.reasoning_text.delta"
+            ) {
+              const itemID = reasoningItemID(nested)
+              if (!itemID) continue
+              const summaryIndex = asNumber(nested["summary_index"] ?? nested["content_index"]) ?? 0
+              const delta = asRawString(nested["delta"])
+              if (delta === undefined) continue
+              yield* ensureReasoning(itemID, summaryIndex, eventMeta, outputMeta(outputIndex))
+              yield* reasoningDelta(itemID, summaryIndex, delta, eventMeta, outputMeta(outputIndex))
+              continue
+            }
+
+            if (
+              responseType === "response.reasoning_summary_text.done" ||
+              responseType === "response.reasoning_text.done" ||
+              responseType === "response.reasoning_summary_part.done"
+            ) {
+              const itemID = reasoningItemID(nested)
+              if (!itemID) continue
+              const summaryIndex = asNumber(nested["summary_index"] ?? nested["content_index"]) ?? 0
+              const part = asRecord(nested["part"])
+              const text = asRawString(nested["text"])
+              const final = text ?? asRawString(part?.["text"])
+              yield* finishReasoning(itemID, summaryIndex, final, eventMeta, outputMeta(outputIndex))
+              continue
+            }
+
+            if (
+              responseType === "response.function_call_arguments.delta" ||
+              responseType === "response.mcp_call_arguments.delta" ||
+              responseType === "response.code_interpreter_call_code.delta"
+            ) {
+              const callID = findCallID(nested, item)
+              if (!callID) continue
+              const delta = asRawString(nested["delta"]) ?? ""
+              const toolName =
+                responseType === "response.code_interpreter_call_code.delta"
+                  ? "code_interpreter"
+                  : asString(nested["name"]) || toolNameFor(callID)
+              yield* appendToolInput(callID, toolName, delta, eventMeta, {
+                item_id: asString(nested["item_id"]),
+                output_index: outputIndex,
+              })
+              continue
+            }
+
+            if (
+              responseType === "response.function_call_arguments.done" ||
+              responseType === "response.mcp_call_arguments.done" ||
+              responseType === "response.code_interpreter_call_code.done"
+            ) {
+              const callID = findCallID(nested, item)
+              if (!callID) continue
+              const toolName =
+                responseType === "response.code_interpreter_call_code.done"
+                  ? "code_interpreter"
+                  : asString(nested["name"]) || toolNameFor(callID)
+              const raw =
+                asRawString(nested["arguments"]) ?? asRawString(nested["code"]) ?? tools.get(callID)?.raw ?? ""
+              yield* finalizeToolInput(callID, toolName, raw, eventMeta, {
+                item_id: asString(nested["item_id"]),
+                output_index: outputIndex,
+              })
+              continue
+            }
+
+            const callMatch = /^response\.([a-z_]+_call)\.(in_progress|searching|running|completed|failed)$/.exec(
+              responseType,
+            )
+            if (callMatch) {
+              const itemType = callMatch[1]
+              const phase = callMatch[2]
+              const callID = findCallID(nested, item) || asString(nested["item_id"])
+              if (!callID) continue
+              const toolName = normalizeToolName(itemType, item)
+              const itemID = asString(nested["item_id"]) || asString(item?.["id"])
+              if (itemID) callByItem.set(itemID, callID)
+              if (outputIndex !== undefined) callByOutput.set(outputIndex, callID)
+
+              if (phase === "in_progress" || phase === "searching" || phase === "running") {
+                yield* runTool(callID, toolName, eventMeta, {
+                  item_id: itemID,
+                  output_index: outputIndex,
+                  item_type: itemType,
+                  phase,
+                })
+                continue
+              }
+
+              if (phase === "completed") {
+                // Keep completion sourced from output_item.done/messages/tool_output.
+                // completed phase events can precede final payload and should not finalize output.
+                yield* runTool(callID, toolName, eventMeta, {
+                  item_id: itemID,
+                  output_index: outputIndex,
+                  item_type: itemType,
+                  phase,
+                })
+                continue
+              }
+
+              const message = asString(nested["error"]) || asString(nested["message"]) || `${toolName} failed`
+              yield* failTool(callID, toolName, message, eventMeta, {
+                item_id: itemID,
+                output_index: outputIndex,
+                item_type: itemType,
+                phase,
+              })
+              continue
+            }
+
+            if (responseType === "error") {
+              const message = asString(nested["message"]) || asString(nested["error"]) || "Unknown stream error"
+              streamError = new Error(message)
+              break
+            }
+
+            continue
+          }
+
+          if (kind === "run_item_stream_event") {
+            yield* handleRunItemEvent(frame.payload, eventMeta)
+            continue
+          }
         }
-
-        if (kind === "run_item_stream_event") {
-          yield* handleRunItemEvent(frame.payload, eventMeta)
-          continue
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          streamAborted = true
+        } else {
+          streamError = error instanceof Error ? error : new Error(String(error))
         }
+      } finally {
+        if (cancelBeforeMetaTimer) {
+          clearTimeout(cancelBeforeMetaTimer)
+        }
+        input.abort.removeEventListener("abort", onAbort)
       }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        streamAborted = true
-      } else {
-        streamError = error instanceof Error ? error : new Error(String(error))
+
+      yield* flushOpen()
+
+      if (!streamError && hadDanglingTool && !streamAborted && !cancelRequested) {
+        streamError = new Error("Tool stream ended before output was received")
       }
-    } finally {
-      if (cancelBeforeMetaTimer) {
-        clearTimeout(cancelBeforeMetaTimer)
+
+      if (streamError) {
+        yield {
+          type: "error",
+          error: streamError,
+        }
+        return
       }
-      input.abort.removeEventListener("abort", onAbort)
-    }
 
-    yield* flushOpen()
+      const finalUsage = usage ?? {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        reasoningTokens: 0,
+        cachedInputTokens: 0,
+        cacheWriteInputTokens: 0,
+      }
+      const cost = finalUsage.cost ?? 0
 
-    if (!streamError && hadDanglingTool && !streamAborted && !cancelRequested) {
-      streamError = new Error("Tool stream ended before output was received")
-    }
-
-    if (streamError) {
       yield {
-        type: "error",
-        error: streamError,
-      }
-      return
-    }
-
-    const finalUsage = usage ?? {
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      reasoningTokens: 0,
-      cachedInputTokens: 0,
-      cacheWriteInputTokens: 0,
-    }
-    const cost = finalUsage.cost ?? 0
-
-    yield {
-      type: "finish-step",
-      finishReason: cancelRequested || streamAborted ? "cancelled" : "stop",
-      usage: {
-        inputTokens: finalUsage.inputTokens,
-        outputTokens: finalUsage.outputTokens,
-        totalTokens: finalUsage.totalTokens,
-        reasoningTokens: finalUsage.reasoningTokens,
-        cachedInputTokens: finalUsage.cachedInputTokens,
-      },
-      providerMetadata: {
-        agency_swarm: {
-          cacheWriteInputTokens: finalUsage.cacheWriteInputTokens,
-          totalCost: cost,
+        type: "finish-step",
+        finishReason: cancelRequested || streamAborted ? "cancelled" : "stop",
+        usage: {
+          inputTokens: finalUsage.inputTokens,
+          outputTokens: finalUsage.outputTokens,
+          totalTokens: finalUsage.totalTokens,
+          reasoningTokens: finalUsage.reasoningTokens,
+          cachedInputTokens: finalUsage.cachedInputTokens,
         },
-      },
+        providerMetadata: {
+          agency_swarm: {
+            cacheWriteInputTokens: finalUsage.cacheWriteInputTokens,
+            totalCost: cost,
+          },
+        },
+      }
+
+      yield {
+        type: "finish",
+      }
+    })()
+
+    return {
+      fullStream,
+    }
+  }
+
+  async function applyAssistantLabel(message: MessageV2.Assistant, metadata: AgencySwarmEventMeta) {
+    if (!metadata.agent) return
+    if (metadata.agent === message.agent) return
+    message.agent = metadata.agent
+    message.mode = metadata.agent
+    await Session.updateMessage(message)
+  }
+
+  function asBoolean(value: unknown): boolean | undefined {
+    return typeof value === "boolean" ? value : undefined
+  }
+
+  async function resolveRecipientAgent(input: {
+    sessionID: SessionID
+    baseURL: string
+    agency: string
+    token?: string
+    timeoutMs: number
+    mentionedRecipient?: string
+    configuredRecipient?: string
+  }): Promise<string | undefined> {
+    const sessionRecipient = await resolveSessionRecipient(input.sessionID)
+    const candidates = [input.mentionedRecipient, sessionRecipient, input.configuredRecipient].filter(
+      (value, index, array): value is string => !!value && array.indexOf(value) === index,
+    )
+    if (candidates.length === 0) {
+      return undefined
     }
 
-    yield {
-      type: "finish",
+    let metadata: AgencySwarmAdapter.AgencyMetadata
+    try {
+      metadata = await AgencySwarmAdapter.getMetadata({
+        baseURL: input.baseURL,
+        agency: input.agency,
+        token: input.token,
+        timeoutMs: input.timeoutMs,
+      })
+    } catch (error) {
+      log.warn("unable to refresh agency metadata; skipping recipient override", {
+        sessionID: input.sessionID,
+        agency: input.agency,
+        candidates,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return undefined
     }
-  })()
 
-  return {
-    fullStream,
-  }
-}
+    const recipientMap = extractRecipientMap(metadata)
+    if (recipientMap.size === 0) {
+      log.warn("agency metadata has no recipient agents; skipping recipient override", {
+        sessionID: input.sessionID,
+        agency: input.agency,
+        candidates,
+      })
+      return undefined
+    }
 
-async function applyAssistantLabel(message: MessageV2.Assistant, metadata: AgencySwarmEventMeta) {
-  if (!metadata.agent) return
-  if (metadata.agent === message.agent) return
-  message.agent = metadata.agent
-  message.mode = metadata.agent
-  await Session.updateMessage(message)
-}
+    const availableAgents = Array.from(new Set(recipientMap.values()))
+    for (const candidate of candidates) {
+      const resolved = recipientMap.get(candidate)
+      if (resolved) return resolved
+      const source =
+        candidate === input.mentionedRecipient ? "message" : candidate === sessionRecipient ? "session" : "config"
+      log.warn("ignoring stale recipient agent candidate", {
+        sessionID: input.sessionID,
+        agency: input.agency,
+        candidate,
+        source,
+        availableAgents,
+      })
+    }
 
-function asBoolean(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined
-}
-
-async function resolveRecipientAgent(input: {
-  sessionID: SessionID
-  baseURL: string
-  agency: string
-  token?: string
-  timeoutMs: number
-  mentionedRecipient?: string
-  configuredRecipient?: string
-}): Promise<string | undefined> {
-  const sessionRecipient = await resolveSessionRecipient(input.sessionID)
-  const candidates = [input.mentionedRecipient, sessionRecipient, input.configuredRecipient].filter(
-    (value, index, array): value is string => !!value && array.indexOf(value) === index,
-  )
-  if (candidates.length === 0) {
     return undefined
   }
 
-  let metadata: AgencySwarmAdapter.AgencyMetadata
-  try {
-    metadata = await AgencySwarmAdapter.getMetadata({
-      baseURL: input.baseURL,
-      agency: input.agency,
-      token: input.token,
-      timeoutMs: input.timeoutMs,
-    })
-  } catch (error) {
-    log.warn("unable to refresh agency metadata; skipping recipient override", {
-      sessionID: input.sessionID,
-      agency: input.agency,
-      candidates,
-      error: error instanceof Error ? error.message : String(error),
-    })
-    return undefined
+  async function resolveSessionRecipient(sessionID: SessionID) {
+    try {
+      const messages = await Session.messages({ sessionID })
+      const last = messages.findLast((item) => {
+        if (item.info.role !== "assistant") return false
+        if (item.info.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
+        if (item.info.summary) return false
+        return !!item.info.agent
+      })
+      if (!last) return
+      if (last.info.role !== "assistant") return
+      return last.info.agent
+    } catch (error) {
+      log.warn("unable to load session recipient; skipping recipient override", {
+        sessionID,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return undefined
+    }
   }
 
-  const recipientMap = extractRecipientMap(metadata)
-  if (recipientMap.size === 0) {
-    log.warn("agency metadata has no recipient agents; skipping recipient override", {
-      sessionID: input.sessionID,
-      agency: input.agency,
-      candidates,
-    })
-    return undefined
-  }
+  export function compactHistory(input: { msgs: MessageV2.WithParts[]; currentID: string }) {
+    let start = -1
+    for (let i = input.msgs.length - 1; i >= 0; i--) {
+      const msg = input.msgs[i]
+      if (msg.info.role !== "assistant") continue
+      if (!msg.info.summary || !msg.info.finish || msg.info.error) continue
+      const parentID = msg.info.parentID
+      const parent = input.msgs.find((item) => item.info.id === parentID)
+      if (!parent || parent.info.role !== "user") continue
+      if (!parent.parts.some((part) => part.type === "compaction")) continue
+      start = i
+      break
+    }
 
-  const availableAgents = Array.from(new Set(recipientMap.values()))
-  for (const candidate of candidates) {
-    const resolved = recipientMap.get(candidate)
-    if (resolved) return resolved
-    const source =
-      candidate === input.mentionedRecipient ? "message" : candidate === sessionRecipient ? "session" : "config"
-    log.warn("ignoring stale recipient agent candidate", {
-      sessionID: input.sessionID,
-      agency: input.agency,
-      candidate,
-      source,
-      availableAgents,
-    })
-  }
+    if (start < 0) return
+    const slice = input.msgs.slice(start < 0 ? 0 : start)
+    if (slice.some((msg) => msg.info.id !== input.currentID && !isAgencySwarmMessage(msg))) return
 
-  return undefined
-}
+    return slice.flatMap((msg) => {
+      if (msg.info.id === input.currentID) return []
 
-async function resolveSessionRecipient(sessionID: SessionID) {
-  try {
-    const messages = await Session.messages({ sessionID })
-    const last = messages.findLast((item) => {
-      if (item.info.role !== "assistant") return false
-      if (item.info.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
-      if (item.info.summary) return false
-      return !!item.info.agent
-    })
-    if (!last) return
-    if (last.info.role !== "assistant") return
-    return last.info.agent
-  } catch (error) {
-    log.warn("unable to load session recipient; skipping recipient override", {
-      sessionID,
-      error: error instanceof Error ? error.message : String(error),
-    })
-    return undefined
-  }
-}
+      if (msg.info.role === "user") {
+        const text = buildOutgoingMessage(msg)
+        if (!text) return []
+        return [
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text }],
+            agent: msg.info.agent,
+            callerAgent: null,
+            timestamp: msg.info.time.created,
+          },
+        ]
+      }
 
-export function compactHistory(input: { msgs: MessageV2.WithParts[]; currentID: string }) {
-  let start = -1
-  for (let i = input.msgs.length - 1; i >= 0; i--) {
-    const msg = input.msgs[i]
-    if (msg.info.role !== "assistant") continue
-    if (!msg.info.summary || !msg.info.finish || msg.info.error) continue
-    const parentID = msg.info.parentID
-    const parent = input.msgs.find((item) => item.info.id === parentID)
-    if (!parent || parent.info.role !== "user") continue
-    if (!parent.parts.some((part) => part.type === "compaction")) continue
-    start = i
-    break
-  }
-
-  if (start < 0) return
-  const slice = input.msgs.slice(start < 0 ? 0 : start)
-  if (slice.some((msg) => msg.info.id !== input.currentID && !isAgencySwarmMessage(msg))) return
-
-  return slice.flatMap((msg) => {
-    if (msg.info.id === input.currentID) return []
-
-    if (msg.info.role === "user") {
-      const text = buildOutgoingMessage(msg)
+      const text = msg.parts
+        .filter((part): part is MessageV2.TextPart => part.type === "text")
+        .filter((part) => !part.ignored)
+        .map((part) => part.text.trim())
+        .filter(Boolean)
+        .join("\n\n")
       if (!text) return []
       return [
         {
           type: "message",
-          role: "user",
-          content: [{ type: "input_text", text }],
+          role: "assistant",
+          content: [{ type: "output_text", text }],
           agent: msg.info.agent,
-          callerAgent: null,
+          callerAgent: extractCallerAgent(msg),
           timestamp: msg.info.time.created,
         },
       ]
+    })
+  }
+
+  function extractCallerAgent(msg: MessageV2.WithParts): string | null {
+    for (let i = msg.parts.length - 1; i >= 0; i--) {
+      const part = msg.parts[i]
+      if (part.type !== "text" && part.type !== "reasoning") continue
+      const metadata = asRecord(part.metadata)
+      if (!metadata || !Object.prototype.hasOwnProperty.call(metadata, "callerAgent")) continue
+      if (metadata["callerAgent"] === null) return null
+      return normalizeCallerAgentValue(asString(metadata["callerAgent"])) ?? null
     }
-
-    const text = msg.parts
-      .filter((part): part is MessageV2.TextPart => part.type === "text")
-      .filter((part) => !part.ignored)
-      .map((part) => part.text.trim())
-      .filter(Boolean)
-      .join("\n\n")
-    if (!text) return []
-    return [
-      {
-        type: "message",
-        role: "assistant",
-        content: [{ type: "output_text", text }],
-        agent: msg.info.agent,
-        callerAgent: extractCallerAgent(msg),
-        timestamp: msg.info.time.created,
-      },
-    ]
-  })
-}
-
-function extractCallerAgent(msg: MessageV2.WithParts): string | null {
-  for (let i = msg.parts.length - 1; i >= 0; i--) {
-    const part = msg.parts[i]
-    if (part.type !== "text" && part.type !== "reasoning") continue
-    const metadata = asRecord(part.metadata)
-    if (!metadata || !Object.prototype.hasOwnProperty.call(metadata, "callerAgent")) continue
-    if (metadata["callerAgent"] === null) return null
-    return normalizeCallerAgentValue(asString(metadata["callerAgent"])) ?? null
-  }
-  return null
-}
-
-function isAgencySwarmMessage(msg: MessageV2.WithParts) {
-  if (msg.info.role === "assistant") {
-    return msg.info.providerID === AgencySwarmAdapter.PROVIDER_ID
-  }
-  return msg.info.model.providerID === AgencySwarmAdapter.PROVIDER_ID
-}
-
-function extractRecipientMap(metadata: AgencySwarmAdapter.AgencyMetadata): Map<string, string> {
-  const result = new Map<string, string>()
-  const metadataRecord = asRecord(metadata["metadata"])
-  for (const id of asStringArray(metadataRecord?.["agents"])) {
-    result.set(id, id)
+    return null
   }
 
-  const nodes = Array.isArray(metadata["nodes"]) ? metadata["nodes"] : []
-  for (const rawNode of nodes) {
-    const node = asRecord(rawNode)
-    if (!node) continue
-    const id = asString(node["id"])
-    if (!id) continue
-    const nodeType = asString(node["type"])
-    const data = asRecord(node["data"])
-    if (nodeType === "agent") {
+  function isAgencySwarmMessage(msg: MessageV2.WithParts) {
+    if (msg.info.role === "assistant") {
+      return msg.info.providerID === AgencySwarmAdapter.PROVIDER_ID
+    }
+    return msg.info.model.providerID === AgencySwarmAdapter.PROVIDER_ID
+  }
+
+  function extractRecipientMap(metadata: AgencySwarmAdapter.AgencyMetadata): Map<string, string> {
+    const result = new Map<string, string>()
+    const metadataRecord = asRecord(metadata["metadata"])
+    for (const id of asStringArray(metadataRecord?.["agents"])) {
       result.set(id, id)
-      const label = asString(data?.["label"])
-      if (label) result.set(label, id)
     }
-  }
 
-  return result
-}
-
-function asStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((item) => {
-    const parsed = asString(item)
-    return parsed ? [parsed] : []
-  })
-}
-
-function asNumber(value: unknown): number | undefined {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : undefined
-  }
-  if (typeof value === "string") {
-    const parsed = Number(value)
-    if (Number.isFinite(parsed)) {
-      return parsed
+    const nodes = Array.isArray(metadata["nodes"]) ? metadata["nodes"] : []
+    for (const rawNode of nodes) {
+      const node = asRecord(rawNode)
+      if (!node) continue
+      const id = asString(node["id"])
+      if (!id) continue
+      const nodeType = asString(node["type"])
+      const data = asRecord(node["data"])
+      if (nodeType === "agent") {
+        result.set(id, id)
+        const label = asString(data?.["label"])
+        if (label) result.set(label, id)
+      }
     }
+
+    return result
   }
-  return undefined
+
+  function asStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) return []
+    return value.flatMap((item) => {
+      const parsed = asString(item)
+      return parsed ? [parsed] : []
+    })
+  }
+
+  function asNumber(value: unknown): number | undefined {
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : undefined
+    }
+    if (typeof value === "string") {
+      const parsed = Number(value)
+      if (Number.isFinite(parsed)) {
+        return parsed
+      }
+    }
+    return undefined
+  }
 }

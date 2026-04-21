@@ -288,7 +288,9 @@ describe("agency-swarm npx onboarding", () => {
 
     expect(error).toBeInstanceOf(Error)
     if (!error) throw new Error("Expected prepareProjectLaunch to fail")
-    expect(error.message).toContain("Canary import failed. Check requirements.txt/pyproject.toml for agency-swarm version compatibility.")
+    expect(error.message).toContain(
+      "Canary import failed. Check requirements.txt/pyproject.toml for agency-swarm version compatibility.",
+    )
     expect(error.message).not.toContain("Canary import failed on fallback install.")
     expect(error.message).toContain("LoadFileAttachment")
 
@@ -350,9 +352,7 @@ describe("agency-swarm npx onboarding", () => {
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
       }),
-    ).rejects.toThrow(
-      "Detected project-local fastapi.py, agency_swarm.py that may shadow installed packages.",
-    )
+    ).rejects.toThrow("Detected project-local fastapi.py, agency_swarm.py that may shadow installed packages.")
   })
 
   test("detectAgencyProject requires agency.py with create_agency", async () => {
