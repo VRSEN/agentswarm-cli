@@ -9,10 +9,8 @@ import { Flag } from "@/flag/flag"
 import { AgencySwarmHistory } from "@/agency-swarm/history"
 import {
   buildLitellmModelForClientConfig,
-  isOpenAIBasedLitellmModel,
   mapProviderIDToLiteLLMProvider,
   normalizeExplicitClientConfigModel,
-  OPENAI_BASED_LITELLM_PROVIDERS,
 } from "@/agency-swarm/litellm-provider"
 import { Auth } from "@/auth"
 import { Env } from "@/env"
@@ -152,17 +150,12 @@ export namespace SessionAgencySwarm {
 
   async function resolveClientConfig(
     baseURL: string,
-    agency: string,
-    token: string | undefined,
-    timeoutMs: number,
     config: Record<string, unknown> | undefined,
     forwardUpstreamCredentials?: boolean,
     sessionLitellmModel?: string,
   ): Promise<Record<string, unknown> | undefined> {
     const explicit = asRecord(config)
     const explicitUpstreamBaseURL = readConfiguredBaseURL(explicit)
-    const explicitModel = explicit && asString(explicit["model"])
-    const requestedModel = explicitModel ? normalizeExplicitClientConfigModel(explicitModel) : sessionLitellmModel
     const forwardGenerated =
       isLocalAgencyUpstreamURL(baseURL) ||
       Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS ||
@@ -175,27 +168,7 @@ export namespace SessionAgencySwarm {
           allowStoredOpenAIOAuth: !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
         })
       : undefined
-    const generated =
-      !explicitUpstreamBaseURL &&
-      (await shouldStripCodexOAuth(requestedModel, rawGenerated, explicit, async () => {
-        try {
-          return await AgencySwarmAdapter.getMetadata({
-            baseURL,
-            agency,
-            token,
-            timeoutMs,
-          })
-        } catch (error) {
-          log.error("unable to load agency metadata while deciding Codex OAuth routing", {
-            baseURL,
-            agency,
-            error: error instanceof Error ? error.message : String(error),
-          })
-          return undefined
-        }
-      }))
-        ? stripCodexOAuthForNonOpenAI(rawGenerated)
-        : rawGenerated
+    const generated = rawGenerated
     if (!config) {
       return finalizeClientConfig(generated, undefined, sessionLitellmModel)
     }
@@ -352,106 +325,6 @@ export namespace SessionAgencySwarm {
 
   function isCodexAPIBaseURL(value: string) {
     return value.replace(/\/+$/, "") === CODEX_API_BASE_URL
-  }
-
-  // TODO(agency-swarm#629): remove after upstream scopes config.base_url per-provider.
-  /**
-   * True when `litellm_keys` holds a credential for any non-OpenAI-based provider. Signals that the
-   * agency-swarm server will route at least one agent through LiteLLM for a provider where the
-   * Codex OAuth `base_url` would break Messages API calls.
-   */
-  function hasNonOpenAILitellmKey(src: Record<string, unknown> | undefined): boolean {
-    if (!src) return false
-    const keys = asRecord(src["litellm_keys"]) ?? asRecord(src["litellmKeys"])
-    if (!keys) return false
-    return Object.entries(keys).some(
-      ([provider, value]) =>
-        typeof value === "string" && value.length > 0 && !OPENAI_BASED_LITELLM_PROVIDERS.has(provider),
-    )
-  }
-
-  // TODO(agency-swarm#629): remove after upstream scopes config.base_url per-provider.
-  /**
-   * Strip the Codex OAuth triplet when either the session override is non-OpenAI
-   * (explicit user intent to route non-OpenAI), or no session override exists and the
-   * generated payload or the user's explicit `client_config.litellm_keys` carries a
-   * non-OpenAI LiteLLM key (framework mode — agent-level non-OpenAI routing is possible).
-   * A session model that is explicitly OpenAI-based keeps the OAuth triplet so the
-   * forced OpenAI override still authenticates.
-   */
-  async function shouldStripCodexOAuth(
-    sessionLitellmModel: string | undefined,
-    generated: Record<string, unknown> | undefined,
-    explicit: Record<string, unknown> | undefined,
-    loadAgencyMetadata: () => Promise<AgencySwarmAdapter.AgencyMetadata | undefined>,
-  ): Promise<boolean> {
-    if (!isOpenAIBasedLitellmModel(sessionLitellmModel)) return true
-    if (sessionLitellmModel) return false
-    if (!hasNonOpenAILitellmKey(generated) && !hasNonOpenAILitellmKey(explicit)) return false
-
-    const metadata = await loadAgencyMetadata()
-    if (!metadata) {
-      log.error("agency metadata unavailable while deciding Codex OAuth routing; stripping OpenAI OAuth conservatively")
-      return true
-    }
-
-    const agencyModels = extractAgencyModels(metadata)
-    if (agencyModels.length === 0) {
-      log.error(
-        "agency metadata exposed no agent models while deciding Codex OAuth routing; stripping OpenAI OAuth conservatively",
-        {
-          metadataKeys: Object.keys(metadata),
-        },
-      )
-      return true
-    }
-
-    const nonOpenAIModels = agencyModels.filter(
-      (model) => !isOpenAIBasedLitellmModel(normalizeExplicitClientConfigModel(model)),
-    )
-    if (nonOpenAIModels.length === 0) {
-      log.info(
-        "keeping Codex OAuth for agency-swarm request because agency metadata only exposes OpenAI-based models",
-        {
-          agencyModels,
-        },
-      )
-      return false
-    }
-
-    log.warn(
-      "stripping Codex OAuth because agency metadata exposes non-OpenAI models and upstream applies base_url globally",
-      {
-        agencyModels,
-        nonOpenAIModels,
-      },
-    )
-    return true
-  }
-
-  // TODO(agency-swarm#629): remove after upstream scopes config.base_url per-provider.
-  /**
-   * Drop the Codex OAuth triplet (`base_url` + `api_key` + `ChatGPT-Account-Id`) from the generated payload
-   * so a non-OpenAI LiteLLM session (anthropic, gemini, ...) does not inherit ChatGPT's OAuth endpoint.
-   * Upstream agency-swarm applies `config.base_url` to all LiteLLM agents regardless of provider
-   * (endpoint_handlers.py:1320), which would route Anthropic Messages through chatgpt.com and 404.
-   */
-  function stripCodexOAuthForNonOpenAI(
-    generated: Record<string, unknown> | undefined,
-  ): Record<string, unknown> | undefined {
-    if (!generated) return generated
-    const base = asString(generated["base_url"])
-    if (!base || !isCodexAPIBaseURL(base)) return generated
-    const out: Record<string, unknown> = { ...generated }
-    delete out["base_url"]
-    delete out["api_key"]
-    const headers = readStringRecord(out["default_headers"])
-    if (headers && "ChatGPT-Account-Id" in headers) {
-      const next = Object.fromEntries(Object.entries(headers).filter(([k]) => k !== "ChatGPT-Account-Id"))
-      if (Object.keys(next).length > 0) out["default_headers"] = next
-      else delete out["default_headers"]
-    }
-    return Object.keys(out).length > 0 ? out : undefined
   }
 
   function hasEnvCredential(
@@ -1504,9 +1377,6 @@ export namespace SessionAgencySwarm {
         buildLitellmModelForClientConfig(input.sessionModel.providerID, input.sessionModel.modelID)
       const clientConfig = await resolveClientConfig(
         input.options.baseURL,
-        agency,
-        input.options.token,
-        input.options.discoveryTimeoutMs,
         input.options.clientConfig,
         input.options.forwardUpstreamCredentials,
         sessionLitellmModel,
@@ -2054,20 +1924,6 @@ export namespace SessionAgencySwarm {
     }
 
     return result
-  }
-
-  function extractAgencyModels(metadata: AgencySwarmAdapter.AgencyMetadata): string[] {
-    const models = new Set<string>()
-    const nodes = Array.isArray(metadata["nodes"]) ? metadata["nodes"] : []
-    for (const rawNode of nodes) {
-      const node = asRecord(rawNode)
-      if (!node) continue
-      if (asString(node["type"]) !== "agent") continue
-      const data = asRecord(node["data"])
-      const model = asString(data?.["model"])
-      if (model) models.add(model)
-    }
-    return [...models]
   }
 
   function asStringArray(value: unknown): string[] {

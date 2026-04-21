@@ -458,7 +458,7 @@ describe("session.agency-swarm", () => {
     }
   })
 
-  test("stream strips Codex OAuth triplet in framework mode when stored keys reveal non-OpenAI routing", async () => {
+  test("stream forwards Codex OAuth while the backend keeps it off Anthropic calls", async () => {
     mockHistory()
     await Auth.set("openai", {
       type: "oauth",
@@ -489,7 +489,13 @@ describe("session.agency-swarm", () => {
       },
     })) as typeof Provider.list
 
-    let body: Record<string, unknown> | undefined
+    let forwardedClientConfig: Record<string, unknown> | undefined
+    let downstreamAnthropicCall:
+      | {
+          apiKey?: string
+          baseURL?: string
+        }
+      | undefined
     const server = createServer(async (request, response) => {
       if (request.url !== "/builder/get_response_stream") {
         response.writeHead(404)
@@ -501,7 +507,23 @@ describe("session.agency-swarm", () => {
         if (Buffer.isBuffer(chunk)) chunks.push(chunk)
         else chunks.push(Buffer.from(chunk))
       }
-      body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
+      const body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
+      forwardedClientConfig = body["client_config"] as Record<string, unknown> | undefined
+      const litellmKeys =
+        forwardedClientConfig &&
+        typeof forwardedClientConfig["litellm_keys"] === "object" &&
+        forwardedClientConfig["litellm_keys"] !== null
+          ? (forwardedClientConfig["litellm_keys"] as Record<string, unknown>)
+          : undefined
+      const forwardedBaseURL =
+        forwardedClientConfig && typeof forwardedClientConfig["base_url"] === "string"
+          ? forwardedClientConfig["base_url"]
+          : undefined
+      downstreamAnthropicCall = {
+        apiKey: typeof litellmKeys?.["anthropic"] === "string" ? litellmKeys["anthropic"] : undefined,
+        // Mirrors the merged agency-swarm 1.9.3 contract from PR #630.
+        baseURL: forwardedBaseURL === "https://chatgpt.com/backend-api/codex" ? undefined : forwardedBaseURL,
+      }
       response.writeHead(200, { "Content-Type": "text/event-stream" })
       response.end(
         [
@@ -527,14 +549,22 @@ describe("session.agency-swarm", () => {
     try {
       const { input } = helper()
       input.options.baseURL = `http://127.0.0.1:${(address as AddressInfo).port}`
-      // No sessionModel set — framework mode leaves sessionLitellmModel undefined.
       const stream = await SessionAgencySwarm.stream(input)
-      for await (const _ of stream.fullStream) {
-        /* drain */
+      const text: string[] = []
+      for await (const event of stream.fullStream) {
+        if (event.type === "text-delta") text.push(event.text)
       }
 
-      expect(body?.["client_config"]).toEqual({
+      expect(text).toEqual(["ok"])
+      expect(forwardedClientConfig).toEqual({
+        api_key: "oauth-access",
+        base_url: "https://chatgpt.com/backend-api/codex",
+        default_headers: { "ChatGPT-Account-Id": "acct_123" },
         litellm_keys: { anthropic: "env-anthropic" },
+      })
+      expect(downstreamAnthropicCall).toEqual({
+        apiKey: "env-anthropic",
+        baseURL: undefined,
       })
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
@@ -542,7 +572,7 @@ describe("session.agency-swarm", () => {
     }
   })
 
-  test("stream strips Codex OAuth triplet in framework mode when explicit client_config reveals non-OpenAI routing", async () => {
+  test("stream keeps Codex OAuth triplet when explicit client_config reveals non-OpenAI routing", async () => {
     mockHistory()
     await Auth.set("openai", {
       type: "oauth",
@@ -601,8 +631,6 @@ describe("session.agency-swarm", () => {
     try {
       const { input } = helper()
       input.options.baseURL = `http://127.0.0.1:${(address as AddressInfo).port}`
-      // Framework mode (sessionModel undefined). Stored Anthropic key is ABSENT;
-      // the only non-OpenAI routing signal is the user's explicit client_config.
       input.options.clientConfig = {
         litellm_keys: { anthropic: "manual-ant" },
       }
@@ -613,17 +641,18 @@ describe("session.agency-swarm", () => {
 
       const cfg = body?.["client_config"] as Record<string, unknown> | undefined
       expect(cfg).toEqual({
+        api_key: "oauth-access",
+        base_url: "https://chatgpt.com/backend-api/codex",
+        default_headers: { "ChatGPT-Account-Id": "acct_123" },
         litellm_keys: { anthropic: "manual-ant" },
       })
-      expect(cfg).not.toHaveProperty("base_url")
-      expect(cfg).not.toHaveProperty("api_key")
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
       await Auth.remove("openai")
     }
   })
 
-  test("stream strips Codex OAuth triplet when session model is a non-OpenAI LiteLLM provider", async () => {
+  test("stream keeps Codex OAuth triplet when session model is a non-OpenAI LiteLLM provider", async () => {
     mockHistory()
     await Auth.set("openai", {
       type: "oauth",
@@ -699,6 +728,9 @@ describe("session.agency-swarm", () => {
       }
 
       expect(body?.["client_config"]).toEqual({
+        api_key: "oauth-access",
+        base_url: "https://chatgpt.com/backend-api/codex",
+        default_headers: { "ChatGPT-Account-Id": "acct_123" },
         litellm_keys: { anthropic: "env-anthropic" },
         model: "litellm/anthropic/claude-sonnet-4-6",
       })
@@ -789,120 +821,6 @@ describe("session.agency-swarm", () => {
         default_headers: { "ChatGPT-Account-Id": "acct_123" },
         litellm_keys: { anthropic: "env-anthropic" },
         model: "gpt-4o",
-      })
-    } finally {
-      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
-      await Auth.remove("openai")
-    }
-  })
-
-  test("stream keeps Codex OAuth triplet in framework mode when agency metadata only exposes OpenAI models", async () => {
-    mockHistory()
-    await Auth.set("openai", {
-      type: "oauth",
-      access: "oauth-access",
-      refresh: "oauth-refresh",
-      expires: Date.now() + 60_000,
-      accountId: "acct_123",
-    } as any)
-    Env.all = (() => ({
-      ANTHROPIC_API_KEY: "env-anthropic",
-    })) as typeof Env.all
-    Provider.list = (async () => ({
-      openai: {
-        id: "openai",
-        name: "OpenAI",
-        source: "oauth",
-        env: ["OPENAI_API_KEY"],
-        options: {},
-        models: {},
-      },
-      anthropic: {
-        id: "anthropic",
-        name: "Anthropic",
-        source: "api",
-        env: ["ANTHROPIC_API_KEY"],
-        options: {},
-        models: {},
-      },
-    })) as typeof Provider.list
-
-    let body: Record<string, unknown> | undefined
-    const metadata = {
-      nodes: [
-        {
-          id: "ExampleAgent",
-          type: "agent",
-          data: {
-            label: "ExampleAgent",
-            model: "gpt-5.4-mini",
-          },
-        },
-        {
-          id: "ExampleAgent2",
-          type: "agent",
-          data: {
-            label: "ExampleAgent2",
-            model: "gpt-5.4-mini",
-          },
-        },
-      ],
-      metadata: {
-        agents: ["ExampleAgent", "ExampleAgent2"],
-      },
-    }
-    const server = createServer(async (request, response) => {
-      if (request.url === "/builder/get_metadata") {
-        response.writeHead(200, { "Content-Type": "application/json" })
-        response.end(JSON.stringify(metadata))
-        return
-      }
-      if (request.url !== "/builder/get_response_stream") {
-        response.writeHead(404)
-        response.end("not found")
-        return
-      }
-      const chunks: Buffer[] = []
-      for await (const chunk of request) {
-        if (Buffer.isBuffer(chunk)) chunks.push(chunk)
-        else chunks.push(Buffer.from(chunk))
-      }
-      body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
-      response.writeHead(200, { "Content-Type": "text/event-stream" })
-      response.end(
-        [
-          'data: {"data":{"type":"raw_response_event","data":{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"ok"}}}\n\n',
-          "event: end\ndata: [DONE]\n\n",
-        ].join(""),
-      )
-    })
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject)
-      server.listen(0, "127.0.0.1", () => {
-        server.off("error", reject)
-        resolve()
-      })
-    })
-
-    const address = server.address()
-    if (!address || typeof address === "string") {
-      server.close()
-      throw new Error("Expected local test server address")
-    }
-
-    try {
-      const { input } = helper()
-      input.options.baseURL = `http://127.0.0.1:${(address as AddressInfo).port}`
-      const stream = await SessionAgencySwarm.stream(input)
-      for await (const _ of stream.fullStream) {
-        /* drain */
-      }
-
-      expect(body?.["client_config"]).toEqual({
-        api_key: "oauth-access",
-        base_url: "https://chatgpt.com/backend-api/codex",
-        default_headers: { "ChatGPT-Account-Id": "acct_123" },
-        litellm_keys: { anthropic: "env-anthropic" },
       })
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
