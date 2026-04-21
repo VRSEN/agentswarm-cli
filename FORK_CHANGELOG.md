@@ -1,128 +1,76 @@
-# Fork Divergence Changelog
+# State Of The Fork
 
-This file records the intentional, maintainable fork delta carried on `vrsen/dev` relative to the local `origin/dev` baseline. It is a feature-level substantiation log for AGENTS.md §6.6.2, built from the current `git log --oneline origin/dev..vrsen/dev` and `git diff --stat origin/dev..vrsen/dev` snapshot rather than a raw per-file dump.
+This file is the canonical, state-only description of the maintained fork delta from `origin/dev` to `vrsen/dev`.
+It records only behavior and files that still exist on `vrsen/dev`. Reverted work, merge history, and user decision history are intentionally omitted.
 
-## Upstream Baseline Anchor
+## Baseline
 
-- `origin/dev`: `a26d53151b11151a5580f11790b768ac334fa6a8`
-- `vrsen/dev`: `27e661224`
-- `git rev-list --left-right --count origin/dev...vrsen/dev`: `639 173`
-- Interpretation: local `vrsen/dev` is 639 commits behind upstream and 173 commits ahead with fork-only changes
-- Snapshot sources: `git log --oneline origin/dev..vrsen/dev` and `git diff --stat origin/dev..vrsen/dev`
+- `origin/dev`: `92c005866b99240a63b11602f3ffb541f844c257`
+- `vrsen/dev`: `41f624ab3fdf1ebd00091407493beac62546731d`
+- `git rev-list --left-right --count origin/dev...vrsen/dev`: `728 236`
 
-## Divergence Categories
+## Maintained Fork Delta
 
-### Branding/Packaging
+### Distribution And Launch
 
-- `README.md`, `install`, `package.json`, `packages/opencode/package.json`, `packages/web/package.json`, `packages/opencode/src/cli/logo.ts`
-  Motivation: rename the distributed product from OpenCode to Agent Swarm CLI, rename the primary command to `agentswarm`, and point install/docs flows at fork-owned repo and docs URLs.
-  Upstream-merge impact: `high` because upstream release/version metadata and public docs change often, so these files conflict on most merges.
+- **The published product is `agentswarm-cli` / `agentswarm`, not upstream OpenCode.**
+  Files: `packages/opencode/package.json`, `packages/opencode/bin/{agentswarm,agentswarm-npx}`, `packages/opencode/script/{build.ts,postinstall.mjs,publish.ts,auth-smoke-test.py}`, `packages/opencode/Dockerfile`, `install`, `bun.lock`, `packages/opencode/src/agency-swarm/{brand.ts,product.ts}`, `packages/opencode/src/cli/{logo.ts,error.ts}`, `packages/opencode/src/cli/cmd/{run.ts,serve.ts,agent.ts,mcp.ts,plug.ts,pr.ts,providers.ts,web.ts}`, `packages/opencode/src/{agent/display.ts,flag/flag.ts,global/index.ts}`, `README.md`.
+  Why: the fork was created to ship a VRSEN-owned Agent Swarm CLI with fork-owned package names, commands, URLs, install paths, and release plumbing instead of anomalyco/opencode metadata.
+  Upstream merge impact: high because upstream frequently changes package metadata, wrappers, installer text, public copy, and release scripts.
 
-- `packages/opencode/script/build.ts`, `packages/opencode/script/postinstall.mjs`, `packages/opencode/script/publish.ts`, `packages/opencode/bin/agency`, `script/publish.ts`, `script/version.ts`, `nix/opencode.nix`, `nix/hashes.json`, `nix/node_modules.nix`
-  Motivation: publish fork-owned binaries and npm packages, including scoped platform packages and the fork launcher layout that upstream does not ship.
-  Upstream-merge impact: `high` because build and release plumbing is operationally sensitive and upstream packaging changes regularly.
+- **Launcher mode bootstraps, repairs, and reconnects Agency Swarm projects before the TUI opens.**
+  Files: `packages/opencode/src/agency-swarm/{npx.ts,server-launcher.ts,run-session.ts}`, `packages/opencode/src/config/{config.ts,paths.ts}`, `packages/opencode/src/installation/index.ts`, `packages/opencode/src/cli/cmd/{uninstall.ts,upgrade.ts}`, `packages/opencode/test/agency-swarm/npx.test.ts`, `packages/opencode/test/{installation/source-install-wrapper.test.ts,config/config.test.ts}`.
+  Why: users wanted the launcher to detect an existing Agency Swarm project, create or connect a starter project, heal a broken `.venv`, rerun the canary after dependency installs, and resume local runs without manual setup steps.
+  Upstream merge impact: high because this is fork-only pre-TUI orchestration that upstream does not carry.
 
-- `packages/util/**`, removed `packages/shared/**`, workspace manifest updates in `package.json`, `packages/app/package.json`, `packages/opencode/package.json`, `packages/ui/package.json`
-  Motivation: keep the fork buildable on its current dependency graph while Agency Swarm-specific patches and imports are carried locally.
-  Upstream-merge impact: `high` because package-graph changes ripple across many imports and create broad textual conflicts.
+### Agency Swarm Runtime
 
-### Agency Swarm Integration
+- **Prompt execution goes through a fork-owned Agency Swarm adapter layer for discovery, metadata parsing, stream transport, cancellation, and tool-call translation.**
+  Files: `packages/opencode/src/agency-swarm/{adapter.ts,client-config.ts,tui.ts}`, `packages/opencode/src/provider/provider.ts`, `packages/opencode/src/session/{agency-swarm.ts,agency-swarm-utils.ts,index.ts,processor.ts,prompt.ts}`, `packages/opencode/src/index.ts`, `packages/opencode/test/agency-swarm/{adapter.test.ts,client-config.test.ts,tui.test.ts}`, `packages/opencode/test/provider/agency-swarm-provider.test.ts`, `packages/opencode/test/session/{agency-swarm.test.ts,agency-swarm-utils.test.ts,prompt.test.ts,prompt-effect.test.ts}`.
+  Why: the fork exists to drive Agency Swarm backends from the OpenCode client, including agency discovery, recipient routing, streamed responses, structured tool events, and cancellation.
+  Upstream merge impact: high because these are hot core paths and upstream has no equivalent Agency Swarm abstraction.
 
-- `packages/opencode/src/agency-swarm/*`, `packages/opencode/src/index.ts`, `packages/opencode/src/config/config.ts`
-  Motivation: add a first-class Agency Swarm adapter layer for backend discovery, metadata parsing, stream transport, branded config discovery, and fork product identity.
-  Upstream-merge impact: `high` because upstream core has no equivalent Agency Swarm abstraction, so these files carry fork-only concepts.
+- **History rebuild, run-session recovery, transcript export, and chat compaction are fork-client responsibilities, not backend behavior.**
+  Files: `packages/opencode/src/agency-swarm/{history.ts,run-session.ts}`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/cli/cmd/tui/util/transcript.ts`, `packages/opencode/test/agency-swarm/{history.test.ts,run-session.test.ts}`, `packages/opencode/test/cli/tui/transcript.test.ts`.
+  Why: users wanted local Agency Swarm sessions to survive port changes, resume correctly, keep caller-agent context, and preserve compacted transcript state even when the local bridge is restarted.
+  Upstream merge impact: high because this local state logic lives inside session flow that upstream also changes often.
 
-- `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/session/agency-swarm-utils.ts`, `packages/opencode/src/session/prompt.ts`, `packages/opencode/src/session/processor.ts`, `packages/opencode/src/provider/provider.ts`
-  Motivation: route prompt execution, structured output, cancellation, history compaction, and session resume through Agency Swarm runs instead of only upstream provider flows.
-  Upstream-merge impact: `high` because these are hot core paths with frequent upstream edits and non-trivial behavioral divergence.
+- **The fork keeps a temporary client-side guard that strips Codex OAuth `base_url` from mixed-provider Agency Swarm requests.**
+  Files: `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/agency-swarm/litellm-provider.ts`, `packages/opencode/test/session/agency-swarm.test.ts`.
+  Why: users hit Anthropic and other non-OpenAI LiteLLM failures when upstream Agency Swarm applied Codex `client_config.base_url` to every provider, so the fork now filters that payload before transport.
+  Upstream merge impact: low because the change is narrowly scoped and can be removed once upstream fixes provider-scoped `base_url`.
+  Known tradeoff: until upstream agency-swarm scopes `client_config.base_url` per provider, the fork may strip Codex OAuth fields conservatively when agency metadata exposes non-OpenAI models.
 
-- `packages/opencode/src/session/agency-swarm.ts` (`resolveClientConfig`) + `packages/opencode/src/agency-swarm/litellm-provider.ts` (`isOpenAIBasedLitellmModel`)
-  Motivation: scope the stored ChatGPT OAuth triplet (`base_url` = `chatgpt.com/backend-api/codex`, matching `api_key`, `ChatGPT-Account-Id` header) to OpenAI-based LiteLLM providers only. Without this, agency-swarm's upstream `_apply_client_to_agent` applies `config.base_url` to every LiteLLM agent regardless of provider, so an Anthropic/Gemini session would route Messages API calls through Codex and 404 with `{"detail":"Not Found"}`.
-  Upstream-merge impact: `low` because the filter is additive and keeps pre-existing OAuth behavior for OpenAI sessions; tracked upstream as the `_is_openai_based_litellm_provider` base_url fix in agency-swarm.
-  Known tradeoff: until upstream agency-swarm scopes `client_config.base_url` per-provider (tracked separately), an OpenAI-only agency run may lose its Codex OAuth `base_url`/`api_key` if the user also has a non-OpenAI LiteLLM credential stored (anthropic/gemini/etc.). Workaround: clear the unused credential from `~/.local/share/agentswarm/auth.json`, or configure an explicit OpenAI-based `client_config.base_url`.
+### TUI Workflow
 
-- `packages/opencode/src/installation/index.ts`, `packages/opencode/src/cli/cmd/run.ts`, `packages/opencode/src/cli/cmd/uninstall.ts`, `packages/opencode/src/cli/cmd/upgrade.ts`
-  Motivation: manage local Agency Swarm bootstrap, credential forwarding, project venv upgrade and self-heal behavior, and branded startup flows.
-  Upstream-merge impact: `high` because install and upgrade code is operationally fragile and the fork adds extra side effects upstream does not want.
+- **Run mode has fork-owned auth, connect, reconnect, model gating, recipient selection, and first-send recovery behavior.**
+  Files: `packages/opencode/src/cli/cmd/agencii.ts`, `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/component/{dialog-agent.tsx,dialog-model.tsx,dialog-provider.tsx,prompt/index.tsx,startup-loading.tsx}`, `packages/opencode/src/cli/cmd/tui/context/{agency-swarm-connection.tsx,helper.tsx,local.tsx,sync.tsx}`, `packages/opencode/src/cli/cmd/tui/{plugin/runtime.ts,routes/session/{footer.tsx,index.tsx,permission.tsx,sidebar.tsx},session-error.ts,thread.ts,util/{agency-target.ts,provider-auth.ts}}`, `packages/opencode/test/cli/{agencii.test.ts,tui/**}`.
+  Why: users wanted `/auth` and `/connect` to be actionable in Agency Swarm framework mode, dead local bridges to prompt reconnect, auth failures to reopen the right dialog, Run mode to target real agency recipients, and the first prompt to reach the session screen without freezing.
+  Upstream merge impact: high because these changes sit in active TUI dialog, session, and composer code.
 
-### CLI/TUI UX
+- **The built-in Builder and Plan agents are retuned for Agency Swarm repos and terminology.**
+  Files: `packages/opencode/src/session/{agent-builder.ts,agent-planner.ts}`, `packages/opencode/src/session/prompt/{agent-builder.txt,agent-planner.txt}`, `packages/opencode/src/tool/{plan.ts,plan-exit.txt}`, `packages/opencode/src/command/template/initialize.txt`, `packages/opencode/test/session/{agent-builder.test.ts,agent-planner.test.ts}`.
+  Why: users wanted the fork’s local helpers to generate Agent Swarm-specific agent plans, templates, and repo instructions instead of upstream OpenCode defaults.
+  Upstream merge impact: medium because these prompts and planning helpers drift whenever upstream changes local agent instructions.
 
-- `packages/opencode/src/cli/cmd/agencii.ts`, `packages/opencode/src/cli/cmd/serve.ts`, `packages/opencode/src/cli/cmd/run.ts`
-  Motivation: add `agency` / `agencii` management commands, fork-specific server text, and launcher behaviors needed to discover and drive Agency Swarm backends.
-  Upstream-merge impact: `medium` because the command surface is clearly scoped, but it sits in files upstream also edits.
+- **The TUI ships a fixed Agent Swarm dark palette and wordmark instead of upstream theme selection.**
+  Files: `packages/opencode/src/cli/cmd/tui/context/{theme.tsx,theme/opencode.json}`, `packages/opencode/src/cli/cmd/tui/component/logo.tsx`, `packages/opencode/test/cli/tui/{theme-provider.test.tsx,theme-store.test.ts,local-context.test.tsx,local.test.ts}`.
+  Why: users wanted the shipped fork to keep the Agent Swarm dark look consistently, including Apple Terminal fallback handling, instead of drifting with upstream theme defaults.
+  Upstream merge impact: medium because upstream theme APIs change, but the divergence is localized.
 
-- `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `packages/opencode/src/cli/cmd/tui/session-error.ts`, `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`, `packages/opencode/src/cli/cmd/tui/routes/session/sidebar.tsx`
-  Motivation: add Run mode connect and auth flows, agency selection, startup recovery, and framework-vs-run command gating for daily Agency Swarm use.
-  Upstream-merge impact: `high` because upstream TUI routing, dialogs, and session flows are active areas with repeated churn.
+### Docs, Validation, And Release Operations
 
-- `packages/opencode/src/cli/cmd/tui/context/theme.tsx`, `packages/opencode/src/config/tui.ts`, `packages/opencode/src/config/tui-migrate.ts`, `packages/opencode/src/config/tui-schema.ts`
-  Motivation: force the Agent Swarm palette and dark-theme defaults, including Apple Terminal fallback handling and migration out of legacy config keys.
-  Upstream-merge impact: `medium` because the forked behavior is contained, but it intentionally diverges from upstream theme policy.
+- **Fork CI and release automation run on VRSEN-owned workflows and add an auth smoke gate before releases.**
+  Files: `.github/workflows/{auth-smoke.yml,publish-npm-on-release.yml,deploy.yml,nix-eval.yml,pr-management.yml,test.yml,typecheck.yml}`, `packages/opencode/script/auth-smoke-test.py`.
+  Why: release work for the fork needed VRSEN-controlled publishing plus a live OpenAI and Anthropic smoke test before shipping `agentswarm-cli`.
+  Upstream merge impact: medium because workflow files are isolated, but they conflict whenever upstream changes CI policy.
 
-- `packages/ui/src/components/*`, `packages/opencode/src/cli/cmd/tui/component/prompt/*`, `packages/opencode/src/cli/cmd/tui/feature-plugins/sidebar/footer.tsx`
-  Motivation: keep tool rendering, reasoning text, footer/status affordances, and session transitions aligned with Agent Builder and Run mode expectations.
-  Upstream-merge impact: `medium` because the changes are mostly presentation-level, but they span shared UI components that upstream also evolves.
+- **The fork carries small app, web, docs, and E2E adjustments that keep the branded share surface and release-validation flows working against the forked session model.**
+  Files: `packages/app/src/app.tsx`, `packages/app/src/i18n/ko.ts`, `packages/app/e2e/**`, `packages/web/package.json`, `packages/web/src/components/{Share.tsx,share/part.tsx}`, `packages/web/src/pages/s/[id].astro`, `README.md`, `USER_FLOWS.md`.
+  Why: users wanted the fork to document Run mode, keep share and build imports aligned with the `agentswarm-cli` package name, and harden the browser checks used to validate fork-specific session and status behavior.
+  Upstream merge impact: medium because most of this is support glue, but it touches surfaces upstream still changes.
 
-### Tests
-
-- `packages/opencode/test/agency-swarm/*`, `packages/opencode/test/session/agency-swarm*.test.ts`, `packages/opencode/test/provider/agency-swarm-provider.test.ts`, `packages/opencode/test/cli/agencii.test.ts`, `packages/opencode/test/cli/tui/session-error.test.ts`
-  Motivation: lock down Agency Swarm transport, auth, session resume, and CLI/TUI bridge behavior that upstream tests do not cover.
-  Upstream-merge impact: `medium` because these tests mirror fork-only APIs and will need updates whenever the integration layer moves.
-
-- `packages/app/e2e/**`, `packages/app/src/testing/*`, `packages/app/test/e2e/*`, `packages/app/script/e2e-local.ts`
-  Motivation: add a dedicated browser E2E harness for branded app/session flows, prompt controls, sidebar behavior, and regression reproduction.
-  Upstream-merge impact: `medium` because the harness is large and app testing is changing upstream, but the risk is mostly maintenance overhead.
-
-- Broad test refactors across `packages/opencode/test/**`, including new utility coverage such as `packages/opencode/test/util/flock.test.ts`
-  Motivation: keep the forked core refactors and package-graph changes covered instead of relying on upstream test layout and imports.
-  Upstream-merge impact: `medium` because the changes follow code movement, but they widen the fork diff in already-busy test directories.
-
-### Web/App Surface
-
-- `packages/app/src/app.tsx`, `packages/app/src/pages/layout.tsx`, `packages/app/src/pages/session.tsx`, `packages/app/src/components/prompt-input.tsx`, `packages/app/src/components/session/session-header.tsx`, `packages/app/src/context/global-sync/bootstrap.ts`, `packages/app/src/context/local.tsx`, `packages/ui/src/components/*`
-  Motivation: support Agent Builder and Run mode, session review variants, prompt/model controls, project/workspace management, and stability fixes required by the fork’s daily workflow.
-  Upstream-merge impact: `high` because upstream app shell and session work is active and these files are frequently touched.
-
-- `packages/web/src/components/Share.tsx`, `packages/web/src/components/share/part.tsx`, `packages/web/src/pages/s/[id].astro`, `packages/web/src/content/docs/**`, `README.md`
-  Motivation: rebrand public docs and share pages, document Agent Builder / Plan / Run mode, and describe the fork’s supported providers and tools.
-  Upstream-merge impact: `medium` because docs are easier to refresh than runtime code, but the localization footprint is large.
-
-- `packages/console/app/**`, `packages/console/core/**`, `packages/enterprise/**`, `packages/desktop-electron/**`, `packages/desktop/**`, `sdks/vscode/**`
-  Motivation: carry fork-specific naming, download paths, provider assumptions, and launch behavior through every shipped surface that still presents or launches the product.
-  Upstream-merge impact: `high` because this spreads the fork delta across multiple products with independent upstream churn.
-
-### Release/CI
-
-- `.github/workflows/publish-npm-on-release.yml`, `.github/workflows/publish.yml`, `.github/workflows/deploy.yml`, `.github/workflows/test.yml`, `.github/workflows/typecheck.yml`, `.github/workflows/nix-eval.yml`, `.github/workflows/pr-management.yml`
-  Motivation: route release and CI through fork-owned repos, runners, secrets, and guardrails instead of anomalyco infrastructure.
-  Upstream-merge impact: `medium` because workflow files are isolated, but they conflict whenever upstream CI policy changes.
-
-- `.github/workflows/auth-smoke.yml`, `packages/opencode/script/auth-smoke-test.py`, related auth-smoke wiring in CI
-  Motivation: add a release-blocking real-auth smoke gate for OpenAI and Anthropic happy paths before shipping fork releases.
-  Upstream-merge impact: `medium` because the workflow is intentionally fork-specific and secret-sensitive, but the touched surface is limited.
-
-- `AGENTS.md`, `CLAUDE.md`, `.agentswarm/skills/requirement-ledger/*`, `FORK_CHANGELOG.md`
-  Motivation: enforce clean-fork operating rules, symlinked policy distribution, durable requirement tracking, and explicit divergence substantiation.
-  Upstream-merge impact: `medium` because these files are mostly fork-local, but policy churn is continuous and must stay synchronized inside the fork.
-
-## Future Reconciliation Targets
-
-- Collapse packaging drift back toward upstream once Agency Swarm naming and publish needs can be expressed as configuration instead of hard-forked manifests and scripts.
-- Reduce core-path Agency Swarm hooks by upstreaming generic provider and session extension points; keep only the Agency Swarm adapter layer fork-local.
-- Shrink the dark-palette and theme fork to a branded preset if upstream theme APIs can express the same behavior.
-- Upstream or neutralize the large app E2E harness pieces that are not inherently brand-specific.
-- Replace repeated web/docs/console brand edits with shared brand tokens or templating so new upstream docs do not require mass manual merges.
-- Revisit the `packages/util` / `packages/shared` graph drift and dependency pins; restore upstream layout where Agency Swarm behavior does not depend on the forked shape.
-
-## Maintenance Protocol
-
-1. Refresh the anchor block with `git rev-parse origin/dev`, `git rev-parse --short vrsen/dev`, `git rev-list --left-right --count origin/dev...vrsen/dev`, `git log --oneline origin/dev..vrsen/dev`, and `git diff --stat origin/dev..vrsen/dev`.
-2. Before editing any file that also exists in `origin/dev`, compare the upstream version first and record the intended behavior delta, per AGENTS.md §6.6.1.
-3. If the edit creates or preserves a fork-only divergence, add or update the matching entry in this file with files/features, observed motivation, and upstream-merge impact, satisfying AGENTS.md §6.6.2.
-4. If the divergence is no longer strictly required for the fork directive, remove it and restore the upstream shape instead of documenting more drift, per AGENTS.md §6.6.3.
-5. Keep entries feature-level and human-readable; use raw `git diff --name-status origin/dev..vrsen/dev` only when a reviewer needs the full file inventory.
-
-## Bootstrap audit: 2026-04-14 .. 2026-04-21
-
-- PR #109 (`1c09fbfd070376334b42a6f972480325bdf82ebf`): during the `v1.4.20` QA/release thread (`"v1.4.20 shipped the same way at commit 1c09fbfd0"`), regenerate `bun.lock` to repair the `ghostty-web` hash drift that was breaking frozen-lockfile publish and release CI for `v1.4.20`.
-- PR #98 (`3a70eb6c76e35c24331cfd3201ace64bff26dd28`): after the user said `"after installProjectDependencies completes, re-run the same canary test"`, re-run the `.venv` canary after dependency install so rebuilt environments do not silently stay broken on version skew.
+- **The fork keeps its own governance layer for requirement tracking and fork-state documentation.**
+  Files: `.agentswarm/.gitignore`, `.agentswarm/skills/requirement-ledger/{SKILL.md,scripts/requirement_ledger.py}`, `AGENTS.md`, `CLAUDE.md`, `FORK_CHANGELOG.md`.
+  Why: users wanted a durable requirement ledger plus a canonical fork-state document so future work can be checked against live fork intent instead of chat memory.
+  Upstream merge impact: low because these files are fork-owned, but they still need manual review when fork process rules change.
