@@ -744,7 +744,10 @@ export namespace SessionAgencySwarm {
       }
 
       if (item) {
-        const fromItem = asString(item["call_id"]) || asString(item["id"])
+        const fromItemID = asString(item["id"])
+        if (fromItemID && callByItem.has(fromItemID)) return callByItem.get(fromItemID)
+        if (fromItemID && tools.has(fromItemID)) return fromItemID
+        const fromItem = asString(item["call_id"]) || fromItemID
         if (fromItem) return fromItem
       }
 
@@ -1349,7 +1352,7 @@ export namespace SessionAgencySwarm {
       }
 
       if (name === "tool_output") {
-        const callID = asString(rawItem["call_id"]) || asString(item?.["call_id"])
+        const callID = findCallID(rawItem, rawItem) || findCallID(item ?? {}, rawItem)
         if (!callID) return []
         const tool = ensureTool(callID, toolNameFor(callID))
         const output = item?.["output"] ?? rawItem["output"]
