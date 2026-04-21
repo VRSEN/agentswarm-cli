@@ -199,7 +199,7 @@ describe("agency-swarm npx onboarding", () => {
       "pip",
       "install",
       "--upgrade",
-      "agency-swarm[fastapi,litellm]>=1.9.1",
+      "agency-swarm[fastapi,litellm]>=1.9.3",
     ])
   })
 
@@ -328,7 +328,7 @@ describe("agency-swarm npx onboarding", () => {
   test("prepareProjectLaunch names detected shadowing files in the canary remediation", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
-    await Bun.write(path.join(dir.path, "requirements.txt"), "agency-swarm==1.9.1\n")
+    await Bun.write(path.join(dir.path, "requirements.txt"), "agency-swarm==1.9.3\n")
     await Bun.write(path.join(dir.path, "fastapi.py"), "print('shadow')\n")
     await Bun.write(path.join(dir.path, "agency_swarm.py"), "print('shadow')\n")
 
