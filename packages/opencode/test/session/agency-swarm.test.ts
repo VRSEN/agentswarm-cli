@@ -9,7 +9,7 @@ import { Instance } from "../../src/project/instance"
 import { Provider } from "../../src/provider/provider"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Session } from "../../src/session"
-import { SessionAgencySwarm } from "../../src/session/agency-swarm"
+import * as SessionAgencySwarm from "../../src/session/agency-swarm"
 import { MessageID, PartID } from "../../src/session/schema"
 import { tmpdir } from "../fixture/fixture"
 
