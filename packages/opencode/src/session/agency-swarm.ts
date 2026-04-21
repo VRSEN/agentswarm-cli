@@ -1348,11 +1348,14 @@ export namespace SessionAgencySwarm {
         ]
       }
 
-      if (name === "tool_output" && itemType.endsWith("_output")) {
-        const callID = asString(rawItem["call_id"])
+      if (name === "tool_output") {
+        const callID = asString(rawItem["call_id"]) || asString(item?.["call_id"])
         if (!callID) return []
         const tool = ensureTool(callID, toolNameFor(callID))
-        return completeTool(callID, tool.tool, stringifyToolOutput(item?.["output"] ?? rawItem["output"]), eventMeta, {
+        const output = item?.["output"] ?? rawItem["output"]
+        if (output === undefined) return []
+        return completeTool(callID, tool.tool, stringifyToolOutput(output), eventMeta, {
+          item_type: itemType || undefined,
           source: "run_item_stream_event",
         })
       }

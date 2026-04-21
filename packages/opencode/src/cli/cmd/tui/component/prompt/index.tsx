@@ -1,5 +1,16 @@
 import { BoxRenderable, TextareaRenderable, MouseEvent, PasteEvent, decodePasteBytes, t, dim, fg } from "@opentui/core"
-import { createEffect, createMemo, onMount, createSignal, onCleanup, on, Show, Switch, Match } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  onMount,
+  createSignal,
+  onCleanup,
+  on,
+  Show,
+  Switch,
+  Match,
+} from "solid-js"
 import "opentui-spinner/solid"
 import path from "path"
 import { fileURLToPath } from "url"
@@ -47,7 +58,11 @@ import {
   shouldOpenAgencyAuthDialog,
 } from "../../session-error"
 import { errorMessage as toErrorMessage } from "@/util/error"
-import { displayRunOnlyAgentLabel } from "../../util/agency-target"
+import {
+  displayRunOnlyAgentLabel,
+  readAgencyProviderOptions,
+  resolveAgencyTargetSelection,
+} from "../../util/agency-target"
 
 export type PromptProps = {
   sessionID?: string
@@ -143,6 +158,51 @@ export function Prompt(props: PromptProps) {
     }),
   )
   const effectiveAgentName = createMemo(() => (frameworkMode() ? "build" : local.agent.current().name))
+  const agencyProviderOptions = createMemo(() =>
+    readAgencyProviderOptions({
+      configuredProvider: sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID],
+      connectedProvider: sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID),
+    }),
+  )
+  const frameworkRecipientDiscoveryInput = createMemo(() => {
+    if (!frameworkMode()) return undefined
+    const options = agencyProviderOptions()
+    if (!options.recipientAgent) return undefined
+    return {
+      baseURL: options.baseURL,
+      token: options.token,
+      timeoutMs: options.discoveryTimeoutMs,
+    }
+  })
+  const [frameworkRecipientDiscovery] = createResource(
+    frameworkRecipientDiscoveryInput,
+    async (input): Promise<AgencySwarmAdapter.AgencyDescriptor[]> => {
+      try {
+        const result = await AgencySwarmAdapter.discover({
+          baseURL: input.baseURL,
+          token: input.token,
+          timeoutMs: input.timeoutMs,
+        })
+        return result.agencies
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw error
+        return []
+      }
+    },
+    {
+      initialValue: [],
+    },
+  )
+  const frameworkRecipientLabel = createMemo(() => {
+    if (!frameworkMode()) return undefined
+    const options = agencyProviderOptions()
+    const selection = resolveAgencyTargetSelection({
+      agencies: frameworkRecipientDiscovery(),
+      configuredAgency: options.agency,
+      configuredRecipient: options.recipientAgent,
+    })
+    return selection?.label ?? options.recipientAgent
+  })
   const currentProviderLabel = createMemo(() => {
     const current = local.model.current()
     const provider = local.model.parsed().provider
@@ -1273,6 +1333,7 @@ export function Prompt(props: PromptProps) {
                     ? "Shell"
                     : displayRunOnlyAgentLabel({
                         frameworkMode: frameworkMode(),
+                        recipientLabel: frameworkRecipientLabel(),
                         localAgentName: effectiveAgentName(),
                       })}{" "}
                 </text>
