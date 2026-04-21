@@ -19,6 +19,7 @@ import { getVisibleProviderAuthMethods, hasStoredProviderCredential } from "@tui
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { isAgencySwarmFrameworkMode, isSupportedAgencyAuthProvider } from "../session-error"
 import { errorMessage as toErrorMessage } from "@/util/error"
+import { Log } from "@/util/log"
 import open from "open"
 import type { Provider } from "@opencode-ai/sdk/v2"
 
@@ -30,6 +31,8 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   "opencode-go": 4,
   opencode: 100,
 }
+
+const log = Log.create({ service: "tui.dialog-provider" })
 
 export function createDialogProviderOptions() {
   return createDialogProviderOptionsWithFilter()
@@ -154,6 +157,12 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
                 inputs,
               })
               if (result.error) {
+                log.error("provider oauth authorize failed", {
+                  providerID: provider.id,
+                  method: method.label,
+                  frameworkMode: frameworkMode(),
+                  error: toErrorMessage(result.error),
+                })
                 toast.show({
                   variant: "error",
                   message: toErrorMessage(result.error),
@@ -750,6 +759,11 @@ function AutoMethod(props: AutoMethodProps) {
   onMount(async () => {
     if (frameworkMode()) {
       void watchBrowserOpen(props.authorization.url, (message) => {
+        log.error("failed to open browser for provider oauth", {
+          providerID: props.providerID,
+          frameworkMode: frameworkMode(),
+          message,
+        })
         setError(message)
         toast.show({
           variant: "warning",
@@ -764,6 +778,11 @@ function AutoMethod(props: AutoMethodProps) {
     })
     if (result.error) {
       const message = toErrorMessage(result.error)
+      log.error("provider oauth callback failed", {
+        providerID: props.providerID,
+        frameworkMode: frameworkMode(),
+        message,
+      })
       setError(message)
       toast.show({
         variant: "error",
@@ -782,6 +801,11 @@ function AutoMethod(props: AutoMethodProps) {
       dialog.replace(() => <DialogModel providerID={props.providerID} />)
     } catch (error) {
       const message = toErrorMessage(error)
+      log.error("provider oauth post-callback bootstrap failed", {
+        providerID: props.providerID,
+        frameworkMode: frameworkMode(),
+        message,
+      })
       setError(message)
       toast.show({
         variant: "error",
@@ -861,6 +885,11 @@ function CodeMethod(props: CodeMethodProps) {
             dialog.replace(() => <DialogModel providerID={props.providerID} />)
           } catch (error) {
             const message = toErrorMessage(error)
+            log.error("provider oauth code-flow bootstrap failed", {
+              providerID: props.providerID,
+              frameworkMode: frameworkMode(),
+              message,
+            })
             setError(message)
             toast.show({
               variant: "error",
@@ -871,6 +900,11 @@ function CodeMethod(props: CodeMethodProps) {
           return
         }
         const message = toErrorMessage(error)
+        log.error("provider oauth code callback failed", {
+          providerID: props.providerID,
+          frameworkMode: frameworkMode(),
+          message,
+        })
         setError(message)
         toast.show({
           variant: "error",
@@ -960,6 +994,11 @@ function ApiMethod(props: ApiMethodProps) {
         })
         if (result.error) {
           const message = toErrorMessage(result.error)
+          log.error("provider api credential save failed", {
+            providerID: props.providerID,
+            frameworkMode: frameworkMode(),
+            message,
+          })
           setError(message)
           toast.show({
             variant: "error",
@@ -978,6 +1017,11 @@ function ApiMethod(props: ApiMethodProps) {
           dialog.replace(() => <DialogModel providerID={props.providerID} />)
         } catch (error) {
           const message = toErrorMessage(error)
+          log.error("provider api auth bootstrap failed", {
+            providerID: props.providerID,
+            frameworkMode: frameworkMode(),
+            message,
+          })
           setError(message)
           toast.show({
             variant: "error",

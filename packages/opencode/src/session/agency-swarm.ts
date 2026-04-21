@@ -152,12 +152,17 @@ export namespace SessionAgencySwarm {
 
   async function resolveClientConfig(
     baseURL: string,
+    agency: string,
+    token: string | undefined,
+    timeoutMs: number,
     config: Record<string, unknown> | undefined,
     forwardUpstreamCredentials?: boolean,
     sessionLitellmModel?: string,
   ): Promise<Record<string, unknown> | undefined> {
     const explicit = asRecord(config)
     const explicitUpstreamBaseURL = readConfiguredBaseURL(explicit)
+    const explicitModel = explicit && asString(explicit["model"])
+    const requestedModel = explicitModel ? normalizeExplicitClientConfigModel(explicitModel) : sessionLitellmModel
     const forwardGenerated =
       isLocalAgencyUpstreamURL(baseURL) ||
       Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS ||
@@ -171,7 +176,24 @@ export namespace SessionAgencySwarm {
         })
       : undefined
     const generated =
-      !explicitUpstreamBaseURL && shouldStripCodexOAuth(sessionLitellmModel, rawGenerated, explicit)
+      !explicitUpstreamBaseURL &&
+      (await shouldStripCodexOAuth(requestedModel, rawGenerated, explicit, async () => {
+        try {
+          return await AgencySwarmAdapter.getMetadata({
+            baseURL,
+            agency,
+            token,
+            timeoutMs,
+          })
+        } catch (error) {
+          log.error("unable to load agency metadata while deciding Codex OAuth routing", {
+            baseURL,
+            agency,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          return undefined
+        }
+      }))
         ? stripCodexOAuthForNonOpenAI(rawGenerated)
         : rawGenerated
     if (!config) {
@@ -357,14 +379,54 @@ export namespace SessionAgencySwarm {
    * A session model that is explicitly OpenAI-based keeps the OAuth triplet so the
    * forced OpenAI override still authenticates.
    */
-  function shouldStripCodexOAuth(
+  async function shouldStripCodexOAuth(
     sessionLitellmModel: string | undefined,
     generated: Record<string, unknown> | undefined,
     explicit: Record<string, unknown> | undefined,
-  ): boolean {
+    loadAgencyMetadata: () => Promise<AgencySwarmAdapter.AgencyMetadata | undefined>,
+  ): Promise<boolean> {
     if (!isOpenAIBasedLitellmModel(sessionLitellmModel)) return true
     if (sessionLitellmModel) return false
-    return hasNonOpenAILitellmKey(generated) || hasNonOpenAILitellmKey(explicit)
+    if (!hasNonOpenAILitellmKey(generated) && !hasNonOpenAILitellmKey(explicit)) return false
+
+    const metadata = await loadAgencyMetadata()
+    if (!metadata) {
+      log.error("agency metadata unavailable while deciding Codex OAuth routing; stripping OpenAI OAuth conservatively")
+      return true
+    }
+
+    const agencyModels = extractAgencyModels(metadata)
+    if (agencyModels.length === 0) {
+      log.error(
+        "agency metadata exposed no agent models while deciding Codex OAuth routing; stripping OpenAI OAuth conservatively",
+        {
+          metadataKeys: Object.keys(metadata),
+        },
+      )
+      return true
+    }
+
+    const nonOpenAIModels = agencyModels.filter(
+      (model) => !isOpenAIBasedLitellmModel(normalizeExplicitClientConfigModel(model)),
+    )
+    if (nonOpenAIModels.length === 0) {
+      log.info(
+        "keeping Codex OAuth for agency-swarm request because agency metadata only exposes OpenAI-based models",
+        {
+          agencyModels,
+        },
+      )
+      return false
+    }
+
+    log.warn(
+      "stripping Codex OAuth because agency metadata exposes non-OpenAI models and upstream applies base_url globally",
+      {
+        agencyModels,
+        nonOpenAIModels,
+      },
+    )
+    return true
   }
 
   // TODO(agency-swarm#629): remove after upstream scopes config.base_url per-provider.
@@ -416,7 +478,13 @@ export namespace SessionAgencySwarm {
   async function listProvidersForEnvCheck(): Promise<Record<string, Provider.Info> | undefined> {
     try {
       return await Provider.list()
-    } catch {
+    } catch (error) {
+      log.error(
+        "failed to list providers while building agency-swarm client_config; continuing without provider env inspection",
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      )
       return undefined
     }
   }
@@ -424,7 +492,10 @@ export namespace SessionAgencySwarm {
   function getEnvForClientConfig(): Record<string, string | undefined> {
     try {
       return Env.all()
-    } catch {
+    } catch (error) {
+      log.error("failed to read Env service while building agency-swarm client_config; falling back to process.env", {
+        error: error instanceof Error ? error.message : String(error),
+      })
       return { ...process.env }
     }
   }
@@ -1430,6 +1501,9 @@ export namespace SessionAgencySwarm {
         buildLitellmModelForClientConfig(input.sessionModel.providerID, input.sessionModel.modelID)
       const clientConfig = await resolveClientConfig(
         input.options.baseURL,
+        agency,
+        input.options.token,
+        input.options.discoveryTimeoutMs,
         input.options.clientConfig,
         input.options.forwardUpstreamCredentials,
         sessionLitellmModel,
@@ -1977,6 +2051,20 @@ export namespace SessionAgencySwarm {
     }
 
     return result
+  }
+
+  function extractAgencyModels(metadata: AgencySwarmAdapter.AgencyMetadata): string[] {
+    const models = new Set<string>()
+    const nodes = Array.isArray(metadata["nodes"]) ? metadata["nodes"] : []
+    for (const rawNode of nodes) {
+      const node = asRecord(rawNode)
+      if (!node) continue
+      if (asString(node["type"]) !== "agent") continue
+      const data = asRecord(node["data"])
+      const model = asString(data?.["model"])
+      if (model) models.add(model)
+    }
+    return [...models]
   }
 
   function asStringArray(value: unknown): string[] {

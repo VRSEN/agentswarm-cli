@@ -89,6 +89,9 @@ describe("dialog provider browser auth", () => {
       model: {
         current: () => ({ providerID: "agency-swarm", modelID: "default" }),
       },
+      agent: {
+        current: () => undefined,
+      },
     } as any)
     spyOn(ThemeContext, "useTheme").mockReturnValue({
       theme: {

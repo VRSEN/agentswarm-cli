@@ -1,8 +1,10 @@
 import path from "node:path"
 import { Global } from "@/global"
+import { Log } from "@/util/log"
 import { Filesystem } from "@/util/filesystem"
 
 export namespace AgencySwarmRunSession {
+  const log = Log.create({ service: "agency-swarm.run-session" })
   export const LOCAL_PROJECT_ENV = "AGENTSWARM_RUN_PROJECT"
   const PROVIDER_ID = "agency-swarm"
 
@@ -42,7 +44,13 @@ export namespace AgencySwarmRunSession {
   }
 
   async function read(): Promise<Record<string, Info>> {
-    const data = await Filesystem.readJson<Record<string, Info>>(file).catch((): Record<string, Info> => ({}))
+    const data = await Filesystem.readJson<Record<string, Info>>(file).catch((error): Record<string, Info> => {
+      log.error("failed to read agency-swarm run-session state; continuing with empty state", {
+        file,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return {}
+    })
     return data && typeof data === "object" && !Array.isArray(data) ? data : {}
   }
 

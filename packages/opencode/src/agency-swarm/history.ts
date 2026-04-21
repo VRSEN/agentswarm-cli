@@ -1,9 +1,11 @@
 import { Storage } from "@/storage/storage"
 import { Global } from "@/global"
+import { Log } from "@/util/log"
 import path from "path"
 import { AgencySwarmAdapter } from "./adapter"
 
 export namespace AgencySwarmHistory {
+  const log = Log.create({ service: "agency-swarm.history" })
   export type Scope = {
     baseURL: string
     agency: string
@@ -102,7 +104,13 @@ export namespace AgencySwarmHistory {
     const file = legacyFile(scope)
     const existing = await Bun.file(file)
       .json()
-      .catch(() => undefined)
+      .catch((error) => {
+        log.error("failed to load legacy agency-swarm history; continuing without it", {
+          file,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return undefined
+      })
     return existing as Entry | undefined
   }
 
@@ -113,7 +121,12 @@ export namespace AgencySwarmHistory {
   async function loadRecoveredLoopback(scope: Scope): Promise<Entry | undefined> {
     if (!isLoopbackBaseURL(scope.baseURL)) return
 
-    const keys = await Storage.list(["agency_swarm_history"]).catch(() => [] as string[][])
+    const keys = await Storage.list(["agency_swarm_history"]).catch((error) => {
+      log.error("failed to list agency-swarm history while recovering loopback state; continuing without recovery", {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return [] as string[][]
+    })
     let newest: Entry | undefined
 
     for (const key of keys) {
@@ -163,7 +176,11 @@ export namespace AgencySwarmHistory {
         parsed.hostname === "localhost" ||
         parsed.hostname === "::1"
       )
-    } catch {
+    } catch (error) {
+      log.error("failed to parse agency-swarm history base URL while checking loopback recovery", {
+        baseURL,
+        error: error instanceof Error ? error.message : String(error),
+      })
       return false
     }
   }
