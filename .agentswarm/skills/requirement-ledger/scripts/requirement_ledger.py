@@ -118,7 +118,7 @@ def command_add(args: argparse.Namespace) -> None:
         "status": _required_text("status", args.status),
         "category": _required_text("category", args.category),
         "title": _required_text("title", args.title),
-        "original": _text_argument("original", args.original, args.original_file, required=True),
+        "original": _text_argument("original", args.original, args.original_file, required=True, preserve_whitespace=True),
         "intent": _required_text("intent", args.intent),
         "next_action": _required_text("next_action", args.next_action),
         "source_pointers": [_required_text("source_pointer", source) for source in args.source_pointer],
@@ -141,7 +141,7 @@ def command_update(args: argparse.Namespace) -> None:
         "intent": args.intent,
         "next_action": args.next_action,
     }
-    original = _text_argument("original", args.original, args.original_file)
+    original = _text_argument("original", args.original, args.original_file, preserve_whitespace=True)
     if args.artifacts_clear and args.artifact:
         raise LedgerError("cannot combine --artifact with --artifacts-clear")
     if (
@@ -343,7 +343,20 @@ def _required_text(field: str, value: str) -> str:
     return text
 
 
-def _text_argument(field: str, value: str | None, file_path: Path | None, *, required: bool = False) -> str | None:
+def _required_verbatim_text(field: str, value: str) -> str:
+    if not value.strip():
+        raise LedgerError(f"{field} cannot be empty")
+    return value
+
+
+def _text_argument(
+    field: str,
+    value: str | None,
+    file_path: Path | None,
+    *,
+    required: bool = False,
+    preserve_whitespace: bool = False,
+) -> str | None:
     if value is not None and file_path is not None:
         raise LedgerError(f"cannot combine --{field} with --{field}-file")
     if file_path is not None:
@@ -357,6 +370,8 @@ def _text_argument(field: str, value: str | None, file_path: Path | None, *, req
         if required:
             raise LedgerError(f"{field} is required")
         return None
+    if preserve_whitespace:
+        return _required_verbatim_text(field, value)
     return _required_text(field, value)
 
 

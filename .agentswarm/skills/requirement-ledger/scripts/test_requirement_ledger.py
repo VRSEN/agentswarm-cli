@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,7 +22,8 @@ class RequirementLedgerCliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             ledger_dir = Path(tmpdir) / "ledger"
             original_path = Path(tmpdir) / "original.txt"
-            original_path.write_text("First line\n\nSecond line\n", encoding="utf-8")
+            original_text = "  First line\n\nSecond line\n"
+            original_path.write_text(original_text, encoding="utf-8")
 
             add_stdout = io.StringIO()
             add_stderr = io.StringIO()
@@ -48,6 +50,8 @@ class RequirementLedgerCliTest(unittest.TestCase):
 
             self.assertEqual(exit_code, 0)
             self.assertEqual(add_stderr.getvalue(), "")
+            active_data = json.loads((ledger_dir / "active.json").read_text(encoding="utf-8"))
+            self.assertEqual(active_data["items"][0]["original"], original_text)
 
             list_stdout = io.StringIO()
             list_stderr = io.StringIO()
@@ -56,7 +60,7 @@ class RequirementLedgerCliTest(unittest.TestCase):
 
             self.assertEqual(exit_code, 0)
             self.assertEqual(list_stderr.getvalue(), "")
-            self.assertIn("  original: First line\n", list_stdout.getvalue())
+            self.assertIn("  original:   First line\n", list_stdout.getvalue())
             self.assertIn("            \n", list_stdout.getvalue())
             self.assertIn("            Second line\n", list_stdout.getvalue())
 
