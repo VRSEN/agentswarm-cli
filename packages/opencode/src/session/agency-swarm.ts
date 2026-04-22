@@ -1885,10 +1885,16 @@ export namespace SessionAgencySwarm {
     configuredRecipient?: string
   }): Promise<string | undefined> {
     const sessionRecipient = await resolveSessionRecipient(input.sessionID)
-    const candidates = [input.mentionedRecipient, sessionRecipient, input.configuredRecipient].filter(
-      (value, index, array): value is string => !!value && array.indexOf(value) === index,
+    const candidates = [
+      { value: input.mentionedRecipient, source: "message" },
+      { value: input.configuredRecipient, source: "config" },
+      { value: sessionRecipient, source: "session" },
+    ].filter(
+      (candidate, index, array): candidate is { value: string; source: "message" | "config" | "session" } =>
+        !!candidate.value && array.findIndex((item) => item.value === candidate.value) === index,
     )
-    if (candidates.length === 0) {
+    const candidateValues = candidates.map((candidate) => candidate.value)
+    if (candidateValues.length === 0) {
       return undefined
     }
 
@@ -1904,7 +1910,7 @@ export namespace SessionAgencySwarm {
       log.warn("unable to refresh agency metadata; skipping recipient override", {
         sessionID: input.sessionID,
         agency: input.agency,
-        candidates,
+        candidates: candidateValues,
         error: error instanceof Error ? error.message : String(error),
       })
       return undefined
@@ -1915,22 +1921,20 @@ export namespace SessionAgencySwarm {
       log.warn("agency metadata has no recipient agents; skipping recipient override", {
         sessionID: input.sessionID,
         agency: input.agency,
-        candidates,
+        candidates: candidateValues,
       })
       return undefined
     }
 
     const availableAgents = Array.from(new Set(recipientMap.values()))
     for (const candidate of candidates) {
-      const resolved = recipientMap.get(candidate)
+      const resolved = recipientMap.get(candidate.value)
       if (resolved) return resolved
-      const source =
-        candidate === input.mentionedRecipient ? "message" : candidate === sessionRecipient ? "session" : "config"
       log.warn("ignoring stale recipient agent candidate", {
         sessionID: input.sessionID,
         agency: input.agency,
-        candidate,
-        source,
+        candidate: candidate.value,
+        source: candidate.source,
         availableAgents,
       })
     }
