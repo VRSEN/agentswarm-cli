@@ -67,6 +67,7 @@ const VENV_CANARY_SCRIPT = ["import agency_swarm", "from agency_swarm.integratio
   "\n",
 )
 const REBUILD_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
+const PROCESS_KILL_GRACE_MS = 5000
 
 export function shouldRunNpxOnboarding(input: {
   env: NodeJS.ProcessEnv
@@ -1177,12 +1178,19 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
       options?.timeoutMs === undefined
         ? undefined
         : new Promise<{ code: number; timedOut: true }>((resolve) => {
-            timeout = setTimeout(() => {
+            timeout = setTimeout(async () => {
               timedOut = true
               outputAbort.abort()
               try {
                 proc.kill()
               } catch {}
+              const forceKill = setTimeout(() => {
+                try {
+                  proc.kill("SIGKILL")
+                } catch {}
+              }, PROCESS_KILL_GRACE_MS)
+              await proc.exited.catch(() => undefined)
+              clearTimeout(forceKill)
               resolve({ code: -1, timedOut: true })
             }, options.timeoutMs)
           })

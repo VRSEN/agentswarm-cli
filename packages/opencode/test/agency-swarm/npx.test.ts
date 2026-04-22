@@ -426,6 +426,7 @@ describe("agency-swarm npx onboarding", () => {
     await writeAgency(dir.path)
 
     const realSetTimeout = globalThis.setTimeout
+    const killSignals: Array<string | undefined> = []
 
     spyOn(prompts, "confirm").mockResolvedValue(true as never)
     spyOn(prompts, "spinner").mockReturnValue({
@@ -457,11 +458,17 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isPipInstallCommand(cmd)) {
+        let resolveExit!: (code: number) => void
         return {
-          exited: new Promise<number>(() => {}),
+          exited: new Promise<number>((resolve) => {
+            resolveExit = resolve
+          }),
           stdout: "",
           stderr: "still working...\n",
-          kill() {},
+          kill(signal?: string) {
+            killSignals.push(signal)
+            if (signal === "SIGKILL") resolveExit(1)
+          },
         } as never
       }
       throw new Error(`Unexpected command: ${cmd.join(" ")}`)
@@ -483,6 +490,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(outcome).not.toBe(pending)
     expect(outcome).toBeInstanceOf(Error)
     if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
+    expect(killSignals).toEqual([undefined, "SIGKILL"])
     expect(outcome.message).toContain("Dependency install timed out after 10 minutes")
   })
 
