@@ -1155,10 +1155,10 @@ async function getFreePort() {
 }
 
 async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<CommandResult> {
-  const logStream = options?.logFile ? createWriteStream(options.logFile, { flags: "a" }) : undefined
+  const commandLog = openCommandLog(options?.logFile)
   const writeChunk = (chunk: string) => {
     if (options?.streamOutputToStderr) process.stderr.write(chunk)
-    logStream?.write(chunk)
+    commandLog.write(chunk)
   }
 
   try {
@@ -1169,46 +1169,101 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
       stderr: "pipe",
       env: options?.env ?? process.env,
     })
+    const outputAbort = new AbortController()
     let timedOut = false
     let timeout: ReturnType<typeof setTimeout> | undefined
-    if (options?.timeoutMs) {
-      timeout = setTimeout(() => {
-        timedOut = true
-        proc.kill()
-      }, options.timeoutMs)
-    }
-    const [code, stdout, stderr] = await Promise.all([
-      proc.exited,
-      readCommandOutput(proc.stdout, writeChunk),
-      readCommandOutput(proc.stderr, writeChunk),
+    const exitResult = proc.exited.then((code) => ({ code, timedOut: false as const }))
+    const timeoutResult =
+      options?.timeoutMs === undefined
+        ? undefined
+        : new Promise<{ code: number; timedOut: true }>((resolve) => {
+            timeout = setTimeout(() => {
+              timedOut = true
+              outputAbort.abort()
+              try {
+                proc.kill()
+              } catch {}
+              resolve({ code: -1, timedOut: true })
+            }, options.timeoutMs)
+          })
+    const [result, stdout, stderr] = await Promise.all([
+      timeoutResult ? Promise.race([exitResult, timeoutResult]) : exitResult,
+      readCommandOutput(proc.stdout, writeChunk, outputAbort.signal),
+      readCommandOutput(proc.stderr, writeChunk, outputAbort.signal),
     ])
     if (timeout) clearTimeout(timeout)
-    await closeCommandLog(logStream)
-    return { code: timedOut ? -1 : code, stdout, stderr, timedOut, logFile: options?.logFile }
+    const logFile = await closeCommandLog(commandLog)
+    return { code: result.code, stdout, stderr, timedOut: timedOut || result.timedOut, logFile }
   } catch (error) {
-    await closeCommandLog(logStream)
+    const logFile = await closeCommandLog(commandLog)
     return {
       code: -1,
       stdout: "",
       stderr: error instanceof Error ? error.message : String(error),
-      logFile: options?.logFile,
+      logFile,
     }
   }
 }
 
-async function closeCommandLog(stream?: ReturnType<typeof createWriteStream>) {
-  if (!stream) return
-  await new Promise<void>((resolve, reject) => {
-    stream.end((error?: Error | null) => {
-      if (error) reject(error)
-      else resolve()
+function openCommandLog(logFile?: string) {
+  if (!logFile) {
+    return {
+      getLogFile: () => undefined,
+      write(_chunk: string) {},
+      async close() {},
+    }
+  }
+
+  let activeLogFile: string | undefined = logFile
+  let stream: ReturnType<typeof createWriteStream> | undefined
+  const disable = () => {
+    activeLogFile = undefined
+    if (!stream) return
+    stream.destroy()
+    stream = undefined
+  }
+
+  try {
+    stream = createWriteStream(logFile, { flags: "a" })
+    stream.on("error", () => {
+      disable()
     })
-  }).catch(() => undefined)
+  } catch {
+    disable()
+  }
+
+  return {
+    getLogFile: () => activeLogFile,
+    write(chunk: string) {
+      if (!stream) return
+      try {
+        stream.write(chunk)
+      } catch {
+        disable()
+      }
+    },
+    async close() {
+      if (!stream) return
+      await new Promise<void>((resolve, reject) => {
+        stream?.end((error?: Error | null) => {
+          if (error) reject(error)
+          else resolve()
+        })
+      }).catch(() => undefined)
+      stream = undefined
+    },
+  }
+}
+
+async function closeCommandLog(log: ReturnType<typeof openCommandLog>) {
+  await log.close()
+  return log.getLogFile()
 }
 
 async function readCommandOutput(
   output: string | ReadableStream<Uint8Array> | null | undefined,
   writer?: (chunk: string) => void,
+  signal?: AbortSignal,
 ) {
   if (typeof output === "string") {
     if (output && writer) writer(output)
@@ -1219,20 +1274,32 @@ async function readCommandOutput(
   const reader = output.getReader()
   const decoder = new TextDecoder()
   let text = ""
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    if (!value || value.length === 0) continue
-    const chunk = decoder.decode(value, { stream: true })
-    if (writer) writer(chunk)
-    text += chunk
+  const abortRead = () => {
+    void reader.cancel().catch(() => undefined)
   }
-  const tail = decoder.decode()
-  if (tail) {
-    if (writer) writer(tail)
-    text += tail
+  signal?.addEventListener("abort", abortRead, { once: true })
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done || signal?.aborted) break
+      if (!value || value.length === 0) continue
+      const chunk = decoder.decode(value, { stream: true })
+      if (writer) writer(chunk)
+      text += chunk
+    }
+    const tail = decoder.decode()
+    if (tail) {
+      if (writer) writer(tail)
+      text += tail
+    }
+    return text
+  } catch (error) {
+    if (signal?.aborted) return text
+    throw error
+  } finally {
+    signal?.removeEventListener("abort", abortRead)
   }
-  return text
 }
 
 function sleep(ms: number) {
