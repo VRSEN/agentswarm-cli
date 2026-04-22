@@ -718,6 +718,7 @@ async function ensureProjectPython(directory: string) {
     spinner.stop("Dependency install failed")
     throw new Error(install.stderr.trim() || install.stdout.trim() || "Dependency install failed")
   }
+  await ensureLatestAgencySwarm(directory, [venvPython])
   const canary = await venvCanaryPasses([venvPython], { cwd: directory, includeStderr: true })
   if (!canary.healthy) {
     spinner.stop("Python environment unhealthy")
