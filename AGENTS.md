@@ -70,6 +70,8 @@ Repo State
 - Keep one live list of the artifacts you own, and give every ledger item an `artifacts` list even when it is empty.
 - Track every pull request, linked issue, branch, local commit not yet on the canonical remote branch, worktree, file, temp asset, release artifact, published binary, open GitHub issue you filed, review artifact such as a local Codex review `.txt` file, pyte screenshot, temp QA directory, and any other open work artifact whether it is named here or not.
 - The moment one of those artifacts exists, it becomes a ledger item. Any state change on a tracked artifact must update the ledger before other work continues.
+- Ledger is the source of truth. If a branch, worktree, shell, tmux session, PR, issue, or other artifact is not referenced in the active ledger, treat it as non-existent and safe to delete. Before deleting any agent-attributable artifact, verify it has no ledger item. If any agent-owned artifact is created without a ledger item, the rule is broken; fix the ledger first.
+- Why: unowned artifacts accumulate and block the team. Fast cleanup works only when ownership is ledger-anchored.
 - Keep each tracked artifact open in the ledger until it is shipped, clearly handed off, or clearly discarded.
 - A pull request, branch, or local-only commit you created is still an open task. Never forget it.
 - Clean up old artifacts you created when a newer artifact fully replaces them and the older one is no longer needed for rollback or proof.
@@ -106,7 +108,7 @@ Execution
 - Review-complete means zero unresolved threads, a clean local Codex review artifact, green required checks, and explicit approval or thumbs up on the latest head.
 - Pending GitHub checks, pending pull-request Codex review, unresolved pull-request comments, and other agent-visible outside workflows still count as open work.
 - If only outside signals are pending, report the exact waiting state and keep polling.
-- If the next step is polling, keep doing it until the workflow ends or you can prove a real outside block. For delegated subagents, check every 3 minutes; if two checks in a row show no meaningful new log content, take over on the manager thread or escalate instead of firing a replacement subagent for the same concept.
+- If the next step is polling, keep doing it until the workflow ends or you can prove a real outside block. If a delegated subagent stalls with no new output, take over on the manager thread or escalate.
 - When polling is next, keep a live wait loop or session and poll at least once a minute with `sleep 60`.
 - If pull-request Codex stays non-terminal for 15 minutes, inspect the latest state and retrigger once if needed.
 - Wait up to 30 minutes for GitHub CI, which means automated GitHub checks, before you call it stalled.
@@ -304,16 +306,16 @@ Why: mistakes repeat when rules are not tightened.
   3. The user tests that local build by hand and gives explicit approval.
   4. Only then tag the release, create the GitHub Release, and publish to npm.
 - Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts changed.
-- Before any `agentswarm --version` check against a published npm release, remove any `bun link` symlink at `/Users/nick/.bun/bin/<name>` that would mask the npm-installed binary.
 - Before any release or safety claim, build and reinstall the CLI from the fresh local build, launch it against the maintainer's canonical local test agency, send a real first message through the connected conversation, and verify that a non-empty streaming assistant response renders.
-- Auth-smoke CI alone never passes this gate. For patch releases only, a missing live-LLM round caused by exhausted credits, corrupted local env, or network does not block ship when the latest Codex review is clean (0 P1 / 0 P2), unit tests pass, and a real-frame capture fixture already exists; log the QA skip in the ledger.
-- Otherwise any launch failure, including environment, credential, dependency, or TUI transition issues, blocks the release until you reproduce it and find the root cause.
+- Auth-smoke CI alone never passes this gate. Any launch failure, including environment, credential, dependency, or TUI transition issues, blocks the release until you reproduce it and find the root cause.
 - Why: release claims were repeated while the installed binary still failed before a usable conversation.
 - No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit using `gpt-5.4` with `extra-high` reasoning.
 - Example: `codex review --base vrsen/dev -c model_reasoning_effort="extra-high"`. Run it only when the CLI default is already `gpt-5.4`, or add `-m gpt-5.4`; do not rely on unknown defaults.
 - Save that review to `/tmp/codex_review_<short_sha>.txt`.
 - If Codex finds a blocking issue (`P1` or `P2`), stop and surface it to the user.
 ## Documentation Rules
+- Do not publish kitchen artifacts. Intermediate classification files, audit reports, keep/drop decision sheets, and other work-in-progress decision artifacts stay internal. Keep them under `.agentswarm/internal/` (gitignored) or `/tmp/`. Public PRs and issues are for final results only: the user-facing outcome, not the team's thinking process. Exception: if the user explicitly asks for a public review artifact.
+- Why: public process exposure creates noise for reviewers, leaks internal unclassified problems, and muddles what the repo actually ships.
 - Do not mention upstream fork origins in user-facing docs unless the user asked for that comparison.
 - Point to the code files that match the documented behavior.
 - Lead with the user benefit before the technical steps.
