@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import * as prompts from "@clack/prompts"
 import {
@@ -404,12 +405,20 @@ describe("agency-swarm npx onboarding", () => {
       throw new Error(`Unexpected command: ${cmd.join(" ")}`)
     })
 
-    await expect(
-      prepareProjectLaunch({
+    let error: Error | undefined
+    try {
+      await prepareProjectLaunch({
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
-      }),
-    ).rejects.toThrow(/Dependency install timed out after 10 minutes\..*activity-logs.*launcher-rebuild\.log/)
+      })
+    } catch (caught) {
+      error = caught as Error
+    }
+
+    expect(error).toBeInstanceOf(Error)
+    if (!error) throw new Error("Expected prepareProjectLaunch to fail")
+    expect(error.message).toMatch(/Dependency install timed out after 10 minutes\..*launcher-rebuild\.log/)
+    expect(error.message).not.toContain(dir.path)
   })
 
   test("prepareProjectLaunch surfaces refresh stderr when agency-swarm upgrade fails", async () => {
@@ -491,6 +500,190 @@ describe("agency-swarm npx onboarding", () => {
     )
 
     await launch?.cleanup?.()
+  })
+
+  test("prepareProjectLaunch checks the FastAPI launcher symbol in the canary", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
+      recursive: true,
+    })
+    await Bun.write(
+      path.join(
+        dir.path,
+        ".venv",
+        process.platform === "win32" ? "Scripts" : "bin",
+        process.platform === "win32" ? "python.exe" : "python",
+      ),
+      "",
+    )
+
+    const commands: string[][] = []
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        return {
+          exited: Promise.resolve(0),
+          stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    })
+
+    const canaryScripts = commands.filter(isCanaryCommand).map((cmd) => cmd.at(-1) ?? "")
+    expect(canaryScripts.length).toBeGreaterThan(0)
+    expect(
+      canaryScripts.every((script) => script.includes("from agency_swarm.integrations.fastapi import run_fastapi")),
+    ).toBe(true)
+
+    await launch?.cleanup?.()
+  })
+
+  test("prepareProjectLaunch does not fail healthy `.venv` launches when refresh logging cannot be created", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    const blockedLogDir = launcherLogDirectory(dir.path)
+    await mkdir(path.dirname(blockedLogDir), { recursive: true })
+    await Bun.write(blockedLogDir, "occupied\n")
+    await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
+      recursive: true,
+    })
+    await Bun.write(
+      path.join(
+        dir.path,
+        ".venv",
+        process.platform === "win32" ? "Scripts" : "bin",
+        process.platform === "win32" ? "python.exe" : "python",
+      ),
+      "",
+    )
+
+    const warn = spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        return {
+          exited: Promise.resolve(0),
+          stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    })
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Could not create launcher refresh log file"))
+
+    await launch?.cleanup?.()
+  })
+
+  test("prepareProjectLaunch preserves full install stderr when log creation falls back", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    const blockedLogDir = launcherLogDirectory(dir.path)
+    await mkdir(path.dirname(blockedLogDir), { recursive: true })
+    await Bun.write(blockedLogDir, "occupied\n")
+    spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+
+    const installStderr = Array.from({ length: 8 }, (_, i) => `resolver detail ${i}`).join("\n")
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "/usr/bin/python3.12\n3.12.7\n",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("venv")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd)) {
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: installStderr,
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    await expect(
+      prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      }),
+    ).rejects.toThrow(`Dependency install failed: ${installStderr}`)
   })
 
   test("prepareProjectLaunch avoids manifest remediation after fallback install canary failures", async () => {
@@ -1225,6 +1418,14 @@ function mockPrepareProjectLaunchCanaryFailure(canaryStderr: string) {
     }
     throw new Error(`Unexpected command: ${cmd.join(" ")}`)
   })
+}
+
+function launcherLogDirectory(directory: string) {
+  return path.join(
+    os.tmpdir(),
+    "agentswarm-cli-logs",
+    `${path.basename(path.resolve(directory)) || "project"}-${Bun.hash(path.resolve(directory)).toString(16)}`,
+  )
 }
 
 function isPipInstallCommand(cmd: string[]) {

@@ -63,7 +63,9 @@ interface RunCommandOptions {
   timeoutMs?: number
 }
 
-const VENV_CANARY_SCRIPT = ["import agency_swarm", "import agency_swarm.integrations.fastapi"].join("\n")
+const VENV_CANARY_SCRIPT = ["import agency_swarm", "from agency_swarm.integrations.fastapi import run_fastapi"].join(
+  "\n",
+)
 const REBUILD_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 
 export function shouldRunNpxOnboarding(input: {
@@ -655,8 +657,12 @@ async function ensureProjectPython(directory: string) {
       corruptedVenv = true
     } else {
       prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
-      const refreshLogFile = await createProjectCommandLogFile(directory, "launcher-refresh")
-      prompts.log.info(`Refreshing project dependencies. Streaming output to stderr. Full log: ${refreshLogFile}`)
+      const refreshLogFile = await tryCreateProjectCommandLogFile(directory, "launcher-refresh", "launcher refresh")
+      prompts.log.info(
+        refreshLogFile
+          ? `Refreshing project dependencies. Streaming output to stderr. Full log: ${refreshLogFile}`
+          : "Refreshing project dependencies. Streaming output to stderr.",
+      )
       try {
         await ensureLatestAgencySwarm(directory, [venvPython], {
           logFile: refreshLogFile,
@@ -730,15 +736,21 @@ async function ensureProjectPython(directory: string) {
   }
 
   spinner.stop("`.venv` created")
-  const installLogFile = await createProjectCommandLogFile(directory, "launcher-rebuild")
-  prompts.log.info(`Installing project dependencies. Streaming output to stderr. Full log: ${installLogFile}`)
+  const installLogFile = await tryCreateProjectCommandLogFile(directory, "launcher-rebuild", "launcher rebuild")
+  prompts.log.info(
+    installLogFile
+      ? `Installing project dependencies. Streaming output to stderr. Full log: ${installLogFile}`
+      : "Installing project dependencies. Streaming output to stderr.",
+  )
   const install = await installProjectDependencies(directory, [venvPython], {
     logFile: installLogFile,
     timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
   })
   if (install.timedOut) {
     throw new Error(
-      `Dependency install timed out after ${formatInstallDuration(REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${installLogFile}.`,
+      installLogFile
+        ? `Dependency install timed out after ${formatInstallDuration(REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${installLogFile}.`
+        : `Dependency install timed out after ${formatInstallDuration(REBUILD_INSTALL_TIMEOUT_MS)}.`,
     )
   }
   if (install.code !== 0) {
@@ -756,7 +768,7 @@ async function installProjectDependencies(
   directory: string,
   python: string[],
   options: {
-    logFile: string
+    logFile?: string
     timeoutMs: number
   },
 ): Promise<DependencyInstallResult> {
@@ -870,7 +882,9 @@ async function ensureLatestAgencySwarm(
     })
     if (result.timedOut) {
       prompts.log.warn(
-        `Timed out while refreshing agency-swarm after ${formatInstallDuration(options?.timeoutMs ?? REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${options?.logFile}.`,
+        options?.logFile
+          ? `Timed out while refreshing agency-swarm after ${formatInstallDuration(options?.timeoutMs ?? REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${options.logFile}.`
+          : `Timed out while refreshing agency-swarm after ${formatInstallDuration(options?.timeoutMs ?? REBUILD_INSTALL_TIMEOUT_MS)}.`,
       )
       return
     }
@@ -892,9 +906,20 @@ async function ensureLatestAgencySwarm(
 }
 
 async function createProjectCommandLogFile(directory: string, stem: string) {
-  const logDirectory = path.join(directory, "activity-logs")
+  const projectID = `${path.basename(path.resolve(directory)) || "project"}-${Bun.hash(path.resolve(directory)).toString(16)}`
+  const logDirectory = path.join(os.tmpdir(), "agentswarm-cli-logs", projectID)
   await mkdir(logDirectory, { recursive: true })
   return path.join(logDirectory, `${new Date().toISOString().replaceAll(":", "").replaceAll(".", "")}-${stem}.log`)
+}
+
+async function tryCreateProjectCommandLogFile(directory: string, stem: string, label: string) {
+  try {
+    return await createProjectCommandLogFile(directory, stem)
+  } catch (error) {
+    prompts.log.warn(
+      `Could not create ${label} log file. Continuing without a saved log: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 }
 
 function summarizeCommandOutput(result: Pick<CommandResult, "stdout" | "stderr">) {
@@ -902,8 +927,12 @@ function summarizeCommandOutput(result: Pick<CommandResult, "stdout" | "stderr">
 }
 
 function formatCommandFailure(result: CommandResult, fallback: string) {
+  if (!result.logFile) {
+    const detail = result.stderr.trim() || result.stdout.trim()
+    return detail ? `${fallback}: ${detail}` : fallback
+  }
   const summary = summarizeCommandOutput(result)
-  const logHint = result.logFile ? ` Check the log file at ${result.logFile}.` : ""
+  const logHint = ` Check the log file at ${result.logFile}.`
   if (summary) return `${fallback}: ${summary}.${logHint}`
   return `${fallback}.${logHint}`.trim()
 }
