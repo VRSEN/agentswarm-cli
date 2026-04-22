@@ -349,6 +349,8 @@ def _text_argument(field: str, value: str | None, file_path: Path | None, *, req
     if file_path is not None:
         try:
             value = file_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise LedgerError(f"cannot decode {field} file as UTF-8: {file_path}") from exc
         except OSError as exc:
             raise LedgerError(f"cannot read {field} file: {file_path}") from exc
     if value is None:
@@ -379,14 +381,23 @@ def _print_items(label: str, items: list[dict[str, Any]]) -> None:
     print(f"{label} ({len(items)})")
     for item in items:
         print(f"- {item['id']} [{item['status']}/{item['category']}] {item['title']}")
-        print(f"  original: {item['original']}")
-        print(f"  intent: {item['intent']}")
-        print(f"  next: {item.get('next_action', 'none')}")
+        _print_text_field("original", item["original"])
+        _print_text_field("intent", item["intent"])
+        _print_text_field("next", item.get("next_action", "none"))
         print(f"  source: {', '.join(item.get('source_pointers', []))}")
         if artifacts := _read_artifacts(item):
             print(f"  artifacts: {', '.join(artifacts)}")
         if item.get("resolution"):
-            print(f"  resolution: {item['resolution']}")
+            _print_text_field("resolution", item["resolution"])
+
+
+def _print_text_field(label: str, value: str) -> None:
+    prefix = f"  {label}: "
+    lines = value.splitlines() or [""]
+    print(f"{prefix}{lines[0]}")
+    continuation = " " * len(prefix)
+    for line in lines[1:]:
+        print(f"{continuation}{line}")
 
 
 if __name__ == "__main__":
