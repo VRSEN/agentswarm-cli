@@ -47,7 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("--status", choices=ACTIVE_STATUSES, default="open")
     add_parser.add_argument("--category", required=True)
     add_parser.add_argument("--title", required=True)
-    add_parser.add_argument("--original", required=True, help="Close original wording for auditability.")
+    add_parser.add_argument("--original", help="Close original wording for auditability.")
+    add_parser.add_argument("--original-file", type=Path, help="Read the original wording from a UTF-8 text file.")
     add_parser.add_argument("--intent", required=True)
     add_parser.add_argument("--next-action", required=True)
     add_parser.add_argument("--source-pointer", action="append", required=True, help="Repeat for multiple sources.")
@@ -63,6 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     update_parser.add_argument("--category")
     update_parser.add_argument("--title")
     update_parser.add_argument("--original")
+    update_parser.add_argument("--original-file", type=Path, help="Read the original wording from a UTF-8 text file.")
     update_parser.add_argument("--intent")
     update_parser.add_argument("--next-action")
     update_parser.add_argument("--source-pointer", action="append", help="Append one or more source pointers.")
@@ -116,7 +118,7 @@ def command_add(args: argparse.Namespace) -> None:
         "status": _required_text("status", args.status),
         "category": _required_text("category", args.category),
         "title": _required_text("title", args.title),
-        "original": _required_text("original", args.original),
+        "original": _text_argument("original", args.original, args.original_file, required=True),
         "intent": _required_text("intent", args.intent),
         "next_action": _required_text("next_action", args.next_action),
         "source_pointers": [_required_text("source_pointer", source) for source in args.source_pointer],
@@ -136,14 +138,15 @@ def command_update(args: argparse.Namespace) -> None:
         "status": args.status,
         "category": args.category,
         "title": args.title,
-        "original": args.original,
         "intent": args.intent,
         "next_action": args.next_action,
     }
+    original = _text_argument("original", args.original, args.original_file)
     if args.artifacts_clear and args.artifact:
         raise LedgerError("cannot combine --artifact with --artifacts-clear")
     if (
         not any(value is not None for value in updates.values())
+        and original is None
         and not args.source_pointer
         and not args.artifact
         and not args.artifacts_clear
@@ -152,6 +155,8 @@ def command_update(args: argparse.Namespace) -> None:
     for field, value in updates.items():
         if value is not None:
             item[field] = _required_text(field, value)
+    if original is not None:
+        item["original"] = original
     if args.source_pointer:
         item["source_pointers"].extend(_required_text("source_pointer", source) for source in args.source_pointer)
     if args.artifacts_clear:
@@ -336,6 +341,21 @@ def _required_text(field: str, value: str) -> str:
     if not text:
         raise LedgerError(f"{field} cannot be empty")
     return text
+
+
+def _text_argument(field: str, value: str | None, file_path: Path | None, *, required: bool = False) -> str | None:
+    if value is not None and file_path is not None:
+        raise LedgerError(f"cannot combine --{field} with --{field}-file")
+    if file_path is not None:
+        try:
+            value = file_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise LedgerError(f"cannot read {field} file: {file_path}") from exc
+    if value is None:
+        if required:
+            raise LedgerError(f"{field} is required")
+        return None
+    return _required_text(field, value)
 
 
 def _optional_texts(field: str, values: list[str] | None) -> list[str]:
