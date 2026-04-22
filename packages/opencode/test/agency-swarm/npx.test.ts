@@ -428,7 +428,9 @@ describe("agency-swarm npx onboarding", () => {
       "",
     )
 
-    spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+    const info = spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    const warn = spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+    const stderrWrite = spyOn(process.stderr, "write").mockImplementation(() => true as never)
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
@@ -445,7 +447,7 @@ describe("agency-swarm npx onboarding", () => {
       if (isPipInstallCommand(cmd)) {
         return {
           exited: Promise.resolve(1),
-          stdout: "",
+          stdout: "Collecting agency-swarm...\n",
           stderr: "ERROR: No matching distribution found for agency-swarm[fastapi,litellm]",
         } as never
       }
@@ -477,7 +479,14 @@ describe("agency-swarm npx onboarding", () => {
       agencyFile: path.join(dir.path, "agency.py"),
     })
 
-    expect(prompts.log.warn).toHaveBeenCalledWith(
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("Refreshing project dependencies. Streaming output to stderr."),
+    )
+    expect(stderrWrite.mock.calls.map((call) => call[0])).toContain("Collecting agency-swarm...\n")
+    expect(stderrWrite.mock.calls.map((call) => call[0])).toContain(
+      "ERROR: No matching distribution found for agency-swarm[fastapi,litellm]",
+    )
+    expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("Installer output: ERROR: No matching distribution found"),
     )
 

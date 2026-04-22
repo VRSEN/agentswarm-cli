@@ -655,8 +655,13 @@ async function ensureProjectPython(directory: string) {
       corruptedVenv = true
     } else {
       prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
+      const refreshLogFile = await createProjectCommandLogFile(directory, "launcher-refresh")
+      prompts.log.info(`Refreshing project dependencies. Streaming output to stderr. Full log: ${refreshLogFile}`)
       try {
-        await ensureLatestAgencySwarm(directory, [venvPython])
+        await ensureLatestAgencySwarm(directory, [venvPython], {
+          logFile: refreshLogFile,
+          timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+        })
       } catch {
         corruptedVenv = true
       }
@@ -848,16 +853,34 @@ async function venvCanaryPasses(python: string[], options?: { cwd?: string; incl
   return result.code === 0
 }
 
-async function ensureLatestAgencySwarm(directory: string, python: string[]) {
+async function ensureLatestAgencySwarm(
+  directory: string,
+  python: string[],
+  options?: {
+    logFile?: string
+    timeoutMs?: number
+  },
+) {
   try {
     const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]"], {
       cwd: directory,
+      logFile: options?.logFile,
+      streamOutputToStderr: true,
+      timeoutMs: options?.timeoutMs,
     })
+    if (result.timedOut) {
+      prompts.log.warn(
+        `Timed out while refreshing agency-swarm after ${formatInstallDuration(options?.timeoutMs ?? REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${options?.logFile}.`,
+      )
+      return
+    }
     if (result.code !== 0) {
       const summary = summarizeCommandOutput(result)
       prompts.log.warn(
         summary
-          ? `Could not refresh agency-swarm to the latest version. Installer output: ${summary}. The current venv package will be used as-is.`
+          ? `Could not refresh agency-swarm to the latest version. Installer output: ${summary}.${
+              result.logFile ? ` Check the log file at ${result.logFile}.` : ""
+            } The current venv package will be used as-is.`
           : "Could not refresh agency-swarm to the latest version. The current venv package will be used as-is.",
       )
     }
