@@ -295,6 +295,12 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Implementation: root lint config plus broad cleanups under `packages/app`, `packages/opencode`, `packages/console`, and `.opencode` carry the lint rollout.
   - Added by: `80f1f1b5`, plus related lint-cleanup carry-forward commits.
 
+- **Upstream sync carry-forward**
+  - Intent: keep the fork buildable by carrying upstream commits that landed through sync merges instead of treating them as fork-specific features.
+  - Behavior: these commits exist in the fork delta because of sync merges; they do not encode intentional fork value and should rejoin upstream on the next merge.
+  - Implementation: `/tmp/codex_tasks/fork_escalations_dropped.md` records the auto-classified upstream-only escalation set; typical examples are `chore: generate`, `sync`, `wip: zen`, and upstream SST-numbered PRs.
+  - Added by: none (upstream-inherited during sync).
+
 ## Web/App Surface
 
 - **README mode overview for Agent Builder, Plan, and Run**
