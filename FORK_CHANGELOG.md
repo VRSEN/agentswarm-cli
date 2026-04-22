@@ -29,6 +29,12 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Implementation: `findBinary` in `packages/opencode/script/postinstall.mjs` maps the current platform to the fork binary package names.
   - Added by: `725ac8ec`
 
+- **Built source installs fall back to the local `agentswarm` binary**
+  - Intent: keep source-install QA working when the source install path does not ship publish-time binary dependencies.
+  - Behavior: local source installs can fall back to a built `agentswarm` binary instead of failing on missing optional packages.
+  - Implementation: the local wrapper path in `packages/opencode/bin/agentswarm` falls back to `dist/agentswarm-cli-<target>/bin/agentswarm` for built source installs.
+  - Added by: `PR #50`
+
 - **Fork tips strip upstream-only OpenCode commands**
   - Intent: stop the fork from telling users to run commands that only make sense in upstream OpenCode.
   - Behavior: startup and home tips drop upstream-only OpenCode commands and replace them with fork paths like `/auth`, `/connect`, and `/agents`.
@@ -117,6 +123,18 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Implementation: `closeDialogAuthOnEscape` in `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx` and the auth guard in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx` keep prompt input behind the modal.
   - Added by: `2cc6e94a`
 
+- **Manage provider auth can remove stored credentials**
+  - Intent: let users remove a saved provider credential from the same TUI flow they use to add one.
+  - Behavior: `/auth` can remove saved credentials, and the auth command surface exposes management instead of a one-way login only.
+  - Implementation: `DialogAuth` and related slash-command metadata in `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx` wire the remove-credential action and `logout` alias.
+  - Added by: `PR #31`
+
+- **Browser-auth launch failures surface in the TUI**
+  - Intent: stop browser OAuth from failing silently when the default browser cannot be launched.
+  - Behavior: the auth dialog shows the launch failure in the TUI and warns the user instead of appearing to do nothing.
+  - Implementation: browser-launch error handling in `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx` watches the browser-open subprocess and surfaces launch failures.
+  - Added by: `PR #57`
+
 - **Dead agency server detection opens reconnect**
   - Intent: recover faster when the local Agency Swarm server dies during a fork session.
   - Behavior: the TUI notices a dead server and opens the reconnect flow instead of leaving the user in a broken session.
@@ -159,11 +177,29 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Implementation: `DialogModel` in `packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx` filters provider choices against the Agency-supported set.
   - Added by: `828986fb`
 
+- **Configured `agency-swarm/default` beats stale stored model state**
+  - Intent: stop stale remembered model state from pulling a session out of Agent Swarm mode by accident.
+  - Behavior: the configured `agency-swarm/default` mode stays active until the user explicitly chooses a different model.
+  - Implementation: model selection logic in `packages/opencode/src/cli/cmd/tui/context/local.tsx` keeps configured `agency-swarm/default` ahead of stale stored model state.
+  - Added by: `PR #51`
+
+- **Run mode hides `/editor`, but Builder and Plan keep local tools**
+  - Intent: hide model and editor tools only when the connected agency owns them, not in local modes.
+  - Behavior: `/models` and `/editor` stay available in Builder and Plan, but disappear in Run mode.
+  - Implementation: framework-mode command gating in `packages/opencode/src/cli/cmd/tui/app.tsx` keeps local modes on the normal command set and hides those commands only while connected to an agency.
+  - Added by: `PR #81`
+
 - **First prompt reaches the conversation screen without freezing**
   - Intent: stop the first submitted prompt from hanging before the conversation view opens.
   - Behavior: the first prompt transitions into the live conversation screen instead of freezing the TUI.
   - Implementation: `submit` in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx` clears the first prompt and hands control to the session screen in the right order.
   - Added by: `adab6532`
+
+- **Composer clears as soon as a prompt is sent**
+  - Intent: keep prompt submit behavior close to upstream so the composer does not look stuck after send.
+  - Behavior: the composer clears right away on send, and error handling restores the saved prompt only when the send actually fails.
+  - Implementation: prompt submit flow in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx` restores fire-and-forget send behavior with saved-prompt recovery on error.
+  - Added by: `PR #99`
 
 - **Run-target labels use live agency names**
   - Intent: show the names users know from Agency Swarm instead of stale or generic labels.
@@ -182,6 +218,12 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Behavior: startup and TUI logo panels render the Agent Swarm ASCII wordmark with fork colors.
   - Implementation: `logo` in `packages/opencode/src/cli/logo.ts` defines the Agent Swarm wordmark and `Logo` in `packages/opencode/src/cli/cmd/tui/component/logo.tsx` renders it with fork theme colors.
   - Added by: `fd2f678b`
+
+- **Tool-use turns stop without duplicate user resends**
+  - Intent: stop Agency Swarm tool turns from re-sending the same user prompt after the assistant already finished.
+  - Behavior: after a tool-output turn completes, the session loop exits instead of posting the same user message again.
+  - Implementation: agency-aware loop-exit handling in the session message/runtime flow treats finished tool-output turns as complete Agency Swarm assistant turns.
+  - Added by: `PR #62`
 
 ## Install/Upgrade
 
@@ -215,6 +257,44 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Implementation: `latestImpl` and `upgradeImpl` in `packages/opencode/src/installation/index.ts` with `UpgradeCommand` in `packages/opencode/src/cli/cmd/upgrade.ts` gate upgrade support by install channel.
   - Added by: `9d86d959`
 
+## Runtime Carry-Forward
+
+- **Effect runtime migration carry-forward**
+  - Intent: keep the fork on the newer Effect and `InstanceState` service shape that later runtime work depends on.
+  - Behavior: account, auth, command, permission, file, and session services use the newer Effect-based runtime wiring instead of older facade-heavy paths.
+  - Implementation: `packages/opencode/src/account/index.ts`, `src/auth/index.ts`, `src/command/index.ts`, `src/permission/index.ts`, `src/session/index.ts`, and related `specs/effect-*` files carry the migrated service shape.
+  - Added by: `38e0dc9c`, plus related carry-forward commits in the same runtime family.
+
+- **Branded IDs flow through runtime schema**
+  - Intent: keep runtime and transport IDs strongly typed across the fork.
+  - Behavior: workspace, session, provider, model, part, permission, pty, question, and tool IDs stay branded through schema, server, and session code.
+  - Implementation: `packages/opencode/src/control-plane/schema.ts`, `src/provider/provider.ts`, `src/server/routes/session.ts`, and `src/session/compaction.ts` carry the branded ID rollout.
+  - Added by: `16a6d6fe`, plus related ID-branding carry-forward commits.
+
+- **TUI plugin runtime carry-forward**
+  - Intent: keep the fork on the newer plugin-driven TUI surface instead of older hardwired panels.
+  - Behavior: the TUI loads home, session, and plugin runtime features through the newer plugin runtime paths.
+  - Implementation: `packages/opencode/src/cli/cmd/tui/plugin/**`, `src/plugin/**`, and `specs/tui-plugins.md` define the plugin-driven TUI surface.
+  - Added by: `6274b067`
+
+- **Permission rework carry-forward**
+  - Intent: keep the fork on the newer permission request and review flow.
+  - Behavior: permission prompts, session permission views, and local prompt state use the reworked permission model.
+  - Implementation: `packages/opencode/src/permission/**`, `src/cli/cmd/tui/routes/session/permission.tsx`, and `src/cli/cmd/tui/context/local.tsx` carry the reworked permission flow.
+  - Added by: `351ddeed`
+
+- **Multi-instance and sync runtime carry-forward**
+  - Intent: keep the fork on the newer multi-instance and sync model that later session work expects.
+  - Behavior: the runtime tracks multiple instances, workspace sync state, and related bus/server updates through the newer control-plane paths.
+  - Implementation: `packages/opencode/src/bus/**`, `src/effect/instance-*`, `src/server/routes/**`, and `src/cli/cmd/tui/context/sync.tsx` carry the multi-instance and sync plumbing.
+  - Added by: `f993541e`, plus follow-on sync carry-forward commits.
+
+- **Type-aware lint cleanup carry-forward**
+  - Intent: keep the fork on the newer lint rule rollout and cleanup passes that touched wide parts of the tree.
+  - Behavior: large parts of the repo follow newer promise, spread, unused import, and formatter cleanup rules introduced after the fork drift widened.
+  - Implementation: root lint config plus broad cleanups under `packages/app`, `packages/opencode`, `packages/console`, and `.opencode` carry the lint rollout.
+  - Added by: `80f1f1b5`, plus related lint-cleanup carry-forward commits.
+
 ## Web/App Surface
 
 - **README mode overview for Agent Builder, Plan, and Run**
@@ -235,6 +315,30 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Implementation: `packages/web/package.json` plus imports in `packages/web/src/components/Share.tsx`, `packages/web/src/components/share/part.tsx`, and `packages/web/src/pages/s/[id].astro` wire the share surface to `agentswarm-cli`.
   - Added by: `bedc977e`
 
+- **Desktop app workspace and session shell carry-forward**
+  - Intent: keep the fork on the newer app shell for workspaces, review flows, prompt input, and session side panels.
+  - Behavior: the app carries newer session tabs, review panels, composer flows, and workspace switching behavior on top of the fork runtime.
+  - Implementation: `packages/app/src/pages/session.tsx`, `src/pages/session/**`, `src/components/prompt-input.tsx`, and `src/context/global-sync/**` hold the carried-forward app shell.
+  - Added by: `35350b1d`, plus related app-shell carry-forward commits.
+
+- **Desktop app settings and titlebar surface carry-forward**
+  - Intent: keep the fork on the newer desktop app settings, titlebar, and localized app surface.
+  - Behavior: the app carries newer settings panels, titlebar tools, progress-bar preferences, and localized strings.
+  - Implementation: `packages/app/src/components/settings-general.tsx`, `src/context/settings.tsx`, `src/components/titlebar.tsx`, and `src/i18n/**` define the carried-forward app settings surface.
+  - Added by: `811a7e9a`, plus related app-settings carry-forward commits.
+
+- **Desktop Electron packaging and stability carry-forward**
+  - Intent: keep the fork on the newer Electron release, packaging, and desktop stability work.
+  - Behavior: desktop builds keep current electron release targets, context-isolation work, and related packaging and stability updates.
+  - Implementation: `packages/desktop-electron/**` plus desktop-related workflow and package files carry the Electron surface.
+  - Added by: `5cf235fa`, plus related desktop carry-forward commits.
+
+- **Localized web docs and model catalog carry-forward**
+  - Intent: keep the fork on the newer translated docs and model catalog pages that ship with the current docs surface.
+  - Behavior: web docs across locales carry the newer navigation copy plus the current Go and Zen catalog text.
+  - Implementation: `packages/web/src/content/docs/**` carries the translated CLI, modes, permissions, tools, Go, and Zen docs pages.
+  - Added by: `dc53086c`, plus related docs and model-catalog carry-forward commits.
+
 ## Tests
 
 - **Agency Swarm integration regression suite**
@@ -248,6 +352,12 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Behavior: app E2E tests can open status tabs reliably and create or clean up temporary sessions without flaky leftovers.
   - Implementation: `withSession`, `openStatusPopover`, and `openStatusTab` in `packages/app/e2e/actions.ts` harden the fork's session and status browser checks.
   - Added by: `825641267`
+
+- **Desktop app E2E suite and harness carry-forward**
+  - Intent: keep the fork on the newer desktop app E2E harness instead of a smoke-only test layer.
+  - Behavior: the repo carries a broad app E2E suite for prompts, workspaces, settings, terminal, and session flows.
+  - Implementation: `packages/app/e2e/actions.ts`, `fixtures.ts`, `selectors.ts`, and the spec files under `packages/app/e2e/**` define the carried-forward app E2E harness.
+  - Added by: `c3ef69c8`, plus related app E2E carry-forward commits.
 
 ## Release/CI
 
