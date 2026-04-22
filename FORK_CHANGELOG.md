@@ -5,9 +5,9 @@ Each entry below covers one current fork feature, what it does, where it lives, 
 
 ## Upstream Baseline Anchor
 
-- Upstream baseline: `origin/dev` at `caaddf096424193ef3cba4bf2a8f9ae6876915bc`
+- Upstream baseline: `origin/dev` at `8043cfa68dcf97547ede3e26a9325af55583e1e4`
 - Fork baseline: `vrsen/dev` at `e0259d7fd`
-- Ahead/behind count: `origin/dev...vrsen/dev` = `746 247`
+- Ahead/behind count: `origin/dev...vrsen/dev` = `757 247`
 
 ## Branding/Packaging
 
@@ -28,6 +28,12 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Behavior: installs resolve the right packaged binary from the fork's scoped npm artifacts.
   - Implementation: `findBinary` in `packages/opencode/script/postinstall.mjs` maps the current platform to the fork binary package names.
   - Added by: `725ac8ec`
+
+- **Fork tips strip upstream-only OpenCode commands**
+  - Intent: stop the fork from telling users to run commands that only make sense in upstream OpenCode.
+  - Behavior: startup and home tips drop upstream-only OpenCode commands and replace them with fork paths like `/auth`, `/connect`, and `/agents`.
+  - Implementation: `AgencyProduct.tips` in `packages/opencode/src/agency-swarm/product.ts` filters the upstream tip list, rewrites command names, and adds fork-specific guidance.
+  - Added by: `fd2f678b`
 
 ## Agency Swarm Integration
 
@@ -123,6 +129,24 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Implementation: `AgenciiCommand` in `packages/opencode/src/cli/cmd/agencii.ts` defines the fork-only backend management command tree.
   - Added by: `14abd070`
 
+- **Agent Builder instructions are retuned for Agency Swarm repos**
+  - Intent: make the local build agent write fork-specific Agency Swarm changes instead of upstream OpenCode defaults.
+  - Behavior: when the local build agent is active, it follows Agent Swarm builder rules and handoff wording.
+  - Implementation: `agentBuilderInstructions` in `packages/opencode/src/session/agent-builder.ts` injects `packages/opencode/src/session/prompt/agent-builder.txt`.
+  - Added by: `d93fd0f4`
+
+- **Plan agent instructions are retuned for Agency Swarm handoffs**
+  - Intent: make the local plan agent write handoff plans for the fork instead of upstream OpenCode plans.
+  - Behavior: when the local plan agent is active, it writes an Agency Swarm plan file the next build turn can use.
+  - Implementation: `agentPlannerInstructions` in `packages/opencode/src/session/agent-planner.ts` injects `packages/opencode/src/session/prompt/agent-planner.txt`.
+  - Added by: `7643fcde`
+
+- **Builder and Plan switching are hidden in framework mode**
+  - Intent: keep the Agency Swarm TUI on a run-only surface instead of exposing local Builder and Plan mode switching.
+  - Behavior: in framework mode, the agent picker becomes a run-target picker and agent cycling stays on agency recipients.
+  - Implementation: `frameworkMode` and `cycleAgencyRunTarget` in `packages/opencode/src/cli/cmd/tui/app.tsx` plus `DialogAgent` in `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx` replace local agent switching with run-target controls.
+  - Added by: `d6b9ed38`
+
 - **Tab cycles recipient agents in Run mode**
   - Intent: speed up agent switching during run sessions without reopening a picker.
   - Behavior: pressing Tab in Run mode cycles through available recipient agents.
@@ -138,7 +162,7 @@ Each entry below covers one current fork feature, what it does, where it lives, 
 - **First prompt reaches the conversation screen without freezing**
   - Intent: stop the first submitted prompt from hanging before the conversation view opens.
   - Behavior: the first prompt transitions into the live conversation screen instead of freezing the TUI.
-  - Implementation: `onSubmit` in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx` sequences the first-run state update so the conversation screen can render.
+  - Implementation: `submit` in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx` clears the first prompt and hands control to the session screen in the right order.
   - Added by: `adab6532`
 
 - **Run-target labels use live agency names**
@@ -147,11 +171,17 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Implementation: `resolveAgencyTargetSelection` in `packages/opencode/src/cli/cmd/tui/util/agency-target.ts` and `DialogAgent` in `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx` render live agency names in the UI.
   - Added by: `a798a402`
 
-- **Agent Swarm palette is the safe default**
-  - Intent: keep the fork on its own supported theme instead of a default that may not match the fork UX.
-  - Behavior: new sessions default to the Agent Swarm palette when the selected theme is missing or not allowed.
-  - Implementation: `defaultThemeName` and `canSelectBuiltInThemeName` in `packages/opencode/src/cli/cmd/tui/context/theme.tsx` choose the fork-safe built-in theme.
-  - Added by: `ad05ec8b`
+- **Agent Swarm theme is locked to the built-in dark palette**
+  - Intent: keep the fork on one supported dark theme instead of letting the TUI drift across light and theme-picker paths.
+  - Behavior: the TUI starts in the Agent Swarm dark palette and ignores built-in theme changes outside the allowed path.
+  - Implementation: `ThemeProvider` in `packages/opencode/src/cli/cmd/tui/context/theme.tsx` sets `draft.lock = "dark"` and only lets `canSelectBuiltInThemeName` keep the fixed built-in theme.
+  - Added by: `d2070ec3`
+
+- **Agent Swarm wordmark replaces the OpenCode logo**
+  - Intent: show fork branding in the CLI and TUI instead of the upstream OpenCode mark.
+  - Behavior: startup and TUI logo panels render the Agent Swarm ASCII wordmark with fork colors.
+  - Implementation: `logo` in `packages/opencode/src/cli/logo.ts` defines the Agent Swarm wordmark and `Logo` in `packages/opencode/src/cli/cmd/tui/component/logo.tsx` renders it with fork theme colors.
+  - Added by: `fd2f678b`
 
 ## Install/Upgrade
 
@@ -173,6 +203,12 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Implementation: `ensureLatestAgencySwarm` in `packages/opencode/src/agency-swarm/npx.ts` checks and upgrades the project `agency-swarm` package inside the selected virtualenv.
   - Added by: `a77de00c`
 
+- **Run-mode session resumes recover the last local Agency project**
+  - Intent: reopen a run-mode session in the right local Agency project without asking the user to pick it again.
+  - Behavior: explicit session resumes can recover the saved local project before the TUI opens.
+  - Implementation: `AgencySwarmRunSession.get` in `packages/opencode/src/agency-swarm/run-session.ts` and `resolveRunProject` in `packages/opencode/src/agency-swarm/npx.ts` map session ids back to saved local projects.
+  - Added by: `f5ff56b0`
+
 - **Upgrade command rejects unsupported package-manager channels**
   - Intent: stop the upgrade flow from pretending it can update installs that were done through unsupported package-manager paths.
   - Behavior: `upgrade` exits with a clear message when the current install channel is not one the fork knows how to update safely.
@@ -193,6 +229,12 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Implementation: the named flow sections in `USER_FLOWS.md` define the fork's canonical user-flow map.
   - Added by: `b591c478`
 
+- **Shared session web pages import fork session types**
+  - Intent: keep the fork's share page wired to the `agentswarm-cli` package instead of upstream package names.
+  - Behavior: the web share surface reads session and message types from the fork package when it renders shared runs.
+  - Implementation: `packages/web/package.json` plus imports in `packages/web/src/components/Share.tsx`, `packages/web/src/components/share/part.tsx`, and `packages/web/src/pages/s/[id].astro` wire the share surface to `agentswarm-cli`.
+  - Added by: `bedc977e`
+
 ## Tests
 
 - **Agency Swarm integration regression suite**
@@ -200,6 +242,12 @@ Each entry below covers one current fork feature, what it does, where it lives, 
   - Behavior: the repo has regression tests for session and provider behavior that upstream does not ship.
   - Implementation: `packages/opencode/test/session/agency-swarm.test.ts` and `packages/opencode/test/provider/agency-swarm-provider.test.ts` hold the fork's Agency Swarm integration coverage.
   - Added by: `fd2f678b`
+
+- **Browser E2E helpers harden session and status checks**
+  - Intent: keep the fork's browser checks stable around its session and status flows.
+  - Behavior: app E2E tests can open status tabs reliably and create or clean up temporary sessions without flaky leftovers.
+  - Implementation: `withSession`, `openStatusPopover`, and `openStatusTab` in `packages/app/e2e/actions.ts` harden the fork's session and status browser checks.
+  - Added by: `825641267`
 
 ## Release/CI
 
