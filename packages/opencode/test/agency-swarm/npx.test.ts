@@ -459,12 +459,13 @@ describe("agency-swarm npx onboarding", () => {
       }
       if (isPipInstallCommand(cmd)) {
         let resolveExit!: (code: number) => void
+        const stderr = createTextOutputStream("still working...\n")
         return {
           exited: new Promise<number>((resolve) => {
             resolveExit = resolve
           }),
           stdout: "",
-          stderr: "still working...\n",
+          stderr: stderr.stream,
           kill(signal?: string) {
             killSignals.push(signal)
             if (signal === "SIGKILL") resolveExit(1)
@@ -642,6 +643,9 @@ describe("agency-swarm npx onboarding", () => {
 
     expect(timers).not.toHaveLength(0)
     expect(timers[0]?.cleared).toBe(true)
+    const installTimeout = timers[0]
+    if (typeof installTimeout?.fn !== "function") throw new Error("Expected install timeout callback")
+    await installTimeout.fn()
 
     setTimeoutSpy.mockRestore()
     clearTimeoutSpy.mockRestore()
@@ -1763,7 +1767,13 @@ function createTextOutputStream(initial?: string) {
       controller.enqueue(encoder.encode(text))
     },
     close() {
-      controller.close()
+      try {
+        controller.close()
+      } catch (error) {
+        if (!(error instanceof TypeError) || !String(error.message).includes("Controller is already closed")) {
+          throw error
+        }
+      }
     },
   }
 }

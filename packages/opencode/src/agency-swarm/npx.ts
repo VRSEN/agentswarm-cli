@@ -1171,7 +1171,6 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
       env: options?.env ?? process.env,
     })
     const outputAbort = new AbortController()
-    let timedOut = false
     let timeout: ReturnType<typeof setTimeout> | undefined
     const exitPromise = proc.exited.finally(() => {
       if (timeout) clearTimeout(timeout)
@@ -1181,19 +1180,21 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
       options?.timeoutMs === undefined
         ? undefined
         : new Promise<{ code: number; timedOut: true }>((resolve) => {
-            timeout = setTimeout(async () => {
-              timedOut = true
-              try {
-                proc.kill()
-              } catch {}
-              const forceKill = setTimeout(() => {
-                try {
-                  proc.kill("SIGKILL")
-                } catch {}
-              }, PROCESS_KILL_GRACE_MS)
-              await exitPromise.catch(() => undefined)
-              clearTimeout(forceKill)
+            timeout = setTimeout(() => {
               resolve({ code: -1, timedOut: true })
+              void (async () => {
+                try {
+                  proc.kill()
+                } catch {}
+                const forceKill = setTimeout(() => {
+                  try {
+                    proc.kill("SIGKILL")
+                  } catch {}
+                }, PROCESS_KILL_GRACE_MS)
+                await exitPromise.catch(() => undefined)
+                clearTimeout(forceKill)
+                outputAbort.abort()
+              })()
             }, options.timeoutMs)
           })
     const [result, stdout, stderr] = await Promise.all([
@@ -1202,7 +1203,7 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
       readCommandOutput(proc.stderr, writeChunk, outputAbort.signal),
     ])
     const logFile = await closeCommandLog(commandLog)
-    return { code: result.code, stdout, stderr, timedOut: timedOut || result.timedOut, logFile }
+    return { code: result.code, stdout, stderr, timedOut: result.timedOut, logFile }
   } catch (error) {
     const logFile = await closeCommandLog(commandLog)
     return {
