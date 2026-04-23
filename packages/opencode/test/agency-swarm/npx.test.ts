@@ -559,6 +559,97 @@ describe("agency-swarm npx onboarding", () => {
     expect(stderrWrite.mock.calls.map((call) => call[0])).toContain("term tail\n")
   })
 
+  test("prepareProjectLaunch clears the install timeout as soon as the child exits", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    const realSetTimeout = globalThis.setTimeout
+    const timers: Array<{ fn: TimerHandler; cleared: boolean }> = []
+
+    spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    const setTimeoutSpy = spyOn(globalThis, "setTimeout").mockImplementation(((fn: TimerHandler) => {
+      const timer = { fn, cleared: false }
+      timers.push(timer)
+      return timer as never
+    }) as unknown as typeof setTimeout)
+    const clearTimeoutSpy = spyOn(globalThis, "clearTimeout").mockImplementation(((timer: { cleared?: boolean }) => {
+      timer.cleared = true
+    }) as unknown as typeof clearTimeout)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+    const installStderr = createTextOutputStream("install finished\n")
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        return {
+          exited: Promise.resolve(0),
+          stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("venv")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: installStderr.stream,
+          kill() {},
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launchPromise = prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    })
+
+    await new Promise((resolve) => realSetTimeout(resolve, 20))
+
+    expect(timers).not.toHaveLength(0)
+    expect(timers[0]?.cleared).toBe(true)
+
+    setTimeoutSpy.mockRestore()
+    clearTimeoutSpy.mockRestore()
+    installStderr.close()
+    const launch = await launchPromise
+    await launch?.cleanup?.()
+  })
+
   test("prepareProjectLaunch surfaces refresh stderr when agency-swarm upgrade fails", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)

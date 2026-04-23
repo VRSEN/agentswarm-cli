@@ -1173,7 +1173,10 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
     const outputAbort = new AbortController()
     let timedOut = false
     let timeout: ReturnType<typeof setTimeout> | undefined
-    const exitResult = proc.exited.then((code) => ({ code, timedOut: false as const }))
+    const exitPromise = proc.exited.finally(() => {
+      if (timeout) clearTimeout(timeout)
+    })
+    const exitResult = exitPromise.then((code) => ({ code, timedOut: false as const }))
     const timeoutResult =
       options?.timeoutMs === undefined
         ? undefined
@@ -1188,7 +1191,7 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
                   proc.kill("SIGKILL")
                 } catch {}
               }, PROCESS_KILL_GRACE_MS)
-              await proc.exited.catch(() => undefined)
+              await exitPromise.catch(() => undefined)
               clearTimeout(forceKill)
               resolve({ code: -1, timedOut: true })
             }, options.timeoutMs)
@@ -1198,7 +1201,6 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
       readCommandOutput(proc.stdout, writeChunk, outputAbort.signal),
       readCommandOutput(proc.stderr, writeChunk, outputAbort.signal),
     ])
-    if (timeout) clearTimeout(timeout)
     const logFile = await closeCommandLog(commandLog)
     return { code: result.code, stdout, stderr, timedOut: timedOut || result.timedOut, logFile }
   } catch (error) {
