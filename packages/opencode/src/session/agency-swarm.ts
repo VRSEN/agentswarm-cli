@@ -365,17 +365,26 @@ export namespace SessionAgencySwarm {
     )
   }
 
-  function scopesCodexBaseURLPerProvider(metadata: AgencySwarmAdapter.AgencyMetadata): boolean {
+  function readStableAgencySwarmVersion(metadata: AgencySwarmAdapter.AgencyMetadata): string | undefined {
     const version = asString(metadata["agency_swarm_version"])
-    if (!version) return false
-    const parsed = semver.coerce(version)
-    if (!parsed) {
-      log.warn("agency metadata exposed an unreadable agency_swarm_version while deciding Codex OAuth routing", {
-        version,
-      })
-      return false
+    if (!version) return undefined
+    const match = version.trim().match(/^(?:v)?(\d+\.\d+\.\d+)(?:(?:\.post\d+)|(?:post\d+)|(?:\+[0-9a-z.-]+))?$/i)
+    if (!match) {
+      log.warn(
+        "agency metadata exposed a prerelease or unreadable agency_swarm_version while deciding Codex OAuth routing",
+        {
+          version,
+        },
+      )
+      return undefined
     }
-    return semver.gte(parsed.version, "1.9.3")
+    return match[1]
+  }
+
+  function scopesCodexBaseURLPerProvider(metadata: AgencySwarmAdapter.AgencyMetadata): boolean {
+    const version = readStableAgencySwarmVersion(metadata)
+    if (!version) return false
+    return semver.gte(version, "1.9.3")
   }
 
   async function shouldStripCodexOAuth(
