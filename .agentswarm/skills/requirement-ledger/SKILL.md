@@ -53,6 +53,18 @@ python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py add \
   --artifact "branch:vrsen/dev"
 ```
 
+For long verbatim user text, read `original` from a file instead of the shell:
+
+```bash
+python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py add \
+  --category tooling \
+  --title "Ingest verbatim user requests" \
+  --original-file /tmp/verbatim_request.txt \
+  --intent "Keep the full user wording in the ledger without shell-length limits." \
+  --next-action "Reconcile the transcript entry against the active ledger." \
+  --source-pointer "chat:2026-04-22 user#1"
+```
+
 Append or clear linked artifacts on an existing item:
 
 ```bash
