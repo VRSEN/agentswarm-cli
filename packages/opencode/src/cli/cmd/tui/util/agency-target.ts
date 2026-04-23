@@ -101,6 +101,7 @@ export function buildAgencyTargetOptions(input: {
     discoveryTimeoutMs: input.providerOptions.discoveryTimeoutMs,
     agency: input.agency,
     recipientAgent: input.recipientAgent ?? null,
+    recipient_agent: null,
   }
 
   if (input.providerOptions.configToken) {
