@@ -757,7 +757,6 @@ async function ensureProjectPython(directory: string) {
   if (install.code !== 0) {
     throw new Error(formatCommandFailure(install, "Dependency install failed"))
   }
-  await ensureLatestAgencySwarm(directory, [venvPython])
   const canary = await venvCanaryPasses([venvPython], { cwd: directory, includeStderr: true })
   if (!canary.healthy) {
     throw new Error(await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr))
