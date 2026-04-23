@@ -494,6 +494,71 @@ describe("agency-swarm npx onboarding", () => {
     expect(outcome.message).toContain("Dependency install timed out after 10 minutes")
   })
 
+  test("prepareProjectLaunch preserves shutdown stderr emitted during timeout", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    const stderrWrite = spyOn(process.stderr, "write").mockImplementation(() => true as never)
+
+    spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(globalThis, "setTimeout").mockImplementation(((fn: TimerHandler) => {
+      if (typeof fn === "function") fn()
+      return 1 as never
+    }) as unknown as typeof setTimeout)
+    spyOn(globalThis, "clearTimeout").mockImplementation(() => undefined as never)
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "/usr/bin/python3.12\n3.12.7\n",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("venv")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd)) {
+        let resolveExit!: (code: number) => void
+        const stderr = createTextOutputStream("still working...\n")
+        return {
+          exited: new Promise<number>((resolve) => {
+            resolveExit = resolve
+          }),
+          stdout: "",
+          stderr: stderr.stream,
+          kill() {
+            stderr.push("term tail\n")
+            stderr.close()
+            resolveExit(1)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    await expect(
+      prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      }),
+    ).rejects.toThrow("Dependency install timed out after 10 minutes")
+
+    expect(stderrWrite.mock.calls.map((call) => call[0])).toContain("still working...\n")
+    expect(stderrWrite.mock.calls.map((call) => call[0])).toContain("term tail\n")
+  })
+
   test("prepareProjectLaunch surfaces refresh stderr when agency-swarm upgrade fails", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
@@ -1589,6 +1654,27 @@ function launcherLogDirectory(directory: string) {
 
 function launcherLogFilePath(directory: string, stem: string, iso: string) {
   return path.join(launcherLogDirectory(directory), `${iso.replaceAll(":", "").replaceAll(".", "")}-${stem}.log`)
+}
+
+function createTextOutputStream(initial?: string) {
+  let controller!: ReadableStreamDefaultController<Uint8Array>
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream<Uint8Array>({
+    start(next) {
+      controller = next
+      if (initial) controller.enqueue(encoder.encode(initial))
+    },
+  })
+
+  return {
+    stream,
+    push(text: string) {
+      controller.enqueue(encoder.encode(text))
+    },
+    close() {
+      controller.close()
+    },
+  }
 }
 
 function isPipInstallCommand(cmd: string[]) {

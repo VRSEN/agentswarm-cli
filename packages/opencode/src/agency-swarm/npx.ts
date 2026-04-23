@@ -1180,7 +1180,6 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
         : new Promise<{ code: number; timedOut: true }>((resolve) => {
             timeout = setTimeout(async () => {
               timedOut = true
-              outputAbort.abort()
               try {
                 proc.kill()
               } catch {}
