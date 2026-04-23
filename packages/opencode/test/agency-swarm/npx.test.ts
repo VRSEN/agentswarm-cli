@@ -956,6 +956,80 @@ describe("agency-swarm npx onboarding", () => {
     await launch?.cleanup?.()
   })
 
+  test("prepareProjectLaunch ignores mirrored stderr pipe failures during rebuild installs", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    const stderrPipeError = Object.assign(new Error("write EPIPE"), { code: "EPIPE" })
+    const stderrWrite = spyOn(process.stderr, "write").mockImplementation(() => {
+      throw stderrPipeError
+    })
+    spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        return {
+          exited: Promise.resolve(0),
+          stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("venv")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "Collecting agency-swarm...\n",
+          stderr: "",
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    })
+
+    expect(stderrWrite).toHaveBeenCalled()
+
+    await launch?.cleanup?.()
+  })
+
   test("prepareProjectLaunch preserves full install stderr when log creation falls back", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
@@ -1003,6 +1077,77 @@ describe("agency-swarm npx onboarding", () => {
         agencyFile: path.join(dir.path, "agency.py"),
       }),
     ).rejects.toThrow(`Dependency install failed: ${installStderr}`)
+  })
+
+  test("prepareProjectLaunch omits rebuild log hints when timeout logging never opens", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    const iso = "2026-04-23T02:30:00.000Z"
+    const installLogFile = launcherLogFilePath(dir.path, "launcher-rebuild", iso)
+    await mkdir(path.dirname(installLogFile), { recursive: true })
+    await mkdir(installLogFile, { recursive: true })
+
+    spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(Date.prototype, "toISOString").mockReturnValue(iso)
+    spyOn(globalThis, "setTimeout").mockImplementation(((fn: TimerHandler) => {
+      if (typeof fn === "function") fn()
+      return 1 as never
+    }) as unknown as typeof setTimeout)
+    spyOn(globalThis, "clearTimeout").mockImplementation(() => undefined as never)
+
+    let error: Error | undefined
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "/usr/bin/python3.12\n3.12.7\n",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("venv")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd)) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stdout: "",
+          stderr: "still working...\n",
+          kill() {
+            resolveExit(1)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    try {
+      await prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      })
+    } catch (caught) {
+      error = caught as Error
+    }
+
+    expect(error).toBeInstanceOf(Error)
+    if (!error) throw new Error("Expected prepareProjectLaunch to fail")
+    expect(error.message).toBe("Dependency install timed out after 10 minutes.")
   })
 
   test("prepareProjectLaunch avoids manifest remediation after fallback install canary failures", async () => {

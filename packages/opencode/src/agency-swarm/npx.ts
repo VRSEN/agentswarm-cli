@@ -749,8 +749,8 @@ async function ensureProjectPython(directory: string) {
   })
   if (install.timedOut) {
     throw new Error(
-      installLogFile
-        ? `Dependency install timed out after ${formatInstallDuration(REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${installLogFile}.`
+      install.logFile
+        ? `Dependency install timed out after ${formatInstallDuration(REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${install.logFile}.`
         : `Dependency install timed out after ${formatInstallDuration(REBUILD_INSTALL_TIMEOUT_MS)}.`,
     )
   }
@@ -883,8 +883,8 @@ async function ensureLatestAgencySwarm(
     })
     if (result.timedOut) {
       prompts.log.warn(
-        options?.logFile
-          ? `Timed out while refreshing agency-swarm after ${formatInstallDuration(options?.timeoutMs ?? REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${options.logFile}.`
+        result.logFile
+          ? `Timed out while refreshing agency-swarm after ${formatInstallDuration(options?.timeoutMs ?? REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${result.logFile}.`
           : `Timed out while refreshing agency-swarm after ${formatInstallDuration(options?.timeoutMs ?? REBUILD_INSTALL_TIMEOUT_MS)}.`,
       )
       return
@@ -1158,7 +1158,11 @@ async function getFreePort() {
 async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<CommandResult> {
   const commandLog = openCommandLog(options?.logFile)
   const writeChunk = (chunk: string) => {
-    if (options?.streamOutputToStderr) process.stderr.write(chunk)
+    if (options?.streamOutputToStderr) {
+      try {
+        process.stderr.write(chunk)
+      } catch {}
+    }
     commandLog.write(chunk)
   }
 
