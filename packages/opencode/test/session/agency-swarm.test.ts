@@ -458,7 +458,7 @@ describe("session.agency-swarm", () => {
     }
   })
 
-  test("stream forwards Codex OAuth while the backend keeps it off Anthropic calls", async () => {
+  test("stream forwards Codex OAuth when metadata reports agency-swarm 1.9.3+", async () => {
     mockHistory()
     await Auth.set("openai", {
       type: "oauth",
@@ -497,6 +497,17 @@ describe("session.agency-swarm", () => {
         }
       | undefined
     const server = createServer(async (request, response) => {
+      if (request.url === "/builder/get_metadata") {
+        response.writeHead(200, { "Content-Type": "application/json" })
+        response.end(
+          JSON.stringify({
+            agency_swarm_version: "1.9.3",
+            metadata: { agents: ["AgentA"] },
+            nodes: [],
+          }),
+        )
+        return
+      }
       if (request.url !== "/builder/get_response_stream") {
         response.writeHead(404)
         response.end("not found")
@@ -572,7 +583,7 @@ describe("session.agency-swarm", () => {
     }
   })
 
-  test("stream keeps Codex OAuth triplet when explicit client_config reveals non-OpenAI routing", async () => {
+  test("stream keeps Codex OAuth triplet when explicit client_config reveals non-OpenAI routing on 1.9.3+", async () => {
     mockHistory()
     await Auth.set("openai", {
       type: "oauth",
@@ -595,6 +606,17 @@ describe("session.agency-swarm", () => {
 
     let body: Record<string, unknown> | undefined
     const server = createServer(async (request, response) => {
+      if (request.url === "/builder/get_metadata") {
+        response.writeHead(200, { "Content-Type": "application/json" })
+        response.end(
+          JSON.stringify({
+            agency_swarm_version: "1.9.3",
+            metadata: { agents: ["AgentA"] },
+            nodes: [],
+          }),
+        )
+        return
+      }
       if (request.url !== "/builder/get_response_stream") {
         response.writeHead(404)
         response.end("not found")
@@ -652,7 +674,7 @@ describe("session.agency-swarm", () => {
     }
   })
 
-  test("stream keeps Codex OAuth triplet when session model is a non-OpenAI LiteLLM provider", async () => {
+  test("stream keeps Codex OAuth triplet when a non-OpenAI session model targets 1.9.3+", async () => {
     mockHistory()
     await Auth.set("openai", {
       type: "oauth",
@@ -685,6 +707,17 @@ describe("session.agency-swarm", () => {
 
     let body: Record<string, unknown> | undefined
     const server = createServer(async (request, response) => {
+      if (request.url === "/builder/get_metadata") {
+        response.writeHead(200, { "Content-Type": "application/json" })
+        response.end(
+          JSON.stringify({
+            agency_swarm_version: "1.9.3",
+            metadata: { agents: ["AgentA"] },
+            nodes: [],
+          }),
+        )
+        return
+      }
       if (request.url !== "/builder/get_response_stream") {
         response.writeHead(404)
         response.end("not found")
@@ -731,6 +764,102 @@ describe("session.agency-swarm", () => {
         api_key: "oauth-access",
         base_url: "https://chatgpt.com/backend-api/codex",
         default_headers: { "ChatGPT-Account-Id": "acct_123" },
+        litellm_keys: { anthropic: "env-anthropic" },
+        model: "litellm/anthropic/claude-sonnet-4-6",
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+      await Auth.remove("openai")
+    }
+  })
+
+  test("stream strips Codex OAuth triplet when metadata reports agency-swarm 1.9.2", async () => {
+    mockHistory()
+    await Auth.set("openai", {
+      type: "oauth",
+      access: "oauth-access",
+      refresh: "oauth-refresh",
+      expires: Date.now() + 60_000,
+      accountId: "acct_123",
+    } as any)
+    Env.all = (() => ({
+      ANTHROPIC_API_KEY: "env-anthropic",
+    })) as typeof Env.all
+    Provider.list = (async () => ({
+      openai: {
+        id: "openai",
+        name: "OpenAI",
+        source: "oauth",
+        env: ["OPENAI_API_KEY"],
+        options: {},
+        models: {},
+      },
+      anthropic: {
+        id: "anthropic",
+        name: "Anthropic",
+        source: "api",
+        env: ["ANTHROPIC_API_KEY"],
+        options: {},
+        models: {},
+      },
+    })) as typeof Provider.list
+
+    let body: Record<string, unknown> | undefined
+    const server = createServer(async (request, response) => {
+      if (request.url === "/builder/get_metadata") {
+        response.writeHead(200, { "Content-Type": "application/json" })
+        response.end(
+          JSON.stringify({
+            agency_swarm_version: "1.9.2",
+            metadata: { agents: ["AgentA"] },
+            nodes: [],
+          }),
+        )
+        return
+      }
+      if (request.url !== "/builder/get_response_stream") {
+        response.writeHead(404)
+        response.end("not found")
+        return
+      }
+      const chunks: Buffer[] = []
+      for await (const chunk of request) {
+        if (Buffer.isBuffer(chunk)) chunks.push(chunk)
+        else chunks.push(Buffer.from(chunk))
+      }
+      body = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
+      response.writeHead(200, { "Content-Type": "text/event-stream" })
+      response.end(
+        [
+          'data: {"data":{"type":"raw_response_event","data":{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"ok"}}}\n\n',
+          "event: end\ndata: [DONE]\n\n",
+        ].join(""),
+      )
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", reject)
+        resolve()
+      })
+    })
+
+    const address = server.address()
+    if (!address || typeof address === "string") {
+      server.close()
+      throw new Error("Expected local test server address")
+    }
+
+    try {
+      const { input } = helper()
+      input.options.baseURL = `http://127.0.0.1:${(address as AddressInfo).port}`
+      input.sessionModel = { providerID: "anthropic", modelID: "claude-sonnet-4-6" }
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _ of stream.fullStream) {
+        /* drain */
+      }
+
+      expect(body?.["client_config"]).toEqual({
         litellm_keys: { anthropic: "env-anthropic" },
         model: "litellm/anthropic/claude-sonnet-4-6",
       })
