@@ -2,8 +2,8 @@ import * as prompts from "@clack/prompts"
 import net from "node:net"
 import os from "node:os"
 import path from "node:path"
-import { existsSync, statSync } from "node:fs"
-import { mkdtemp, rm } from "node:fs/promises"
+import { createWriteStream, existsSync, statSync } from "node:fs"
+import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { AgencySwarmRunSession } from "./run-session"
 import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
@@ -36,6 +36,8 @@ interface CommandResult {
   code: number
   stdout: string
   stderr: string
+  timedOut?: boolean
+  logFile?: string
 }
 
 interface PythonInfo {
@@ -52,6 +54,20 @@ interface VenvCanaryResult {
 interface DependencyInstallResult extends CommandResult {
   hadManifests: boolean
 }
+
+interface RunCommandOptions {
+  cwd?: string
+  env?: NodeJS.ProcessEnv
+  logFile?: string
+  streamOutputToStderr?: boolean
+  timeoutMs?: number
+}
+
+const VENV_CANARY_SCRIPT = ["import agency_swarm", "from agency_swarm.integrations.fastapi import run_fastapi"].join(
+  "\n",
+)
+const REBUILD_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
+const PROCESS_KILL_GRACE_MS = 5000
 
 export function shouldRunNpxOnboarding(input: {
   env: NodeJS.ProcessEnv
@@ -642,8 +658,17 @@ async function ensureProjectPython(directory: string) {
       corruptedVenv = true
     } else {
       prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
+      const refreshLogFile = await tryCreateProjectCommandLogFile(directory, "launcher-refresh", "launcher refresh")
+      prompts.log.info(
+        refreshLogFile
+          ? `Refreshing project dependencies. Streaming output to stderr. Full log: ${refreshLogFile}`
+          : "Refreshing project dependencies. Streaming output to stderr.",
+      )
       try {
-        await ensureLatestAgencySwarm(directory, [venvPython])
+        await ensureLatestAgencySwarm(directory, [venvPython], {
+          logFile: refreshLogFile,
+          timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+        })
       } catch {
         corruptedVenv = true
       }
@@ -712,26 +737,49 @@ async function ensureProjectPython(directory: string) {
   }
 
   spinner.stop("`.venv` created")
-  spinner.start("Installing project dependencies")
-  const install = await installProjectDependencies(directory, [venvPython])
+  const installLogFile = await tryCreateProjectCommandLogFile(directory, "launcher-rebuild", "launcher rebuild")
+  prompts.log.info(
+    installLogFile
+      ? `Installing project dependencies. Streaming output to stderr. Full log: ${installLogFile}`
+      : "Installing project dependencies. Streaming output to stderr.",
+  )
+  const install = await installProjectDependencies(directory, [venvPython], {
+    logFile: installLogFile,
+    timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+  })
+  if (install.timedOut) {
+    throw new Error(
+      install.logFile
+        ? `Dependency install timed out after ${formatInstallDuration(REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${install.logFile}.`
+        : `Dependency install timed out after ${formatInstallDuration(REBUILD_INSTALL_TIMEOUT_MS)}.`,
+    )
+  }
   if (install.code !== 0) {
-    spinner.stop("Dependency install failed")
-    throw new Error(install.stderr.trim() || install.stdout.trim() || "Dependency install failed")
+    throw new Error(formatCommandFailure(install, "Dependency install failed"))
   }
   const canary = await venvCanaryPasses([venvPython], { cwd: directory, includeStderr: true })
   if (!canary.healthy) {
-    spinner.stop("Python environment unhealthy")
     throw new Error(await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr))
   }
-  spinner.stop("Python environment ready")
+  prompts.log.success("Python environment ready")
   return [venvPython]
 }
 
-async function installProjectDependencies(directory: string, python: string[]): Promise<DependencyInstallResult> {
+async function installProjectDependencies(
+  directory: string,
+  python: string[],
+  options: {
+    logFile?: string
+    timeoutMs: number
+  },
+): Promise<DependencyInstallResult> {
   const requirements = path.join(directory, "requirements.txt")
   if (await Filesystem.exists(requirements)) {
     const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "-r", "requirements.txt"], {
       cwd: directory,
+      logFile: options.logFile,
+      streamOutputToStderr: true,
+      timeoutMs: options.timeoutMs,
     })
     return { ...result, hadManifests: true }
   }
@@ -740,11 +788,21 @@ async function installProjectDependencies(directory: string, python: string[]): 
   if (await Filesystem.exists(pyproject)) {
     const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "-e", "."], {
       cwd: directory,
+      logFile: options.logFile,
+      streamOutputToStderr: true,
+      timeoutMs: options.timeoutMs,
     })
     return { ...result, hadManifests: true }
   }
 
-  const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.1"])
+  const result = await runCommand(
+    [...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.1"],
+    {
+      logFile: options.logFile,
+      streamOutputToStderr: true,
+      timeoutMs: options.timeoutMs,
+    },
+  )
   return { ...result, hadManifests: false }
 }
 
@@ -786,14 +844,17 @@ async function findProjectShadowingFiles(directory: string) {
 }
 
 async function venvCanaryPasses(python: string[], options?: { cwd?: string }): Promise<boolean>
-async function venvCanaryPasses(python: string[], options: { cwd?: string; includeStderr: true }): Promise<VenvCanaryResult>
+async function venvCanaryPasses(
+  python: string[],
+  options: { cwd?: string; includeStderr: true },
+): Promise<VenvCanaryResult>
 async function venvCanaryPasses(python: string[], options?: { cwd?: string; includeStderr?: boolean }) {
   // No cwd by default: the canary must not pick up project-local modules (e.g. `fastapi.py`
   // sitting next to `agency.py`) that shadow installed packages and falsely flag a healthy
   // .venv as broken. Callers that need the server-launch cwd (post-install verification)
   // pass it explicitly.
   const result = await runCommand(
-    [...python, "-c", "from agency_swarm.integrations.fastapi import run_fastapi"],
+    [...python, "-c", VENV_CANARY_SCRIPT],
     options?.cwd ? { cwd: options.cwd } : undefined,
   )
   if (options?.includeStderr) {
@@ -805,15 +866,37 @@ async function venvCanaryPasses(python: string[], options?: { cwd?: string; incl
   return result.code === 0
 }
 
-async function ensureLatestAgencySwarm(directory: string, python: string[]) {
+async function ensureLatestAgencySwarm(
+  directory: string,
+  python: string[],
+  options?: {
+    logFile?: string
+    timeoutMs?: number
+  },
+) {
   try {
-    const result = await runCommand(
-      [...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]"],
-      { cwd: directory },
-    )
-    if (result.code !== 0) {
+    const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]"], {
+      cwd: directory,
+      logFile: options?.logFile,
+      streamOutputToStderr: true,
+      timeoutMs: options?.timeoutMs,
+    })
+    if (result.timedOut) {
       prompts.log.warn(
-        "Could not refresh agency-swarm to the latest version. The current venv package will be used as-is.",
+        result.logFile
+          ? `Timed out while refreshing agency-swarm after ${formatInstallDuration(options?.timeoutMs ?? REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${result.logFile}.`
+          : `Timed out while refreshing agency-swarm after ${formatInstallDuration(options?.timeoutMs ?? REBUILD_INSTALL_TIMEOUT_MS)}.`,
+      )
+      return
+    }
+    if (result.code !== 0) {
+      const summary = summarizeCommandOutput(result)
+      prompts.log.warn(
+        summary
+          ? `Could not refresh agency-swarm to the latest version. Installer output: ${summary}.${
+              result.logFile ? ` Check the log file at ${result.logFile}.` : ""
+            } The current venv package will be used as-is.`
+          : "Could not refresh agency-swarm to the latest version. The current venv package will be used as-is.",
       )
     }
   } catch {
@@ -821,6 +904,50 @@ async function ensureLatestAgencySwarm(directory: string, python: string[]) {
       "Could not refresh agency-swarm to the latest version. The current venv package will be used as-is.",
     )
   }
+}
+
+async function createProjectCommandLogFile(directory: string, stem: string) {
+  const projectID = `${path.basename(path.resolve(directory)) || "project"}-${Bun.hash(path.resolve(directory)).toString(16)}`
+  const logDirectory = path.join(os.tmpdir(), "agentswarm-cli-logs", projectID)
+  await mkdir(logDirectory, { recursive: true })
+  return path.join(logDirectory, `${new Date().toISOString().replaceAll(":", "").replaceAll(".", "")}-${stem}.log`)
+}
+
+async function tryCreateProjectCommandLogFile(directory: string, stem: string, label: string) {
+  try {
+    return await createProjectCommandLogFile(directory, stem)
+  } catch (error) {
+    prompts.log.warn(
+      `Could not create ${label} log file. Continuing without a saved log: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+function summarizeCommandOutput(result: Pick<CommandResult, "stdout" | "stderr">) {
+  return summarizeBridgeStderr(result.stderr) || summarizeBridgeStderr(result.stdout)
+}
+
+function formatCommandFailure(result: CommandResult, fallback: string) {
+  if (!result.logFile) {
+    const detail = result.stderr.trim() || result.stdout.trim()
+    return detail ? `${fallback}: ${detail}` : fallback
+  }
+  const summary = summarizeCommandOutput(result)
+  const logHint = ` Check the log file at ${result.logFile}.`
+  if (summary) return `${fallback}: ${summary}.${logHint}`
+  return `${fallback}.${logHint}`.trim()
+}
+
+function formatInstallDuration(ms: number) {
+  if (ms % 60000 === 0) {
+    const minutes = ms / 60000
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`
+  }
+  if (ms % 1000 === 0) {
+    const seconds = ms / 1000
+    return `${seconds} second${seconds === 1 ? "" : "s"}`
+  }
+  return `${ms}ms`
 }
 
 async function startProjectServer(directory: string, python: string[]) {
@@ -1028,10 +1155,17 @@ async function getFreePort() {
   })
 }
 
-async function runCommand(
-  cmd: string[],
-  options?: { cwd?: string; env?: NodeJS.ProcessEnv },
-): Promise<CommandResult> {
+async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<CommandResult> {
+  const commandLog = openCommandLog(options?.logFile)
+  const writeChunk = (chunk: string) => {
+    if (options?.streamOutputToStderr) {
+      try {
+        process.stderr.write(chunk)
+      } catch {}
+    }
+    commandLog.write(chunk)
+  }
+
   try {
     const proc = Bun.spawn({
       cmd,
@@ -1040,18 +1174,145 @@ async function runCommand(
       stderr: "pipe",
       env: options?.env ?? process.env,
     })
-    const [code, stdout, stderr] = await Promise.all([
-      proc.exited,
-      proc.stdout ? new Response(proc.stdout).text() : Promise.resolve(""),
-      proc.stderr ? new Response(proc.stderr).text() : Promise.resolve(""),
+    const outputAbort = new AbortController()
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const exitPromise = proc.exited.finally(() => {
+      if (timeout) clearTimeout(timeout)
+    })
+    const exitResult = exitPromise.then((code) => ({ code, timedOut: false as const }))
+    const timeoutResult =
+      options?.timeoutMs === undefined
+        ? undefined
+        : new Promise<{ code: number; timedOut: true }>((resolve) => {
+            timeout = setTimeout(() => {
+              resolve({ code: -1, timedOut: true })
+              void (async () => {
+                try {
+                  proc.kill()
+                } catch {}
+                const forceKill = setTimeout(() => {
+                  try {
+                    proc.kill("SIGKILL")
+                  } catch {}
+                }, PROCESS_KILL_GRACE_MS)
+                await exitPromise.catch(() => undefined)
+                clearTimeout(forceKill)
+                outputAbort.abort()
+              })()
+            }, options.timeoutMs)
+          })
+    const [result, stdout, stderr] = await Promise.all([
+      timeoutResult ? Promise.race([exitResult, timeoutResult]) : exitResult,
+      readCommandOutput(proc.stdout, writeChunk, outputAbort.signal),
+      readCommandOutput(proc.stderr, writeChunk, outputAbort.signal),
     ])
-    return { code, stdout, stderr }
+    const logFile = await closeCommandLog(commandLog)
+    return { code: result.code, stdout, stderr, timedOut: result.timedOut, logFile }
   } catch (error) {
+    const logFile = await closeCommandLog(commandLog)
     return {
       code: -1,
       stdout: "",
       stderr: error instanceof Error ? error.message : String(error),
+      logFile,
     }
+  }
+}
+
+function openCommandLog(logFile?: string) {
+  if (!logFile) {
+    return {
+      getLogFile: () => undefined,
+      write(_chunk: string) {},
+      async close() {},
+    }
+  }
+
+  let activeLogFile: string | undefined = logFile
+  let stream: ReturnType<typeof createWriteStream> | undefined
+  const disable = () => {
+    activeLogFile = undefined
+    if (!stream) return
+    stream.destroy()
+    stream = undefined
+  }
+
+  try {
+    stream = createWriteStream(logFile, { flags: "a" })
+    stream.on("error", () => {
+      disable()
+    })
+  } catch {
+    disable()
+  }
+
+  return {
+    getLogFile: () => activeLogFile,
+    write(chunk: string) {
+      if (!stream) return
+      try {
+        stream.write(chunk)
+      } catch {
+        disable()
+      }
+    },
+    async close() {
+      if (!stream) return
+      await new Promise<void>((resolve, reject) => {
+        stream?.end((error?: Error | null) => {
+          if (error) reject(error)
+          else resolve()
+        })
+      }).catch(() => undefined)
+      stream = undefined
+    },
+  }
+}
+
+async function closeCommandLog(log: ReturnType<typeof openCommandLog>) {
+  await log.close()
+  return log.getLogFile()
+}
+
+async function readCommandOutput(
+  output: string | ReadableStream<Uint8Array> | null | undefined,
+  writer?: (chunk: string) => void,
+  signal?: AbortSignal,
+) {
+  if (typeof output === "string") {
+    if (output && writer) writer(output)
+    return output
+  }
+  if (!output) return ""
+
+  const reader = output.getReader()
+  const decoder = new TextDecoder()
+  let text = ""
+  const abortRead = () => {
+    void reader.cancel().catch(() => undefined)
+  }
+  signal?.addEventListener("abort", abortRead, { once: true })
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done || signal?.aborted) break
+      if (!value || value.length === 0) continue
+      const chunk = decoder.decode(value, { stream: true })
+      if (writer) writer(chunk)
+      text += chunk
+    }
+    const tail = decoder.decode()
+    if (tail) {
+      if (writer) writer(tail)
+      text += tail
+    }
+    return text
+  } catch (error) {
+    if (signal?.aborted) return text
+    throw error
+  } finally {
+    signal?.removeEventListener("abort", abortRead)
   }
 }
 
