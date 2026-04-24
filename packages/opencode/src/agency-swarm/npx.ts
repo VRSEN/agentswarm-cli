@@ -796,7 +796,7 @@ async function installProjectDependencies(
   }
 
   const result = await runCommand(
-    [...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.3"],
+    [...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.4"],
     {
       logFile: options.logFile,
       streamOutputToStderr: true,
