@@ -10,7 +10,7 @@ import { BusEvent } from "@/bus/bus-event"
 import { Flag } from "../flag/flag"
 import { Log } from "../util/log"
 import { CHANNEL as channel, VERSION as version } from "./meta"
-import { AgencyDistribution } from "../agency-swarm/distribution"
+import { InstallationDistribution } from "./distribution"
 
 import semver from "semver"
 
@@ -59,7 +59,7 @@ export namespace Installation {
 
   export const VERSION = version
   export const CHANNEL = channel
-  export const USER_AGENT = `${AgencyDistribution.packageName}/${CHANNEL}/${VERSION}/${Flag.OPENCODE_CLIENT}`
+  export const USER_AGENT = `${InstallationDistribution.packageName}/${CHANNEL}/${VERSION}/${Flag.OPENCODE_CLIENT}`
 
   export function isPreview() {
     return CHANNEL !== "latest"
@@ -136,7 +136,7 @@ export namespace Installation {
 
         const upgradeCurl = Effect.fnUntraced(
           function* (target: string) {
-            const response = yield* httpOk.execute(HttpClientRequest.get(AgencyDistribution.installURL))
+            const response = yield* httpOk.execute(HttpClientRequest.get(InstallationDistribution.installURL))
             const body = yield* response.text
             const bodyBytes = new TextEncoder().encode(body)
             const proc = ChildProcess.make("bash", [], {
@@ -157,7 +157,7 @@ export namespace Installation {
         )
 
         const methodImpl = Effect.fn("Installation.method")(function* () {
-          if (process.execPath.includes(path.join(AgencyDistribution.installDir, "bin"))) return "curl" as Method
+          if (process.execPath.includes(path.join(InstallationDistribution.installDir, "bin"))) return "curl" as Method
           if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
           const exec = process.execPath.toLowerCase()
 
@@ -178,7 +178,7 @@ export namespace Installation {
 
           for (const check of checks) {
             const output = yield* check.command()
-            const installedName = AgencyDistribution.packageName
+            const installedName = InstallationDistribution.packageName
             if (output.includes(installedName)) {
               return check.name
             }
@@ -207,7 +207,7 @@ export namespace Installation {
             const registry = reg.endsWith("/") ? reg.slice(0, -1) : reg
             const channel = CHANNEL
             const response = yield* httpOk.execute(
-              HttpClientRequest.get(`${registry}/${AgencyDistribution.packageName}/${channel}`).pipe(
+              HttpClientRequest.get(`${registry}/${InstallationDistribution.packageName}/${channel}`).pipe(
                 HttpClientRequest.acceptJson,
               ),
             )
@@ -233,7 +233,7 @@ export namespace Installation {
 
           const response = yield* httpOk.execute(
             HttpClientRequest.get(
-              `https://api.github.com/repos/${AgencyDistribution.releaseRepo}/releases/latest`,
+              `https://api.github.com/repos/${InstallationDistribution.releaseRepo}/releases/latest`,
             ).pipe(HttpClientRequest.acceptJson),
           )
           const data = yield* HttpClientResponse.schemaBodyJson(GitHubRelease)(response)
@@ -247,16 +247,16 @@ export namespace Installation {
               result = yield* upgradeCurl(target)
               break
             case "npm":
-              result = yield* run(["npm", "install", "-g", `${AgencyDistribution.packageName}@${target}`])
+              result = yield* run(["npm", "install", "-g", `${InstallationDistribution.packageName}@${target}`])
               break
             case "yarn":
-              result = yield* run(["yarn", "global", "add", `${AgencyDistribution.packageName}@${target}`])
+              result = yield* run(["yarn", "global", "add", `${InstallationDistribution.packageName}@${target}`])
               break
             case "pnpm":
-              result = yield* run(["pnpm", "install", "-g", `${AgencyDistribution.packageName}@${target}`])
+              result = yield* run(["pnpm", "install", "-g", `${InstallationDistribution.packageName}@${target}`])
               break
             case "bun":
-              result = yield* run(["bun", "install", "-g", `${AgencyDistribution.packageName}@${target}`])
+              result = yield* run(["bun", "install", "-g", `${InstallationDistribution.packageName}@${target}`])
               break
             case "brew": {
               return yield* new UpgradeFailedError({
