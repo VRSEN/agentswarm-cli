@@ -120,6 +120,21 @@ export function buildAgencyTargetOptions(input: {
   return nextOptions
 }
 
+export function shouldAdoptAgencyHandoffRecipient(input: {
+  frameworkMode: boolean
+  agency?: string
+  currentRecipient?: string
+  assistantAgent?: string
+  completed?: boolean
+}) {
+  if (!input.frameworkMode) return false
+  if (!input.completed) return false
+  if (!input.agency) return false
+  if (!input.assistantAgent) return false
+  if (input.assistantAgent === "build") return false
+  return input.assistantAgent !== input.currentRecipient
+}
+
 export function displayRunOnlyAgentLabel(input: {
   frameworkMode: boolean
   recipientLabel?: string

@@ -59,9 +59,11 @@ import {
 } from "../../session-error"
 import { errorMessage as toErrorMessage } from "@/util/error"
 import {
+  buildAgencyTargetOptions,
   displayRunOnlyAgentLabel,
   readAgencyProviderOptions,
   resolveAgencyTargetSelection,
+  shouldAdoptAgencyHandoffRecipient,
 } from "../../util/agency-target"
 
 export type PromptProps = {
@@ -203,6 +205,62 @@ export function Prompt(props: PromptProps) {
     })
     return selection?.label ?? options.recipientAgent
   })
+  const adoptedAgencyRecipients = new Set<string>()
+  onCleanup(
+    sdk.event.on("message.updated", (evt) => {
+      const info = evt.properties.info
+      if (info.sessionID !== props.sessionID) return
+      if (info.role !== "assistant") return
+      if (info.providerID !== AgencySwarmAdapter.PROVIDER_ID) return
+
+      const options = agencyProviderOptions()
+      if (
+        !shouldAdoptAgencyHandoffRecipient({
+          frameworkMode: frameworkMode(),
+          agency: options.agency,
+          currentRecipient: options.recipientAgent,
+          assistantAgent: info.agent,
+          completed: !!info.time.completed,
+        })
+      ) {
+        return
+      }
+
+      const key = `${info.sessionID}:${info.id}:${info.agent}`
+      if (adoptedAgencyRecipients.has(key)) return
+      adoptedAgencyRecipients.add(key)
+
+      void sdk.client.global.config
+        .update(
+          {
+            config: {
+              model: `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
+              provider: {
+                [AgencySwarmAdapter.PROVIDER_ID]: {
+                  name: "agency-swarm",
+                  options: buildAgencyTargetOptions({
+                    providerOptions: options,
+                    agency: options.agency!,
+                    recipientAgent: info.agent,
+                  }),
+                },
+              },
+            },
+          },
+          {
+            throwOnError: true,
+          },
+        )
+        .then(() => sync.bootstrap())
+        .catch((error) => {
+          toast.show({
+            variant: "error",
+            message: error instanceof Error ? error.message : String(error),
+            duration: 4000,
+          })
+        })
+    }),
+  )
   const currentProviderLabel = createMemo(() => {
     const current = local.model.current()
     const provider = local.model.parsed().provider
