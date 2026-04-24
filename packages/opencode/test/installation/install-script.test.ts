@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { AgencyDistribution } from "../../src/agency-swarm/distribution"
 
 const testDir = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(testDir, "../../../..")
@@ -18,6 +19,10 @@ function readInstallVar(name: string) {
   return match![1].replace(/^"/, "").replace(/"$/, "")
 }
 
+function readResolvedInstallVar(name: string) {
+  return readInstallVar(name).replaceAll("${REPO}", readInstallVar("REPO")).replaceAll("$CMD", readInstallVar("CMD"))
+}
+
 test("install script expects the release archive binary name", () => {
   const binName = Object.keys(packageJson.bin)[0]
   expect(readInstallVar("CMD")).toBe(binName)
@@ -25,7 +30,11 @@ test("install script expects the release archive binary name", () => {
 })
 
 test("install script and installation package source point at the fork package and repo", () => {
-  expect(readInstallVar("APP")).toBe(packageJson.name)
-  expect(readInstallVar("REPO")).toBe("VRSEN/agentswarm-cli")
-  expect(packageJson.repository.url).toContain("VRSEN/agentswarm-cli.git")
+  expect(readInstallVar("APP")).toBe(AgencyDistribution.packageName)
+  expect(packageJson.name).toBe(AgencyDistribution.packageName)
+  expect(readInstallVar("REPO")).toBe(AgencyDistribution.releaseRepo)
+  expect(readResolvedInstallVar("INSTALL_URL")).toBe(AgencyDistribution.installURL)
+  expect(readResolvedInstallVar("RELEASES_URL")).toBe(AgencyDistribution.releasesURL)
+  expect(readResolvedInstallVar("DOCS_URL")).toBe(AgencyDistribution.docsURL)
+  expect(packageJson.repository.url).toContain(`${AgencyDistribution.releaseRepo}.git`)
 })

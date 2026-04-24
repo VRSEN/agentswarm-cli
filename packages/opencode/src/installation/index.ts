@@ -10,14 +10,12 @@ import { BusEvent } from "@/bus/bus-event"
 import { Flag } from "../flag/flag"
 import { Log } from "../util/log"
 import { CHANNEL as channel, VERSION as version } from "./meta"
+import { AgencyDistribution } from "../agency-swarm/distribution"
 
 import semver from "semver"
 
 export namespace Installation {
   const log = Log.create({ service: "installation" })
-  const packageName = "agentswarm-cli"
-  const releaseRepo = "VRSEN/agentswarm-cli"
-  const curlInstallDir = ".opencode"
 
   export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "unknown"
 
@@ -61,7 +59,7 @@ export namespace Installation {
 
   export const VERSION = version
   export const CHANNEL = channel
-  export const USER_AGENT = `${packageName}/${CHANNEL}/${VERSION}/${Flag.OPENCODE_CLIENT}`
+  export const USER_AGENT = `${AgencyDistribution.packageName}/${CHANNEL}/${VERSION}/${Flag.OPENCODE_CLIENT}`
 
   export function isPreview() {
     return CHANNEL !== "latest"
@@ -136,11 +134,9 @@ export namespace Installation {
           Effect.catch(() => Effect.succeed({ code: ChildProcessSpawner.ExitCode(1), stdout: "", stderr: "" })),
         )
 
-        const install = `https://raw.githubusercontent.com/${releaseRepo}/dev/install`
-
         const upgradeCurl = Effect.fnUntraced(
           function* (target: string) {
-            const response = yield* httpOk.execute(HttpClientRequest.get(install))
+            const response = yield* httpOk.execute(HttpClientRequest.get(AgencyDistribution.installURL))
             const body = yield* response.text
             const bodyBytes = new TextEncoder().encode(body)
             const proc = ChildProcess.make("bash", [], {
@@ -161,7 +157,7 @@ export namespace Installation {
         )
 
         const methodImpl = Effect.fn("Installation.method")(function* () {
-          if (process.execPath.includes(path.join(curlInstallDir, "bin"))) return "curl" as Method
+          if (process.execPath.includes(path.join(AgencyDistribution.installDir, "bin"))) return "curl" as Method
           if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
           const exec = process.execPath.toLowerCase()
 
@@ -182,7 +178,7 @@ export namespace Installation {
 
           for (const check of checks) {
             const output = yield* check.command()
-            const installedName = packageName
+            const installedName = AgencyDistribution.packageName
             if (output.includes(installedName)) {
               return check.name
             }
@@ -211,7 +207,9 @@ export namespace Installation {
             const registry = reg.endsWith("/") ? reg.slice(0, -1) : reg
             const channel = CHANNEL
             const response = yield* httpOk.execute(
-              HttpClientRequest.get(`${registry}/${packageName}/${channel}`).pipe(HttpClientRequest.acceptJson),
+              HttpClientRequest.get(`${registry}/${AgencyDistribution.packageName}/${channel}`).pipe(
+                HttpClientRequest.acceptJson,
+              ),
             )
             const data = yield* HttpClientResponse.schemaBodyJson(NpmPackage)(response)
             return data.version
@@ -234,9 +232,9 @@ export namespace Installation {
           }
 
           const response = yield* httpOk.execute(
-            HttpClientRequest.get(`https://api.github.com/repos/${releaseRepo}/releases/latest`).pipe(
-              HttpClientRequest.acceptJson,
-            ),
+            HttpClientRequest.get(
+              `https://api.github.com/repos/${AgencyDistribution.releaseRepo}/releases/latest`,
+            ).pipe(HttpClientRequest.acceptJson),
           )
           const data = yield* HttpClientResponse.schemaBodyJson(GitHubRelease)(response)
           return data.tag_name.replace(/^v/, "")
@@ -249,16 +247,16 @@ export namespace Installation {
               result = yield* upgradeCurl(target)
               break
             case "npm":
-              result = yield* run(["npm", "install", "-g", `${packageName}@${target}`])
+              result = yield* run(["npm", "install", "-g", `${AgencyDistribution.packageName}@${target}`])
               break
             case "yarn":
-              result = yield* run(["yarn", "global", "add", `${packageName}@${target}`])
+              result = yield* run(["yarn", "global", "add", `${AgencyDistribution.packageName}@${target}`])
               break
             case "pnpm":
-              result = yield* run(["pnpm", "install", "-g", `${packageName}@${target}`])
+              result = yield* run(["pnpm", "install", "-g", `${AgencyDistribution.packageName}@${target}`])
               break
             case "bun":
-              result = yield* run(["bun", "install", "-g", `${packageName}@${target}`])
+              result = yield* run(["bun", "install", "-g", `${AgencyDistribution.packageName}@${target}`])
               break
             case "brew": {
               return yield* new UpgradeFailedError({
