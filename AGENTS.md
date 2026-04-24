@@ -14,12 +14,13 @@ Words: `manager` = can delegate; `subagent` = cannot delegate; `mandate` = the e
 - Use `remove > update > add` when the result is the same. Do not add code, docs, tests, or rules until you rule out deleting, tightening, or reusing what already exists.
 - At task start, identify your role. A manager can delegate. A subagent cannot.
 - Protect the context window. Never read a file in full until you know it is small enough. Bound file reads and tool output with `rg`, `sed -n`, `head`, `tail`, `wc`, or tool output limits. For CLIs that may print large output, redirect to a temp file first, then inspect slices.
-- Managers stay at manager height: coordinate, reprioritize, review, make key calls, and verify the critical path.
+- Managers stay at manager height: coordinate, reprioritize, review, make key calls, and verify the critical path. The manager owns pull-request review, merge decisions, release decisions, and destructive-action decisions.
 - Managers delegate when it protects the manager's context window, shortens the critical path, or needs parallel investigation after the manager understands the user's intent and success condition. Use Codex `gpt-5.4` medium for scoped implementation and policy edits. Use Codex `gpt-5.5` medium for high-level or difficult investigation. Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
 - When the delegated work is small and clear, prefer the local `codex` command (`codex exec` or `codex review`) over heavier subagents. Use the smallest useful delegated scope that still cleanly covers the task. Default to one subagent. Split across multiple focused subagents only when one cannot cover the task cleanly.
 - Why: recent broad manager-owned edits made request ownership hard to trace and burned main-thread context.
 - After you delegate, do not interrupt, rush, or keep pinging subagents unless the user changes scope or you have clear proof of failure.
 - Start each delegated task with enough context: the exact user ask, needed background, directly related artifacts, and the higher goal. For subagent delegation, give intent, the required result, and hard limits.
+- Subagents may create branches, commits, and pull requests inside their mandate. They must not merge pull requests, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager explicitly delegates that exact action for that exact artifact after review.
 - You own clearly agent-owned shells, tmux sessions, Codex resume sessions, and polling loops you or delegated subagents spawned in this or prior turns, tracked by session IDs or `ps` tree markers. Reclaim or close them at task boundaries. Do not hunt processes you cannot attribute.
 - Keep pull request work off the manager thread when possible. Prefer a bounded local Codex pass when it cleanly covers the task. Otherwise use one fitting subagent. Only surface a blocker if neither path works.
 - Sonnet models are not allowed here. Only Opus 4.7 may manage. Codex `gpt-5.4` and `gpt-5.5` may act as subagents within the delegation rules above. A Sonnet-model agent must stop at once.
@@ -85,6 +86,7 @@ Repo State
 - If the target branch has an open pull request, read the latest comments, reviews, unresolved threads, and head SHA first. GitHub is the source of truth for live pull-request state.
 - If there is already an open pull request for the same work, reuse it unless it was clearly discarded or reuse is truly impossible.
 - Before you open, update, or merge a pull request, verify the source branch, base branch, head SHA, live diff, and PR-body compliance. On first push, the body must already include `Closes #<ID>` or the tracked REQ; the compliance bot auto-closes non-compliant PRs after 2 hours.
+- Before any pull-request merge, the manager must personally review the final diff, challenge every unexplained line, verify checks and unresolved threads, and state that the PR should merge. Subagent review can inform this gate but cannot replace it.
 Execution
 - Complete one change at a time. Stash unrelated work before you start another change.
 - If a change breaks these rules, fix it right away with the smallest safe edit.
@@ -142,6 +144,7 @@ Why: technical back-and-forth wastes user time.
 - If the critical path is blocked on the user's answer or approval, add the exact user-facing escalation and its `artifacts` list to the ledger, surface the smallest ready-to-ship request right away, and keep lightly re-raising it until it is resolved.
 ## Danger Zone: Public And Irreversible Operations
 - Pull-request merges, release notes, tags, GitHub Releases, PyPI or npm publishing, yanks, unpublishes, and any public package or release change are danger-zone operations.
+- Subagents do not own danger-zone operations. They may prepare evidence and draft artifacts, but the manager must run the final live review and either perform the operation or explicitly delegate that exact operation.
 - In the danger zone, never trust memory, cached notes, or an old audit.
 - Right before each public step, recheck the live repo state, the exact commit, the exact version files on that commit, the live GitHub release and tag state, the live package-index state, and the exact release-notes compare range.
 - In the danger zone, uncertainty is a blocker. If live public state, the real source of truth, or the next mutation is not fully checked, stop and escalate.
@@ -189,10 +192,10 @@ Why: mistakes repeat when rules are not tightened.
 - On each user message, decide whether this file needs an update so the standing instruction can be derived from it next time.
 - When you add or change a rule, keep or add the concrete reason it exists. Review the local diff for duplication, conflict, and extra process cost. Tighten or move an old rule before you restate it.
 - Policy changes in `AGENTS.md` and `.agentswarm/skills/**` go through one rolling draft pull request. Do not commit policy directly to `vrsen/dev` or mix it into feature pull requests. Add new policy edits to that same draft PR unless the user says otherwise.
-- Managers must not edit this file directly. After drafting the policy task and getting user approval, route the edit to a subagent. Avoid needless scripting.
+- Managers may edit this file directly only when the user explicitly asks them to do so. Otherwise, after drafting the policy task and getting user approval, route the edit to a subagent. Avoid needless scripting.
 - For policy edits you start on your own, ask the user before you change the file. Do not stop normal coding or test work for extra approval requests.
 ### Writing Style (User Responses Only)
-- Start your final response with a one-line status preamble. Lead with the answer. This does not apply to intermediate text you write during your work.
+- Do not start replies with a mechanical `Status:` preamble. Lead with the answer in the fewest clear words that preserve understanding.
 - Use 8th-grade language in user replies. If one sentence is enough, use one sentence.
 - Use bullets or numbers only when they make things clearer.
 - Cut filler, vague wording, hype, and empty agreement words.
@@ -287,6 +290,8 @@ Why: mistakes repeat when rules are not tightened.
 - Unrelated refactors, reformatting, style drift, while-you're-here cleanup, and made-up abstraction layers are not allowed in fork-only work.
 - Every fork-only line needs a concrete reason. If a line is not strictly required, remove it or restore the upstream shape. State why upstream behavior is not enough in the commit message or `FORK_CHANGELOG.md`.
 - Why: keep the fork rebuildable from upstream with a small, auditable delta.
+- Treat every divergence from upstream as expensive and risky. It should feel painful to add or keep fork-only code because every extra line increases rebase, release, and debugging risk.
+- Keep a line-or-hunk-level classification for every non-trivial fork delta before merge. The classification may live in an internal review artifact, PR review notes, or tests; `FORK_CHANGELOG.md` stays high-level and should summarize categories, not become a raw line dump.
 - If the needed feature or behavior already exists in `origin/dev`, use that implementation. Do not build a parallel path.
 - Keep the clean test checkout clean and current before you use it as proof. If that checkout is stale or has unowned local changes, escalate before you rely on it.
 - Do not hide local-only drift.
