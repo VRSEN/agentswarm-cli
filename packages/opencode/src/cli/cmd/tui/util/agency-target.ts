@@ -8,6 +8,7 @@ export type AgencyProviderOptions = {
   configToken?: string
   agency?: string
   recipientAgent?: string
+  recipientAgentSelectedAt?: number
   discoveryTimeoutMs: number
   rawOptions: Record<string, unknown>
 }
@@ -29,6 +30,9 @@ export function readAgencyProviderOptions(input: {
   const token = readString(input.connectedProvider?.key) ?? configToken
   const agency = readString(options?.["agency"])
   const recipientAgent = readString(options?.["recipientAgent"]) ?? readString(options?.["recipient_agent"])
+  const recipientAgentSelectedAt =
+    readPositiveNumber(options?.["recipientAgentSelectedAt"]) ??
+    readPositiveNumber(options?.["recipient_agent_selected_at"])
   const discoveryTimeoutMs =
     readPositiveNumber(options?.["discoveryTimeoutMs"]) ??
     readPositiveNumber(options?.["discovery_timeout_ms"]) ??
@@ -40,6 +44,7 @@ export function readAgencyProviderOptions(input: {
     configToken,
     agency,
     recipientAgent,
+    recipientAgentSelectedAt,
     discoveryTimeoutMs,
     rawOptions: (options && typeof options === "object" ? options : {}) as Record<string, unknown>,
   }
@@ -53,7 +58,9 @@ export function resolveAgencyTargetSelection(input: {
   const agency = resolveSelectableAgency(input.agencies, input.configuredAgency)
   if (!agency) return undefined
 
-  const current = input.configuredRecipient ? agency.agents.find((agent) => agent.id === input.configuredRecipient) : undefined
+  const current = input.configuredRecipient
+    ? agency.agents.find((agent) => agent.id === input.configuredRecipient)
+    : undefined
   const recipient = current ?? defaultAgencyRecipient(agency)
   if (!recipient) return undefined
 
@@ -101,7 +108,9 @@ export function buildAgencyTargetOptions(input: {
     discoveryTimeoutMs: input.providerOptions.discoveryTimeoutMs,
     agency: input.agency,
     recipientAgent: input.recipientAgent ?? null,
+    recipientAgentSelectedAt: input.recipientAgent ? Date.now() : null,
     recipient_agent: null,
+    recipient_agent_selected_at: null,
   }
 
   if (input.providerOptions.configToken) {
@@ -120,18 +129,12 @@ export function displayRunOnlyAgentLabel(input: {
   return input.recipientLabel ?? "Run"
 }
 
-export function displayRunOnlyModeLabel(input: {
-  frameworkMode: boolean
-  mode: string
-}) {
+export function displayRunOnlyModeLabel(input: { frameworkMode: boolean; mode: string }) {
   if (input.frameworkMode) return "Run"
   return Locale.titlecase(input.mode)
 }
 
-function resolveSelectableAgency(
-  agencies: AgencySwarmAdapter.AgencyDescriptor[],
-  configuredAgency?: string,
-) {
+function resolveSelectableAgency(agencies: AgencySwarmAdapter.AgencyDescriptor[], configuredAgency?: string) {
   if (configuredAgency) return agencies.find((agency) => agency.id === configuredAgency)
   if (agencies.length === 1) return agencies[0]
   return undefined
