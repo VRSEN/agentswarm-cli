@@ -77,7 +77,7 @@ Repo State
 - Clean up old artifacts you created when a newer artifact fully replaces them and the older one is no longer needed for rollback or proof.
 - After your work lands on `vrsen/dev`, or is otherwise closed, clean up stale local branches and worktrees you own before you start new work. If ownership or merge state is unclear, escalate before cleanup.
 - Docs-only and `FORK_CHANGELOG.md` edits go straight to `vrsen/dev`. Policy stays in the rolling draft PR unless the user says otherwise.
-- If `origin/dev` is reachable, run `git fetch --all --prune` and work from a named branch based on `origin/dev` before analysis, edits, or tests. `origin` points to `https://github.com/anomalyco/opencode`, so `origin/dev` is the upstream branch. `vrsen/dev` is the shared fork branch.
+- After verifying the local remote model, if `origin/dev` is reachable, run `git fetch --all --prune` and work from a named branch based on `origin/dev` before analysis, edits, or tests. In this checkout, `origin/dev` means the upstream OpenCode `dev` branch and `vrsen/dev` means the canonical fork `dev` branch. These are local Git remote aliases, not GitHub-global names.
 - For pushes to `vrsen/dev`, verify the `origin/dev...vrsen/dev` counts before you push.
 - For public release work, also verify that the exact release commit is already reachable from `vrsen/dev` and that the target version is already present in the release input files on that commit, such as `package.json`, package manifests, generated artifacts, and `bun.lock`.
 - If the remote is unavailable, you may continue, but say that you are assuming the branch is already synced.
@@ -293,15 +293,16 @@ Why: mistakes repeat when rules are not tightened.
 - Any task that edits files must run in a separate git worktree. Do not edit from a detached checkout or the shared main checkout.
 - Before any commit, pull request, or release, compare your state to the right clean baseline: use `origin/dev` for upstream comparisons and fork-delta checks, and use `vrsen/dev` only for fork-branch drift or publish-state checks. Revert or justify anything that is not tied to a deliberate requirement.
 - Why: preserve rebuild-from-upstream capability and stop silent fork drift.
-- Remote model: `origin` = upstream OpenCode at `https://github.com/anomalyco/opencode`; `vrsen` = the fork at `https://github.com/VRSEN/agentswarm-cli` and the canonical remote for `dev` pushes.
+- Local remote model: in the maintainer checkout, `origin` must point to upstream OpenCode at `https://github.com/anomalyco/opencode` and `vrsen` must point to the fork at `https://github.com/VRSEN/agentswarm-cli`, the canonical remote for `dev` pushes. These are local Git remote aliases, not GitHub-global names.
 - Treat `dev` and other shared long-lived fork branches as append-only. Do not force-push, rebase, or rewrite their published history unless the user explicitly asks for that exact recovery.
 - A stale-branch mistake is severity one. If a pull request comes from the wrong base, wrong diff, or wrong artifact, stop product work and do a full live audit before you mutate pull requests again.
 - To sync fork `dev`, merge `origin/dev` into fork `dev`, or do the reverse equivalent, then fast-forward push. Avoid restacking published commit series.
 - If a rewrite is explicitly approved as an emergency exception, make backup refs first and save proof that compares the old commit range to the new one before and after.
 - Sync workflow:
+  - verify `origin` and `vrsen` point to the expected repository URLs
   - run `git fetch --all --prune`
   - verify `origin/dev...vrsen/dev` counts
-  - push `dev` to `vrsen`
+  - push local `dev` to the `vrsen` remote
 - To regenerate the JavaScript SDK, run `./packages/sdk/js/script/build.ts`.
 ## Release Gate
 - For any npm-published package in this repo, follow this four-step release flow and never skip step 3:
