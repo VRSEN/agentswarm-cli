@@ -49,6 +49,7 @@ export namespace SessionAgencySwarm {
     baseURL: string
     agency?: string
     recipientAgent?: string
+    recipientAgentSelectedAt?: number
     additionalInstructions?: string
     userContext?: Record<string, unknown>
     fileIDs?: string[]
@@ -94,6 +95,9 @@ export namespace SessionAgencySwarm {
     const rawAgency = asString(provider?.options?.["agency"])
     const rawRecipientAgent =
       asString(provider?.options?.["recipientAgent"]) ?? asString(provider?.options?.["recipient_agent"])
+    const rawRecipientAgentSelectedAt =
+      asNumber(provider?.options?.["recipientAgentSelectedAt"]) ??
+      asNumber(provider?.options?.["recipient_agent_selected_at"])
     const rawAdditionalInstructions =
       asString(provider?.options?.["additionalInstructions"]) ??
       asString(provider?.options?.["additional_instructions"])
@@ -113,6 +117,7 @@ export namespace SessionAgencySwarm {
       baseURL: AgencySwarmAdapter.normalizeBaseURL(rawBaseURL || AgencySwarmAdapter.DEFAULT_BASE_URL),
       agency: rawAgency || undefined,
       recipientAgent: rawRecipientAgent || undefined,
+      recipientAgentSelectedAt: rawRecipientAgentSelectedAt,
       additionalInstructions: rawAdditionalInstructions || undefined,
       userContext: rawUserContext,
       fileIDs: rawFileIDs.length > 0 ? rawFileIDs : undefined,
@@ -1512,6 +1517,7 @@ export namespace SessionAgencySwarm {
         timeoutMs: input.options.discoveryTimeoutMs,
         mentionedRecipient,
         configuredRecipient: input.options.recipientAgent,
+        configuredRecipientSelectedAt: input.options.recipientAgentSelectedAt,
       })
       const sessionLitellmModel =
         input.sessionModel &&
@@ -1585,7 +1591,9 @@ export namespace SessionAgencySwarm {
           }
           if (kind === "agent_updated_stream_event") {
             const next = asRecord(frame.payload["new_agent"])
-            const maybeName = next ? asString(next["name"]) : undefined
+            const maybeName = next
+              ? (asString(next["id"]) ?? asString(next["name"]) ?? asString(next["label"]))
+              : undefined
             if (maybeName) {
               input.assistantMessage.agent = maybeName
               input.assistantMessage.mode = maybeName
@@ -1894,17 +1902,27 @@ export namespace SessionAgencySwarm {
     timeoutMs: number
     mentionedRecipient?: string
     configuredRecipient?: string
+    configuredRecipientSelectedAt?: number
   }): Promise<string | undefined> {
     const sessionRecipient = await resolveSessionRecipient(input.sessionID)
+    type RecipientCandidate = {
+      value: {
+        agent: string
+        messageAt?: number
+      }
+      source: "message" | "config" | "session"
+    }
     const candidates = [
-      { value: input.mentionedRecipient, source: "message" },
-      { value: input.configuredRecipient, source: "config" },
-      { value: sessionRecipient, source: "session" },
-    ].filter(
-      (candidate, index, array): candidate is { value: string; source: "message" | "config" | "session" } =>
-        !!candidate.value && array.findIndex((item) => item.value === candidate.value) === index,
-    )
-    const candidateValues = candidates.map((candidate) => candidate.value)
+      input.mentionedRecipient ? { value: { agent: input.mentionedRecipient }, source: "message" } : undefined,
+      input.configuredRecipient ? { value: { agent: input.configuredRecipient }, source: "config" } : undefined,
+      sessionRecipient ? { value: sessionRecipient, source: "session" } : undefined,
+    ]
+      .filter((candidate): candidate is RecipientCandidate => !!candidate?.value.agent)
+      .sort((a, b) => candidateRank(a) - candidateRank(b))
+      .filter(
+        (candidate, index, array) => array.findIndex((item) => item.value.agent === candidate.value.agent) === index,
+      )
+    const candidateValues = candidates.map((candidate) => candidate.value.agent)
     if (candidateValues.length === 0) {
       return undefined
     }
@@ -1939,18 +1957,28 @@ export namespace SessionAgencySwarm {
 
     const availableAgents = Array.from(new Set(recipientMap.values()))
     for (const candidate of candidates) {
-      const resolved = recipientMap.get(candidate.value)
+      const resolved = recipientMap.get(candidate.value.agent)
       if (resolved) return resolved
       log.warn("ignoring stale recipient agent candidate", {
         sessionID: input.sessionID,
         agency: input.agency,
-        candidate: candidate.value,
+        candidate: candidate.value.agent,
         source: candidate.source,
         availableAgents,
       })
     }
 
     return undefined
+
+    function candidateRank(candidate: RecipientCandidate) {
+      if (candidate.source === "message") return 0
+      if (candidate.source === "config" && input.configuredRecipientSelectedAt) {
+        const sessionMessageAt = sessionRecipient?.messageAt ?? 0
+        if (input.configuredRecipientSelectedAt > sessionMessageAt) return 1
+      }
+      if (candidate.source === "session") return 2
+      return 3
+    }
   }
 
   async function resolveSessionRecipient(sessionID: SessionID) {
@@ -1964,7 +1992,10 @@ export namespace SessionAgencySwarm {
       })
       if (!last) return
       if (last.info.role !== "assistant") return
-      return last.info.agent
+      return {
+        agent: last.info.agent,
+        messageAt: last.info.time.created,
+      }
     } catch (error) {
       log.warn("unable to load session recipient; skipping recipient override", {
         sessionID,
