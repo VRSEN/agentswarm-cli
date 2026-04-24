@@ -177,25 +177,26 @@ export namespace SessionAgencySwarm {
         })
       : undefined
     const generated =
-      !explicitUpstreamBaseURL &&
-      (await shouldStripCodexOAuth(requestedModel, rawGenerated, explicit, async () => {
-        try {
-          return await AgencySwarmAdapter.getMetadata({
-            baseURL,
-            agency,
-            token,
-            timeoutMs,
-          })
-        } catch (error) {
-          log.error("unable to load agency metadata while deciding Codex OAuth routing", {
-            baseURL,
-            agency,
-            error: error instanceof Error ? error.message : String(error),
-          })
-          return undefined
-        }
-      }))
-        ? stripCodexOAuthForNonOpenAI(rawGenerated)
+      rawGenerated && !explicitUpstreamBaseURL
+        ? (await shouldStripCodexOAuth(requestedModel, rawGenerated, explicit, async () => {
+            try {
+              return await AgencySwarmAdapter.getMetadata({
+                baseURL,
+                agency,
+                token,
+                timeoutMs,
+              })
+            } catch (error) {
+              log.error("unable to load agency metadata while deciding Codex OAuth routing", {
+                baseURL,
+                agency,
+                error: error instanceof Error ? error.message : String(error),
+              })
+              return undefined
+            }
+          }))
+          ? stripCodexOAuthForNonOpenAI(rawGenerated)
+          : rawGenerated
         : rawGenerated
     if (!config) {
       return finalizeClientConfig(generated, undefined, sessionLitellmModel)

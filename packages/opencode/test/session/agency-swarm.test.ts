@@ -307,6 +307,39 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream skips metadata lookup when remote non-openai sessions have no generated auth payload", async () => {
+    mockHistory()
+    Auth.all = (async () => ({
+      anthropic: { type: "api", key: "sk-ant" } as any,
+    })) as typeof Auth.all
+
+    let metadataCalls = 0
+    AgencySwarmAdapter.getMetadata = (async () => {
+      metadataCalls += 1
+      throw new Error("metadata should not be fetched")
+    }) as typeof AgencySwarmAdapter.getMetadata
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.baseURL = "https://agency.example.com"
+    input.sessionModel = { providerID: "anthropic", modelID: "claude-sonnet-4-6" }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(metadataCalls).toBe(0)
+    expect(captured).toEqual({
+      model: "litellm/anthropic/claude-sonnet-4-6",
+    })
+  })
+
   test("stream forwards stored API auth to remote URL when forwardUpstreamCredentials is true", async () => {
     mockHistory()
     Auth.all = (async () => ({
