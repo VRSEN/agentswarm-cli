@@ -13,7 +13,7 @@ Words: `manager` = can delegate; `subagent` = cannot delegate; `mandate` = the e
 - Before you rely on this file, or before you ship an edit to it, verify that `CLAUDE.md` is still a symlink to `AGENTS.md`. If not, fix or escalate before you trust the rules.
 - Use `remove > update > add` when the result is the same. Do not add code, docs, tests, or rules until you rule out deleting, tightening, or reusing what already exists.
 - At task start, identify your role. A manager can delegate. A subagent cannot.
-- Protect the context window. Prefer bounded reads and searches. Do not pull huge output unless you need it.
+- Protect the context window. Never read a file in full until you know it is small enough. Bound file reads and tool output with `rg`, `sed -n`, `head`, `tail`, `wc`, or tool output limits. For CLIs that may print large output, redirect to a temp file first, then inspect slices.
 - Managers stay at manager height: coordinate, reprioritize, review, make key calls, and verify the critical path.
 - Managers delegate only when that clearly shortens the critical path or cuts context load. Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
 - When the delegated work is small and clear, prefer the local `codex` command (`codex exec` or `codex review`) over heavier subagents. Use the smallest useful delegated scope that still cleanly covers the task. Default to one subagent, but use multiple focused subagents when that clearly shortens the critical path.
