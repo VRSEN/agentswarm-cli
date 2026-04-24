@@ -10,12 +10,14 @@ import { BusEvent } from "@/bus/bus-event"
 import { Flag } from "../flag/flag"
 import { Log } from "../util/log"
 import { CHANNEL as channel, VERSION as version } from "./meta"
-import { AgencyBrand } from "@/agency-swarm/brand"
 
 import semver from "semver"
 
 export namespace Installation {
   const log = Log.create({ service: "installation" })
+  const packageName = "agentswarm-cli"
+  const releaseRepo = "VRSEN/agentswarm-cli"
+  const curlInstallDir = ".opencode"
 
   export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "unknown"
 
@@ -59,7 +61,7 @@ export namespace Installation {
 
   export const VERSION = version
   export const CHANNEL = channel
-  export const USER_AGENT = `agentswarm-cli/${CHANNEL}/${VERSION}/${Flag.OPENCODE_CLIENT}`
+  export const USER_AGENT = `${packageName}/${CHANNEL}/${VERSION}/${Flag.OPENCODE_CLIENT}`
 
   export function isPreview() {
     return CHANNEL !== "latest"
@@ -134,8 +136,7 @@ export namespace Installation {
           Effect.catch(() => Effect.succeed({ code: ChildProcessSpawner.ExitCode(1), stdout: "", stderr: "" })),
         )
 
-        const repo = "VRSEN/agentswarm-cli"
-        const install = `https://raw.githubusercontent.com/${repo}/dev/install`
+        const install = `https://raw.githubusercontent.com/${releaseRepo}/dev/install`
 
         const upgradeCurl = Effect.fnUntraced(
           function* (target: string) {
@@ -160,10 +161,9 @@ export namespace Installation {
         )
 
         const methodImpl = Effect.fn("Installation.method")(function* () {
-          if (process.execPath.includes(path.join(AgencyBrand.workspace, "bin"))) return "curl" as Method
+          if (process.execPath.includes(path.join(curlInstallDir, "bin"))) return "curl" as Method
           if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
           const exec = process.execPath.toLowerCase()
-          const pkg = "agentswarm-cli"
 
           const checks: Array<{ name: Method; command: () => Effect.Effect<string> }> = [
             { name: "npm", command: () => text(["npm", "list", "-g", "--depth=0"]) },
@@ -182,7 +182,7 @@ export namespace Installation {
 
           for (const check of checks) {
             const output = yield* check.command()
-            const installedName = pkg
+            const installedName = packageName
             if (output.includes(installedName)) {
               return check.name
             }
@@ -200,13 +200,18 @@ export namespace Installation {
             })
           }
 
-          if (detectedMethod === "npm" || detectedMethod === "bun" || detectedMethod === "pnpm" || detectedMethod === "yarn") {
+          if (
+            detectedMethod === "npm" ||
+            detectedMethod === "bun" ||
+            detectedMethod === "pnpm" ||
+            detectedMethod === "yarn"
+          ) {
             const r = (yield* text(["npm", "config", "get", "registry"])).trim()
             const reg = r || "https://registry.npmjs.org"
             const registry = reg.endsWith("/") ? reg.slice(0, -1) : reg
             const channel = CHANNEL
             const response = yield* httpOk.execute(
-              HttpClientRequest.get(`${registry}/agentswarm-cli/${channel}`).pipe(HttpClientRequest.acceptJson),
+              HttpClientRequest.get(`${registry}/${packageName}/${channel}`).pipe(HttpClientRequest.acceptJson),
             )
             const data = yield* HttpClientResponse.schemaBodyJson(NpmPackage)(response)
             return data.version
@@ -229,7 +234,7 @@ export namespace Installation {
           }
 
           const response = yield* httpOk.execute(
-            HttpClientRequest.get(`https://api.github.com/repos/${repo}/releases/latest`).pipe(
+            HttpClientRequest.get(`https://api.github.com/repos/${releaseRepo}/releases/latest`).pipe(
               HttpClientRequest.acceptJson,
             ),
           )
@@ -244,16 +249,16 @@ export namespace Installation {
               result = yield* upgradeCurl(target)
               break
             case "npm":
-              result = yield* run(["npm", "install", "-g", `agentswarm-cli@${target}`])
+              result = yield* run(["npm", "install", "-g", `${packageName}@${target}`])
               break
             case "yarn":
-              result = yield* run(["yarn", "global", "add", `agentswarm-cli@${target}`])
+              result = yield* run(["yarn", "global", "add", `${packageName}@${target}`])
               break
             case "pnpm":
-              result = yield* run(["pnpm", "install", "-g", `agentswarm-cli@${target}`])
+              result = yield* run(["pnpm", "install", "-g", `${packageName}@${target}`])
               break
             case "bun":
-              result = yield* run(["bun", "install", "-g", `agentswarm-cli@${target}`])
+              result = yield* run(["bun", "install", "-g", `${packageName}@${target}`])
               break
             case "brew": {
               return yield* new UpgradeFailedError({
