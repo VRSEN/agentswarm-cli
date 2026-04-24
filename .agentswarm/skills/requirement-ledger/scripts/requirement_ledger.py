@@ -69,7 +69,6 @@ def build_parser() -> argparse.ArgumentParser:
     update_parser.add_argument("--next-action")
     update_parser.add_argument("--source-pointer", action="append", help="Append one or more source pointers.")
     update_parser.add_argument("--artifact", action="append", help="Append one or more artifacts if missing.")
-    update_parser.add_argument("--artifacts-clear", action="store_true", help="Clear the artifacts list.")
     update_parser.set_defaults(func=command_update)
 
     complete_parser = subparsers.add_parser("complete", help="Move an active item to the archive.")
@@ -142,14 +141,11 @@ def command_update(args: argparse.Namespace) -> None:
         "next_action": args.next_action,
     }
     original = _text_argument("original", args.original, args.original_file, preserve_whitespace=True)
-    if args.artifacts_clear and args.artifact:
-        raise LedgerError("cannot combine --artifact with --artifacts-clear")
     if (
         not any(value is not None for value in updates.values())
         and original is None
         and not args.source_pointer
         and not args.artifact
-        and not args.artifacts_clear
     ):
         raise LedgerError("update needs at least one field to change")
     for field, value in updates.items():
@@ -159,8 +155,6 @@ def command_update(args: argparse.Namespace) -> None:
         item["original"] = original
     if args.source_pointer:
         item["source_pointers"].extend(_required_text("source_pointer", source) for source in args.source_pointer)
-    if args.artifacts_clear:
-        item["artifacts"] = []
     if args.artifact:
         item["artifacts"] = _merge_unique_texts(_read_artifacts(item), _optional_texts("artifact", args.artifact))
     item["updated_at"] = _now()

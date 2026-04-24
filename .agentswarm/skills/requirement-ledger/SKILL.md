@@ -65,7 +65,7 @@ python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py add \
   --source-pointer "chat:2026-04-22 user#1"
 ```
 
-Append or clear linked artifacts on an existing item:
+Append linked artifacts on an existing item:
 
 ```bash
 python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py update REQ-20260415-001 \
