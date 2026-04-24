@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { buildAgencyTargetOptions } from "../../../src/cli/cmd/tui/util/agency-target"
+import {
+  buildAgencyTargetOptions,
+  shouldAdoptAgencyHandoffRecipient,
+} from "../../../src/cli/cmd/tui/util/agency-target"
 
 describe("agency target options", () => {
   test("clears stale snake_case recipient state when /agents switches recipients", () => {
@@ -32,5 +35,38 @@ describe("agency target options", () => {
       recipient_agent: null,
       recipient_agent_selected_at: null,
     })
+  })
+
+  test("adopts completed handoff agent as selected run target", () => {
+    expect(
+      shouldAdoptAgencyHandoffRecipient({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: "ExampleAgent",
+        assistantAgent: "ExampleAgent2",
+        completed: true,
+      }),
+    ).toBe(true)
+  })
+
+  test("does not adopt incomplete or unchanged handoff agent", () => {
+    expect(
+      shouldAdoptAgencyHandoffRecipient({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: "ExampleAgent",
+        assistantAgent: "ExampleAgent2",
+        completed: false,
+      }),
+    ).toBe(false)
+    expect(
+      shouldAdoptAgencyHandoffRecipient({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: "ExampleAgent",
+        assistantAgent: "ExampleAgent",
+        completed: true,
+      }),
+    ).toBe(false)
   })
 })

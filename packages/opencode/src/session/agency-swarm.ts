@@ -1197,12 +1197,14 @@ export namespace SessionAgencySwarm {
       for (const raw of newMessages) {
         const message = asRecord(raw)
         if (!message || asString(message["type"]) !== "message") continue
+        const messageMeta = extractEventMeta(message)
+        if (asString(message["role"]) === "assistant") await applyAssistantLabel(input.assistantMessage, messageMeta)
         const itemID = asString(message["id"])
         if (!itemID) continue
         const text = extractMessageText(message)
         if (!text) continue
         if (shouldSkipDuplicateAssistantText(itemID, 0, text)) continue
-        yield* finishText(itemID, 0, text, {}, { source: "messages" })
+        yield* finishText(itemID, 0, text, messageMeta, { source: "messages" })
       }
     }
 
@@ -1914,8 +1916,8 @@ export namespace SessionAgencySwarm {
     }
     const candidates = [
       input.mentionedRecipient ? { value: { agent: input.mentionedRecipient }, source: "message" } : undefined,
-      input.configuredRecipient ? { value: { agent: input.configuredRecipient }, source: "config" } : undefined,
       sessionRecipient ? { value: sessionRecipient, source: "session" } : undefined,
+      input.configuredRecipient ? { value: { agent: input.configuredRecipient }, source: "config" } : undefined,
     ]
       .filter((candidate): candidate is RecipientCandidate => !!candidate?.value.agent)
       .sort((a, b) => candidateRank(a) - candidateRank(b))
@@ -1994,7 +1996,7 @@ export namespace SessionAgencySwarm {
       if (last.info.role !== "assistant") return
       return {
         agent: last.info.agent,
-        messageAt: last.info.time.created,
+        messageAt: last.info.time.completed ?? last.info.time.created,
       }
     } catch (error) {
       log.warn("unable to load session recipient; skipping recipient override", {

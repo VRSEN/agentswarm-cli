@@ -2723,6 +2723,101 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream persists handed off recipient from final messages payload", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        enabled_providers: ["agency-swarm"],
+        provider: {
+          "agency-swarm": {},
+        },
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        mockHistory()
+        let turn = 0
+        let sentRecipient: string | undefined
+        AgencySwarmAdapter.getMetadata = (async () => ({
+          metadata: {
+            agents: ["support_agent", "MathAgent"],
+          },
+        })) as typeof AgencySwarmAdapter.getMetadata
+        AgencySwarmAdapter.streamRun = async function* (args) {
+          turn++
+          sentRecipient = args.recipientAgent ?? undefined
+          if (turn === 1) {
+            yield {
+              type: "messages",
+              payload: {
+                new_messages: [
+                  {
+                    id: "agency_message_1",
+                    type: "message",
+                    role: "assistant",
+                    agent: "support_agent",
+                    content: [{ type: "output_text", text: "Transferred." }],
+                  },
+                ],
+              },
+            }
+          }
+          yield { type: "end" }
+        } as typeof AgencySwarmAdapter.streamRun
+
+        const session = await Session.create({ title: "messages handoff recipient" })
+        const user = await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "user",
+          sessionID: session.id,
+          agent: "build",
+          model: {
+            providerID: ProviderID.make("agency-swarm"),
+            modelID: ModelID.make("default"),
+          },
+          time: {
+            created: Date.now(),
+          },
+        })
+        await Session.updatePart({
+          id: PartID.ascending(),
+          messageID: user.id,
+          sessionID: session.id,
+          type: "text",
+          text: "hello",
+        })
+
+        const first = helper()
+        first.input.sessionID = session.id
+        first.input.assistantMessage.sessionID = session.id
+        first.input.assistantMessage.id = MessageID.ascending()
+        first.input.assistantMessage.parentID = user.id
+        first.input.userMessage.info.id = user.id
+        first.input.options.recipientAgent = "MathAgent"
+
+        const firstStream = await SessionAgencySwarm.stream(first.input)
+        for await (const _ of firstStream.fullStream) {
+        }
+
+        const second = helper()
+        second.input.sessionID = session.id
+        second.input.assistantMessage.sessionID = session.id
+        second.input.assistantMessage.id = MessageID.ascending()
+        second.input.userMessage.info.id = MessageID.ascending()
+        second.input.userMessage.parts = [{ type: "text", text: "follow up", ignored: false }] as any
+        second.input.options.recipientAgent = "MathAgent"
+
+        const secondStream = await SessionAgencySwarm.stream(second.input)
+        for await (const _ of secondStream.fullStream) {
+        }
+
+        expect(sentRecipient).toBe("support_agent")
+      },
+    })
+  })
+
   test("stream routes next message to agent_updated handoff id", async () => {
     await using tmp = await tmpdir({
       git: true,
@@ -3019,6 +3114,108 @@ describe("session.agency-swarm", () => {
         }
 
         expect(sentRecipient).toBe("MathAgent")
+      },
+    })
+  })
+
+  test("stream prefers completed handoff over recipient selected during that response", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        enabled_providers: ["agency-swarm"],
+        provider: {
+          "agency-swarm": {},
+        },
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        mockHistory()
+        let sentRecipient: string | undefined
+        AgencySwarmAdapter.getMetadata = (async () => ({
+          metadata: {
+            agents: ["support_agent", "MathAgent"],
+          },
+          nodes: [
+            {
+              id: "support_agent",
+              type: "agent",
+              data: {
+                label: "UserSupportAgent",
+              },
+            },
+          ],
+        })) as typeof AgencySwarmAdapter.getMetadata
+        AgencySwarmAdapter.streamRun = async function* (args) {
+          sentRecipient = args.recipientAgent ?? undefined
+          yield { type: "end" }
+        } as typeof AgencySwarmAdapter.streamRun
+
+        const session = await Session.create({ title: "completed handoff override" })
+        const handoffStartedAt = Date.now()
+        const handoffCompletedAt = handoffStartedAt + 10
+        const user = await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "user",
+          sessionID: session.id,
+          agent: "build",
+          model: {
+            providerID: ProviderID.make("agency-swarm"),
+            modelID: ModelID.make("default"),
+          },
+          time: {
+            created: handoffStartedAt - 1,
+          },
+        })
+        await Session.updatePart({
+          id: PartID.ascending(),
+          messageID: user.id,
+          sessionID: session.id,
+          type: "text",
+          text: "hello",
+        })
+        await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "assistant",
+          sessionID: session.id,
+          parentID: user.id,
+          modelID: "default",
+          providerID: "agency-swarm",
+          mode: "UserSupportAgent",
+          agent: "UserSupportAgent",
+          path: {
+            cwd: "/",
+            root: "/",
+          },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: {
+            created: handoffStartedAt,
+            completed: handoffCompletedAt,
+          },
+        } as any)
+
+        const { input } = helper()
+        input.sessionID = session.id
+        input.assistantMessage.sessionID = session.id
+        input.options.recipientAgent = "MathAgent"
+        ;(input.options as any).recipientAgentSelectedAt = handoffStartedAt + 1
+        input.userMessage.info.id = MessageID.ascending()
+        input.userMessage.parts = [{ type: "text", text: "follow up", ignored: false }] as any
+
+        const stream = await SessionAgencySwarm.stream(input)
+        for await (const _ of stream.fullStream) {
+        }
+
+        expect(sentRecipient).toBe("support_agent")
       },
     })
   })
