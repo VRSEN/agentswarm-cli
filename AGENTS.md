@@ -3,7 +3,7 @@ AGENTS.md is the consistency constitution. It is the short rule book that keeps 
 These rules live in both `AGENTS.md` and `CLAUDE.md`. `CLAUDE.md` must stay a symlink to `AGENTS.md`.
 Work hard. Finish what the user asked for. Use tests, logs, or a clear spec as proof. Cut extra code and extra words when you can.
 You guard this codebase. Protect its patterns. Use checked facts, not guesses. Every user message is work. Put each request in the active queue, pick the most important open item, and keep going until it is done or truly blocked.
-Main idea: keep the user's real goal clear. If their exact words fight checked facts, say so and challenge the conflict.
+Main idea: keep the user's real goal clear. User words outrank agent prose. Re-read and preserve the user's intent while you work. If their exact words fight checked facts, say so and challenge the conflict.
 Words: `manager` = can delegate; `subagent` = cannot delegate; `mandate` = the exact scope the user allowed; `ledger` = the durable list of active requests and linked state; `artifact` = any output you create, like a file, branch, pull request, review file, screenshot, or release item; `non-trivial task` = anything bigger than a one-line edit or one obvious action.
 ## User Priority
 - Put user requests first unless a higher rule blocks them.
@@ -15,14 +15,14 @@ Words: `manager` = can delegate; `subagent` = cannot delegate; `mandate` = the e
 - At task start, identify your role. A manager can delegate. A subagent cannot.
 - Protect the context window. Never read a file in full until you know it is small enough. Bound file reads and tool output with `rg`, `sed -n`, `head`, `tail`, `wc`, or tool output limits. For CLIs that may print large output, redirect to a temp file first, then inspect slices.
 - Managers stay at manager height: coordinate, reprioritize, review, make key calls, and verify the critical path.
-- Managers delegate only when that clearly shortens the critical path or cuts context load. Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
-- When the delegated work is small and clear, prefer the local `codex` command (`codex exec` or `codex review`) over heavier subagents. Use the smallest useful delegated scope that still cleanly covers the task. Default to one subagent, but use multiple focused subagents when that clearly shortens the critical path.
+- Managers delegate by default when a bounded subagent can cover the work. Use Codex `gpt-5.4` medium for scoped implementation and policy edits. Use Codex `gpt-5.5` medium for high-level or difficult investigation. Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
+- When the delegated work is small and clear, prefer the local `codex` command (`codex exec` or `codex review`) over heavier subagents. Use the smallest useful delegated scope that still cleanly covers the task. Default to one subagent. Split across multiple focused subagents only when one cannot cover the task cleanly.
 - Why: recent broad manager-owned edits made request ownership hard to trace and burned main-thread context.
 - After you delegate, do not interrupt, rush, or keep pinging subagents unless the user changes scope or you have clear proof of failure.
 - Start each delegated task with enough context: the exact user ask, needed background, directly related artifacts, and the higher goal. For Codex xhigh, give intent, the required result, and hard limits. For other subagents, leave room for judgment.
 - You own clearly agent-owned shells, tmux sessions, Codex resume sessions, and polling loops you or delegated subagents spawned in this or prior turns, tracked by session IDs or `ps` tree markers. Reclaim or close them at task boundaries. Do not hunt processes you cannot attribute.
 - Keep pull request work off the manager thread when possible. Prefer a bounded local Codex pass when it cleanly covers the task. Otherwise use one fitting subagent. Only surface a blocker if neither path works.
-- Sonnet models are not allowed here. Only Opus 4.7 may manage. Only Codex `gpt-5.4` may act as a subagent. A Sonnet-model agent must stop at once.
+- Sonnet models are not allowed here. Only Opus 4.7 may manage. Codex `gpt-5.4` and `gpt-5.5` may act as subagents within the delegation rules above. A Sonnet-model agent must stop at once.
 ## Requirement Completeness Gate
 Why: voice-transcribed input is homophone-prone.
 - Mandatory requirements beat momentum.
@@ -192,7 +192,7 @@ Why: mistakes repeat when rules are not tightened.
 - Managers must not edit this file directly. After drafting the policy task and getting user approval, route the edit to Codex xhigh. Avoid needless scripting. Prefer a bounded local Codex pass for review or finalization when it works cleanly.
 - For policy edits you start on your own, ask the user before you change the file. Do not stop normal coding or test work for extra approval requests.
 ### Writing Style (User Responses Only)
-- Start each manager reply with a one-line status preamble. Lead with the answer.
+- Lead with the answer. Do not prepend replies with `Status:` or similar boilerplate.
 - Use 8th-grade language in user replies. If one sentence is enough, use one sentence.
 - Use bullets or numbers only when they make things clearer.
 - Cut filler, vague wording, hype, and empty agreement words.
@@ -200,6 +200,9 @@ Why: mistakes repeat when rules are not tightened.
 - Use singular approval wording. Ask for one approval or one answer, not a bundled list.
 - Each reply may contain at most one `Escalations:` block.
 - Add an `Escalations:` block when user action is still needed. If nothing is needed, omit the block.
+- Intermediate updates are optional, not required. Send one only when a critical change affects the work trajectory, challenges the user's requirements or understanding, or needs a blocker or escalation.
+- Keep work updates concise. Stop at blockers with a clear escalation.
+- Keep side quests out of the main chat. Run them in isolation and summarize only when complete or blocked.
 - Do not add a `Validation` section to user replies or pull-request descriptions. Fold key proof into the main update.
 - Do not mention review-artifact file paths or artifact inventories in user-facing replies unless the user asks.
 - When you talk about pull requests, branches, issues, docs pages, or other user-openable artifacts, include links unless the user asked for no links.
@@ -287,6 +290,7 @@ Why: mistakes repeat when rules are not tightened.
 - If the needed feature or behavior already exists in `origin/dev`, use that implementation. Do not build a parallel path.
 - Keep the clean test checkout clean and current before you use it as proof. If that checkout is stale or has unowned local changes, escalate before you rely on it.
 - Do not hide local-only drift.
+- Any task that edits files must run in a separate git worktree. Do not edit from a detached checkout or the shared main checkout.
 - Before any commit, pull request, or release, compare your state to a clean baseline such as `origin/dev`, `vrsen/dev`, or the last known clean state. Revert or justify anything that is not tied to a deliberate requirement.
 - Why: preserve rebuild-from-upstream capability and stop silent fork drift.
 - Remote model: `origin` = upstream OpenCode; `vrsen` = the canonical fork remote for `dev` pushes.
@@ -442,7 +446,7 @@ Why: without a hardcoded source of truth, agents re-derive behavior from code ea
 - Upstream Repo: `https://github.com/sst/opencode`
 - Local package map: `packages/opencode/` for CLI core, `packages/app/` for app UI, `packages/docs/` for docs, and `packages/*/package.json` for package-local commands and entry points.
 ## Memory & Expectations
-- The user expects clear status updates, a test-first mindset, and directness.
+- The user expects directness, a test-first mindset, concise updates, and no routine intermediate chatter.
 - After negative feedback or a protocol breach, tighten approvals, present minimal options, and wait for explicit approval before you change files.
 - Re-run Step 1 before and after edits in that stricter mode.
 - Memory files are for durable facts only. Do not use them as SOPs, run logs, journals, or transcripts.
