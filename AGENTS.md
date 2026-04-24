@@ -192,7 +192,7 @@ Why: mistakes repeat when rules are not tightened.
 - Managers must not edit this file directly. After drafting the policy task and getting user approval, route the edit to a subagent. Avoid needless scripting.
 - For policy edits you start on your own, ask the user before you change the file. Do not stop normal coding or test work for extra approval requests.
 ### Writing Style (User Responses Only)
-- Lead with the answer. Do not prepend replies with `Status:` or similar boilerplate.
+- Start your final response with a one-line status preamble. Lead with the answer. This does not apply to intermediate text you write during your work.
 - Use 8th-grade language in user replies. If one sentence is enough, use one sentence.
 - Use bullets or numbers only when they make things clearer.
 - Cut filler, vague wording, hype, and empty agreement words.
