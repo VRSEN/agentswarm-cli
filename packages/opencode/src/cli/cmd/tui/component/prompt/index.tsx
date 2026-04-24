@@ -810,11 +810,13 @@ export function Prompt(props: PromptProps) {
       return
     }
     const submittedPrompt = structuredClone(unwrap(store.prompt))
+    const savedPrompt = { input: store.prompt.input, parts: [...store.prompt.parts] }
     let sessionID = props.sessionID
     let createdSessionID: string | undefined
     let navigatedToCreatedSession = false
     let navigateTimer: ReturnType<typeof setTimeout> | undefined
     let promptProgress: ReturnType<typeof waitForSessionPromptProgress> | undefined
+    let promptTask: ReturnType<typeof sdk.client.session.prompt> | undefined
     if (sessionID == null) {
       const res = await sdk.client.session.create({
         workspaceID: props.workspaceID,
@@ -874,90 +876,93 @@ export function Prompt(props: PromptProps) {
           })),
       })
     } else {
-      const savedPrompt = { input: store.prompt.input, parts: [...store.prompt.parts] }
-      try {
-        const promptTask = sdk.client.session.prompt({
-          sessionID,
-          ...selectedModel,
-          messageID,
-          agent: effectiveAgentName(),
-          model: selectedModel,
-          variant,
-          parts: [
-            {
-              id: PartID.ascending(),
-              type: "text",
-              text: inputText,
-            },
-            ...nonTextParts.map(assign),
-          ],
-        })
+      promptTask = sdk.client.session.prompt({
+        sessionID,
+        ...selectedModel,
+        messageID,
+        agent: effectiveAgentName(),
+        model: selectedModel,
+        variant,
+        parts: [
+          {
+            id: PartID.ascending(),
+            type: "text",
+            text: inputText,
+          },
+          ...nonTextParts.map(assign),
+        ],
+      })
+    }
 
-        clearSubmittedPrompt(currentMode)
+    clearSubmittedPrompt(currentMode)
 
-        if (createdSessionID) {
-          const newSessionID = createdSessionID
-          await Promise.race([promptTask, promptProgress!.promise])
-
-          // temporary hack to make sure the message is sent
-          navigateTimer = setTimeout(() => {
-            navigateTimer = undefined
-            navigatedToCreatedSession = true
-            route.navigate({
-              type: "session",
-              sessionID: newSessionID,
-            })
-          }, 50)
+    try {
+      if (createdSessionID) {
+        const newSessionID = createdSessionID
+        if (promptTask && promptProgress) {
+          await Promise.race([promptTask, promptProgress.promise])
         }
 
-        await promptTask
-      } catch (error) {
-        // Fork-only: surface auth errors via the connect/auth dialog and restore the
-        // composer state so the user can retry. Rebuilding extmarks from the saved parts
-        // keeps file/agent/paste markers in sync — without this, syncExtmarksWithPromptParts
-        // would drop them on the next keystroke.
-        setStore("prompt", savedPrompt)
-        input.setText(savedPrompt.input)
-        restoreExtmarksFromParts(savedPrompt.parts)
-        const message = toErrorMessage(error)
-        const shouldReopenAuth = shouldOpenAgencyAuthDialog({
-          providerID: selectedModel.providerID,
-          message,
-        })
-        if (navigateTimer) {
-          clearTimeout(navigateTimer)
+        // temporary hack to make sure the message is sent
+        navigateTimer = setTimeout(() => {
           navigateTimer = undefined
-        }
-        if (createdSessionID && shouldReopenAuth) {
-          if (navigatedToCreatedSession) {
-            route.navigate({
-              type: "home",
-              workspaceID: props.workspaceID,
-              initialPrompt: submittedPrompt,
-            })
-          }
-          void sdk.client.session.delete({
-            sessionID: createdSessionID,
+          navigatedToCreatedSession = true
+          route.navigate({
+            type: "session",
+            sessionID: newSessionID,
+          })
+        }, 50)
+      }
+
+      if (!promptTask) return
+
+      await promptTask
+    } catch (error) {
+      // Fork-only: surface auth errors via the connect/auth dialog and restore the
+      // composer state so the user can retry. Rebuilding extmarks from the saved parts
+      // keeps file/agent/paste markers in sync — without this, syncExtmarksWithPromptParts
+      // would drop them on the next keystroke.
+      setStore("prompt", savedPrompt)
+      input.setText(savedPrompt.input)
+      restoreExtmarksFromParts(savedPrompt.parts)
+      const message = toErrorMessage(error)
+      const shouldReopenAuth = shouldOpenAgencyAuthDialog({
+        providerID: selectedModel.providerID,
+        message,
+      })
+      if (navigateTimer) {
+        clearTimeout(navigateTimer)
+        navigateTimer = undefined
+      }
+      if (createdSessionID && shouldReopenAuth) {
+        if (navigatedToCreatedSession) {
+          route.navigate({
+            type: "home",
+            workspaceID: props.workspaceID,
+            initialPrompt: submittedPrompt,
           })
         }
-        if (shouldReopenAuth) {
-          toast.show({
-            variant: "error",
-            message: describeAgencyAuthFailure(message),
-            duration: 5000,
-          })
-          dialog.replace(() => <DialogAuth />)
-          return
-        }
+        void sdk.client.session.delete({
+          sessionID: createdSessionID,
+        })
+      }
+      if (shouldReopenAuth) {
         toast.show({
           variant: "error",
-          message,
+          message: describeAgencyAuthFailure(message),
           duration: 5000,
         })
+        dialog.replace(() => <DialogAuth />)
         return
-      } finally {
-        promptProgress?.cleanup()
       }
+      toast.show({
+        variant: "error",
+        message,
+        duration: 5000,
+      })
+      return
+    } finally {
+      promptProgress?.cleanup()
     }
   }
   const exit = useExit()

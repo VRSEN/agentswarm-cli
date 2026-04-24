@@ -281,6 +281,228 @@ describe("prompt auth rejection handling", () => {
     await flushEffects()
   })
 
+  test("clears the draft after dispatching a server slash command", async () => {
+    process.env.OPENAI_API_KEY = "sk-test"
+
+    const events = createEventBus()
+    const commandSession = spyOn(
+      {
+        command: () => undefined,
+      },
+      "command",
+    )
+    const promptSession = spyOn(
+      {
+        prompt: () => Promise.resolve(),
+      },
+      "prompt",
+    )
+
+    spyOn(AgencySwarmRunSession, "sync").mockResolvedValue(undefined)
+    spyOn(AutocompleteModule, "Autocomplete").mockImplementation((props: any) => {
+      props.ref?.({
+        onInput() {},
+        onKeyDown() {},
+        visible: false,
+      })
+      return <box />
+    })
+    spyOn(CommandDialogModule, "useCommandDialog").mockReturnValue({
+      register: () => () => {},
+      slashes: () => [],
+      trigger: () => {},
+    } as any)
+    spyOn(ExitContext, "useExit").mockReturnValue(
+      Object.assign(async () => {}, {
+        message: {
+          set: () => () => {},
+          clear: () => {},
+          get: () => undefined,
+        },
+      }) as any,
+    )
+    spyOn(AgencySwarmConnectionContext, "useAgencySwarmConnection").mockReturnValue({
+      requiresReconnect: () => false,
+      openConnectDialog: () => false,
+      status: () => "connected",
+      baseURL: () => undefined,
+      failureCount: () => 0,
+      frameworkMode: () => true,
+    } as any)
+    spyOn(KeybindContext, "useKeybind").mockReturnValue({
+      leader: false,
+      match: () => false,
+      print: () => "",
+    } as any)
+    spyOn(KVContext, "useKV").mockReturnValue({
+      get: (_key: string, fallback?: unknown) => fallback,
+    } as any)
+    spyOn(LocalContext, "useLocal").mockReturnValue({
+      agent: {
+        current: () => ({
+          name: "builder",
+          model: {
+            providerID: "agency-swarm",
+            modelID: "default",
+          },
+        }),
+        list: () => [{ name: "builder" }],
+        set: () => {},
+        color: () => RGBA.fromHex("#38bdf8"),
+      },
+      model: {
+        current: () => ({
+          providerID: "agency-swarm",
+          modelID: "default",
+        }),
+        parsed: () => ({
+          provider: "Agency Swarm",
+          model: "default",
+        }),
+        set: () => {},
+        variant: {
+          current: () => undefined,
+          list: () => [],
+          set: () => {},
+        },
+      },
+    } as any)
+    spyOn(SDKContext, "useSDK").mockReturnValue({
+      client: {
+        session: {
+          command: commandSession,
+          prompt: promptSession,
+        },
+      },
+      event: events,
+    } as any)
+    spyOn(SyncContext, "useSync").mockReturnValue({
+      data: {
+        command: [{ name: "auth" }],
+        config: {
+          model: "agency-swarm/default",
+          experimental: {},
+        },
+        console_state: {
+          activeOrgName: "",
+          consoleManagedProviders: [],
+          switchableOrgCount: 0,
+        },
+        message: {},
+        provider: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "config",
+            env: ["OPENAI_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+        provider_auth: {
+          openai: [{ type: "api", label: "API key" }],
+        },
+        provider_next: {
+          all: [{ id: "openai", name: "OpenAI" }],
+          connected: [],
+          default: {},
+        },
+        session_status: {},
+      },
+    } as any)
+    spyOn(ThemeContext, "useTheme").mockReturnValue({
+      theme: {
+        _hasSelectedListItemText: false,
+        accent: RGBA.fromHex("#14b8a6"),
+        background: RGBA.fromHex("#020617"),
+        backgroundElement: RGBA.fromHex("#111827"),
+        backgroundPanel: RGBA.fromHex("#0f172a"),
+        border: RGBA.fromHex("#334155"),
+        error: RGBA.fromHex("#ef4444"),
+        primary: RGBA.fromHex("#38bdf8"),
+        selectedListItemText: RGBA.fromHex("#f8fafc"),
+        success: RGBA.fromHex("#22c55e"),
+        text: RGBA.fromHex("#f8fafc"),
+        textMuted: RGBA.fromHex("#94a3b8"),
+        warning: RGBA.fromHex("#f59e0b"),
+      },
+      syntax: () => ({
+        getStyleId: () => 1,
+      }),
+    } as any)
+    spyOn(TuiConfigContext, "useTuiConfig").mockReturnValue({} as any)
+    const appendHistory = spyOn(
+      {
+        append: () => {},
+      },
+      "append",
+    )
+    spyOn(PromptHistoryModule, "usePromptHistory").mockReturnValue({
+      move: () => undefined,
+      append: appendHistory,
+    } as any)
+    spyOn(PromptStashModule, "usePromptStash").mockReturnValue({
+      list: () => [],
+      push: () => {},
+      pop: () => undefined,
+      remove: () => {},
+    } as any)
+    spyOn(TextareaKeybindingsModule, "useTextareaKeybindings").mockReturnValue(() => [] as any)
+    spyOn(ToastModule, "useToast").mockReturnValue({
+      show: () => {},
+      error: () => {},
+      currentToast: null,
+    } as any)
+
+    const { Prompt } = await import("../../../src/cli/cmd/tui/component/prompt")
+
+    let promptRef: PromptRef | undefined
+
+    await testRender(() => (
+      <RouteProvider>
+        <DialogProvider>
+          <Prompt
+            ref={(value) => (promptRef = value)}
+            sessionID="session_server_command"
+            workspaceID="workspace_server_command"
+            placeholders={{ normal: [] }}
+          />
+        </DialogProvider>
+      </RouteProvider>
+    ))
+
+    expect(promptRef).toBeDefined()
+
+    promptRef!.set({
+      input: "/auth refresh\nsecond line",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef!.submit()
+    await flushEffects()
+
+    expect(commandSession).toHaveBeenCalledTimes(1)
+    expect(promptSession).not.toHaveBeenCalled()
+    expect(appendHistory).toHaveBeenCalledWith({
+      input: "/auth refresh\nsecond line",
+      parts: [],
+      mode: "normal",
+    })
+    expect(promptRef!.current).toEqual({
+      input: "",
+      parts: [],
+    })
+  })
+
   test("keeps the first draft on home when a slow auth rejection lands before streaming starts", async () => {
     process.env.OPENAI_API_KEY = "sk-test"
 
