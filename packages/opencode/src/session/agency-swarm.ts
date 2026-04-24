@@ -22,6 +22,7 @@ import { Session } from "@/session"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionID } from "@/session/schema"
 import { Log } from "@/util/log"
+import semver from "semver"
 import {
   asRecord,
   asRawString,
@@ -176,25 +177,26 @@ export namespace SessionAgencySwarm {
         })
       : undefined
     const generated =
-      !explicitUpstreamBaseURL &&
-      (await shouldStripCodexOAuth(requestedModel, rawGenerated, explicit, async () => {
-        try {
-          return await AgencySwarmAdapter.getMetadata({
-            baseURL,
-            agency,
-            token,
-            timeoutMs,
-          })
-        } catch (error) {
-          log.error("unable to load agency metadata while deciding Codex OAuth routing", {
-            baseURL,
-            agency,
-            error: error instanceof Error ? error.message : String(error),
-          })
-          return undefined
-        }
-      }))
-        ? stripCodexOAuthForNonOpenAI(rawGenerated)
+      rawGenerated && !explicitUpstreamBaseURL
+        ? (await shouldStripCodexOAuth(requestedModel, rawGenerated, explicit, async () => {
+            try {
+              return await AgencySwarmAdapter.getMetadata({
+                baseURL,
+                agency,
+                token,
+                timeoutMs,
+              })
+            } catch (error) {
+              log.error("unable to load agency metadata while deciding Codex OAuth routing", {
+                baseURL,
+                agency,
+                error: error instanceof Error ? error.message : String(error),
+              })
+              return undefined
+            }
+          }))
+          ? stripCodexOAuthForNonOpenAI(rawGenerated)
+          : rawGenerated
         : rawGenerated
     if (!config) {
       return finalizeClientConfig(generated, undefined, sessionLitellmModel)
@@ -354,12 +356,6 @@ export namespace SessionAgencySwarm {
     return value.replace(/\/+$/, "") === CODEX_API_BASE_URL
   }
 
-  // TODO(agency-swarm#629): remove after upstream scopes config.base_url per-provider.
-  /**
-   * True when `litellm_keys` holds a credential for any non-OpenAI-based provider. Signals that the
-   * agency-swarm server will route at least one agent through LiteLLM for a provider where the
-   * Codex OAuth `base_url` would break Messages API calls.
-   */
   function hasNonOpenAILitellmKey(src: Record<string, unknown> | undefined): boolean {
     if (!src) return false
     const keys = asRecord(src["litellm_keys"]) ?? asRecord(src["litellmKeys"])
@@ -370,30 +366,52 @@ export namespace SessionAgencySwarm {
     )
   }
 
-  // TODO(agency-swarm#629): remove after upstream scopes config.base_url per-provider.
-  /**
-   * Strip the Codex OAuth triplet when either the session override is non-OpenAI
-   * (explicit user intent to route non-OpenAI), or no session override exists and the
-   * generated payload or the user's explicit `client_config.litellm_keys` carries a
-   * non-OpenAI LiteLLM key (framework mode — agent-level non-OpenAI routing is possible).
-   * A session model that is explicitly OpenAI-based keeps the OAuth triplet so the
-   * forced OpenAI override still authenticates.
-   */
+  function readStableAgencySwarmVersion(metadata: AgencySwarmAdapter.AgencyMetadata): string | undefined {
+    const version = asString(metadata["agency_swarm_version"])
+    if (!version) return undefined
+    const match = version.trim().match(/^(?:v)?(\d+\.\d+\.\d+)(?:(?:\.post\d+)|(?:post\d+)|(?:\+[0-9a-z.-]+))?$/i)
+    if (!match) {
+      log.warn(
+        "agency metadata exposed a prerelease or unreadable agency_swarm_version while deciding Codex OAuth routing",
+        {
+          version,
+        },
+      )
+      return undefined
+    }
+    return match[1]
+  }
+
+  function scopesCodexBaseURLPerProvider(metadata: AgencySwarmAdapter.AgencyMetadata): boolean {
+    const version = readStableAgencySwarmVersion(metadata)
+    if (!version) return false
+    return semver.gte(version, "1.9.3")
+  }
+
   async function shouldStripCodexOAuth(
     sessionLitellmModel: string | undefined,
     generated: Record<string, unknown> | undefined,
     explicit: Record<string, unknown> | undefined,
     loadAgencyMetadata: () => Promise<AgencySwarmAdapter.AgencyMetadata | undefined>,
   ): Promise<boolean> {
-    if (!isOpenAIBasedLitellmModel(sessionLitellmModel)) return true
-    if (sessionLitellmModel) return false
-    if (!hasNonOpenAILitellmKey(generated) && !hasNonOpenAILitellmKey(explicit)) return false
+    const sessionTargetsNonOpenAI =
+      !!sessionLitellmModel && !isOpenAIBasedLitellmModel(normalizeExplicitClientConfigModel(sessionLitellmModel))
+    if (!sessionTargetsNonOpenAI && sessionLitellmModel) return false
+    if (!sessionTargetsNonOpenAI && !hasNonOpenAILitellmKey(generated) && !hasNonOpenAILitellmKey(explicit)) {
+      return false
+    }
 
     const metadata = await loadAgencyMetadata()
     if (!metadata) {
       log.error("agency metadata unavailable while deciding Codex OAuth routing; stripping OpenAI OAuth conservatively")
       return true
     }
+
+    if (scopesCodexBaseURLPerProvider(metadata)) {
+      return false
+    }
+
+    if (sessionTargetsNonOpenAI) return true
 
     const agencyModels = extractAgencyModels(metadata)
     if (agencyModels.length === 0) {
@@ -429,13 +447,6 @@ export namespace SessionAgencySwarm {
     return true
   }
 
-  // TODO(agency-swarm#629): remove after upstream scopes config.base_url per-provider.
-  /**
-   * Drop the Codex OAuth triplet (`base_url` + `api_key` + `ChatGPT-Account-Id`) from the generated payload
-   * so a non-OpenAI LiteLLM session (anthropic, gemini, ...) does not inherit ChatGPT's OAuth endpoint.
-   * Upstream agency-swarm applies `config.base_url` to all LiteLLM agents regardless of provider
-   * (endpoint_handlers.py:1320), which would route Anthropic Messages through chatgpt.com and 404.
-   */
   function stripCodexOAuthForNonOpenAI(
     generated: Record<string, unknown> | undefined,
   ): Record<string, unknown> | undefined {
@@ -447,7 +458,7 @@ export namespace SessionAgencySwarm {
     delete out["api_key"]
     const headers = readStringRecord(out["default_headers"])
     if (headers && "ChatGPT-Account-Id" in headers) {
-      const next = Object.fromEntries(Object.entries(headers).filter(([k]) => k !== "ChatGPT-Account-Id"))
+      const next = Object.fromEntries(Object.entries(headers).filter(([key]) => key !== "ChatGPT-Account-Id"))
       if (Object.keys(next).length > 0) out["default_headers"] = next
       else delete out["default_headers"]
     }

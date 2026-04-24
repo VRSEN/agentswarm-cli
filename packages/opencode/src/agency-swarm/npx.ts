@@ -796,7 +796,7 @@ async function installProjectDependencies(
   }
 
   const result = await runCommand(
-    [...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.1"],
+    [...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]>=1.9.4"],
     {
       logFile: options.logFile,
       streamOutputToStderr: true,
@@ -1165,7 +1165,6 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
     }
     commandLog.write(chunk)
   }
-
   try {
     const proc = Bun.spawn({
       cmd,
