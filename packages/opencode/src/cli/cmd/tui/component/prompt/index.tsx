@@ -893,6 +893,8 @@ export function Prompt(props: PromptProps) {
           ],
         })
 
+        clearSubmittedPrompt(currentMode)
+
         if (createdSessionID) {
           const newSessionID = createdSessionID
           await Promise.race([promptTask, promptProgress!.promise])
@@ -957,7 +959,6 @@ export function Prompt(props: PromptProps) {
         promptProgress?.cleanup()
       }
     }
-    clearSubmittedPrompt(currentMode)
   }
   const exit = useExit()
 
