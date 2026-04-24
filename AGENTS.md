@@ -19,7 +19,7 @@ Words: `manager` = can delegate; `subagent` = cannot delegate; `mandate` = the e
 - When the delegated work is small and clear, prefer the local `codex` command (`codex exec` or `codex review`) over heavier subagents. Use the smallest useful delegated scope that still cleanly covers the task. Default to one subagent. Split across multiple focused subagents only when one cannot cover the task cleanly.
 - Why: recent broad manager-owned edits made request ownership hard to trace and burned main-thread context.
 - After you delegate, do not interrupt, rush, or keep pinging subagents unless the user changes scope or you have clear proof of failure.
-- Start each delegated task with enough context: the exact user ask, needed background, directly related artifacts, and the higher goal. For Codex xhigh, give intent, the required result, and hard limits. For other subagents, leave room for judgment.
+- Start each delegated task with enough context: the exact user ask, needed background, directly related artifacts, and the higher goal. For subagent delegation, give intent, the required result, and hard limits.
 - You own clearly agent-owned shells, tmux sessions, Codex resume sessions, and polling loops you or delegated subagents spawned in this or prior turns, tracked by session IDs or `ps` tree markers. Reclaim or close them at task boundaries. Do not hunt processes you cannot attribute.
 - Keep pull request work off the manager thread when possible. Prefer a bounded local Codex pass when it cleanly covers the task. Otherwise use one fitting subagent. Only surface a blocker if neither path works.
 - Sonnet models are not allowed here. Only Opus 4.7 may manage. Codex `gpt-5.4` and `gpt-5.5` may act as subagents within the delegation rules above. A Sonnet-model agent must stop at once.
@@ -189,7 +189,7 @@ Why: mistakes repeat when rules are not tightened.
 - On each user message, decide whether this file needs an update so the standing instruction can be derived from it next time.
 - When you add or change a rule, keep or add the concrete reason it exists. Review the local diff for duplication, conflict, and extra process cost. Tighten or move an old rule before you restate it.
 - Policy changes in `AGENTS.md` and `.agentswarm/skills/**` go through one rolling draft pull request. Do not commit policy directly to `vrsen/dev` or mix it into feature pull requests. Add new policy edits to that same draft PR unless the user says otherwise.
-- Managers must not edit this file directly. After drafting the policy task and getting user approval, route the edit to Codex xhigh. Avoid needless scripting. Prefer a bounded local Codex pass for review or finalization when it works cleanly.
+- Managers must not edit this file directly. After drafting the policy task and getting user approval, route the edit to a subagent. Avoid needless scripting.
 - For policy edits you start on your own, ask the user before you change the file. Do not stop normal coding or test work for extra approval requests.
 ### Writing Style (User Responses Only)
 - Lead with the answer. Do not prepend replies with `Status:` or similar boilerplate.
@@ -313,8 +313,8 @@ Why: mistakes repeat when rules are not tightened.
 - Before any release or safety claim, build and reinstall the CLI from the fresh local build, launch it against the maintainer's canonical local test agency, send a real first message through the connected conversation, and verify that a non-empty streaming assistant response renders.
 - Auth-smoke CI alone never passes this gate. Any launch failure, including environment, credential, dependency, or TUI transition issues, blocks the release until you reproduce it and find the root cause.
 - Why: release claims were repeated while the installed binary still failed before a usable conversation.
-- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit using `gpt-5.4` with `extra-high` reasoning.
-- Example: `codex review --base vrsen/dev -c model_reasoning_effort="extra-high"`. Run it only when the CLI default is already `gpt-5.4`, or add `-m gpt-5.4`; do not rely on unknown defaults.
+- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit using `gpt-5.5` with `medium` reasoning.
+- Example: `codex review --base vrsen/dev -m gpt-5.5 -c model_reasoning_effort="medium"`.
 - Save that review to `/tmp/codex_review_<short_sha>.txt`.
 - If Codex finds a blocking issue (`P1` or `P2`), stop and surface it to the user.
 ## Documentation Rules
@@ -428,7 +428,7 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
   - Pull-request-specific work includes comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations.
   - If a bounded local Codex pass cannot cover the task and no good subagent is available, stop and surface the blocker.
   - Save local Codex review output to `/tmp/codex_review_<sha>.txt`.
-  - Preferred fallback command: `codex review --base origin/dev -m gpt-5.4 -c model_reasoning_effort="extra-high" > /tmp/codex_review_<short_sha>.txt 2>&1`.
+  - Preferred fallback command: `codex review --base origin/dev -m gpt-5.5 -c model_reasoning_effort="medium" > /tmp/codex_review_<short_sha>.txt 2>&1`.
   - If `codex review` is unavailable, use an equivalent `codex exec` diff review and save it to the same artifact pattern. Do not rely on unknown model defaults.
   - Do not stream the full Codex output in updates. Read only the needed excerpts.
   - Trigger `@codex review` only when both the local Codex path and suitable subagents are unavailable, when the user asked for it, or when merge-gate proof needs pull-request-bound Codex.
