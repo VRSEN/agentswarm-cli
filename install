@@ -2,7 +2,7 @@
 set -euo pipefail
 APP=agentswarm-cli
 CMD=agentswarm
-BIN=agency
+BIN="$CMD"
 REPO=VRSEN/agentswarm-cli
 INSTALL_URL="https://raw.githubusercontent.com/${REPO}/dev/install"
 RELEASES_URL="https://github.com/${REPO}/releases"
@@ -28,7 +28,7 @@ Options:
 Examples:
     curl -fsSL ${INSTALL_URL} | bash
     curl -fsSL ${INSTALL_URL} | bash -s -- --version 1.0.180
-    ./install --binary /path/to/agency
+    ./install --binary /path/to/agentswarm
 EOF
 }
 
