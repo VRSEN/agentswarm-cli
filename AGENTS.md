@@ -69,10 +69,10 @@ Context
 Repo State
 - Keep one live list of the artifacts you own, and give every ledger item an `artifacts` list even when it is empty.
 - Track every pull request, linked issue, branch, local commit not yet on the canonical remote branch, worktree, file, temp asset, release artifact, published binary, open GitHub issue you filed, review artifact such as a local Codex review `.txt` file, pyte screenshot, temp QA directory, and any other open work artifact whether it is named here or not.
-- The moment one of those artifacts exists, it becomes a ledger item. Any state change on a tracked artifact must update the ledger before other work continues.
-- Ledger is the source of truth. If a branch, worktree, shell, tmux session, PR, issue, or other artifact is not referenced in the active ledger, treat it as non-existent and safe to delete. Before deleting any agent-attributable artifact, verify it has no ledger item. If any agent-owned artifact is created without a ledger item, the rule is broken; fix the ledger first.
+- The moment one of those artifacts exists, add it to the relevant ledger item's `artifacts` list. Create a separate ledger item only when the artifact represents independent open work. Any state change on a tracked artifact must update the ledger before other work continues.
+- Ledger is the source of truth for active work. Missing ledger coverage is an ownership defect, not deletion proof. Before deleting any agent-attributable artifact, verify that it is shipped, clearly handed off, clearly discarded, or stale and unneeded. If any agent-owned artifact exists without a ledger item, the rule is broken; fix the ledger first.
 - Why: unowned artifacts accumulate and block the team. Fast cleanup works only when ownership is ledger-anchored.
-- Keep each tracked artifact open in the ledger until it is shipped, clearly handed off, or clearly discarded.
+- Keep each tracked artifact on the relevant active ledger item until it is shipped, clearly handed off, or clearly discarded.
 - A pull request, branch, or local-only commit you created is still an open task. Never forget it.
 - Clean up old artifacts you created when a newer artifact fully replaces them and the older one is no longer needed for rollback or proof.
 - After your work lands on `vrsen/dev`, or is otherwise closed, clean up stale local branches and worktrees you own before you start new work. If ownership or merge state is unclear, escalate before cleanup.
@@ -114,7 +114,7 @@ Execution
 - Wait up to 30 minutes for GitHub CI, which means automated GitHub checks, before you call it stalled.
 ## Escalation Triggers (User Questions and Approvals)
 Why: technical back-and-forth wastes user time.
-- Escalate only for architecture, design, or user-experience choices. Resolve everything else inside the mandate yourself.
+- Escalate only when a listed trigger applies or a decision genuinely needs the user. Resolve everything else inside the mandate yourself.
 - Pause and ask the user when:
   - there is no active mandate for the next step, the mandate is unclear, or a mandate precondition is still missing.
   - requirements or behavior stay unclear after deep research.
@@ -123,7 +123,7 @@ Why: technical back-and-forth wastes user time.
   - a design choice or conflict with existing patterns needs user direction.
   - a user-visible architecture or experience tradeoff needs explicit input.
   - you find failures or root causes that change scope or expectations.
-  - the next step would change the repo, branch, remote, artifact, visibility, or would create a repo, fork, release, or public artifact.
+  - the next step would change the target repo, target branch, remote, artifact, or visibility boundary, or would create a repo, fork, release, or public artifact outside the active mandate.
   - you need explicit approval for workarounds, behavior changes, staging, committing, destructive commands, or mess-increasing changes.
   - you would need to stop, start, restart, kill, unload, or otherwise change a local process or service you cannot attribute to your own work by session ID or `ps` tree.
   - you hit unexpected changes outside the intended change set or cannot tell who made them.
