@@ -126,6 +126,21 @@ test("loads tui config with the same precedence order as server config paths", a
   })
 })
 
+test("preserves public config/tui* package subpaths after the config move", async () => {
+  const current = await import("../../src/cli/cmd/tui/config/tui")
+  const legacy = await import("agentswarm-cli/config/tui")
+  const currentSchema = await import("../../src/cli/cmd/tui/config/tui-schema")
+  const legacySchema = await import("agentswarm-cli/config/tui-schema")
+  const currentMigrate = await import("../../src/cli/cmd/tui/config/tui-migrate")
+  const legacyMigrate = await import("agentswarm-cli/config/tui-migrate")
+
+  expect(legacy.TuiConfig.get).toBe(current.TuiConfig.get)
+  expect(legacy.TuiConfig.waitForDependencies).toBe(current.TuiConfig.waitForDependencies)
+  expect(legacySchema.TuiInfo).toBe(currentSchema.TuiInfo)
+  expect(legacySchema.TuiOptions).toBe(currentSchema.TuiOptions)
+  expect(legacyMigrate.migrateTuiConfig).toBe(currentMigrate.migrateTuiConfig)
+})
+
 test("migrates tui-specific keys from opencode.json when tui.json does not exist", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
