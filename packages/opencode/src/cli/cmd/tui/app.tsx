@@ -56,7 +56,7 @@ import open from "open"
 import { writeHeapSnapshot } from "v8"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { TuiConfigProvider, useTuiConfig } from "./context/tui-config"
-import { TuiConfig } from "@/config/tui"
+import { TuiConfig } from "@/cli/cmd/tui/config/tui"
 import { createTuiApi, TuiPluginRuntime, type RouteMap } from "./plugin"
 import { FormatError, FormatUnknownError } from "@/cli/error"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
@@ -492,11 +492,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     local.agent.set("build")
   })
 
-  async function setAgencyRunTarget(input: {
-    agency: string
-    recipientAgent?: string | null
-    label: string
-  }) {
+  async function setAgencyRunTarget(input: { agency: string; recipientAgent?: string | null; label: string }) {
     const nextOptions = buildAgencyTargetOptions({
       providerOptions: agencyProviderOptions(),
       agency: input.agency,

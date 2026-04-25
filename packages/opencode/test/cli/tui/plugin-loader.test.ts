@@ -6,7 +6,7 @@ import { tmpdir } from "../../fixture/fixture"
 import { createTuiPluginApi } from "../../fixture/tui-plugin"
 import { AgencyBrand } from "../../../src/agency-swarm/brand"
 import { Global } from "../../../src/global"
-import { TuiConfig } from "../../../src/config/tui"
+import { TuiConfig } from "../../../src/cli/cmd/tui/config/tui"
 import { Config } from "../../../src/config/config"
 import { Filesystem } from "../../../src/util/filesystem"
 
