@@ -5,6 +5,9 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { Installation } from "../../src/installation"
 
 const encoder = new TextEncoder()
+const expectedPackageName = "agentswarm-cli"
+const expectedReleaseRepo = "VRSEN/agentswarm-cli"
+const expectedInstallDir = ".opencode"
 
 function mockHttpClient(handler: (request: HttpClientRequest.HttpClientRequest) => Response) {
   const client = HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, handler(request))))
@@ -52,7 +55,7 @@ describe("installation", () => {
     test("detects curl installs from the installer directory", async () => {
       const originalExecPath = process.execPath
       Object.defineProperty(process, "execPath", {
-        value: "/Users/test/.opencode/bin/agentswarm",
+        value: `/Users/test/${expectedInstallDir}/bin/agentswarm`,
         configurable: true,
       })
 
@@ -83,7 +86,7 @@ describe("installation", () => {
         Installation.Service.use((svc) => svc.latest("unknown")).pipe(Effect.provide(layer)),
       )
       expect(result).toBe("1.2.3")
-      expect(requestURL).toBe("https://api.github.com/repos/VRSEN/agentswarm-cli/releases/latest")
+      expect(requestURL).toBe(`https://api.github.com/repos/${expectedReleaseRepo}/releases/latest`)
     })
 
     test("strips v prefix from GitHub release tag", async () => {
@@ -112,7 +115,7 @@ describe("installation", () => {
         Installation.Service.use((svc) => svc.latest("npm")).pipe(Effect.provide(layer)),
       )
       expect(result).toBe("1.5.0")
-      expect(requestURL).toBe(`https://registry.npmjs.org/agentswarm-cli/${Installation.CHANNEL}`)
+      expect(requestURL).toBe(`https://registry.npmjs.org/${expectedPackageName}/${Installation.CHANNEL}`)
     })
 
     test("reads npm registry versions for bun method", async () => {
