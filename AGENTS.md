@@ -291,6 +291,7 @@ Why: mistakes repeat when rules are not tightened.
 - Every fork-only line needs a concrete reason. If a line is not strictly required, remove it or restore the upstream shape. State why upstream behavior is not enough in the commit message or `FORK_CHANGELOG.md`.
 - Why: keep the fork rebuildable from upstream with a small, auditable delta.
 - Treat every divergence from upstream as expensive and risky. It should feel painful to add or keep fork-only code because every extra line increases rebase, release, and debugging risk.
+- Treat `FORK_CHANGELOG.md` as the approval map for intentional fork behavior. If code differs from upstream and the behavior is not clearly covered there, or looks unintentional against it, stop and escalate before editing further.
 - Keep a line-or-hunk-level classification for every non-trivial fork delta before merge. The classification may live in an internal review artifact, PR review notes, or tests; `FORK_CHANGELOG.md` stays high-level and should summarize categories, not become a raw line dump.
 - If the needed feature or behavior already exists in `origin/dev`, use that implementation. Do not build a parallel path.
 - Keep the clean test checkout clean and current before you use it as proof. If that checkout is stale or has unowned local changes, escalate before you rely on it.
