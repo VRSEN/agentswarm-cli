@@ -25,7 +25,7 @@ import { provideTmpdirServer } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestLLMServer } from "../lib/llm-server"
 
-// Same layer setup as prompt-effect.test.ts
+// Same layer setup as prompt.test.ts
 import { NodeFileSystem } from "@effect/platform-node"
 import { Layer } from "effect"
 import { Agent as AgentSvc } from "../../src/agent/agent"

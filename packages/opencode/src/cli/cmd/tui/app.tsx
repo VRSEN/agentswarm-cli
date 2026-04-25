@@ -33,7 +33,6 @@ import { DialogHelp } from "./ui/dialog-help"
 import { CommandProvider, useCommandDialog } from "@tui/component/dialog-command"
 import { DialogAgent } from "@tui/component/dialog-agent"
 import { DialogSessionList } from "@tui/component/dialog-session-list"
-import { DialogWorkspaceList } from "@tui/component/dialog-workspace-list"
 import { DialogConsoleOrg } from "@tui/component/dialog-console-org"
 import { KeybindProvider, useKeybind } from "@tui/context/keybind"
 import { ThemeProvider, useTheme } from "@tui/context/theme"
@@ -56,7 +55,7 @@ import open from "open"
 import { writeHeapSnapshot } from "v8"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { TuiConfigProvider, useTuiConfig } from "./context/tui-config"
-import { TuiConfig } from "@/config/tui"
+import { TuiConfig } from "@/cli/cmd/tui/config/tui"
 import { createTuiApi, TuiPluginRuntime, type RouteMap } from "./plugin"
 import { FormatError, FormatUnknownError } from "@/cli/error"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
@@ -492,11 +491,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     local.agent.set("build")
   })
 
-  async function setAgencyRunTarget(input: {
-    agency: string
-    recipientAgent?: string | null
-    label: string
-  }) {
+  async function setAgencyRunTarget(input: { agency: string; recipientAgent?: string | null; label: string }) {
     const nextOptions = buildAgencyTargetOptions({
       providerOptions: agencyProviderOptions(),
       agency: input.agency,
@@ -573,22 +568,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         dialog.replace(() => <DialogSessionList />)
       },
     },
-    ...(Flag.OPENCODE_EXPERIMENTAL_WORKSPACES
-      ? [
-          {
-            title: "Manage workspaces",
-            value: "workspace.list",
-            category: "Workspace",
-            suggested: true,
-            slash: {
-              name: "workspaces",
-            },
-            onSelect: () => {
-              dialog.replace(() => <DialogWorkspaceList />)
-            },
-          },
-        ]
-      : []),
     {
       title: "New session",
       suggested: route.data.type === "session",
