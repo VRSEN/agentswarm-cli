@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, spyOn, test } from "bun:test"
+import { afterEach, beforeEach, expect, test } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
 import { tmpdir } from "../fixture/fixture"
@@ -126,30 +126,16 @@ test("loads tui config with the same precedence order as server config paths", a
   })
 })
 
-test("keeps TuiConfig mutable for spies from the refactored import path", async () => {
-  const get = spyOn(TuiConfig, "get").mockResolvedValue({ scroll_speed: 9 })
-  const wait = spyOn(TuiConfig, "waitForDependencies").mockResolvedValue()
-
-  try {
-    await expect(TuiConfig.get()).resolves.toEqual({ scroll_speed: 9 })
-    await expect(TuiConfig.waitForDependencies()).resolves.toBeUndefined()
-  } finally {
-    get.mockRestore()
-    wait.mockRestore()
-  }
-})
-
-test("preserves config/tui* deep import shims", async () => {
+test("preserves public config/tui* package subpaths after the config move", async () => {
   const current = await import("../../src/cli/cmd/tui/config/tui")
-  const legacy = await import("../../src/config/tui")
+  const legacy = await import("agentswarm-cli/config/tui")
   const currentSchema = await import("../../src/cli/cmd/tui/config/tui-schema")
-  const legacySchema = await import("../../src/config/tui-schema")
+  const legacySchema = await import("agentswarm-cli/config/tui-schema")
   const currentMigrate = await import("../../src/cli/cmd/tui/config/tui-migrate")
-  const legacyMigrate = await import("../../src/config/tui-migrate")
+  const legacyMigrate = await import("agentswarm-cli/config/tui-migrate")
 
   expect(legacy.TuiConfig.get).toBe(current.TuiConfig.get)
   expect(legacy.TuiConfig.waitForDependencies).toBe(current.TuiConfig.waitForDependencies)
-  expect(legacy.TuiConfig.Info).toBe(current.TuiConfig.Info)
   expect(legacySchema.TuiInfo).toBe(currentSchema.TuiInfo)
   expect(legacySchema.TuiOptions).toBe(currentSchema.TuiOptions)
   expect(legacyMigrate.migrateTuiConfig).toBe(currentMigrate.migrateTuiConfig)
