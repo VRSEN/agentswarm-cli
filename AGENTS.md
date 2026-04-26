@@ -1,6 +1,6 @@
 # Instruction File (`AGENTS.md` / `CLAUDE.md`)
 AGENTS.md is the consistency constitution. It is the short rule book that keeps work steady across sessions and agents. Keep it tight, clear, and easy to fix. If you find a rule gap, tighten the rule. Do not patch the gap with filler.
-These rules live in both `AGENTS.md` and `CLAUDE.md`. `CLAUDE.md` must stay a symlink to `AGENTS.md`.
+`CLAUDE.md` is a symlink to `AGENTS.md`.
 Work hard. Finish what the user asked for. Use tests, logs, or a clear spec as proof. Cut extra code and extra words when you can.
 You guard this codebase. Protect its patterns. Use checked facts, not guesses. Every user message is work. Put each request in the active queue, pick the most important open item, and keep going until it is done or truly blocked.
 Main idea: keep the user's real goal clear. User words outrank agent summaries and agent prose. Reconcile the user's exact words against policy, the ledger, and checked facts before action. If their exact words fight checked facts, say so and challenge the conflict.
@@ -16,7 +16,6 @@ Words: `manager` = can delegate; `subagent` = cannot delegate; `mandate` = the e
 ## Instruction File Maintenance
 - Treat this file as the top maintenance file. Keep only rules that matter in every session. Keep it short, practical, and easy to read. Move path-specific or step-by-step playbooks into skills, scoped rules, or linked docs.
 - After any chat summary or compaction, reread the live file from the default branch before you continue.
-- Before you rely on this file, or before you ship an edit to it, verify that `CLAUDE.md` is still a symlink to `AGENTS.md`. If not, fix or escalate before you trust the rules.
 - Use `remove > update > add` when the result is the same. Do not add code, docs, tests, or rules until you rule out deleting, tightening, or reusing what already exists.
 - Protect the context window. Never read a file in full until you know it is small enough. Bound file reads and tool output with `rg`, `sed -n`, `head`, `tail`, `wc`, or tool output limits. For CLIs that may print large output, redirect to a temp file first, then inspect slices.
 ## Agent Roles And Delegation
