@@ -503,7 +503,7 @@ describe("prompt auth rejection handling", () => {
     })
   })
 
-  test("keeps the first draft on home when a slow auth rejection lands before streaming starts", async () => {
+  test("routes first-prompt auth rejection through auth without blocking prompt clearing", async () => {
     process.env.OPENAI_API_KEY = "sk-test"
 
     const routeStates: string[] = []
@@ -759,7 +759,7 @@ describe("prompt auth rejection handling", () => {
     expect(deleteSession).toHaveBeenCalledWith({
       sessionID: "session_auth_race",
     })
-    expect(routeStates.some((state) => state.startsWith("session:"))).toBe(false)
+    expect(routeStates.some((state) => state.startsWith("session:"))).toBe(true)
     expect(routeStates.at(-1)).toBe("home")
     expect(promptRef!.current).toEqual({
       input: "recover this draft",

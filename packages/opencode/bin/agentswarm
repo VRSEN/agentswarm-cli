@@ -176,17 +176,10 @@ function findBinary(startDir) {
   }
 }
 
-function findBuiltBinary(startDir) {
-  for (const name of names) {
-    const candidate = path.join(startDir, "..", "dist", name, "bin", binary)
-    if (fs.existsSync(candidate)) return candidate
-  }
-}
-
-const resolved = findBinary(scriptDir) ?? findBuiltBinary(scriptDir)
+const resolved = findBinary(scriptDir)
 if (!resolved) {
   console.error(
-    "It seems that your package manager failed to install the right version of the agentswarm-cli package for your platform. If this is a local source install, build the current checkout first with \"bun run build -- --single\" before running \"npm install -g .\". Otherwise you can try manually installing " +
+    "It seems that your package manager failed to install the right version of the agentswarm-cli package for your platform. You can try manually installing " +
       packageNames.map((name) => `"${name}"`).join(" or ") +
       " package",
   )

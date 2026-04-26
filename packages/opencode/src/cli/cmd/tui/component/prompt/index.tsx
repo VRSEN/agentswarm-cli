@@ -102,31 +102,6 @@ function randomIndex(count: number) {
   return Math.floor(Math.random() * count)
 }
 
-function waitForSessionPromptProgress(sdk: ReturnType<typeof useSDK>, sessionID: string) {
-  let done = false
-  let offMessage = () => {}
-
-  const cleanup = () => {
-    if (done) return
-    done = true
-    offMessage()
-  }
-
-  const promise = new Promise<void>((resolve) => {
-    offMessage = sdk.event.on("message.updated", (evt) => {
-      if (evt.properties.info.sessionID !== sessionID) return
-      if (evt.properties.info.role !== "assistant") return
-      cleanup()
-      resolve()
-    })
-  })
-
-  return {
-    promise,
-    cleanup,
-  }
-}
-
 export function Prompt(props: PromptProps) {
   let input: TextareaRenderable
   let anchor: BoxRenderable
@@ -873,8 +848,6 @@ export function Prompt(props: PromptProps) {
     let createdSessionID: string | undefined
     let navigatedToCreatedSession = false
     let navigateTimer: ReturnType<typeof setTimeout> | undefined
-    let promptProgress: ReturnType<typeof waitForSessionPromptProgress> | undefined
-    let promptTask: ReturnType<typeof sdk.client.session.prompt> | undefined
     if (sessionID == null) {
       const res = await sdk.client.session.create({
         workspaceID: props.workspaceID,
@@ -891,7 +864,6 @@ export function Prompt(props: PromptProps) {
 
       sessionID = res.data.id
       createdSessionID = sessionID
-      promptProgress = waitForSessionPromptProgress(sdk, sessionID)
     }
 
     const messageID = MessageID.ascending()
@@ -934,94 +906,77 @@ export function Prompt(props: PromptProps) {
           })),
       })
     } else {
-      promptTask = sdk.client.session.prompt({
-        sessionID,
-        ...selectedModel,
-        messageID,
-        agent: effectiveAgentName(),
-        model: selectedModel,
-        variant,
-        parts: [
-          {
-            id: PartID.ascending(),
-            type: "text",
-            text: inputText,
-          },
-          ...nonTextParts.map(assign),
-        ],
-      })
+      sdk.client.session
+        .prompt({
+          sessionID,
+          ...selectedModel,
+          messageID,
+          agent: effectiveAgentName(),
+          model: selectedModel,
+          variant,
+          parts: [
+            {
+              id: PartID.ascending(),
+              type: "text",
+              text: inputText,
+            },
+            ...nonTextParts.map(assign),
+          ],
+        })
+        .catch((error) => {
+          setStore("prompt", savedPrompt)
+          input.setText(savedPrompt.input)
+          restoreExtmarksFromParts(savedPrompt.parts)
+          const message = toErrorMessage(error)
+          const shouldReopenAuth = shouldOpenAgencyAuthDialog({
+            providerID: selectedModel.providerID,
+            message,
+          })
+          if (navigateTimer) {
+            clearTimeout(navigateTimer)
+            navigateTimer = undefined
+          }
+          if (createdSessionID && shouldReopenAuth) {
+            if (navigatedToCreatedSession) {
+              route.navigate({
+                type: "home",
+                workspaceID: props.workspaceID,
+                initialPrompt: submittedPrompt,
+              })
+            }
+            void sdk.client.session.delete({
+              sessionID: createdSessionID,
+            })
+          }
+          if (shouldReopenAuth) {
+            toast.show({
+              variant: "error",
+              message: describeAgencyAuthFailure(message),
+              duration: 5000,
+            })
+            dialog.replace(() => <DialogAuth />)
+            return
+          }
+          toast.show({
+            variant: "error",
+            message,
+            duration: 5000,
+          })
+        })
     }
 
     clearSubmittedPrompt(currentMode)
 
-    try {
-      if (createdSessionID) {
-        const newSessionID = createdSessionID
-        if (promptTask && promptProgress) {
-          await Promise.race([promptTask, promptProgress.promise])
-        }
-
-        // temporary hack to make sure the message is sent
-        navigateTimer = setTimeout(() => {
-          navigateTimer = undefined
-          navigatedToCreatedSession = true
-          route.navigate({
-            type: "session",
-            sessionID: newSessionID,
-          })
-        }, 50)
-      }
-
-      if (!promptTask) return
-
-      await promptTask
-    } catch (error) {
-      // Fork-only: surface auth errors via the connect/auth dialog and restore the
-      // composer state so the user can retry. Rebuilding extmarks from the saved parts
-      // keeps file/agent/paste markers in sync — without this, syncExtmarksWithPromptParts
-      // would drop them on the next keystroke.
-      setStore("prompt", savedPrompt)
-      input.setText(savedPrompt.input)
-      restoreExtmarksFromParts(savedPrompt.parts)
-      const message = toErrorMessage(error)
-      const shouldReopenAuth = shouldOpenAgencyAuthDialog({
-        providerID: selectedModel.providerID,
-        message,
-      })
-      if (navigateTimer) {
-        clearTimeout(navigateTimer)
+    // temporary hack to make sure the message is sent
+    if (!props.sessionID)
+      navigateTimer = setTimeout(() => {
         navigateTimer = undefined
-      }
-      if (createdSessionID && shouldReopenAuth) {
-        if (navigatedToCreatedSession) {
-          route.navigate({
-            type: "home",
-            workspaceID: props.workspaceID,
-            initialPrompt: submittedPrompt,
-          })
-        }
-        void sdk.client.session.delete({
-          sessionID: createdSessionID,
+        navigatedToCreatedSession = true
+        route.navigate({
+          type: "session",
+          sessionID,
         })
-      }
-      if (shouldReopenAuth) {
-        toast.show({
-          variant: "error",
-          message: describeAgencyAuthFailure(message),
-          duration: 5000,
-        })
-        dialog.replace(() => <DialogAuth />)
-        return
-      }
-      toast.show({
-        variant: "error",
-        message,
-        duration: 5000,
-      })
-      return
-    } finally {
-      promptProgress?.cleanup()
-    }
+      }, 50)
   }
   const exit = useExit()
 
