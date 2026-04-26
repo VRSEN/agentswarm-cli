@@ -3,7 +3,7 @@
 This file is the authoritative map of intentional fork-specific differences from upstream.
 It should contain all intentional Agent Swarm / fork changes needed to reconstruct this fork from upstream. It should not list ordinary upstream commits merely because they exist in the fork.
 By default, upstream changes should be merged into the fork. After that, Agent Swarm-specific differences are reapplied. If an upstream change adds or modifies user-facing behavior, it needs product review before being accepted as Agent Swarm behavior.
-When a change is suspicious, unproven, not clearly fork-specific, or not clearly intentional, move it to Review for Removal until verified. Do not silently delete uncertain items.
+When a change is suspicious, unproven, not clearly fork-specific, or not clearly intentional, move it to the upstream alignment cleanup queue until verified and removed or approved. Do not silently delete uncertain items.
 
 ## Fork Product Frame
 
@@ -19,9 +19,9 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 ## Upstream Baseline Anchor
 
-- Upstream baseline: `origin/dev` at `28935880169fc55eb6114402e3976b2a70f83ace`
+- Upstream baseline: `origin/dev` at `301ecb185e06a230c6d720845b04effa84450976`
 - Fork baseline: `vrsen/dev` at `764f9033269ff096d2c9ac3511f7fa1baf11c718`
-- Ahead/behind count: `origin/dev...vrsen/dev` = `914 281`
+- Ahead/behind count: `origin/dev...vrsen/dev` = `932 281`
 
 ## Branding/Packaging
 
@@ -313,19 +313,27 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: the release-gate rules in `AGENTS.md`.
   - Added by: `f143e53d`
 
-## Review for Removal
+## Upstream Alignment Cleanup Queue
 
-These items were checked with `git blame` against `origin/dev` and upstream release `v1.14.25` on 2026-04-26. They are not approved product intent and should be aligned with upstream in a cleanup pass.
+These items were checked with `git blame`, source PRs/issues, `origin/dev`, and upstream release `v1.14.25` on 2026-04-26. They are not intentional fork product behavior and should be aligned with upstream in cleanup PRs.
 
 - **Built source installs can fall back to local dist binaries during global source installs**
   - Decision: align with upstream. Upstream `origin/dev` and `v1.14.25` do not have an equivalent local `dist` fallback, and this is not approved product behavior.
+  - Evidence: VRSEN PR #50 and issue #49 say this was a developer source-install QA fallback for `npm install -g .` from `packages/opencode`, not an end-user feature.
   - Blame/intent check: added by bonk1t in `725ac8ec0` (`fix(install): support built source global installs`).
   - Current implementation: `findBuiltBinary` in `packages/opencode/bin/agentswarm` and `packages/opencode/test/installation/source-install-wrapper.test.ts`.
 
-- **Prompt submit flow still diverges from upstream immediate-clear behavior**
-  - Decision: align with upstream immediate-clear behavior. The composer-clearing bug still exists, and any auth-retry fix must be narrower than blocking prompt clearing.
-  - Blame/intent check: the current divergence is bonk1t-authored through `5b055dc8f` (`fix(tui): Run-only mode, clear-on-submit, send-gate`) and `2ad600b64` (`fix(tui): address Codex PR #99 follow-up findings on prompt and /models`).
+- **Prompt submit flow has fork-only retry/error handling instead of clean upstream fire-and-forget submit**
+  - Decision: align with upstream. Immediate composer clearing is upstream behavior, not a fork feature, and waiting for model completion was not intentional.
+  - Evidence: VRSEN PR #42 introduced the original regression by changing upstream fire-and-forget `sdk.client.session.prompt(...).catch(() => {})` into `await sdk.client.session.prompt(...)`; issue #103 names that exact root cause. VRSEN PR #88 was mostly intentional, but it carried this bug forward. VRSEN PR #99 tried to restore upstream behavior, but later follow-up code still left extra prompt-task waiting and retry/error-restoration logic instead of the clean upstream shape.
+  - Blame/intent check: original regression line is `f977cea74b` (`fix: harden agent swarm auth onboarding`); current follow-up machinery is mainly `8a18f7bb`, `9e73b5f7`, and `2ad600b64`.
   - Current implementation: prompt submit flow in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`.
+
+- **Spurious package scripts remain from upstream junk**
+  - Decision: align with upstream. These scripts are not fork intent and should not be treated as Agent Swarm functionality.
+  - Evidence: upstream OpenCode PR #22160 and issue #22159 identify `random`, `clean`, `lint`, `format`, `docs`, and `deploy` as accidental junk and remove them with no logic change.
+  - Blame/intent check: local blame points to upstream/historical commits `9fdbe193cd` and `6d95f0d14c`, not bonk1t fork product work.
+  - Current implementation: `packages/opencode/package.json`.
 
 ## Maintenance Protocol
 
@@ -333,6 +341,6 @@ These items were checked with `git blame` against `origin/dev` and upstream rele
 2. Rebuild the live fork delta from fresh `git log` and `git diff` output before you add, remove, or rewrite entries.
 3. Record exactly one intentional fork-specific difference per entry. Do not bundle separate user-visible behaviors or separate technical mechanisms into one entry.
 4. Keep each `Implementation` line to one sentence that names the file path and the key function or symbol that a rebuilder would need on top of upstream.
-5. If a change is suspicious, unproven, not clearly fork-specific, not clearly intentional, or bug-like rather than product intent, move it to `## Review for Removal` until verified.
+5. If a change is suspicious, unproven, not clearly fork-specific, not clearly intentional, or bug-like rather than product intent, move it to `## Upstream Alignment Cleanup Queue` until verified.
 6. If a feature no longer exists on `vrsen/dev` HEAD, remove it instead of keeping historical noise here.
-7. If you cannot prove a concrete commit SHA, PR number, or release tag for a live feature, move it to `## Review for Removal` with a one-line reason.
+7. If you cannot prove a concrete commit SHA, PR number, or release tag for a live feature, move it to `## Upstream Alignment Cleanup Queue` with a one-line reason.
