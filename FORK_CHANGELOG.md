@@ -37,6 +37,12 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `roots` in `packages/opencode/script/publish.ts`.
   - Added by: `772db106`
 
+- **Scoped `@vrsen` platform-package resolution for published binaries**
+  - Intent: make published `agentswarm-cli` installs resolve the fork's scoped platform packages instead of upstream platform packages.
+  - Behavior: postinstall and the `agentswarm` wrapper find `@vrsen/agentswarm-cli-*` binaries for the current platform and architecture.
+  - Implementation: `platformScope` in `packages/opencode/package.json`, `findBinary` in `packages/opencode/script/postinstall.mjs`, and package lookup in `packages/opencode/bin/agentswarm`.
+  - Added by: `c645fbf4`
+
 - **Fork tips strip upstream-only OpenCode commands**
   - Intent: keep onboarding and startup guidance aligned with the fork instead of upstream OpenCode-only commands.
   - Behavior: tips point users to fork flows such as `/auth`, `/connect`, and `/agents` and stop advertising upstream-only commands.
@@ -235,6 +241,12 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `AgencySwarmRunSession.get` in `packages/opencode/src/agency-swarm/run-session.ts` and `resolveRunProject` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `f5ff56b0`
 
+- **Upgrade only supports published `agentswarm-cli` channels**
+  - Intent: prevent upgrade flows from claiming support for package-manager channels where the fork is not published.
+  - Behavior: upgrade supports npm, yarn, pnpm, bun, and curl; Homebrew, Chocolatey, and Scoop return a clear unsupported-channel message.
+  - Implementation: `latestImpl` and `upgradeImpl` in `packages/opencode/src/installation/index.ts` with `UpgradeCommand` in `packages/opencode/src/cli/cmd/upgrade.ts`.
+  - Added by: `9d86d959`
+
 ## Web/App Surface
 
 - **README mode overview explains Builder, Plan, and Run**
@@ -303,49 +315,21 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 ## Review for Removal
 
-- **Scoped platform wrapper for shipped binaries**
-  - Reason for review: packaging plumbing may be implementation detail rather than durable fork product behavior.
-  - Current implementation: `findBinary` in `packages/opencode/script/postinstall.mjs`.
+These items were checked against `origin/dev` on 2026-04-26. They are not approved product intent yet, and the next cleanup pass should either remove them, align them with upstream, or prove a concrete fork constraint.
+
+- **Built source installs can fall back to local dist binaries during global source installs**
+  - Decision: keep under review. The behavior exists and is tested, but it still looks like maintainer/source-install convenience rather than approved product intent.
+  - Current implementation: `findBuiltBinary` in `packages/opencode/bin/agentswarm` and `packages/opencode/test/installation/source-install-wrapper.test.ts`.
   - Added by: `725ac8ec`
 
-- **Built source installs fall back to the local `agentswarm` binary**
-  - Reason for review: source-install fallback may be QA or packaging convenience rather than approved product intent.
-  - Current implementation: `packages/opencode/bin/agentswarm`.
-  - Added by: `PR #50`
-
-- **Upgrade command rejects unsupported package-manager channels**
-  - Reason for review: upgrade-channel guard needs product confirmation before it stays as intentional fork UX.
-  - Current implementation: `latestImpl` and `upgradeImpl` in `packages/opencode/src/installation/index.ts` with `UpgradeCommand` in `packages/opencode/src/cli/cmd/upgrade.ts`.
-  - Added by: `9d86d959`
-
-- **First prompt reaches the conversation screen without freezing**
-  - Reason for review: bug fix or root-cause work is not a product feature and should not stay in approved sections.
-  - Current implementation: `submit` in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`.
-  - Added by: `adab6532`
-
-- **Composer clears as soon as a prompt is sent**
-  - Reason for review: this was bug/root-cause work, and the composer-clearing behavior was not actually fixed as approved product intent.
+- **Prompt submit flow still diverges from upstream immediate-clear behavior**
+  - Decision: align with upstream unless the auth-retry fix requires a narrower, proven fork-specific patch. This is bug/root-cause work, not approved product intent.
   - Current implementation: prompt submit flow in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`.
   - Added by: `PR #99`
 
-- **Shared session web pages import fork session types**
-  - Reason for review: package wiring may be merge-compatibility detail rather than user-facing fork behavior.
-  - Current implementation: `packages/web/package.json`, `packages/web/src/components/Share.tsx`, `packages/web/src/components/share/part.tsx`, and `packages/web/src/pages/s/[id].astro`.
-  - Added by: `bedc977e`
-
-- **Agency Swarm integration regression suite**
-  - Reason for review: test coverage is useful, but it is not product intent by itself.
-  - Current implementation: `packages/opencode/test/session/agency-swarm.test.ts` and `packages/opencode/test/provider/agency-swarm-provider.test.ts`.
-  - Added by: `fd2f678b`
-
-- **Browser E2E helpers harden session and status checks**
-  - Reason for review: test harness stability work is not approved product behavior by itself.
-  - Current implementation: `withSession`, `openStatusPopover`, and `openStatusTab` in `packages/app/e2e/actions.ts`.
-  - Added by: `825641267`
-
-- **Package scripts such as `random`, `docs`, and `deploy`**
-  - Reason for review: command surface needs case-by-case product approval before it belongs in the intentional fork delta.
-  - Current implementation: package scripts across the repo.
+- **`packages/opencode/package.json` carries non-product helper scripts absent from upstream**
+  - Decision: remove or align with upstream unless a real maintainer workflow is proven. The root `random` script is upstream noise, but the package-level `random`, `clean`, `lint`, `format`, `docs`, and `deploy` scripts are fork-only command-surface drift.
+  - Current implementation: `scripts` in `packages/opencode/package.json`.
   - Added by: unverified
 
 ## Maintenance Protocol
