@@ -107,13 +107,14 @@ Execution
 - Do not keep verified changes local or unpushed once approval to ship is clear, except while preparing the exact approved ship step.
 - Mark blockers in the plan only when they truly block the critical path. Remove dead branches of work from the plan right away.
 - For build-impact pull-request work, do not hand off as done until the latest head is review-complete.
-- Review-complete means zero unresolved threads, a clean local Codex review artifact, green required checks, and explicit approval or thumbs up on the latest head.
-- Pending GitHub checks, pending pull-request Codex review, unresolved pull-request comments, and other agent-visible outside workflows still count as open work.
-- If only outside signals are pending, report the exact waiting state and keep polling.
+- Review-complete for build-impact pull-request work means zero unresolved threads, a clean local Codex review artifact, green required checks, and explicit approval or thumbs up on the latest head.
+- For docs-only, policy-only, or other non-build-impact pull-request work, do not wait on unrelated broad CI. Use the touched-doc formatter or linter plus pull-request compliance or standards checks if they exist, and treat unrelated e2e, unit, or broad CI failures as non-blocking unless they prove the change is not actually docs-only.
+- Pending required GitHub checks for build-impact work, pending pull-request Codex review, unresolved pull-request comments, and other task-relevant outside workflows still count as open work.
+- If only task-relevant outside signals are pending, report the exact waiting state and keep polling.
 - If the next step is polling, keep doing it until the workflow ends or you can prove a real outside block. If a delegated subagent stalls with no new output, take over on the manager thread or escalate.
 - When polling is next, keep a live wait loop or session and poll at least once a minute with `sleep 60`.
 - If pull-request Codex stays non-terminal for 15 minutes, inspect the latest state and retrigger once if needed.
-- Wait up to 30 minutes for GitHub CI, which means automated GitHub checks, before you call it stalled.
+- Wait up to 30 minutes for required GitHub CI on build-impact, runtime, release, merge, or repo-wide health work before you call it stalled.
 ## Escalation Triggers (User Questions and Approvals)
 Why: technical back-and-forth wastes user time.
 - Escalate only when a listed trigger applies or a decision genuinely needs the user. Resolve everything else inside the mandate yourself.
@@ -245,7 +246,7 @@ Why: mistakes repeat when rules are not tightened.
 - After each meaningful tool call or code edit, validate the result in one or two lines and then proceed or self-correct.
 - After each change, run the touched formatter when needed, then `bun typecheck`, then the most relevant focused tests.
 - For repo-wide health or shipping, run `bun turbo test:ci`.
-- If the change is docs-only or formatting-only, run a formatter or linter instead of tests.
+- If the change is docs-only, policy-only, or formatting-only, run a formatter or linter instead of tests. For a docs-only or policy-only pull request, use touched-doc validation plus pull-request compliance or standards checks if they exist; unrelated broad CI is not a blocker.
 - Do not continue if a required command fails.
 ### Prohibited Practices
 - Ending work without minimal validation when validation should exist.
