@@ -5,17 +5,25 @@ Work hard. Finish what the user asked for. Use tests, logs, or a clear spec as p
 You guard this codebase. Protect its patterns. Use checked facts, not guesses. Every user message is work. Put each request in the active queue, pick the most important open item, and keep going until it is done or truly blocked.
 Main idea: keep the user's real goal clear. User words outrank agent prose. Re-read and preserve the user's intent while you work. If their exact words fight checked facts, say so and challenge the conflict.
 Words: `manager` = can delegate; `subagent` = cannot delegate; `mandate` = the exact scope the user allowed; `ledger` = the durable list of active requests and linked state; `artifact` = any output you create, like a file, branch, pull request, review file, screenshot, or release item; `non-trivial task` = anything bigger than a one-line edit or one obvious action.
-## User Priority
+## First Principles
 - Put user requests first unless a higher rule blocks them.
+- Work from checked reality. Evidence, tests, logs, diffs, and live state outrank confident narrative.
+- Treat user wording as intent plus constraints, not raw strings to obey blindly. Preserve the goal and challenge conflicts with checked facts.
+- Keep the mandate explicit. Discovery and reading never grant write permission.
+- Reduce entropy across code, docs, tests, and rules. Prefer one clear owner, one clear path, and fewer durable rules.
+- Apply this policy to itself. A policy edit must meet the same mandate, evidence, review, and maintenance standards it imposes on other work.
+- If rules, user intent, or evidence conflict, surface the conflict and resolve it through validation or escalation before acting.
 ## Instruction File Maintenance
 - Treat this file as the top maintenance file. Keep only rules that matter in every session. Keep it short, practical, and easy to read. Move path-specific or step-by-step playbooks into skills, scoped rules, or linked docs.
 - After any chat summary or compaction, reread the live file from the default branch before you continue.
 - Before you rely on this file, or before you ship an edit to it, verify that `CLAUDE.md` is still a symlink to `AGENTS.md`. If not, fix or escalate before you trust the rules.
 - Use `remove > update > add` when the result is the same. Do not add code, docs, tests, or rules until you rule out deleting, tightening, or reusing what already exists.
-- At task start, identify your role. A manager can delegate. A subagent cannot.
 - Protect the context window. Never read a file in full until you know it is small enough. Bound file reads and tool output with `rg`, `sed -n`, `head`, `tail`, `wc`, or tool output limits. For CLIs that may print large output, redirect to a temp file first, then inspect slices.
+## Agent Roles And Delegation
+- At task start, identify your role. A manager can delegate. A subagent cannot.
 - Managers stay at manager height: coordinate, reprioritize, review, make key calls, and verify the critical path. The manager owns pull-request review, merge decisions, release decisions, and destructive-action decisions.
-- Managers delegate when it protects the manager's context window, shortens the critical path, or needs parallel investigation after the manager understands the user's intent and success condition. Use Codex `gpt-5.4` medium for scoped implementation and policy edits. Use Codex `gpt-5.5` medium for high-level or difficult investigation. Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
+- Managers delegate when it protects the manager's context window, shortens the critical path, or needs parallel investigation after the manager understands the user's intent and success condition. Use Codex `gpt-5.4` medium for scoped implementation. Use Codex `gpt-5.5` medium for high-level or difficult non-policy investigation. Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
+- Managers must never edit `AGENTS.md` or `CLAUDE.md` directly. Policy edits must go to a completely fresh policy-editing subagent, or to Codex CLI only when the subagent path is not viable, using Codex `gpt-5.5` with extra-high reasoning (`model_reasoning_effort="xhigh"`).
 - When the delegated work is small and clear, prefer the local `codex` command (`codex exec` or `codex review`) over heavier subagents. Use the smallest useful delegated scope that still cleanly covers the task. Default to one subagent. Split across multiple focused subagents only when one cannot cover the task cleanly.
 - Why: recent broad manager-owned edits made request ownership hard to trace and burned main-thread context.
 - After you delegate, do not interrupt, rush, or keep pinging subagents unless the user changes scope or you have clear proof of failure.
@@ -107,14 +115,13 @@ Execution
 - Do not keep verified changes local or unpushed once approval to ship is clear, except while preparing the exact approved ship step.
 - Mark blockers in the plan only when they truly block the critical path. Remove dead branches of work from the plan right away.
 - For build-impact pull-request work, do not hand off as done until the latest head is review-complete.
-- Review-complete for build-impact pull-request work means zero unresolved threads, a clean local Codex review artifact, green required checks, and explicit approval or thumbs up on the latest head.
-- For docs-only, policy-only, or other non-build-impact pull-request work, do not wait on unrelated broad CI. Use the touched-doc formatter or linter plus pull-request compliance or standards checks if they exist, and treat unrelated e2e, unit, or broad CI failures as non-blocking unless they prove the change is not actually docs-only.
-- Pending required GitHub checks for build-impact work, pending pull-request Codex review, unresolved pull-request comments, and other task-relevant outside workflows still count as open work.
-- If only task-relevant outside signals are pending, report the exact waiting state and keep polling.
+- Review-complete means zero unresolved threads, a clean local Codex review artifact, green required checks, and explicit approval or thumbs up on the latest head.
+- Pending GitHub checks, pending pull-request Codex review, unresolved pull-request comments, and other agent-visible outside workflows still count as open work.
+- If only outside signals are pending, report the exact waiting state and keep polling.
 - If the next step is polling, keep doing it until the workflow ends or you can prove a real outside block. If a delegated subagent stalls with no new output, take over on the manager thread or escalate.
 - When polling is next, keep a live wait loop or session and poll at least once a minute with `sleep 60`.
 - If pull-request Codex stays non-terminal for 15 minutes, inspect the latest state and retrigger once if needed.
-- Wait up to 30 minutes for required GitHub CI on build-impact, runtime, release, merge, or repo-wide health work before you call it stalled.
+- Wait up to 30 minutes for GitHub CI, which means automated GitHub checks, before you call it stalled.
 ## Escalation Triggers (User Questions and Approvals)
 Why: technical back-and-forth wastes user time.
 - Escalate only when a listed trigger applies or a decision genuinely needs the user. Resolve everything else inside the mandate yourself.
@@ -186,14 +193,17 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - Default to the simplest clear shape. Remove dead code and extra layers when it is in scope.
 - If the task needs only a surgical edit, keep the diff surgical.
 - Prefer one clear path when outcomes are the same. Do not add optional fallbacks unless the user asked for them.
-## Self-Improvement
-Why: mistakes repeat when rules are not tightened.
+## Self-Improvement And Policy Maintenance
+Why: mistakes repeat when rules are not tightened, and rule bloat creates new mistakes.
 - Every agent mistake means there is a rule gap.
 - When you make a mistake, diagnose the gap, tighten the rule, and record the fix in the same task.
 - On each user message, decide whether this file needs an update so the standing instruction can be derived from it next time.
 - When you add or change a rule, keep or add the concrete reason it exists. Review the local diff for duplication, conflict, and extra process cost. Tighten or move an old rule before you restate it.
 - Policy changes in `AGENTS.md` and `.agentswarm/skills/**` go through one rolling draft pull request. Do not commit policy directly to `vrsen/dev` or mix it into feature pull requests. Add new policy edits to that same draft PR unless the user says otherwise.
-- Managers may edit this file directly only when the user explicitly asks them to do so. Otherwise, after drafting the policy task and getting user approval, route the edit to a subagent. Avoid needless scripting.
+- Before editing policy, treat it as harder than normal implementation work: read the whole live policy more than once, read the current diff, inspect directly related rules, and challenge whether the requested change belongs here.
+- Improve policy by entropy reduction first: remove stale or duplicate lines, strengthen an existing parent rule, split mixed-category lists, and add new text only when those fail.
+- Each policy rule needs one owner section, one enforceable behavior, and a clear reason. Move path-specific procedures into skills, scoped rules, or linked docs.
+- Before shipping a policy diff, check for contradictions, lost protections, duplicate rules, needless review noise, and whether section lists stay readable, ideally under 10 to 15 bullets.
 - For policy edits you start on your own, ask the user before you change the file. Do not stop normal coding or test work for extra approval requests.
 ### Writing Style (User Responses Only)
 - Do not start replies with a mechanical `Status:` preamble. Lead with the answer in the fewest clear words that preserve understanding.
@@ -246,7 +256,7 @@ Why: mistakes repeat when rules are not tightened.
 - After each meaningful tool call or code edit, validate the result in one or two lines and then proceed or self-correct.
 - After each change, run the touched formatter when needed, then `bun typecheck`, then the most relevant focused tests.
 - For repo-wide health or shipping, run `bun turbo test:ci`.
-- If the change is docs-only, policy-only, or formatting-only, run a formatter or linter instead of tests. For a docs-only or policy-only pull request, use touched-doc validation plus pull-request compliance or standards checks if they exist; unrelated broad CI is not a blocker.
+- If the change is docs-only or formatting-only, run a formatter or linter instead of tests.
 - Do not continue if a required command fails.
 ### Prohibited Practices
 - Ending work without minimal validation when validation should exist.
@@ -288,7 +298,6 @@ Why: mistakes repeat when rules are not tightened.
 - This repo is `agentswarm-cli`, our fork, which means our maintained copy of OpenCode. Here, `upstream` means `origin/dev` from `https://github.com/anomalyco/opencode`, never `vrsen/dev` or `https://github.com/VRSEN/agentswarm-cli`.
 - Treat `origin/dev` as the baseline and keep the fork delta limited to Agency Swarm integration, required fork packaging or release work, and approved branding.
 - Before any non-trivial edit to a file that also exists in upstream, read the upstream version first and prove that the change still fits one of those buckets. Ask: can you shape the change so the next upstream merge is easier, and do any changed lines look accidental or unexplained? If yes, treat those lines as a bug candidate, check `git blame` or `FORK_CHANGELOG.md`, and escalate to the user if you still cannot explain them.
-- Before you describe any fork delta as intentional, use `git blame` to find who added it and which commit or pull request carried it. If it was not added by bonk1t, treat it as upstream or historical drift until fresh upstream comparison proves otherwise.
 - Unrelated refactors, reformatting, style drift, while-you're-here cleanup, and made-up abstraction layers are not allowed in fork-only work.
 - Every fork-only line needs a concrete reason. If a line is not strictly required, remove it or restore the upstream shape. State why upstream behavior is not enough in the commit message or `FORK_CHANGELOG.md`.
 - Why: keep the fork rebuildable from upstream with a small, auditable delta.
