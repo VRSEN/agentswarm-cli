@@ -288,6 +288,7 @@ Why: mistakes repeat when rules are not tightened.
 - This repo is `agentswarm-cli`, our fork, which means our maintained copy of OpenCode. Here, `upstream` means `origin/dev` from `https://github.com/anomalyco/opencode`, never `vrsen/dev` or `https://github.com/VRSEN/agentswarm-cli`.
 - Treat `origin/dev` as the baseline and keep the fork delta limited to Agency Swarm integration, required fork packaging or release work, and approved branding.
 - Before any non-trivial edit to a file that also exists in upstream, read the upstream version first and prove that the change still fits one of those buckets. Ask: can you shape the change so the next upstream merge is easier, and do any changed lines look accidental or unexplained? If yes, treat those lines as a bug candidate, check `git blame` or `FORK_CHANGELOG.md`, and escalate to the user if you still cannot explain them.
+- Before you describe any fork delta as intentional, use `git blame` to find who added it and which commit or pull request carried it. If it was not added by bonk1t, treat it as upstream or historical drift until fresh upstream comparison proves otherwise.
 - Unrelated refactors, reformatting, style drift, while-you're-here cleanup, and made-up abstraction layers are not allowed in fork-only work.
 - Every fork-only line needs a concrete reason. If a line is not strictly required, remove it or restore the upstream shape. State why upstream behavior is not enough in the commit message or `FORK_CHANGELOG.md`.
 - Why: keep the fork rebuildable from upstream with a small, auditable delta.
