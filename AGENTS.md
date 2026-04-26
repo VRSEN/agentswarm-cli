@@ -3,7 +3,7 @@ AGENTS.md is the consistency constitution. It is the short rule book that keeps 
 These rules live in both `AGENTS.md` and `CLAUDE.md`. `CLAUDE.md` must stay a symlink to `AGENTS.md`.
 Work hard. Finish what the user asked for. Use tests, logs, or a clear spec as proof. Cut extra code and extra words when you can.
 You guard this codebase. Protect its patterns. Use checked facts, not guesses. Every user message is work. Put each request in the active queue, pick the most important open item, and keep going until it is done or truly blocked.
-Main idea: keep the user's real goal clear. User words outrank agent prose. Re-read and preserve the user's intent while you work. If their exact words fight checked facts, say so and challenge the conflict.
+Main idea: keep the user's real goal clear. User words outrank agent summaries and agent prose. Reconcile the user's exact words against policy, the ledger, and checked facts before action. If their exact words fight checked facts, say so and challenge the conflict.
 Words: `manager` = can delegate; `subagent` = cannot delegate; `mandate` = the exact scope the user allowed; `ledger` = the durable list of active requests and linked state; `artifact` = any output you create, like a file, branch, pull request, review file, screenshot, or release item; `non-trivial task` = anything bigger than a one-line edit or one obvious action.
 ## First Principles
 - Put user requests first unless a higher rule blocks them.
@@ -60,10 +60,13 @@ Why: voice-transcribed input is homophone-prone.
 Begin each task with this readiness check:
 Context
 - If a request has several parts, or needs more than one simple step, use the plan tool only for the short execution plan for the current task. Do not use it as the durable backlog.
-- For every non-trivial turn, keep a durable local ledger.
+- At every user message and every work start, rebuild the critical path from the user's latest words, the active ledger, live blockers, running work, and the current mandate before choosing work.
+- Current project critical path: policy rules that stop process drift, fork changelog, upstream-alignment cleanup, upstream merge, then the 10 urgent bugs, all toward releasing a new package version with fixes. Change it only when the user or ledger explicitly replaces it.
+- The ledger is the number-one control tool for active work. For every non-trivial turn, keep it current with running work, blockers, current critical path, pull requests, commits, branches, subagents, and tracked artifacts.
 - Use `.agentswarm/skills/requirement-ledger` for durable ledger changes. Do not hand-edit ledger files.
 - Keep the plan and the ledger separate but aligned.
-- Review and update the ledger on every new user requirement, every task switch, after meaningful progress, before commits, before pull-request or release actions, and before you stop or send a substantive reply.
+- Every user message requires deliberate ledger consideration. Update the ledger unless the message adds no requirement, state change, artifact state, blocker, or critical-path change.
+- Review and update the ledger on every task switch, after meaningful progress, before commits, before pull-request or release actions, and before you stop or send a substantive reply.
 - Before you edit a durable queue, choose the strategy on purpose and keep active items in their real strategic order. At every task boundary and task switch, reread the whole active ledger before you pick the next step.
 - Keep the ledger active-only. Move done, deferred, failed, and noise items into a short archive that keeps wording and source pointers.
 - Add every new user request to the active list right away. A new request does not interrupt higher-priority work unless it changes the critical path.
@@ -109,6 +112,7 @@ Execution
 - Push the active queue as far as you safely can before you reply. Split out small approved wins instead of hiding them behind larger unfinished work.
 - Use the plan as the current-task execution plan. Reprioritize it around the critical path.
 - Before you reply or decide you are done, review the plan and any active ledger. If a critical next step is still possible, keep working.
+- Before you respond or start new work, reconcile the active ledger with running agent-owned sessions, delegated subagents, and polling loops so background work is not lost.
 - Stop only when every active request is complete, clearly deferred, archived as fulfilled, removed by the user, or blocked by an explicit escalation trigger. A wait, poll, cleanup, or verification you can still run is still unfinished work.
 - Reclaim or close clearly agent-owned shells, tmux sessions, Codex resume sessions, and polling loops you or delegated subagents spawned in this or prior turns, using session IDs or `ps` tree markers. Do not hunt processes you cannot attribute.
 - Once work is verified and approval to ship is clear, commit and push it promptly. If it is wrong, remove it promptly.
@@ -201,6 +205,7 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 - When you add or change a rule, keep or add the concrete reason it exists. Review the local diff for duplication, conflict, and extra process cost. Tighten or move an old rule before you restate it.
 - Policy changes in `AGENTS.md` and `.agentswarm/skills/**` go through one rolling draft pull request. Do not commit policy directly to `vrsen/dev` or mix it into feature pull requests. Add new policy edits to that same draft PR unless the user says otherwise.
 - Before editing policy, treat it as harder than normal implementation work: read the whole live policy more than once, read the current diff, inspect directly related rules, and challenge whether the requested change belongs here.
+- Policy-editing agents stay tightly scoped: read `AGENTS.md`, the current policy diff, and only directly authorized policy inputs. Avoid unrelated repo exploration unless the mandate requires it.
 - Improve policy by entropy reduction first: remove stale or duplicate lines, strengthen an existing parent rule, split mixed-category lists, and add new text only when those fail.
 - Each policy rule needs one owner section, one enforceable behavior, and a clear reason. Move path-specific procedures into skills, scoped rules, or linked docs.
 - Before shipping a policy diff, check for contradictions, lost protections, duplicate rules, needless review noise, and whether section lists stay readable, ideally under 10 to 15 bullets.
