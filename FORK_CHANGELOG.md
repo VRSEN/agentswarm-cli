@@ -315,22 +315,17 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 ## Review for Removal
 
-These items were checked against `origin/dev` on 2026-04-26. They are not approved product intent yet, and the next cleanup pass should either remove them, align them with upstream, or prove a concrete fork constraint.
+These items were checked with `git blame` against `origin/dev` and upstream release `v1.14.25` on 2026-04-26. They are not approved product intent and should be aligned with upstream in a cleanup pass.
 
 - **Built source installs can fall back to local dist binaries during global source installs**
-  - Decision: keep under review. The behavior exists and is tested, but it still looks like maintainer/source-install convenience rather than approved product intent.
+  - Decision: align with upstream. Upstream `origin/dev` and `v1.14.25` do not have an equivalent local `dist` fallback, and this is not approved product behavior.
+  - Blame/intent check: added by bonk1t in `725ac8ec0` (`fix(install): support built source global installs`).
   - Current implementation: `findBuiltBinary` in `packages/opencode/bin/agentswarm` and `packages/opencode/test/installation/source-install-wrapper.test.ts`.
-  - Added by: `725ac8ec`
 
 - **Prompt submit flow still diverges from upstream immediate-clear behavior**
-  - Decision: align with upstream unless the auth-retry fix requires a narrower, proven fork-specific patch. This is bug/root-cause work, not approved product intent.
+  - Decision: align with upstream immediate-clear behavior. The composer-clearing bug still exists, and any auth-retry fix must be narrower than blocking prompt clearing.
+  - Blame/intent check: the current divergence is bonk1t-authored through `5b055dc8f` (`fix(tui): Run-only mode, clear-on-submit, send-gate`) and `2ad600b64` (`fix(tui): address Codex PR #99 follow-up findings on prompt and /models`).
   - Current implementation: prompt submit flow in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`.
-  - Added by: `PR #99`
-
-- **`packages/opencode/package.json` carries non-product helper scripts absent from upstream**
-  - Decision: remove or align with upstream unless a real maintainer workflow is proven. The root `random` script is upstream noise, but the package-level `random`, `clean`, `lint`, `format`, `docs`, and `deploy` scripts are fork-only command-surface drift.
-  - Current implementation: `scripts` in `packages/opencode/package.json`.
-  - Added by: unverified
 
 ## Maintenance Protocol
 
