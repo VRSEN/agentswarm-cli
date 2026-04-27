@@ -1503,7 +1503,18 @@ export namespace SessionAgencySwarm {
 
       const history = await AgencySwarmHistory.load(scope)
       const chatHistory = await Session.messages({ sessionID: input.sessionID })
-        .then((msgs) => compactHistory({ msgs, currentID: input.userMessage.info.id }) ?? history.chat_history)
+        .then((msgs) => {
+          const compacted = compactHistory({ msgs, currentID: input.userMessage.info.id })
+          if (compacted) return compacted
+          // Forked sessions clone local messages but get a fresh AgencySwarmHistory key, so the bridge
+          // would otherwise start with no context. Rebuild from the cloned messages when stored history
+          // is empty and prior messages are all agency-swarm.
+          if (history.chat_history.length === 0) {
+            const rebuilt = buildAgencyHistoryFromMessages({ msgs, currentID: input.userMessage.info.id })
+            if (rebuilt && rebuilt.length > 0) return rebuilt
+          }
+          return history.chat_history
+        })
         .catch((error) => {
           log.warn("unable to rebuild compacted agency history; falling back to stored history", {
             sessionID: input.sessionID,
@@ -2025,42 +2036,56 @@ export namespace SessionAgencySwarm {
     const slice = input.msgs.slice(start < 0 ? 0 : start)
     if (slice.some((msg) => msg.info.id !== input.currentID && !isAgencySwarmMessage(msg))) return
 
-    return slice.flatMap((msg) => {
-      if (msg.info.id === input.currentID) return []
+    return slice.flatMap((msg) => messageToHistoryItem(msg, input.currentID))
+  }
 
-      if (msg.info.role === "user") {
-        const text = buildOutgoingMessage(msg)
-        if (!text) return []
-        return [
-          {
-            type: "message",
-            role: "user",
-            content: [{ type: "input_text", text }],
-            agent: msg.info.agent,
-            callerAgent: null,
-            timestamp: msg.info.time.created,
-          },
-        ]
-      }
+  /**
+   * Rebuild bridge chat_history from local session messages. Used as a fallback when
+   * `AgencySwarmHistory` has no entry for the session (e.g. a forked session whose new sessionID
+   * never streamed before). Returns undefined when the prior messages are not all agency-swarm,
+   * to avoid sending mismatched-shape items into the bridge.
+   */
+  export function buildAgencyHistoryFromMessages(input: { msgs: MessageV2.WithParts[]; currentID: string }) {
+    if (input.msgs.length <= 1) return undefined
+    if (input.msgs.some((msg) => msg.info.id !== input.currentID && !isAgencySwarmMessage(msg))) return undefined
+    return input.msgs.flatMap((msg) => messageToHistoryItem(msg, input.currentID))
+  }
 
-      const text = msg.parts
-        .filter((part): part is MessageV2.TextPart => part.type === "text")
-        .filter((part) => !part.ignored)
-        .map((part) => part.text.trim())
-        .filter(Boolean)
-        .join("\n\n")
+  function messageToHistoryItem(msg: MessageV2.WithParts, currentID: string) {
+    if (msg.info.id === currentID) return []
+
+    if (msg.info.role === "user") {
+      const text = buildOutgoingMessage(msg)
       if (!text) return []
       return [
         {
           type: "message",
-          role: "assistant",
-          content: [{ type: "output_text", text }],
+          role: "user",
+          content: [{ type: "input_text", text }],
           agent: msg.info.agent,
-          callerAgent: extractCallerAgent(msg),
+          callerAgent: null,
           timestamp: msg.info.time.created,
         },
       ]
-    })
+    }
+
+    const text = msg.parts
+      .filter((part): part is MessageV2.TextPart => part.type === "text")
+      .filter((part) => !part.ignored)
+      .map((part) => part.text.trim())
+      .filter(Boolean)
+      .join("\n\n")
+    if (!text) return []
+    return [
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text }],
+        agent: msg.info.agent,
+        callerAgent: extractCallerAgent(msg),
+        timestamp: msg.info.time.created,
+      },
+    ]
   }
 
   function extractCallerAgent(msg: MessageV2.WithParts): string | null {

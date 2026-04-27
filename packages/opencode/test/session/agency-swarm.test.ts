@@ -2447,6 +2447,111 @@ describe("session.agency-swarm", () => {
     expect(SessionAgencySwarm.compactHistory({ msgs, currentID: "current" })).toBeUndefined()
   })
 
+  test("buildAgencyHistoryFromMessages rebuilds bridge history from cloned messages", () => {
+    const msgs = [
+      {
+        info: {
+          id: "user_1",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "text", text: "first question", ignored: false }],
+      },
+      {
+        info: {
+          id: "assistant_1",
+          role: "assistant",
+          parentID: "user_1",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Reviewer",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: { total: 0, input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "first answer" }],
+      },
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [{ type: "text", text: "follow up", ignored: false }],
+      },
+    ] as any
+
+    expect(SessionAgencySwarm.buildAgencyHistoryFromMessages({ msgs, currentID: "current" })).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "first question" }],
+        agent: "build",
+        callerAgent: null,
+        timestamp: 1,
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "first answer" }],
+        agent: "Reviewer",
+        callerAgent: null,
+        timestamp: 2,
+      },
+    ])
+  })
+
+  test("buildAgencyHistoryFromMessages returns undefined when only the current user message exists", () => {
+    const msgs = [
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "text", text: "first prompt", ignored: false }],
+      },
+    ] as any
+
+    expect(SessionAgencySwarm.buildAgencyHistoryFromMessages({ msgs, currentID: "current" })).toBeUndefined()
+  })
+
+  test("buildAgencyHistoryFromMessages bails out when prior messages are not all agency-swarm", () => {
+    const msgs = [
+      {
+        info: {
+          id: "user_1",
+          role: "user",
+          agent: "build",
+          model: { providerID: "openai", modelID: "gpt-5" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "text", text: "openai prompt", ignored: false }],
+      },
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 2 },
+        },
+        parts: [{ type: "text", text: "follow up", ignored: false }],
+      },
+    ] as any
+
+    expect(SessionAgencySwarm.buildAgencyHistoryFromMessages({ msgs, currentID: "current" })).toBeUndefined()
+  })
+
   test("stream resolves configured recipient alias to live agent id from metadata", async () => {
     mockHistory()
     let sentRecipient: string | undefined
@@ -2619,6 +2724,98 @@ describe("session.agency-swarm", () => {
     }
 
     expect(sentHistory).toEqual(storedHistory)
+  })
+
+  test("stream rebuilds chat history from cloned messages when bridge history is empty", async () => {
+    const clonedAgencyMessages = [
+      {
+        info: {
+          id: "user_clone_1",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "text", text: "before fork", ignored: false }],
+      },
+      {
+        info: {
+          id: "assistant_clone_1",
+          role: "assistant",
+          parentID: "user_clone_1",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Reviewer",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: { total: 0, input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "answer before fork" }],
+      },
+      {
+        info: {
+          id: "message_user_1",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [{ type: "text", text: "follow up after fork", ignored: false }],
+      },
+    ] as any
+
+    let sentHistory: unknown
+    AgencySwarmHistory.load = (async () => ({
+      scope: "http://127.0.0.1:8000|builder|session_1",
+      chat_history: [],
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.load
+    AgencySwarmHistory.appendMessages = (async () => ({
+      scope: "scope",
+      chat_history: [],
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.appendMessages
+    AgencySwarmHistory.setLastRunID = (async () => ({
+      scope: "scope",
+      chat_history: [],
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.setLastRunID
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      sentHistory = args.chatHistory
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const messagesSpy = spyOn(Session, "messages").mockResolvedValue(clonedAgencyMessages)
+    try {
+      const { input } = helper()
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _ of stream.fullStream) {
+      }
+    } finally {
+      messagesSpy.mockRestore()
+    }
+
+    expect(sentHistory).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "before fork" }],
+        agent: "build",
+        callerAgent: null,
+        timestamp: 1,
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "answer before fork" }],
+        agent: "Reviewer",
+        callerAgent: null,
+        timestamp: 2,
+      },
+    ])
   })
 
   test("stream persists handed off recipient from session history", async () => {
