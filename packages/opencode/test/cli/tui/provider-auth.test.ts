@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test"
-import { getVisibleProviderAuthMethods, hasStoredProviderCredential } from "../../../src/cli/cmd/tui/util/provider-auth"
+import {
+  getStoredProviderAuthMethod,
+  getVisibleProviderAuthMethods,
+  hasStoredProviderCredential,
+  OAUTH_DUMMY_KEY,
+} from "../../../src/cli/cmd/tui/util/provider-auth"
 
 test("detects stored api credentials", () => {
   expect(
@@ -151,4 +156,69 @@ test("keeps only API auth methods for non-openai providers in agency-swarm frame
       { frameworkMode: true },
     ),
   ).toEqual([{ type: "api", label: "API key" }])
+})
+
+test("getStoredProviderAuthMethod returns 'api' for stored API key", () => {
+  expect(
+    getStoredProviderAuthMethod({
+      id: "openai",
+      name: "OpenAI",
+      source: "api",
+      env: [],
+      options: {},
+      models: {},
+    }),
+  ).toBe("api")
+})
+
+test("getStoredProviderAuthMethod returns 'env' for env-backed providers", () => {
+  expect(
+    getStoredProviderAuthMethod({
+      id: "openai",
+      name: "OpenAI",
+      source: "env",
+      env: ["OPENAI_API_KEY"],
+      options: {},
+      models: {},
+    }),
+  ).toBe("env")
+})
+
+test("getStoredProviderAuthMethod returns 'oauth' for OAUTH_DUMMY_KEY-marked custom providers", () => {
+  expect(
+    getStoredProviderAuthMethod({
+      id: "openai",
+      name: "OpenAI",
+      source: "custom",
+      env: [],
+      options: { apiKey: OAUTH_DUMMY_KEY },
+      models: {},
+    }),
+  ).toBe("oauth")
+})
+
+test("getStoredProviderAuthMethod returns undefined for opencode public mode", () => {
+  expect(
+    getStoredProviderAuthMethod({
+      id: "opencode",
+      name: "OpenCode",
+      source: "custom",
+      env: [],
+      options: { apiKey: "public" },
+      models: {},
+    }),
+  ).toBeUndefined()
+})
+
+test("getStoredProviderAuthMethod returns undefined for empty custom options", () => {
+  expect(
+    getStoredProviderAuthMethod({
+      id: "openai",
+      name: "OpenAI",
+      source: "custom",
+      env: [],
+      options: {},
+      models: {},
+    }),
+  ).toBeUndefined()
 })
