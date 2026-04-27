@@ -7,14 +7,10 @@ import { useDialog } from "@tui/ui/dialog"
 import { createDialogProviderOptions, createDialogProviderOptionsWithFilter, DialogProvider } from "./dialog-provider"
 import { DialogVariant } from "./dialog-variant"
 import { useKeybind } from "../context/keybind"
-import { hasUsableProvider, isAgencySupportedProvider, isAgencySwarmFrameworkMode } from "../session-error"
+import { isAgencySupportedProvider, isAgencySwarmFrameworkMode } from "../session-error"
 import * as fuzzysort from "fuzzysort"
 import { consoleManagedProviderLabel } from "@tui/util/provider-origin"
-
-export function useConnected() {
-  const sync = useSync()
-  return createMemo(() => hasUsableProvider(sync.data.provider))
-}
+import { useConnected } from "./use-connected"
 
 export function DialogModel(props: { providerID?: string }) {
   const local = useLocal()

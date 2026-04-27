@@ -22,6 +22,7 @@ import { errorMessage as toErrorMessage } from "@/util/error"
 import { Log } from "@/util/log"
 import open from "open"
 import type { Provider } from "@opencode-ai/sdk/v2"
+import { useConnected } from "./use-connected"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
   openai: 0,
@@ -64,6 +65,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
   const toast = useToast()
   const local = useLocal()
   const { theme } = useTheme()
+  const onboarded = useConnected()
   const allowed = createMemo(() => new Set(props.providerIDs ?? []))
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
@@ -94,7 +96,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
           category: provider.id in PROVIDER_PRIORITY ? "Popular" : "Other",
           gutter: consoleManaged ? (
             <text fg={theme.textMuted}>{CONSOLE_MANAGED_ICON}</text>
-          ) : connected ? (
+          ) : connected && onboarded() ? (
             <text fg={theme.success}>✓</text>
           ) : undefined,
           async onSelect() {
