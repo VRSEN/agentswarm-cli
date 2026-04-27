@@ -5,7 +5,7 @@ import {
   readCredentialHeaders,
   readStringRecord,
 } from "@/agency-swarm/client-config"
-import { Flag } from "@/flag/flag"
+import { Flag } from "@opencode-ai/core/flag/flag"
 import { AgencySwarmHistory } from "@/agency-swarm/history"
 import {
   buildLitellmModelForClientConfig,
@@ -21,7 +21,7 @@ import { Provider } from "@/provider/provider"
 import { Session } from "@/session"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionID } from "@/session/schema"
-import { Log } from "@/util/log"
+import { Log } from "@/util"
 import semver from "semver"
 import {
   asRecord,
@@ -175,7 +175,7 @@ export namespace SessionAgencySwarm {
       forwardUpstreamCredentials === true
     const skipOpenAIApiKey = hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config)
     const rawGenerated = forwardGenerated
-      ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), getEnvForClientConfig(), {
+      ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), await getEnvForClientConfig(), {
           skipOpenAIApiKeyInjection: skipOpenAIApiKey,
           skipOpenAIOAuthFromStored: hasExplicitOpenAIClientConfig(config),
           allowStoredOpenAIOAuth: !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
@@ -505,9 +505,9 @@ export namespace SessionAgencySwarm {
     }
   }
 
-  function getEnvForClientConfig(): Record<string, string | undefined> {
+  async function getEnvForClientConfig(): Promise<Record<string, string | undefined>> {
     try {
-      return Env.all()
+      return await Env.all()
     } catch (error) {
       log.error("failed to read Env service while building agency-swarm client_config; falling back to process.env", {
         error: error instanceof Error ? error.message : String(error),

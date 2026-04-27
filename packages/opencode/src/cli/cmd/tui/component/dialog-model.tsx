@@ -9,7 +9,6 @@ import { DialogVariant } from "./dialog-variant"
 import { useKeybind } from "../context/keybind"
 import { isAgencySupportedProvider, isAgencySwarmFrameworkMode } from "../session-error"
 import * as fuzzysort from "fuzzysort"
-import { consoleManagedProviderLabel } from "@tui/util/provider-origin"
 import { useConnected } from "./use-connected"
 
 export function DialogModel(props: { providerID?: string }) {
@@ -66,11 +65,7 @@ export function DialogModel(props: { providerID?: string }) {
             key: item,
             value: { providerID: provider.id, modelID: model.id },
             title: model.name ?? item.modelID,
-            description: consoleManagedProviderLabel(
-              sync.data.console_state.consoleManagedProviders,
-              provider.id,
-              provider.name,
-            ),
+            description: provider.name,
             category,
             disabled: provider.id === "opencode" && model.id.includes("-nano"),
             footer: model.cost?.input === 0 && provider.id === "opencode" ? "Free" : undefined,
@@ -108,9 +103,7 @@ export function DialogModel(props: { providerID?: string }) {
             description: favorites.some((item) => item.providerID === provider.id && item.modelID === model)
               ? "(Favorite)"
               : undefined,
-            category: connected()
-              ? consoleManagedProviderLabel(sync.data.console_state.consoleManagedProviders, provider.id, provider.name)
-              : undefined,
+            category: connected() ? provider.name : undefined,
             disabled: provider.id === "opencode" && model.includes("-nano"),
             footer: info.cost?.input === 0 && provider.id === "opencode" ? "Free" : undefined,
             onSelect() {
@@ -161,7 +154,7 @@ export function DialogModel(props: { providerID?: string }) {
   const title = createMemo(() => {
     const value = provider()
     if (!value) return "Select model"
-    return consoleManagedProviderLabel(sync.data.console_state.consoleManagedProviders, value.id, value.name)
+    return value.name
   })
 
   function onSelect(providerID: string, modelID: string) {

@@ -5,7 +5,7 @@ import { UI } from "../ui"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencyProduct } from "@/agency-swarm/product"
 import { Auth } from "@/auth"
-import { Config } from "@/config/config"
+import * as Config from "@/config/config"
 import path from "path"
 
 export const AgenciiCommand = cmd({

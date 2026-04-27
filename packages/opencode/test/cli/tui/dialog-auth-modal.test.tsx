@@ -8,9 +8,14 @@ import { Prompt, type PromptRef } from "../../../src/cli/cmd/tui/component/promp
 import * as FrecencyModule from "../../../src/cli/cmd/tui/component/prompt/frecency"
 import * as PromptHistoryModule from "../../../src/cli/cmd/tui/component/prompt/history"
 import * as PromptStashModule from "../../../src/cli/cmd/tui/component/prompt/stash"
+import * as AgencySwarmConnectionContext from "../../../src/cli/cmd/tui/context/agency-swarm-connection"
+import * as ArgsContext from "../../../src/cli/cmd/tui/context/args"
+import * as EditorContext from "../../../src/cli/cmd/tui/context/editor"
+import * as EventContext from "../../../src/cli/cmd/tui/context/event"
 import * as ExitContext from "../../../src/cli/cmd/tui/context/exit"
 import * as KVContext from "../../../src/cli/cmd/tui/context/kv"
 import * as LocalContext from "../../../src/cli/cmd/tui/context/local"
+import * as ProjectContext from "../../../src/cli/cmd/tui/context/project"
 import * as KeybindContext from "../../../src/cli/cmd/tui/context/keybind"
 import * as RouteContext from "../../../src/cli/cmd/tui/context/route"
 import * as SDKContext from "../../../src/cli/cmd/tui/context/sdk"
@@ -133,6 +138,30 @@ async function renderDialogAuthHarness() {
       },
     }) as any,
   )
+  spyOn(AgencySwarmConnectionContext, "useAgencySwarmConnection").mockReturnValue({
+    requiresReconnect: () => false,
+    openConnectDialog: () => false,
+    status: () => "connected",
+    baseURL: () => undefined,
+    failureCount: () => 0,
+    frameworkMode: () => true,
+  } as any)
+  spyOn(ArgsContext, "useArgs").mockReturnValue({} as any)
+  spyOn(EditorContext, "useEditorContext").mockReturnValue({
+    enabled: () => false,
+    connected: () => false,
+    selection: () => undefined,
+    onMention: () => () => {},
+    server: () => undefined,
+  } as any)
+  spyOn(EventContext, "useEvent").mockReturnValue({
+    subscribe: () => () => {},
+    on: () => () => {},
+  } as any)
+  spyOn(ProjectContext, "useProject").mockReturnValue({
+    workspace: { current: () => undefined, status: () => undefined },
+    instance: { directory: () => "/tmp" },
+  } as any)
   spyOn(KVContext, "useKV").mockReturnValue({
     get: (_key: string, fallback?: boolean) => fallback,
     set: () => {},
@@ -325,6 +354,6 @@ describe("dialog auth modal behavior", () => {
     await app.renderOnce()
 
     expect(app.dialog.stack.length).toBe(1)
-    expect(app.toastMessages.at(-1)?.message).toBe("Add a supported provider credential before sending a message")
+    expect(app.toastMessages.at(-1)?.message).toBe("No provider credential is configured. Run /auth to add it.")
   })
 })

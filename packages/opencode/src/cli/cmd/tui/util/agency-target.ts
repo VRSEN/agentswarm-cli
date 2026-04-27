@@ -1,6 +1,6 @@
 import { displayAgentName } from "@/agent/display"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import { Locale } from "@/util/locale"
+import * as Locale from "@/util/locale"
 
 export type AgencyProviderOptions = {
   baseURL: string

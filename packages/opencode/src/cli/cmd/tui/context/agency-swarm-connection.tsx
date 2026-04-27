@@ -1,7 +1,7 @@
 import { createMemo, createEffect, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import { Log } from "@/util/log"
+import { Log } from "@/util"
 import { createSimpleContext } from "./helper"
 import { useLocal } from "./local"
 import { useSync } from "./sync"
