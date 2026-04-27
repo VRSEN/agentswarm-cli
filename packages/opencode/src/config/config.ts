@@ -539,13 +539,17 @@ export const layer = Layer.effect(
         }
 
         // ConfigPaths.directories returns each parent's [.agentswarm, .opencode] pair in that order.
-        // mergeDeep makes later entries win, so swap each adjacent same-parent pair to load legacy
-        // `.opencode` before branded `.agentswarm` and keep the FORK_CHANGELOG branded-wins rule.
+        // mergeDeep makes later entries win, so swap each adjacent same-parent pair so legacy
+        // `.opencode` loads before branded `.agentswarm` and branded wins at the same workspace
+        // level. Skip the swap when either side is OPENCODE_CONFIG_DIR so the explicit env override
+        // keeps its existing position.
         const ordered = directories.slice()
         for (let i = 0; i < ordered.length - 1; i++) {
           const a = ordered[i]
           const b = ordered[i + 1]
           if (
+            a !== Flag.OPENCODE_CONFIG_DIR &&
+            b !== Flag.OPENCODE_CONFIG_DIR &&
             a.endsWith(AgencyBrand.workspace) &&
             b.endsWith(AgencyBrand.legacyWorkspace) &&
             path.dirname(a) === path.dirname(b)

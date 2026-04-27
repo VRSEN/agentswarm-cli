@@ -1,5 +1,6 @@
 export * as TuiConfig from "./tui"
 
+import path from "path"
 import z from "zod"
 import { mergeDeep, unique } from "remeda"
 import { Context, Effect, Fiber, Layer } from "effect"
@@ -129,13 +130,29 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
   // walking up the tree. Also returned below so callers can install plugin
   // dependencies from each location.
   const dirs = unique(directories).filter(shouldLoadConfigDir)
-  const loadDirs = [
-    ...dirs.filter((dir) => dir !== Flag.OPENCODE_CONFIG_DIR).toReversed(),
-    ...dirs.filter((dir) => dir === Flag.OPENCODE_CONFIG_DIR),
-  ]
 
-  for (const dir of loadDirs) {
-    if (!shouldLoadConfigDir(dir)) continue
+  // ConfigPaths.directories returns each parent's [.agentswarm, .opencode] pair in that order.
+  // mergeDeep makes later entries win, so swap each adjacent same-parent pair so legacy `.opencode`
+  // loads before branded `.agentswarm` and branded wins at the same workspace level. Skip the swap
+  // when either side is OPENCODE_CONFIG_DIR so the explicit env override keeps its existing position.
+  const ordered = dirs.slice()
+  for (let i = 0; i < ordered.length - 1; i++) {
+    const a = ordered[i]
+    const b = ordered[i + 1]
+    if (
+      a !== Flag.OPENCODE_CONFIG_DIR &&
+      b !== Flag.OPENCODE_CONFIG_DIR &&
+      a.endsWith(AgencyBrand.workspace) &&
+      b.endsWith(AgencyBrand.legacyWorkspace) &&
+      path.dirname(a) === path.dirname(b)
+    ) {
+      ordered[i] = b
+      ordered[i + 1] = a
+      i++
+    }
+  }
+
+  for (const dir of ordered) {
     for (const file of ConfigPaths.fileInDirectory(dir, "tui")) {
       yield* Effect.promise(() => mergeFile(acc, file, ctx)).pipe(Effect.orDie)
     }
