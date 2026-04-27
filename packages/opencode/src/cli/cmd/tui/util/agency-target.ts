@@ -125,10 +125,8 @@ export function shouldAdoptAgencyHandoffRecipient(input: {
   agency?: string
   currentRecipient?: string
   assistantAgent?: string
-  completed?: boolean
 }) {
   if (!input.frameworkMode) return false
-  if (!input.completed) return false
   if (!input.agency) return false
   if (!input.assistantAgent) return false
   if (input.assistantAgent === "build") return false
