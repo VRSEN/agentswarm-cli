@@ -538,9 +538,27 @@ export const layer = Layer.effect(
           log.debug("loading config from OPENCODE_CONFIG_DIR", { path: Flag.OPENCODE_CONFIG_DIR })
         }
 
+        // ConfigPaths.directories returns each parent's [.agentswarm, .opencode] pair in that order.
+        // mergeDeep makes later entries win, so swap each adjacent same-parent pair to load legacy
+        // `.opencode` before branded `.agentswarm` and keep the FORK_CHANGELOG branded-wins rule.
+        const ordered = directories.slice()
+        for (let i = 0; i < ordered.length - 1; i++) {
+          const a = ordered[i]
+          const b = ordered[i + 1]
+          if (
+            a.endsWith(AgencyBrand.workspace) &&
+            b.endsWith(AgencyBrand.legacyWorkspace) &&
+            path.dirname(a) === path.dirname(b)
+          ) {
+            ordered[i] = b
+            ordered[i + 1] = a
+            i++
+          }
+        }
+
         const deps: Fiber.Fiber<void, never>[] = []
 
-        for (const dir of directories) {
+        for (const dir of ordered) {
           if (
             dir.endsWith(AgencyBrand.workspace) ||
             dir.endsWith(AgencyBrand.legacyWorkspace) ||
