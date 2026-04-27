@@ -109,9 +109,10 @@ export function isSupportedAgencyAuthProvider(
 }
 
 function isAgencyProviderCredentialFailure(message: string) {
-  return /missing provider credentials|client_config|invalid api key|api key rejected|authentication failed|auth failed|access token/i.test(
-    message,
-  )
+  if (/missing provider credentials|client_config|authentication failed|auth failed|access token/i.test(message)) {
+    return true
+  }
+  return describeStreamAuthError(message) !== null
 }
 
 function hasSupportedAgencyCredential(
@@ -286,7 +287,7 @@ export function describeStreamAuthError(message: string): string | null {
     hasEnvVarHint ||
     (/\bAuthenticationError\b/i.test(message) && /\bMissing\b/i.test(message) && Boolean(provider))
   const isRejected =
-    /incorrect_api_key|invalid_api_key|Invalid API key for\s+\w[\w-]+|api key rejected/i.test(message) && !isMissing
+    /incorrect_api_key|invalid_api_key|Invalid API key|incorrect api key|api key rejected/i.test(message) && !isMissing
 
   if (isMissing) {
     return provider ? `${provider} API key required. Run /auth to add it.` : "Missing API key. Run /auth to add it."

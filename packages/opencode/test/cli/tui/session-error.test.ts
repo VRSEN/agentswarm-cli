@@ -963,6 +963,31 @@ describe("agency session errors", () => {
     ).toBe(true)
   })
 
+  test("routes spaced 'Incorrect API key' upstream errors to auth", () => {
+    const message = "Streaming request failed (401): Incorrect API key provided: sk-***"
+    expect(shouldOpenAgencyConnectDialog({ providerID: "agency-swarm", message })).toBe(false)
+    expect(shouldOpenAgencyAuthDialog({ providerID: "agency-swarm", message })).toBe(true)
+  })
+
+  test("routes invalid_api_key error code upstream errors to auth", () => {
+    const message = 'Streaming request failed (401): {"error":{"code":"invalid_api_key","message":"Incorrect API key"}}'
+    expect(shouldOpenAgencyConnectDialog({ providerID: "agency-swarm", message })).toBe(false)
+    expect(shouldOpenAgencyAuthDialog({ providerID: "agency-swarm", message })).toBe(true)
+  })
+
+  test("routes litellm AuthenticationError upstream errors to auth", () => {
+    const message =
+      "Streaming request failed (500): litellm.AuthenticationError: AuthenticationError: OpenAIException - Incorrect API key provided"
+    expect(shouldOpenAgencyConnectDialog({ providerID: "agency-swarm", message })).toBe(false)
+    expect(shouldOpenAgencyAuthDialog({ providerID: "agency-swarm", message })).toBe(true)
+  })
+
+  test("routes Missing API key env-var hints to auth", () => {
+    const message = "Streaming request failed (401): Please set OPENAI_API_KEY before retrying."
+    expect(shouldOpenAgencyConnectDialog({ providerID: "agency-swarm", message })).toBe(false)
+    expect(shouldOpenAgencyAuthDialog({ providerID: "agency-swarm", message })).toBe(true)
+  })
+
   test("describes missing agency provider credentials with /auth add guidance", () => {
     expect(
       describeAgencyAuthFailure("Streaming request failed (401): Missing provider credentials in client_config"),
@@ -1053,6 +1078,16 @@ describe("describeStreamAuthError", () => {
     expect(describeStreamAuthError(msg)).toBe("API key rejected. Run /auth to update it.")
   })
 
+  test("detects rejected key via spaced 'Incorrect API key' phrasing", () => {
+    expect(describeStreamAuthError("Streaming request failed (401): Incorrect API key provided: sk-***")).toBe(
+      "API key rejected. Run /auth to update it.",
+    )
+  })
+
+  test("detects rejected key via bare 'Invalid API key' without provider", () => {
+    expect(describeStreamAuthError("Error: Invalid API key")).toBe("API key rejected. Run /auth to update it.")
+  })
+
   test("detects rejected key via LiteLLM AuthenticationError marker", () => {
     const msg = "litellm.AuthenticationError: API key rejected by upstream"
     expect(describeStreamAuthError(msg)).toBe("API key rejected. Run /auth to update it.")
@@ -1069,8 +1104,7 @@ describe("describeStreamAuthError", () => {
   })
 
   test("prioritizes missing over rejected when both patterns appear", () => {
-    const msg =
-      'litellm.AuthenticationError: Missing Anthropic API Key {"error":{"code":"invalid_api_key"}}'
+    const msg = 'litellm.AuthenticationError: Missing Anthropic API Key {"error":{"code":"invalid_api_key"}}'
     expect(describeStreamAuthError(msg)).toBe("anthropic API key required. Run /auth to add it.")
   })
 })
