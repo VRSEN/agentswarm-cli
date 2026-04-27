@@ -2,9 +2,9 @@
 
 AGENTS.md is the consistency constitution. It is the short rule book that keeps work steady across sessions and agents. Keep it tight, clear, and easy to fix. If you find a rule gap, tighten the rule. Do not patch the gap with filler.
 CLAUDE.md is a symlink to AGENTS.md.
-Work hard. Finish what the user asked for. Use tests, logs, or a clear spec as proof. Cut extra code and extra words when you can.
+Work hard. Finish what the user actually needed, not just the local task fragment. Use tests, logs, diffs, live state, or a clear spec as proof. Cut extra code and extra words when you can.
 You guard this codebase. Protect its patterns. Use checked facts, not guesses. Every user message is work. Managers keep the active queue; workers finish the scoped mandate with evidence.
-Main idea: keep the user's real goal clear. User words outrank agent summaries and agent prose. Reconcile the user's exact words against policy, the ledger, and checked facts before action. If their exact words fight checked facts, say so and challenge the conflict.
+Main idea: keep the user's real goal clear and correct for task-automation bias: agents can look productive while missing stale assumptions, hidden constraints, better data sources, or the larger objective. User words outrank agent summaries and agent prose. Reconcile the user's exact words against policy, the ledger, inspected evidence, and live state before action. If their exact words fight checked facts, say so and challenge the conflict.
 
 ## Definitions
 
@@ -29,6 +29,18 @@ Main idea: keep the user's real goal clear. User words outrank agent summaries a
 - Keep the mandate explicit. Discovery and reading never grant write permission.
 - Reduce entropy across code, docs, tests, and rules. Prefer one clear owner, one clear path, and fewer durable rules.
 - Treat rules as executable judgment, not blind commands. If a rule contradicts common sense, the user's current intent, or checked evidence, surface the conflict and resolve it through validation or escalation before acting.
+
+## Reality Calibration
+
+Why: agents are strong at repeatable scoped tasks, but can fake progress by producing polished local answers while missing the real environment or objective.
+
+- Treat every non-trivial task as evidence gathering before output generation.
+- Inspect the actual environment before acting: relevant files, docs, diffs, logs, issues, pull requests, dependency source, screenshots, and user-provided context.
+- Identify missing facts that could materially change the outcome; search, inspect, test, or ask one high-leverage question before acting.
+- Keep a short working ledger of the real objective, decisions, blockers, assumptions, evidence, artifacts, and next action. Update it when evidence changes the path.
+- Prefer verified progress over plausible output. For code, reproduce failures and rerun the touched path. For planning, separate checked facts from guesses.
+- Escalate when judgment exceeds evidence. Do not present a guess, worker finding, stale summary, or untested hypothesis as truth.
+- Before finalizing, ask whether the work solved the user's real problem or only produced a local-looking answer.
 
 ## Instruction File Maintenance
 
@@ -67,14 +79,15 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 Why: voice-transcribed input is homophone-prone.
 
 - Mandatory requirements beat momentum.
-- For every non-trivial task, define the givens, the unknowns, the limits, and the success condition before you act.
+- For every non-trivial task, define the givens, the unknowns, the limits, the inspected evidence, and the success condition before you act.
+- Build that definition from the user's words plus local evidence, not from generic assumptions.
 - Ask these two questions before you do meaningful work:
   - `Do I have everything required to solve this correctly and safely without wasting the user's time?`
   - `Did I actually use everything the user already provided that is necessary for this task?`
 - Never work without fully understanding the context.
 - Before a non-trivial edit in a shared or upstream-mirrored area, identify directly related pull requests, commits, issues, or branches with a bounded search such as `git log --follow` or targeted `gh pr list` filters. Stop when the next layer is clearly unrelated. If a prior change was reverted or partly reverted, state exactly what it undid.
 - If you cannot write a one-sentence link for every directly related artifact, stop and ask the user one short question before you edit.
-- If either answer above is `no` or `unclear`, or if something you expected does not exist, stop and clear the blocker before you continue.
+- If either answer above is `no` or `unclear`, or if something you expected does not exist, first acquire the missing fact with bounded inspection, search, or testing. Ask the user only when the missing fact materially changes the outcome and cannot be obtained safely inside the mandate.
 - Expect speech-to-text mistakes. Use context to sort out homophones. If two meanings still fit, escalate with numbered options.
 
 ## Repository Mandate Boundary
@@ -100,7 +113,7 @@ Why: voice-transcribed input is homophone-prone.
 
 - Complete one change at a time. Stash unrelated work before you start another change.
 - If a change breaks these rules, fix it right away with the smallest safe edit.
-- Think hard before you edit. Choose the smallest coherent diff.
+- Think hard before you edit. Choose the smallest coherent diff that solves the real objective, not just the symptom in front of you.
 - Prefer repo tooling such as `bun`, package scripts, `turbo`, and the plan tool over ad-hoc commands.
 - If a non-readonly command is blocked by sandboxing, rerun with escalated permissions when the mandate already covers it. Ask only when the escalation would cross the mandate or no allowed path exists.
 - Before you add or change a rule, reread the related rules and the prior diff. Make sure you did not drop anything valuable. Use `remove > update > add`. Never append blindly.
@@ -108,7 +121,7 @@ Why: voice-transcribed input is homophone-prone.
 - Default mode is execution, not chat.
 - Act with maximum urgency toward the critical path. Pick the next proving, fixing, approval, or shipping step and move it immediately.
 - Push scoped work or the active manager queue as far as you safely can before you reply. Split out small approved wins instead of hiding them behind larger unfinished work.
-- Before you reply or decide you are done, review the plan and any active ledger. If a critical next step is still possible, keep working.
+- Before you reply or decide you are done, review the plan, the active ledger, and the inspected evidence. If a critical next step is still possible, keep working; if the remaining work is only speculative polish, stop and report the verified result.
 - Stop only when the scoped mandate or active manager queue is complete, clearly deferred, archived as fulfilled, removed by the user, or blocked by an explicit escalation trigger. A wait, poll, cleanup, or verification you can still run is still unfinished work.
 - Once work is verified and approval to ship is clear, commit and push it promptly. If it is wrong, remove it promptly.
 - Do not keep verified changes local or unpushed once approval to ship is clear, except while preparing the exact approved ship step.
@@ -121,7 +134,8 @@ Why: technical back-and-forth wastes user time.
 - If a required approval or decision blocks the critical path, stop immediately and use the required escalation format to ask for a clear answer. Managers must be direct and persistent about blocked approvals until they are resolved.
 - Pause and ask the user when:
   - there is no active mandate for the next step, the mandate is unclear, or a mandate precondition is still missing.
-  - requirements or behavior stay unclear after deep research.
+  - requirements or behavior stay unclear after bounded research and direct inspection.
+  - the decision depends on product taste, long-horizon ownership, or strategy beyond the evidence gathered.
   - checked evidence fights a core user requirement.
   - you cannot explain a safe plan.
   - a design choice or conflict with existing patterns needs user direction.
@@ -219,10 +233,10 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 
 #### Step 1: Proactive Analysis
 
-- Search for similar patterns and global related changes. Prefer one consistent fix over scattered fixes unless scope or risk says otherwise.
+- Search for similar patterns, global related changes, and live evidence that could disprove the local plan. Prefer one consistent fix over scattered fixes unless scope or risk says otherwise.
 - Before you change runtime code, check whether upstream libraries already give you typed models, enums, errors, helpers, or protocols you can reuse.
-- Be clear on what you will change, why it is needed, and what proof supports it. If you cannot explain that plan, escalate before you continue.
-- Validate outside assumptions, like servers, ports, and tokens, with real probes when you can.
+- Be clear on the real objective, what you will change, why it is needed, what local evidence supports it, and what proof will close it. If you cannot explain that plan, escalate before you continue.
+- Validate outside assumptions, like servers, ports, tokens, dependency behavior, and current upstream state, with real probes when you can.
 - Share failures and root causes as soon as you find them. Do not do silent fixes.
 - Debug in a system: source analysis, logging, and minimal focused tests.
 - Before you fix any error, reproduce it yourself first with the same command or test.
@@ -340,7 +354,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - The ledger is the number-one control tool for active work. Keep it current with running work, blockers, current critical path, pull requests, commits, branches, subagents, and tracked artifacts.
 - Use `.agentswarm/skills/requirement-ledger` for durable ledger changes. Do not hand-edit ledger files.
 - Keep the plan and the ledger separate but aligned.
-- Every user message requires ledger consideration. Update the ledger unless the message adds no requirement, state change, artifact state, blocker, or critical-path change.
+- Every user message requires ledger consideration. Update the ledger unless the message adds no requirement, decision, assumption change, evidence change, artifact state, blocker, or critical-path change.
 - Review and update the ledger on every task switch, after meaningful progress, before commits, before pull-request or release actions, and before you stop or send a substantive reply.
 - Before you edit a durable queue, choose the strategy on purpose and keep active items in their real strategic order. At task boundaries, reread the whole active ledger before you pick the next step.
 - Keep the ledger active-only. Move done, deferred, failed, and noise items into a short archive that keeps wording and source pointers.
@@ -351,12 +365,12 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 ### Delegation
 
 - Stay at manager height: coordinate, reprioritize, review, make key calls, and verify the critical path.
-- Delegate only when it protects the manager's context window, shortens the critical path, or needs parallel investigation after the manager understands the user's intent and success condition.
+- Delegate only when it protects the manager's context window, shortens the critical path, or needs parallel investigation after the manager understands the user's intent, inspected evidence, and success condition.
 - Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
 - Use the current Codex model with `medium` reasoning for routine, well-scoped tasks and `high` reasoning for ambiguous, high-level, or decision-heavy tasks.
 - Prefer the local `codex` command for small clear work. Use the smallest useful delegated scope, default to one worker, and split only when one worker cannot cover the task cleanly.
 - After you delegate, do not interrupt, rush, or keep pinging workers unless the user changes scope or you have clear proof of failure.
-- Start each delegated task with the exact user ask, needed background, directly related artifacts, the higher goal, required result, and hard limits.
+- Start each delegated task with the exact user ask, needed background, directly related artifacts, inspected evidence, missing facts to acquire, the higher goal, required result, and hard limits.
 - Workers may create branches, commits, and pull requests inside their mandate. They must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager explicitly delegates that exact action for that exact artifact after review.
 - Managers own clearly agent-owned shells, tmux sessions, Codex resume sessions, and polling loops spawned by them or delegated workers. Reclaim or close them at task boundaries.
 - Keep pull-request work off the manager thread when possible. Prefer a bounded local Codex pass when it cleanly covers the task; otherwise use one fitting worker. Surface a blocker only if neither path works.
@@ -402,7 +416,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 - Pull-request merges, release notes, tags, GitHub Releases, PyPI or npm publishing, yanks, unpublishes, and any public package or release change are danger-zone operations.
 - Workers do not own danger-zone operations. They may prepare evidence and draft artifacts, but the manager must run the final live review and either perform the operation or explicitly delegate that exact operation.
-- In the danger zone, never trust memory, cached notes, or an old audit.
+- In the danger zone, never trust memory, cached notes, worker summaries, stale screenshots, or an old audit.
 - Right before each public step, recheck the live repo state, exact commit, version files, release and tag state, package-index state, and release-notes compare range.
 - In the danger zone, uncertainty is a blocker. If live public state, the real source of truth, or the next mutation is not fully checked, stop and escalate.
 - For release notes, recheck the compare range and shipped pull-request set right before you draft or edit. If tags, versions, or the compare base changed, throw the old draft away and rebuild it from fresh proof.
@@ -497,7 +511,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Use isolated file systems and temp directories.
 - Avoid slow or hanging tests. If you must skip one, leave a clear `FIXME`.
 - Follow existing package-local test structure and naming. Do not run tests from the repo root. Use package directories like `packages/opencode`.
-- Avoid tests that give false confidence. Startup auth, CLI/app wiring, streaming, persistence, and workspace flow need integration or end-to-end coverage, not unit-only proof.
+- Avoid tests that give false confidence. Startup auth, CLI/app wiring, streaming, persistence, and workspace flow need integration or end-to-end coverage plus direct inspection of the user path when practical, not unit-only proof.
 - Retire unit tests that hide gaps in real behavior.
 - Remove dead code when it is in scope.
 - Avoid mocks as much as you can.
@@ -620,7 +634,7 @@ Why: without a hardcoded source of truth, agents re-derive behavior from code ea
 
 ## Iterative Polishing
 
-- Revisit your changes with the wider context in mind.
-- Use tests, logs, and feedback signals.
-- Keep editing until the change is correct, minimal, and clean.
-- Stop only when no useful improvement remains and every open task is closed.
+- Revisit your changes with the wider context, current ledger, and real user objective in mind.
+- Use tests, logs, direct inspection, and feedback signals.
+- Keep editing until the change is correct, minimal, and clean; do not keep editing merely to create activity.
+- Stop only when no useful verified improvement remains and every open task is closed, deferred, or escalated with a concrete blocker.
