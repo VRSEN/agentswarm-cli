@@ -129,8 +129,12 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
   // walking up the tree. Also returned below so callers can install plugin
   // dependencies from each location.
   const dirs = unique(directories).filter(shouldLoadConfigDir)
+  const loadDirs = [
+    ...dirs.filter((dir) => dir !== Flag.OPENCODE_CONFIG_DIR).toReversed(),
+    ...dirs.filter((dir) => dir === Flag.OPENCODE_CONFIG_DIR),
+  ]
 
-  for (const dir of dirs) {
+  for (const dir of loadDirs) {
     if (!shouldLoadConfigDir(dir)) continue
     for (const file of ConfigPaths.fileInDirectory(dir, "tui")) {
       yield* Effect.promise(() => mergeFile(acc, file, ctx)).pipe(Effect.orDie)
