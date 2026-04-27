@@ -1,11 +1,13 @@
 import { createMemo } from "solid-js"
 import { useSync } from "@tui/context/sync"
-import { DialogSelect } from "@tui/ui/dialog-select"
+import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
 import { useSDK } from "@tui/context/sdk"
+import { useLocal } from "@tui/context/local"
 import { useRoute } from "@tui/context/route"
 import * as Clipboard from "@tui/util/clipboard"
 import type { PromptInfo } from "@tui/component/prompt/history"
 import { strip } from "@tui/component/prompt/part"
+import { isAgencySwarmFrameworkMode } from "../../session-error"
 
 export function DialogMessage(props: {
   messageID: string
@@ -14,44 +16,52 @@ export function DialogMessage(props: {
 }) {
   const sync = useSync()
   const sdk = useSDK()
+  const local = useLocal()
   const message = createMemo(() => sync.data.message[props.sessionID]?.find((x) => x.id === props.messageID))
   const route = useRoute()
+  const frameworkMode = isAgencySwarmFrameworkMode({
+    currentProviderID: local.model.current()?.providerID,
+    configuredModel: sync.data.config.model,
+    agentModel: local.agent.current()?.model,
+  })
+
+  const revertOption: DialogSelectOption<string> = {
+    title: "Revert",
+    value: "session.revert",
+    description: "undo messages and file changes",
+    onSelect: (dialog) => {
+      const msg = message()
+      if (!msg) return
+
+      void sdk.client.session.revert({
+        sessionID: props.sessionID,
+        messageID: msg.id,
+      })
+
+      if (props.setPrompt) {
+        const parts = sync.data.part[msg.id]
+        const promptInfo = parts.reduce(
+          (agg, part) => {
+            if (part.type === "text") {
+              if (!part.synthetic) agg.input += part.text
+            }
+            if (part.type === "file") agg.parts.push(strip(part))
+            return agg
+          },
+          { input: "", parts: [] as PromptInfo["parts"] },
+        )
+        props.setPrompt(promptInfo)
+      }
+
+      dialog.clear()
+    },
+  }
 
   return (
     <DialogSelect
       title="Message Actions"
       options={[
-        {
-          title: "Revert",
-          value: "session.revert",
-          description: "undo messages and file changes",
-          onSelect: (dialog) => {
-            const msg = message()
-            if (!msg) return
-
-            void sdk.client.session.revert({
-              sessionID: props.sessionID,
-              messageID: msg.id,
-            })
-
-            if (props.setPrompt) {
-              const parts = sync.data.part[msg.id]
-              const promptInfo = parts.reduce(
-                (agg, part) => {
-                  if (part.type === "text") {
-                    if (!part.synthetic) agg.input += part.text
-                  }
-                  if (part.type === "file") agg.parts.push(strip(part))
-                  return agg
-                },
-                { input: "", parts: [] as PromptInfo["parts"] },
-              )
-              props.setPrompt(promptInfo)
-            }
-
-            dialog.clear()
-          },
-        },
+        ...(frameworkMode ? [] : [revertOption]),
         {
           title: "Copy",
           value: "message.copy",
