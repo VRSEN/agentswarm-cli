@@ -19,6 +19,7 @@ import { makeRuntime } from "@opencode-ai/core/effect/runtime"
 import { Filesystem, Log } from "@/util"
 import { ConfigVariable } from "@/config/variable"
 import { Npm } from "@opencode-ai/core/npm"
+import { AgencyBrand } from "@/agency-swarm/brand"
 
 const log = Log.create({ service: "tui.config" })
 
@@ -89,8 +90,14 @@ async function mergeFile(acc: Acc, file: string, ctx: { directory: string }) {
   acc.result.plugin_origins = plugins
 }
 
+function shouldLoadConfigDir(dir: string) {
+  return (
+    dir.endsWith(AgencyBrand.workspace) || dir.endsWith(AgencyBrand.legacyWorkspace) || dir === Flag.OPENCODE_CONFIG_DIR
+  )
+}
+
 const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: string }) {
-  // Every config dir we may read from: global config dir, any `.opencode`
+  // Every config dir we may read from: global config dir, any workspace
   // folders between cwd and home, and OPENCODE_CONFIG_DIR.
   const directories = yield* ConfigPaths.directories(ctx.directory)
   yield* Effect.promise(() => migrateTuiConfig({ directories, cwd: ctx.directory }))
@@ -118,13 +125,13 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
     yield* Effect.promise(() => mergeFile(acc, file, ctx)).pipe(Effect.orDie)
   }
 
-  // 4. `.opencode` directories (and OPENCODE_CONFIG_DIR) discovered while
+  // 4. Workspace directories (and OPENCODE_CONFIG_DIR) discovered while
   // walking up the tree. Also returned below so callers can install plugin
   // dependencies from each location.
-  const dirs = unique(directories).filter((dir) => dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR)
+  const dirs = unique(directories).filter(shouldLoadConfigDir)
 
   for (const dir of dirs) {
-    if (!dir.endsWith(".opencode") && dir !== Flag.OPENCODE_CONFIG_DIR) continue
+    if (!shouldLoadConfigDir(dir)) continue
     for (const file of ConfigPaths.fileInDirectory(dir, "tui")) {
       yield* Effect.promise(() => mergeFile(acc, file, ctx)).pipe(Effect.orDie)
     }

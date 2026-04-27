@@ -16,7 +16,7 @@ export const files = Effect.fn("ConfigPaths.projectFiles")(function* (
   worktree?: string,
 ) {
   const afs = yield* AppFileSystem.Service
-  const names = name === AgencyBrand.config ? unique([AgencyBrand.legacyConfig, name]) : [name]
+  const names = name === AgencyBrand.config ? unique([name, AgencyBrand.legacyConfig]) : [name]
   return (yield* afs.up({
     targets: names.flatMap((item) => [`${item}.jsonc`, `${item}.json`]),
     start: directory,

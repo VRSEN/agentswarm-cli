@@ -144,6 +144,32 @@ test("loads JSON config file", async () => {
   })
 })
 
+test("branded project config overrides legacy config in the same directory", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await writeConfig(dir, {
+        $schema: "https://opencode.ai/config.json",
+        share: "manual",
+      })
+      await writeConfig(
+        dir,
+        {
+          $schema: "https://opencode.ai/config.json",
+          share: "disabled",
+        },
+        "agentswarm.json",
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const config = await load()
+      expect(config.share).toBe("disabled")
+    },
+  })
+})
+
 test("loads shell config field", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
