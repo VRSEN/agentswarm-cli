@@ -318,6 +318,7 @@ Use this file when changing the fork-owned launch, resume, auth, connect, and ru
 
 ## Source Of Truth Map
 
+- Agent Swarm terminal TUI e2e coverage: `e2e/agent-swarm-tui/QA_COVERAGE.md`
 - Wrapper resolution and launcher env: `packages/opencode/bin/agentswarm-npx:8-40`; `packages/opencode/bin/agentswarm:9-196`; `packages/opencode/src/index.ts:66-176`
 - Default TUI entry and arg-to-launch handoff: `packages/opencode/src/cli/cmd/tui/thread.ts:84-176`; `packages/opencode/src/cli/cmd/tui/thread.ts:226-290`
 - Launcher gating and project/session auto-resolution: `packages/opencode/src/agency-swarm/npx.ts:47-139`
