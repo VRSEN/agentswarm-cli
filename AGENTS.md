@@ -476,6 +476,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Avoid `try` and `catch` when you can.
 - Prefer short local names when they stay clear.
 - Prefer array methods like `flatMap`, `filter`, and `map` over `for` loops when they keep the code clear. Use type guards on `filter` when needed to keep type inference.
+- In `src/config`, follow the existing self-export pattern at the top of the file (for example `export * as ConfigAgent from "./agent"`) when adding a new config module.
 
 ### Naming
 

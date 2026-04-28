@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
 
-import { Process } from "../../src/util/process"
-import { Filesystem } from "../../src/util/filesystem"
+import { Process } from "../../src/util"
+import { Filesystem } from "../../src/util"
 import { tmpdir } from "../fixture/fixture"
+import { AgencyBrand } from "../../src/agency-swarm/brand"
 
 const root = path.join(import.meta.dir, "../..")
 const worker = path.join(import.meta.dir, "../fixture/plug-worker.ts")
@@ -82,7 +83,7 @@ describe("plugin.install.concurrent", () => {
     expect(out.map((x) => x.code)).toEqual(Array.from({ length: all.length }, () => 0))
     expect(out.map((x) => x.stderr.toString()).filter(Boolean)).toEqual([])
 
-    const cfg = await read(path.join(tmp.path, ".opencode", "opencode.jsonc"))
+    const cfg = await read(path.join(tmp.path, AgencyBrand.workspace, `${AgencyBrand.config}.jsonc`))
     expectPlugins(cfg.plugin, all)
   }, 25_000)
 
@@ -105,8 +106,8 @@ describe("plugin.install.concurrent", () => {
     expect(out.map((x) => x.code)).toEqual(Array.from({ length: all.length }, () => 0))
     expect(out.map((x) => x.stderr.toString()).filter(Boolean)).toEqual([])
 
-    const server = await read(path.join(tmp.path, ".opencode", "opencode.jsonc"))
-    const tui = await read(path.join(tmp.path, ".opencode", "tui.jsonc"))
+    const server = await read(path.join(tmp.path, AgencyBrand.workspace, `${AgencyBrand.config}.jsonc`))
+    const tui = await read(path.join(tmp.path, AgencyBrand.workspace, "tui.jsonc"))
     expectPlugins(server.plugin, all)
     expectPlugins(tui.plugin, all)
   }, 25_000)
@@ -114,7 +115,7 @@ describe("plugin.install.concurrent", () => {
   test("preserves updates when existing config uses .json", async () => {
     await using tmp = await tmpdir()
     const target = await plugin(tmp.path, ["server"])
-    const cfg = path.join(tmp.path, ".opencode", "opencode.json")
+    const cfg = path.join(tmp.path, AgencyBrand.workspace, `${AgencyBrand.config}.json`)
     await fs.mkdir(path.dirname(cfg), { recursive: true })
     await Bun.write(cfg, JSON.stringify({ plugin: ["seed@1.0.0"] }, null, 2))
 
@@ -135,6 +136,8 @@ describe("plugin.install.concurrent", () => {
 
     const json = await read(cfg)
     expectPlugins(json.plugin, ["seed@1.0.0", ...next])
-    expect(await Filesystem.exists(path.join(tmp.path, ".opencode", "opencode.jsonc"))).toBe(false)
+    expect(await Filesystem.exists(path.join(tmp.path, AgencyBrand.workspace, `${AgencyBrand.config}.jsonc`))).toBe(
+      false,
+    )
   }, 25_000)
 })

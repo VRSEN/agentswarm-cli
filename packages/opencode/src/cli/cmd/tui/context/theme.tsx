@@ -2,12 +2,12 @@ import { SyntaxStyle, RGBA, type TerminalColors } from "@opentui/core"
 import path from "path"
 import { createEffect, createMemo, onMount } from "solid-js"
 import { createSimpleContext } from "./helper"
-import { Glob } from "../../../../util/glob"
+import { Glob } from "@opencode-ai/core/util/glob"
 import opencode from "./theme/opencode.json" with { type: "json" }
 import { useRenderer } from "@opentui/solid"
 import { createStore, produce } from "solid-js/store"
-import { Global } from "@/global"
-import { Filesystem } from "@/util/filesystem"
+import { Global } from "@opencode-ai/core/global"
+import * as Filesystem from "@/util/filesystem"
 import { isRecord } from "@/util/record"
 import type { TuiThemeCurrent } from "@opencode-ai/plugin/tui"
 import { AgencyBrand } from "@/agency-swarm/brand"
@@ -481,8 +481,10 @@ function generateSystem(colors: TerminalColors, mode: "dark" | "light"): ThemeJs
   const diffAlpha = isDark ? 0.22 : 0.14
   const diffAddedBg = tint(bg, ansiColors.green, diffAlpha)
   const diffRemovedBg = tint(bg, ansiColors.red, diffAlpha)
-  const diffAddedLineNumberBg = tint(grays[3], ansiColors.green, diffAlpha)
-  const diffRemovedLineNumberBg = tint(grays[3], ansiColors.red, diffAlpha)
+  const diffContextBg = grays[2]
+  const diffAddedLineNumberBg = tint(diffContextBg, ansiColors.green, diffAlpha)
+  const diffRemovedLineNumberBg = tint(diffContextBg, ansiColors.red, diffAlpha)
+  const diffLineNumber = textMuted
 
   return {
     theme: {
@@ -522,8 +524,8 @@ function generateSystem(colors: TerminalColors, mode: "dark" | "light"): ThemeJs
       diffHighlightRemoved: ansiColors.redBright,
       diffAddedBg,
       diffRemovedBg,
-      diffContextBg: grays[1],
-      diffLineNumber: grays[6],
+      diffContextBg,
+      diffLineNumber,
       diffAddedLineNumberBg,
       diffRemovedLineNumberBg,
 

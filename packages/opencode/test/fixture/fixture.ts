@@ -2,12 +2,11 @@ import { $ } from "bun"
 import * as fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { Effect, ServiceMap } from "effect"
+import { Effect, Context } from "effect"
 import type * as PlatformError from "effect/PlatformError"
 import type * as Scope from "effect/Scope"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
-import { AgencyBrand } from "../../src/agency-swarm/brand"
-import type { Config } from "../../src/config/config"
+import type { Config } from "../../src/config"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import { Instance } from "../../src/project/instance"
 import { TestLLMServer } from "../lib/llm-server"
@@ -57,7 +56,7 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
   }
   if (options?.config) {
     await Bun.write(
-      path.join(dirpath, `${AgencyBrand.config}.json`),
+      path.join(dirpath, "opencode.json"),
       JSON.stringify({
         $schema: "https://opencode.ai/config.json",
         ...options.config,
@@ -111,7 +110,7 @@ export function tmpdirScoped(options?: { git?: boolean; config?: Partial<Config.
     if (options?.config) {
       yield* Effect.promise(() =>
         fs.writeFile(
-          path.join(dir, `${AgencyBrand.config}.json`),
+          path.join(dir, "opencode.json"),
           JSON.stringify({ $schema: "https://opencode.ai/config.json", ...options.config }),
         ),
       )
@@ -124,7 +123,7 @@ export function tmpdirScoped(options?: { git?: boolean; config?: Partial<Config.
 export const provideInstance =
   (directory: string) =>
   <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-    Effect.servicesWith((services: ServiceMap.ServiceMap<R>) =>
+    Effect.contextWith((services: Context.Context<R>) =>
       Effect.promise<A>(async () =>
         Instance.provide({
           directory,

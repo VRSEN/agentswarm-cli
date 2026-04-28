@@ -49,6 +49,12 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `AgencyProduct.tips` in `packages/opencode/src/agency-swarm/product.ts`.
   - Added by: `fd2f678b`
 
+- **Branded `agentswarm` config and `.agentswarm` workspace win over same-level legacy `opencode` files**
+  - Intent: keep Agent Swarm config canonical when legacy `opencode` files coexist at the same level, so migrating users do not silently keep stale settings.
+  - Behavior: at the same project directory level, `agentswarm.json` overrides `opencode.json`; at the same workspace level, `.agentswarm/agentswarm.json` and `.agentswarm/tui.json` override sibling `.opencode/opencode.json` and `.opencode/tui.json`. Legacy files still load when branded ones are absent. Cross-level (parent/child) precedence is unchanged from upstream.
+  - Implementation: target order in `ConfigPaths.files` in `packages/opencode/src/config/paths.ts`, plus same-parent adjacent-pair swaps in `Config.loadInstanceState` in `packages/opencode/src/config/config.ts` and `TuiConfig.loadState` in `packages/opencode/src/cli/cmd/tui/config/tui.ts`.
+  - Added by: `a6e60a80`, `490baa06`, `4e35d3e4`
+
 ## Agency Swarm Integration
 
 - **Agency Swarm backend adapter**

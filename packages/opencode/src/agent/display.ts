@@ -1,4 +1,4 @@
-import { Locale } from "@/util/locale"
+import * as Locale from "@/util/locale"
 
 export function displayAgentName(name: string) {
   if (name === "build") return "Agent Builder"

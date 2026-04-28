@@ -1,6 +1,6 @@
 import path from "node:path"
-import { Global } from "@/global"
-import { Log } from "@/util/log"
+import { Global } from "@opencode-ai/core/global"
+import { Log } from "@/util"
 import { Filesystem } from "@/util/filesystem"
 
 export namespace AgencySwarmRunSession {

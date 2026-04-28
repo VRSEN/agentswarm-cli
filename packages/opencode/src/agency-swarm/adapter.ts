@@ -1,4 +1,4 @@
-import { Log } from "@/util/log"
+import { Log } from "@/util"
 import { sanitizeClientConfigForTransport } from "./client-config"
 
 export namespace AgencySwarmAdapter {

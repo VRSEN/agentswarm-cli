@@ -1,18 +1,32 @@
+import { useProject } from "@tui/context/project"
 import { useSync } from "@tui/context/sync"
 import { createMemo, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useTuiConfig } from "../../context/tui-config"
-import { Installation } from "@/installation"
+import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { TuiPluginRuntime } from "../../plugin"
 import { AgencyProduct } from "@/agency-swarm/product"
 
 import { getScrollAcceleration } from "../../util/scroll"
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
+  const project = useProject()
   const sync = useSync()
   const { theme } = useTheme()
   const tuiConfig = useTuiConfig()
   const session = createMemo(() => sync.session.get(props.sessionID))
+  const workspaceStatus = () => {
+    const workspaceID = session()?.workspaceID
+    if (!workspaceID) return "error"
+    return project.workspace.status(workspaceID) ?? "error"
+  }
+  const workspaceLabel = () => {
+    const workspaceID = session()?.workspaceID
+    if (!workspaceID) return "unknown"
+    const info = project.workspace.get(workspaceID)
+    if (!info) return "unknown"
+    return `${info.type}: ${info.name}`
+  }
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
 
   return (
@@ -49,6 +63,15 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
                 <text fg={theme.text}>
                   <b>{session()!.title}</b>
                 </text>
+                <Show when={InstallationChannel !== "latest"}>
+                  <text fg={theme.textMuted}>{props.sessionID}</text>
+                </Show>
+                <Show when={session()!.workspaceID}>
+                  <text fg={theme.textMuted}>
+                    <span style={{ fg: workspaceStatus() === "connected" ? theme.success : theme.error }}>●</span>{" "}
+                    {workspaceLabel()}
+                  </text>
+                </Show>
                 <Show when={session()!.share?.url}>
                   <text fg={theme.textMuted}>{session()!.share!.url}</text>
                 </Show>
@@ -62,7 +85,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
           <TuiPluginRuntime.Slot name="sidebar_footer" mode="single_winner" session_id={props.sessionID}>
             <text fg={theme.textMuted}>
               <span style={{ fg: theme.success }}>•</span> <b>{AgencyProduct.name}</b>{" "}
-              <span>{Installation.VERSION}</span>
+              <span>{InstallationVersion}</span>
             </text>
           </TuiPluginRuntime.Slot>
         </box>

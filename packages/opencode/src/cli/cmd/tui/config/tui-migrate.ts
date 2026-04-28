@@ -2,19 +2,17 @@ import path from "path"
 import { type ParseError as JsoncParseError, applyEdits, modify, parse as parseJsonc } from "jsonc-parser"
 import { unique } from "remeda"
 import z from "zod"
-import { ConfigPaths } from "@/config/paths"
-import { TuiOptions } from "./tui-schema"
-import { Instance } from "@/project/instance"
-import { Flag } from "@/flag/flag"
-import { Log } from "@/util/log"
-import { Filesystem } from "@/util/filesystem"
-import { Global } from "@/global"
-import { AgencyBrand } from "@/agency-swarm/brand"
+import { TuiInfo, TuiOptions } from "./tui-schema"
+import { Flag } from "@opencode-ai/core/flag/flag"
+import { Global } from "@opencode-ai/core/global"
+import { Filesystem, Log } from "@/util"
+import * as ConfigPaths from "@/config/paths"
 
 const log = Log.create({ service: "tui.migrate" })
 
 const TUI_SCHEMA_URL = "https://opencode.ai/tui.json"
 
+const LegacyTheme = TuiInfo.shape.theme.optional()
 const LegacyRecord = z.record(z.string(), z.unknown()).optional()
 
 const TuiLegacy = z
@@ -25,20 +23,19 @@ const TuiLegacy = z
   })
   .strip()
 
-type Input = {
+interface MigrateInput {
+  cwd: string
   directories: string[]
-  custom?: string
-  managed: string
 }
 
 /**
- * Migrates tui-specific keys from server config files into dedicated tui.json
- * files. Legacy theme keys are stripped because the TUI now enforces a single
- * built-in dark theme.
+ * Migrates tui-specific keys (theme, keybinds, tui) from opencode.json files
+ * into dedicated tui.json files. Migration is performed per-directory and
+ * skips only locations where a tui.json already exists.
  */
-export async function migrateTuiConfig(input: Input) {
-  const configs = await serverConfigFiles(input)
-  for (const file of configs) {
+export async function migrateTuiConfig(input: MigrateInput) {
+  const opencode = await opencodeFiles(input)
+  for (const file of opencode) {
     const source = await Filesystem.readText(file).catch((error) => {
       log.warn("failed to read config for tui migration", { path: file, error })
       return undefined
@@ -48,10 +45,11 @@ export async function migrateTuiConfig(input: Input) {
     const data = parseJsonc(source, errors, { allowTrailingComma: true })
     if (errors.length || !data || typeof data !== "object" || Array.isArray(data)) continue
 
+    const theme = LegacyTheme.safeParse("theme" in data ? data.theme : undefined)
     const keybinds = LegacyRecord.safeParse("keybinds" in data ? data.keybinds : undefined)
     const legacyTui = LegacyRecord.safeParse("tui" in data ? data.tui : undefined)
     const extracted = {
-      theme: "theme" in data ? data.theme : undefined,
+      theme: theme.success ? theme.data : undefined,
       keybinds: keybinds.success ? keybinds.data : undefined,
       tui: legacyTui.success ? legacyTui.data : undefined,
     }
@@ -60,26 +58,13 @@ export async function migrateTuiConfig(input: Input) {
 
     const target = path.join(path.dirname(file), "tui.json")
     const targetExists = await Filesystem.exists(target)
-    if (targetExists) {
-      if (extracted.theme !== undefined && extracted.keybinds === undefined && !tui) {
-        await backupAndStripLegacy(file, source)
-      }
-      continue
-    }
-
-    if (extracted.keybinds === undefined && !tui) {
-      await backupAndStripLegacy(file, source)
-      continue
-    }
+    if (targetExists) continue
 
     const payload: Record<string, unknown> = {
       $schema: TUI_SCHEMA_URL,
     }
-    if (extracted.keybinds !== undefined) {
-      const keybinds = { ...extracted.keybinds }
-      delete keybinds.theme_list
-      if (Object.keys(keybinds).length) payload.keybinds = keybinds
-    }
+    if (extracted.theme !== undefined) payload.theme = extracted.theme
+    if (extracted.keybinds !== undefined) payload.keybinds = extracted.keybinds
     if (tui) Object.assign(payload, tui)
 
     const wrote = await Filesystem.write(target, JSON.stringify(payload, null, 2))
@@ -146,16 +131,15 @@ async function backupAndStripLegacy(file: string, source: string) {
     })
 }
 
-async function serverConfigFiles(input: { directories: string[]; managed: string }) {
-  const project = Flag.OPENCODE_DISABLE_PROJECT_CONFIG
-    ? []
-    : await ConfigPaths.projectFiles(AgencyBrand.config, Instance.directory, Instance.worktree)
-  const files = [...project, ...ConfigPaths.fileInDirectory(Global.Path.config, AgencyBrand.config)]
+async function opencodeFiles(input: { directories: string[]; cwd: string }) {
+  const files = [
+    ...ConfigPaths.fileInDirectory(Global.Path.config, "opencode"),
+    ...(await Filesystem.findUp(["opencode.json", "opencode.jsonc"], input.cwd, undefined, { rootFirst: true })),
+  ]
   for (const dir of unique(input.directories)) {
-    files.push(...ConfigPaths.fileInDirectory(dir, AgencyBrand.config))
+    files.push(...ConfigPaths.fileInDirectory(dir, "opencode"))
   }
   if (Flag.OPENCODE_CONFIG) files.push(Flag.OPENCODE_CONFIG)
-  files.push(...ConfigPaths.fileInDirectory(input.managed, AgencyBrand.config))
 
   const existing = await Promise.all(
     unique(files).map(async (file) => {

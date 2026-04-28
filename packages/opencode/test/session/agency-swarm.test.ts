@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test"
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { Auth } from "../../src/auth"
@@ -21,12 +21,10 @@ describe("session.agency-swarm", () => {
   const originalLoad = AgencySwarmHistory.load
   const originalAppendMessages = AgencySwarmHistory.appendMessages
   const originalSetLastRunID = AgencySwarmHistory.setLastRunID
-  const originalAuthAll = Auth.all
-  const originalEnvAll = Env.all
-  const originalProviderList = Provider.list
   const originalFetch = globalThis.fetch
 
   afterEach(() => {
+    mock.restore()
     AgencySwarmAdapter.discover = originalDiscover
     AgencySwarmAdapter.getMetadata = originalGetMetadata
     AgencySwarmAdapter.streamRun = originalStreamRun
@@ -34,9 +32,6 @@ describe("session.agency-swarm", () => {
     AgencySwarmHistory.load = originalLoad
     AgencySwarmHistory.appendMessages = originalAppendMessages
     AgencySwarmHistory.setLastRunID = originalSetLastRunID
-    Auth.all = originalAuthAll
-    Env.all = originalEnvAll
-    Provider.list = originalProviderList
     globalThis.fetch = originalFetch
   })
 
@@ -247,7 +242,7 @@ describe("session.agency-swarm", () => {
 
   test("stream preserves explicit client_config without auto-merging LiteLLM auth", async () => {
     mockHistory()
-    Auth.all = (async () => ({
+    spyOn(Auth, "all").mockImplementation(async () => ({
       openai: { type: "api", key: "sk-openai" } as any,
       anthropic: { type: "api", key: "sk-ant" } as any,
       nova: { type: "api", key: "nova-key" } as any,
@@ -296,7 +291,7 @@ describe("session.agency-swarm", () => {
 
   test("stream does not forward stored API auth to remote agency-swarm servers", async () => {
     mockHistory()
-    Auth.all = (async () => ({
+    spyOn(Auth, "all").mockImplementation(async () => ({
       openai: { type: "api", key: "sk-openai" } as any,
       anthropic: { type: "api", key: "sk-ant" } as any,
     })) as typeof Auth.all
@@ -325,7 +320,7 @@ describe("session.agency-swarm", () => {
 
   test("stream skips metadata lookup when remote non-openai sessions have no generated auth payload", async () => {
     mockHistory()
-    Auth.all = (async () => ({
+    spyOn(Auth, "all").mockImplementation(async () => ({
       anthropic: { type: "api", key: "sk-ant" } as any,
     })) as typeof Auth.all
 
@@ -358,7 +353,7 @@ describe("session.agency-swarm", () => {
 
   test("stream forwards stored API auth to remote URL when forwardUpstreamCredentials is true", async () => {
     mockHistory()
-    Auth.all = (async () => ({
+    spyOn(Auth, "all").mockImplementation(async () => ({
       openai: { type: "api", key: "sk-openai" } as any,
     })) as typeof Auth.all
 
@@ -384,7 +379,7 @@ describe("session.agency-swarm", () => {
 
   test("stream forwards stored API auth to 0.0.0.0 local agency-swarm servers", async () => {
     mockHistory()
-    Auth.all = (async () => ({
+    spyOn(Auth, "all").mockImplementation(async () => ({
       openai: { type: "api", key: "sk-openai" } as any,
       anthropic: { type: "api", key: "sk-ant" } as any,
     })) as typeof Auth.all
@@ -413,7 +408,7 @@ describe("session.agency-swarm", () => {
 
   test("stream forwards stored API auth to host.docker.internal (Docker Desktop)", async () => {
     mockHistory()
-    Auth.all = (async () => ({
+    spyOn(Auth, "all").mockImplementation(async () => ({
       openai: { type: "api", key: "sk-openai" } as any,
     })) as typeof Auth.all
 
@@ -516,10 +511,10 @@ describe("session.agency-swarm", () => {
       expires: Date.now() + 60_000,
       accountId: "acct_123",
     } as any)
-    Env.all = (() => ({
+    spyOn(Env, "all").mockImplementation(() => ({
       ANTHROPIC_API_KEY: "env-anthropic",
     })) as typeof Env.all
-    Provider.list = (async () => ({
+    spyOn(Provider, "list").mockImplementation(async () => ({
       openai: {
         id: "openai",
         name: "OpenAI",
@@ -641,8 +636,8 @@ describe("session.agency-swarm", () => {
       expires: Date.now() + 60_000,
       accountId: "acct_123",
     } as any)
-    Env.all = (() => ({})) as typeof Env.all
-    Provider.list = (async () => ({
+    spyOn(Env, "all").mockImplementation(() => ({})) as typeof Env.all
+    spyOn(Provider, "list").mockImplementation(async () => ({
       openai: {
         id: "openai",
         name: "OpenAI",
@@ -732,10 +727,10 @@ describe("session.agency-swarm", () => {
       expires: Date.now() + 60_000,
       accountId: "acct_123",
     } as any)
-    Env.all = (() => ({
+    spyOn(Env, "all").mockImplementation(() => ({
       ANTHROPIC_API_KEY: "env-anthropic",
     })) as typeof Env.all
-    Provider.list = (async () => ({
+    spyOn(Provider, "list").mockImplementation(async () => ({
       openai: {
         id: "openai",
         name: "OpenAI",
@@ -831,10 +826,10 @@ describe("session.agency-swarm", () => {
       expires: Date.now() + 60_000,
       accountId: "acct_123",
     } as any)
-    Env.all = (() => ({
+    spyOn(Env, "all").mockImplementation(() => ({
       ANTHROPIC_API_KEY: "env-anthropic",
     })) as typeof Env.all
-    Provider.list = (async () => ({
+    spyOn(Provider, "list").mockImplementation(async () => ({
       openai: {
         id: "openai",
         name: "OpenAI",
@@ -927,10 +922,10 @@ describe("session.agency-swarm", () => {
       expires: Date.now() + 60_000,
       accountId: "acct_123",
     } as any)
-    Env.all = (() => ({
+    spyOn(Env, "all").mockImplementation(() => ({
       ANTHROPIC_API_KEY: "env-anthropic",
     })) as typeof Env.all
-    Provider.list = (async () => ({
+    spyOn(Provider, "list").mockImplementation(async () => ({
       openai: {
         id: "openai",
         name: "OpenAI",
@@ -1023,10 +1018,10 @@ describe("session.agency-swarm", () => {
       expires: Date.now() + 60_000,
       accountId: "acct_123",
     } as any)
-    Env.all = (() => ({
+    spyOn(Env, "all").mockImplementation(() => ({
       ANTHROPIC_API_KEY: "env-anthropic",
     })) as typeof Env.all
-    Provider.list = (async () => ({
+    spyOn(Provider, "list").mockImplementation(async () => ({
       openai: {
         id: "openai",
         name: "OpenAI",
@@ -1104,13 +1099,13 @@ describe("session.agency-swarm", () => {
 
   test("stream keeps stored OpenAI auth working when an Anthropic env key exists", async () => {
     mockHistory()
-    Auth.all = (async () => ({
+    spyOn(Auth, "all").mockImplementation(async () => ({
       openai: { type: "api", key: "stored-openai" } as any,
     })) as typeof Auth.all
-    Env.all = (() => ({
+    spyOn(Env, "all").mockImplementation(() => ({
       ANTHROPIC_API_KEY: "env-anthropic",
     })) as typeof Env.all
-    Provider.list = (async () => ({
+    spyOn(Provider, "list").mockImplementation(async () => ({
       openai: {
         id: "openai",
         name: "OpenAI",
@@ -1191,9 +1186,9 @@ describe("session.agency-swarm", () => {
 
   test("stream forwards session UI model as client_config.model (litellm/ for non-OpenAI)", async () => {
     mockHistory()
-    Auth.all = (async () => ({})) as typeof Auth.all
-    Env.all = (() => ({})) as typeof Env.all
-    Provider.list = (async () => ({})) as typeof Provider.list
+    spyOn(Auth, "all").mockImplementation(async () => ({})) as typeof Auth.all
+    spyOn(Env, "all").mockImplementation(() => ({})) as typeof Env.all
+    spyOn(Provider, "list").mockImplementation(async () => ({})) as typeof Provider.list
 
     let body: Record<string, unknown> | undefined
     const server = createServer(async (request, response) => {
@@ -1253,9 +1248,9 @@ describe("session.agency-swarm", () => {
 
   test("stream forwards session UI OpenAI model as bare model id", async () => {
     mockHistory()
-    Auth.all = (async () => ({})) as typeof Auth.all
-    Env.all = (() => ({})) as typeof Env.all
-    Provider.list = (async () => ({})) as typeof Provider.list
+    spyOn(Auth, "all").mockImplementation(async () => ({})) as typeof Auth.all
+    spyOn(Env, "all").mockImplementation(() => ({})) as typeof Env.all
+    spyOn(Provider, "list").mockImplementation(async () => ({})) as typeof Provider.list
 
     let body: Record<string, unknown> | undefined
     const server = createServer(async (request, response) => {
@@ -1315,9 +1310,9 @@ describe("session.agency-swarm", () => {
 
   test("explicit client_config.model overrides session-derived model", async () => {
     mockHistory()
-    Auth.all = (async () => ({})) as typeof Auth.all
-    Env.all = (() => ({})) as typeof Env.all
-    Provider.list = (async () => ({})) as typeof Provider.list
+    spyOn(Auth, "all").mockImplementation(async () => ({})) as typeof Auth.all
+    spyOn(Env, "all").mockImplementation(() => ({})) as typeof Env.all
+    spyOn(Provider, "list").mockImplementation(async () => ({})) as typeof Provider.list
 
     let body: Record<string, unknown> | undefined
     const server = createServer(async (request, response) => {
@@ -1522,18 +1517,18 @@ describe("session.agency-swarm", () => {
 
   test("stream prefers env OpenAI auth and forwards stored non-openai keys as litellm_keys", async () => {
     mockHistory()
-    Auth.all = (async () => ({
+    spyOn(Auth, "all").mockImplementation(async () => ({
       openai: { type: "api", key: "stored-openai" } as any,
       anthropic: { type: "api", key: "stored-anthropic" } as any,
       azure: { type: "api", key: "stored-azure" } as any,
     })) as typeof Auth.all
-    Env.all = (() => ({
+    spyOn(Env, "all").mockImplementation(() => ({
       OPENAI_API_KEY: "env-openai",
       AZURE_RESOURCE_NAME: "azure-resource",
       AZURE_API_KEY: "env-azure",
       GOOGLE_GENERATIVE_AI_API_KEY: "env-google",
     })) as typeof Env.all
-    Provider.list = (async () => ({
+    spyOn(Provider, "list").mockImplementation(async () => ({
       openai: {
         id: "openai",
         name: "OpenAI",
@@ -1600,7 +1595,7 @@ describe("session.agency-swarm", () => {
 
   test("stream does not refresh stored OpenAI OAuth when explicit OpenAI client_config exists", async () => {
     mockHistory()
-    Auth.all = (async () => ({
+    spyOn(Auth, "all").mockImplementation(async () => ({
       openai: {
         type: "oauth",
         access: "expired-access",
@@ -1632,7 +1627,7 @@ describe("session.agency-swarm", () => {
 
   test("stream keeps explicit base_url when stored OpenAI OAuth exists", async () => {
     mockHistory()
-    Auth.all = (async () => ({
+    spyOn(Auth, "all").mockImplementation(async () => ({
       openai: {
         type: "oauth",
         access: "oauth-access",
@@ -1664,7 +1659,7 @@ describe("session.agency-swarm", () => {
 
   test("stream preserves stored OpenAI OAuth when explicit base_url still targets Codex", async () => {
     mockHistory()
-    Auth.all = (async () => ({
+    spyOn(Auth, "all").mockImplementation(async () => ({
       openai: {
         type: "oauth",
         access: "oauth-access",
@@ -1701,7 +1696,7 @@ describe("session.agency-swarm", () => {
 
   test("stream skips failing stored OpenAI OAuth refresh but still forwards non-OpenAI litellm keys", async () => {
     mockHistory()
-    Auth.all = (async () => ({
+    spyOn(Auth, "all").mockImplementation(async () => ({
       openai: {
         type: "oauth",
         access: "expired-access",
@@ -1733,7 +1728,7 @@ describe("session.agency-swarm", () => {
 
   test("stream preserves explicit header-based OpenAI auth without merging stored OAuth", async () => {
     mockHistory()
-    Auth.all = (async () => ({
+    spyOn(Auth, "all").mockImplementation(async () => ({
       openai: {
         type: "oauth",
         access: "oauth-access",

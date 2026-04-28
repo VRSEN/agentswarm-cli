@@ -107,7 +107,7 @@ test("system stays reserved while the built-in opencode theme stays protected", 
 test("resolveTheme rejects circular color refs", () => {
   const item = structuredClone(DEFAULT_THEMES.opencode)
   item.defs = {
-    ...(item.defs ?? {}),
+    ...item.defs,
     one: "two",
     two: "one",
   }

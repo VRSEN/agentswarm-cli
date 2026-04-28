@@ -1,9 +1,10 @@
 import z from "zod"
-import { Config } from "@/config/config"
+import { ConfigPlugin } from "@/config/plugin"
+import { ConfigKeybinds } from "@/config/keybinds"
 
 const KeybindOverride = z
   .object(
-    Object.fromEntries(Object.keys(Config.Keybinds.shape).map((key) => [key, z.string().optional()])) as Record<
+    Object.fromEntries(Object.keys(ConfigKeybinds.Keybinds.shape).map((key) => [key, z.string().optional()])) as Record<
       string,
       z.ZodOptional<z.ZodString>
     >,
@@ -28,8 +29,9 @@ export const TuiOptions = z.object({
 export const TuiInfo = z
   .object({
     $schema: z.string().optional(),
+    theme: z.string().optional(),
     keybinds: KeybindOverride.optional(),
-    plugin: Config.PluginSpec.array().optional(),
+    plugin: ConfigPlugin.Spec.zod.array().optional(),
     plugin_enabled: z.record(z.string(), z.boolean()).optional(),
   })
   .extend(TuiOptions.shape)

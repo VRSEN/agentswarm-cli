@@ -1,6 +1,7 @@
 import type { ParsedKey } from "@opentui/core"
 import type { TuiDialogSelectOption, TuiPluginApi, TuiRouteDefinition, TuiSlotProps } from "@opencode-ai/plugin/tui"
 import type { useCommandDialog } from "@tui/component/dialog-command"
+import type { useEvent } from "@tui/context/event"
 import type { useKeybind } from "@tui/context/keybind"
 import type { useRoute } from "@tui/context/route"
 import type { useSDK } from "@tui/context/sdk"
@@ -17,8 +18,7 @@ import { DialogSelect, type DialogSelectOption as SelectOption } from "../ui/dia
 import { Prompt } from "../component/prompt"
 import { Slot as HostSlot } from "./slots"
 import type { useToast } from "../ui/toast"
-import { Installation } from "@/installation"
-import { type OpencodeClient } from "@opencode-ai/sdk/v2"
+import { InstallationVersion } from "@opencode-ai/core/installation/version"
 
 type RouteEntry = {
   key: symbol
@@ -36,6 +36,7 @@ type Input = {
   route: ReturnType<typeof useRoute>
   routes: RouteMap
   bump: () => void
+  event: ReturnType<typeof useEvent>
   sdk: ReturnType<typeof useSDK>
   sync: ReturnType<typeof useSync>
   theme: ReturnType<typeof useTheme>
@@ -90,7 +91,7 @@ function routeCurrent(route: ReturnType<typeof useRoute>): TuiPluginApi["route"]
       name: "session",
       params: {
         sessionID: route.data.sessionID,
-        initialPrompt: route.data.initialPrompt,
+        prompt: route.data.prompt,
       },
     }
   }
@@ -136,21 +137,13 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
       return sync.data.provider
     },
     get path() {
-      return sync.data.path
+      return sync.path
     },
     get vcs() {
       if (!sync.data.vcs) return
       return {
         branch: sync.data.vcs.branch,
       }
-    },
-    workspace: {
-      list() {
-        return sync.data.workspaceList
-      },
-      get(workspaceID) {
-        return sync.workspace.get(workspaceID)
-      },
     },
     session: {
       count() {
@@ -196,7 +189,7 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
 function appApi(): TuiPluginApi["app"] {
   return {
     get version() {
-      return Installation.VERSION
+      return InstallationVersion
     },
   }
 }
@@ -342,7 +335,7 @@ export function createTuiApi(input: Input): TuiPluginApi {
     get client() {
       return input.sdk.client
     },
-    event: input.sdk.event,
+    event: input.event,
     renderer: input.renderer,
     slots: {
       register() {

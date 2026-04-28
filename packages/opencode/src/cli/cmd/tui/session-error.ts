@@ -1,7 +1,7 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { hasClientConfigCredential } from "@/agency-swarm/client-config"
-import { Flag } from "@/flag/flag"
-import { Log } from "@/util/log"
+import { Flag } from "@opencode-ai/core/flag/flag"
+import { Log } from "@/util"
 import { hasStoredProviderCredential } from "@tui/util/provider-auth"
 import type { Provider, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 

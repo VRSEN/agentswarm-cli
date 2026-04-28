@@ -9,7 +9,11 @@ import { useToast } from "@tui/ui/toast"
 import { createMemo, createResource } from "solid-js"
 import { DialogAgencySwarmConnect } from "./dialog-provider"
 import { isAgencySwarmFrameworkMode } from "../session-error"
-import { buildAgencyTargetOptions, readAgencyProviderOptions, resolveAgencyTargetSelection } from "../util/agency-target"
+import {
+  buildAgencyTargetOptions,
+  readAgencyProviderOptions,
+  resolveAgencyTargetSelection,
+} from "../util/agency-target"
 
 type AgentOptionValue =
   | {
@@ -183,7 +187,7 @@ export function DialogAgent() {
     if (!agencySwarmEnabled()) {
       return {
         kind: "local",
-        agent: local.agent.current().name,
+        agent: local.agent.current()?.name ?? "build",
       }
     }
 

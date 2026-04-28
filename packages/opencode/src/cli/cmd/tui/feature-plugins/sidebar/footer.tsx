@@ -1,6 +1,6 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { createMemo, Show } from "solid-js"
-import { Global } from "@/global"
+import { Global } from "@opencode-ai/core/global"
 import { AgencyProduct } from "@/agency-swarm/product"
 
 const id = "internal:sidebar-footer"

@@ -1,19 +1,27 @@
 import { createStore } from "solid-js/store"
+import { createSimpleContext } from "./helper"
 import { batch, createEffect, createMemo } from "solid-js"
 import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
 import { uniqueBy } from "remeda"
 import path from "path"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import { Global } from "@/global"
+import { Global } from "@opencode-ai/core/global"
 import { iife } from "@/util/iife"
-import { createSimpleContext } from "./helper"
 import { useToast } from "../ui/toast"
-import { Provider } from "@/provider/provider"
 import { useArgs } from "./args"
 import { useSDK } from "./sdk"
 import { RGBA } from "@opentui/core"
-import { Filesystem } from "@/util/filesystem"
+import { Filesystem } from "@/util"
+import { Provider } from "@/provider/provider"
+
+export function parseModel(model: string) {
+  const [providerID, ...rest] = model.split("/")
+  return {
+    providerID: providerID,
+    modelID: rest.join("/"),
+  }
+}
 
 export function isUsableModel(input: {
   model: {
@@ -172,10 +180,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const agent = iife(() => {
       const agents = createMemo(() => sync.data.agent.filter((x) => x.mode !== "subagent" && !x.hidden))
       const visibleAgents = createMemo(() => sync.data.agent.filter((x) => !x.hidden))
-      const [agentStore, setAgentStore] = createStore<{
-        current: string
-      }>({
-        current: agents()[0].name,
+      const [agentStore, setAgentStore] = createStore({
+        current: undefined as string | undefined,
       })
       const { theme } = useTheme()
       const colors = createMemo(() => [
@@ -192,7 +198,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           return agents()
         },
         current() {
-          return agents().find((x) => x.name === agentStore.current) ?? agents()[0]
+          return agents().find((x) => x.name === agentStore.current) ?? agents().at(0)
         },
         set(name: string) {
           if (!agents().some((x) => x.name === name))
@@ -205,7 +211,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         },
         move(direction: 1 | -1) {
           batch(() => {
-            let next = agents().findIndex((x) => x.name === agentStore.current) + direction
+            const current = this.current()
+            if (!current) return
+            let next = agents().findIndex((x) => x.name === current.name) + direction
             if (next < 0) next = agents().length - 1
             if (next >= agents().length) next = 0
             const value = agents()[next]
@@ -266,7 +274,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           return
         }
         state.pending = false
-        Filesystem.writeJson(filePath, {
+        void Filesystem.writeJson(filePath, {
           recent: modelStore.recent,
           favorite: modelStore.favorite,
           variant: modelStore.variant,
@@ -287,6 +295,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
       const currentModel = createMemo(() => {
         const a = agent.current()
+        if (!a) return
         return selectCurrentModel({
           storedModel: modelStore.model[a.name],
           agentModel: a.model,
@@ -344,7 +353,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (next >= recent.length) next = 0
           const val = recent[next]
           if (!val) return
-          setModelStore("model", agent.current().name, { ...val })
+          const a = agent.current()
+          if (!a) return
+          setModelStore("model", a.name, { ...val })
         },
         cycleFavorite(direction: 1 | -1) {
           const favorites = modelStore.favorite.filter((item) => isModelValid(item))
@@ -370,7 +381,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           }
           const next = favorites[index]
           if (!next) return
-          setModelStore("model", agent.current().name, { ...next })
+          const a = agent.current()
+          if (!a) return
+          setModelStore("model", a.name, { ...next })
           const uniq = uniqueBy([next, ...modelStore.recent], (x) => `${x.providerID}/${x.modelID}`)
           if (uniq.length > 10) uniq.pop()
           setModelStore(
@@ -389,7 +402,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               })
               return
             }
-            setModelStore("model", agent.current().name, model)
+            const a = agent.current()
+            if (!a) return
+            setModelStore("model", a.name, model)
             if (options?.recent) {
               const uniq = uniqueBy([model, ...modelStore.recent], (x) => `${x.providerID}/${x.modelID}`)
               if (uniq.length > 10) uniq.pop()
@@ -492,6 +507,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     // Keep this effect only for invalid-model warnings while following agent config.
     createEffect(() => {
       const value = agent.current()
+      if (!value) return
       if (
         !shouldSyncAgentModel({
           storedModel: model.override(value.name),
