@@ -258,7 +258,7 @@ Use this file when changing the fork-owned launch, resume, auth, connect, and ru
 - Step-by-step:
   - Compute framework mode with `isAgencySwarmFrameworkMode()`.
   - Filter auth to supported providers.
-  - Hide `/editor`, `/variants`, and some model controls while framework mode stays active.
+  - Hide `/editor`, `/variants`, `/init`, `/review`, and some model controls while framework mode stays active.
   - Route prompts through the Agency provider.
   - Let agent selection discover agencies and recipient agents from the backend.
   - Offer `/connect` when discovery fails.

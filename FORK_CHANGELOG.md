@@ -251,7 +251,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 - **Upgrade only supports published `agentswarm-cli` channels**
   - Intent: prevent upgrade flows from claiming support for package-manager channels where the fork is not published.
-  - Behavior: upgrade supports npm, yarn, pnpm, bun, and curl; Homebrew, Chocolatey, and Scoop return a clear unsupported-channel message.
+  - Behavior: upgrade supports npm, pnpm, bun, and curl; Yarn, Homebrew, Chocolatey, and Scoop return a clear unsupported-channel message.
   - Implementation: `latestImpl` and `upgradeImpl` in `packages/opencode/src/installation/index.ts` with `UpgradeCommand` in `packages/opencode/src/cli/cmd/upgrade.ts`.
   - Added by: `9d86d959`
 

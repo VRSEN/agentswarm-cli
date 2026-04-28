@@ -140,4 +140,69 @@ describe("dialog provider browser auth", () => {
     const warningToast = toastMessages.find((item) => item.variant === "warning")
     expect(warningToast?.message).toContain("Could not open your default browser")
   })
+
+  test("empty provider allow-list returns no provider options", async () => {
+    let options!: ReturnType<typeof createDialogProviderOptionsWithFilter>
+
+    spyOn(DialogContext, "useDialog").mockReturnValue({
+      replace: () => {},
+      clear: () => {},
+    } as any)
+    spyOn(SDKContext, "useSDK").mockReturnValue({ client: {} } as any)
+    spyOn(SyncContext, "useSync").mockReturnValue({
+      data: {
+        provider_next: {
+          all: [
+            { id: "openai", name: "OpenAI" },
+            { id: "google", name: "Google" },
+          ],
+          connected: [],
+        },
+        provider_auth: {},
+        provider: [],
+        console_state: {
+          consoleManagedProviders: [],
+        },
+        config: {
+          model: "agency-swarm/default",
+        },
+      },
+      bootstrap: async () => {},
+    } as any)
+    spyOn(LocalContext, "useLocal").mockReturnValue({
+      model: {
+        current: () => ({ providerID: "agency-swarm", modelID: "default" }),
+      },
+      agent: {
+        current: () => undefined,
+      },
+    } as any)
+    spyOn(ThemeContext, "useTheme").mockReturnValue({
+      theme: {
+        text: RGBA.fromHex("#ffffff"),
+        textMuted: RGBA.fromHex("#999999"),
+        primary: RGBA.fromHex("#00a3ff"),
+        error: RGBA.fromHex("#ff5555"),
+        success: RGBA.fromHex("#22c55e"),
+        warning: RGBA.fromHex("#f59e0b"),
+        secondary: RGBA.fromHex("#8b5cf6"),
+        accent: RGBA.fromHex("#14b8a6"),
+        info: RGBA.fromHex("#38bdf8"),
+      },
+    } as any)
+    spyOn(ToastModule, "useToast").mockReturnValue({
+      show: () => {},
+      error: () => {},
+      currentToast: null,
+    } as any)
+
+    const Capture = () => {
+      options = createDialogProviderOptionsWithFilter({ providerIDs: [] })
+      return <box />
+    }
+
+    await testRender(() => <Capture />)
+
+    expect(options()).toEqual([])
+  })
 })
