@@ -369,6 +369,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
 - Use the current Codex model with `medium` reasoning for routine, well-scoped tasks and `high` reasoning for ambiguous, high-level, or decision-heavy tasks.
 - Prefer the local `codex` command for small clear work. Use the smallest useful delegated scope, default to one worker, and split only when one worker cannot cover the task cleanly.
+- Claude CLI with Opus 4.7 max is useful for cheap long-running reviews, broad scans, and artifact generation, but it is weaker evidence than GPT-5.5 for high-stakes bug finding, root-cause analysis, and final correctness decisions; the manager must review Claude output and prefer GPT-5.5 for critical verification.
 - After you delegate, do not interrupt, rush, or keep pinging workers unless the user changes scope or you have clear proof of failure.
 - Start each delegated task with the exact user ask, needed background, directly related artifacts, inspected evidence, missing facts to acquire, the higher goal, required result, and hard limits.
 - Workers may create branches, commits, and pull requests inside their mandate. They must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager explicitly delegates that exact action for that exact artifact after review.
