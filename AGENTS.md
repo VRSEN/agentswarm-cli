@@ -85,7 +85,7 @@ Why: voice-transcribed input is homophone-prone.
   - `Do I have everything required to solve this correctly and safely without wasting the user's time?`
   - `Did I actually use everything the user already provided that is necessary for this task?`
 - Never work without fully understanding the context.
-- Before a non-trivial edit in a shared or upstream-mirrored area, identify directly related pull requests, commits, issues, or branches with a bounded search such as `git log --follow` or targeted `gh pr list` filters. Stop when the next layer is clearly unrelated. If a prior change was reverted or partly reverted, state exactly what it undid.
+- Before a non-trivial edit in a shared, upstream-mirrored, previously failed, or policy-sensitive area, identify directly related pull requests, commits, issues, or branches with a bounded search such as `git log --follow` or targeted `gh pr list` filters. Include closed, rejected, superseded, or reverted attempts when they are directly related. Stop when the next layer is clearly unrelated. If a prior change was reverted or partly reverted, state exactly what it undid.
 - If you cannot write a one-sentence link for every directly related artifact, stop and ask the user one short question before you edit.
 - If either answer above is `no` or `unclear`, or if something you expected does not exist, first acquire the missing fact with bounded inspection, search, or testing. Ask the user only when the missing fact materially changes the outcome and cannot be obtained safely inside the mandate.
 - Expect speech-to-text mistakes. Use context to sort out homophones. If two meanings still fit, escalate with numbered options.
@@ -322,7 +322,7 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - Every fork-only line needs a concrete reason. If a line is not strictly required, remove it or restore the upstream shape. State why upstream behavior is not enough in the commit message or `FORK_CHANGELOG.md`.
 - Why: keep the fork rebuildable from upstream with a small, auditable delta.
 - Treat every divergence from upstream as expensive and risky. It should feel painful to add or keep fork-only code because every extra line increases rebase, release, and debugging risk.
-- Treat `FORK_CHANGELOG.md` as the approval map for intentional fork behavior. If code differs from upstream and the behavior is not clearly covered there, or looks unintentional against it, stop and escalate before editing further.
+- Treat `FORK_CHANGELOG.md` and `USER_FLOWS.md` as the fork priming path for coding, review, release, and delegation. Read the relevant bounded sections before fork work; `FORK_CHANGELOG.md` approves intentional divergence, and `USER_FLOWS.md` owns fork user-flow expectations. If code differs from upstream and the behavior is not clearly covered there, looks unintentional, or changes a listed user flow without matching proof, stop and escalate before editing further.
 - Keep a line-or-hunk-level classification for every non-trivial fork delta before merge. The classification may live in an internal review artifact, PR review notes, or tests; `FORK_CHANGELOG.md` stays high-level and should summarize categories, not become a raw line dump.
 - If the needed feature or behavior already exists in `origin/dev`, use that implementation. Do not build a parallel path.
 - Keep the clean test checkout clean and current before you use it as proof. If that checkout is stale or has unowned local changes, escalate before you rely on it.
@@ -511,7 +511,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Use the standard test tools and patterns already used here.
 - Use isolated file systems and temp directories.
 - Avoid slow or hanging tests. If you must skip one, leave a clear `FIXME`.
-- Follow existing package-local test structure and naming. Do not run tests from the repo root. Use package directories like `packages/opencode`.
+- Follow existing package-local test structure and naming. Upstream tests still matter, but Agent Swarm-specific behavior needs named fork-owned coverage mapped to `FORK_CHANGELOG.md` or `USER_FLOWS.md`; keep that coverage separate from upstream tests when feasible so expected fork divergence or upstream test drift cannot mask fork regressions. Do not run tests from the repo root. Use package directories like `packages/opencode`.
 - Avoid tests that give false confidence. Startup auth, CLI/app wiring, streaming, persistence, and workspace flow need integration or end-to-end coverage plus direct inspection of the user path when practical, not unit-only proof.
 - Retire unit tests that hide gaps in real behavior.
 - Remove dead code when it is in scope.
