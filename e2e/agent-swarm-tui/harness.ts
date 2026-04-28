@@ -142,28 +142,29 @@ export async function startTui(input: {
     : undefined
 
   const args = input.args ?? (input.baseURL ? ["--model", "agency-swarm/default"] : [])
+  const env = await scrubProviderEnv({
+    ...process.env,
+    CI: "1",
+    TERM: "xterm-256color",
+    HOME: path.join(root, "home"),
+    XDG_CONFIG_HOME: path.join(root, "config"),
+    XDG_DATA_HOME: path.join(root, "data"),
+    OPENCODE_CONFIG_DIR: path.join(root, "config", "opencode"),
+    OPENCODE_TEST_HOME: path.join(root, "home"),
+    OPENCODE_TEST_MANAGED_CONFIG_DIR: path.join(root, "managed"),
+    OPENCODE_DISABLE_AUTOUPDATE: "true",
+    OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
+    OPENCODE_DISABLE_MODELS_FETCH: "true",
+    OPENCODE_MODELS_PATH: modelsFixture,
+    ...(configContent ? { OPENCODE_CONFIG_CONTENT: configContent } : {}),
+    ...(input.env ?? {}),
+  })
   const proc = spawn(process.execPath, ["--conditions=browser", "./src/index.ts", ...args], {
     cwd: input.cwd ?? packageRoot,
     cols: 100,
     rows: 30,
     name: "xterm-256color",
-    env: cleanEnv({
-      ...process.env,
-      CI: "1",
-      TERM: "xterm-256color",
-      HOME: path.join(root, "home"),
-      XDG_CONFIG_HOME: path.join(root, "config"),
-      XDG_DATA_HOME: path.join(root, "data"),
-      OPENCODE_CONFIG_DIR: path.join(root, "config", "opencode"),
-      OPENCODE_TEST_HOME: path.join(root, "home"),
-      OPENCODE_TEST_MANAGED_CONFIG_DIR: path.join(root, "managed"),
-      OPENCODE_DISABLE_AUTOUPDATE: "true",
-      OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
-      OPENCODE_DISABLE_MODELS_FETCH: "true",
-      OPENCODE_MODELS_PATH: modelsFixture,
-      ...(configContent ? { OPENCODE_CONFIG_CONTENT: configContent } : {}),
-      ...(input.env ?? {}),
-    }),
+    env: cleanEnv(env),
   })
 
   proc.onData((chunk) => {
@@ -251,6 +252,33 @@ function cleanEnv(env: Record<string, string | undefined>) {
     if (value !== undefined) result[key] = value
   }
   return result
+}
+
+async function scrubProviderEnv(env: Record<string, string | undefined>) {
+  const result = { ...env }
+  const providerEnvNames = await loadProviderEnvNames()
+  providerEnvNames.add("OPENAI_API_KEY")
+  providerEnvNames.add("ANTHROPIC_API_KEY")
+  providerEnvNames.add("ANTHROPIC_AUTH_TOKEN")
+  for (const name of providerEnvNames) result[name] = undefined
+  return result
+}
+
+async function loadProviderEnvNames() {
+  const fixture = (await Bun.file(modelsFixture).json()) as
+    | { providers?: Record<string, unknown> }
+    | Record<string, unknown>
+  const providers = "providers" in fixture && fixture.providers ? fixture.providers : fixture
+  const names = new Set<string>()
+  for (const provider of Object.values(providers)) {
+    if (!provider || typeof provider !== "object") continue
+    const envNames = (provider as { env?: unknown }).env
+    if (!Array.isArray(envNames)) continue
+    for (const name of envNames) {
+      if (typeof name === "string") names.add(name)
+    }
+  }
+  return names
 }
 
 function tail(value: string, lines = 80) {

@@ -48,10 +48,29 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(screen).toContain("/auth")
     expect(screen).toContain("/connect")
     expect(screen).toContain("/agents")
-    expect(screen).not.toContain("/editor")
-    expect(screen).not.toContain("/variants")
-    expect(screen).not.toContain("/init")
-    expect(screen).not.toContain("/review")
+  })
+
+  test("run-mode slash command filtering hides native commands by query", async () => {
+    for (const [hiddenCommand, query] of [
+      ["/editor", "/edi"],
+      ["/variants", "/var"],
+      ["/init", "/ini"],
+      ["/review", "/rev"],
+    ] as const) {
+      currentServer = await startFakeAgencyServer()
+      currentTui = await startTui({ baseURL: currentServer.baseURL })
+
+      await currentTui.waitForText("agent-swarm", 12_000)
+      currentTui.write(query)
+      await currentTui.waitForText(query)
+
+      expect(currentTui.screen()).not.toContain(hiddenCommand)
+
+      await currentTui.close()
+      currentTui = undefined
+      currentServer.stop()
+      currentServer = undefined
+    }
   })
 
   test("run-target picker uses live agency labels instead of local-agency ids", async () => {
@@ -79,5 +98,26 @@ describe("Agent Swarm terminal TUI e2e", () => {
       message: "hello from terminal e2e",
       recipient_agent: "entry-agent",
     })
+  })
+
+  test("harness does not leak parent provider credentials to the fake agency", async () => {
+    currentServer = await startFakeAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      env: {
+        OPENAI_API_KEY: "sentinel-openai-key",
+        ANTHROPIC_API_KEY: "sentinel-anthropic-key",
+        ANTHROPIC_AUTH_TOKEN: "sentinel-anthropic-token",
+      },
+    })
+
+    await currentTui.waitForText("agent-swarm", 12_000)
+    currentTui.write("check env isolation\r")
+    await currentTui.waitFor(() => currentServer!.requests.length === 1, "fake agency stream request", 15_000)
+
+    const body = JSON.stringify(currentServer.requests[0]?.body)
+    expect(body).not.toContain("sentinel-openai-key")
+    expect(body).not.toContain("sentinel-anthropic-key")
+    expect(body).not.toContain("sentinel-anthropic-token")
   })
 })
