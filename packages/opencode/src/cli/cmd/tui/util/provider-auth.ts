@@ -31,11 +31,11 @@ export function getVisibleProviderAuthMethods(
 }
 
 export function getStoredProviderAuthMethod(provider: Provider): StoredProviderAuthMethod | undefined {
+  const options = provider.options ?? {}
   if (provider.source === "api") return "api"
   if (provider.source === "env" && (provider.env?.length ?? 0) > 0) return "env"
-  if (provider.source === "config") return "config"
+  if (provider.source === "config" && typeof options["apiKey"] === "string" && options["apiKey"]) return "config"
   if (provider.source === "custom") {
-    const options = provider.options ?? {}
     if (provider.id === "opencode" && options["apiKey"] === "public") return undefined
     if (options["apiKey"] === OAUTH_DUMMY_KEY) return "oauth"
     if (Object.keys(options).length > 0) return "oauth"

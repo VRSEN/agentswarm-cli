@@ -2768,16 +2768,20 @@ describe("session.agency-swarm", () => {
     ] as any
 
     let sentHistory: unknown
+    const appendedHistory: unknown[] = []
     AgencySwarmHistory.load = (async () => ({
       scope: "http://127.0.0.1:8000|builder|session_1",
       chat_history: [],
       updated_at: Date.now(),
     })) as typeof AgencySwarmHistory.load
-    AgencySwarmHistory.appendMessages = (async () => ({
-      scope: "scope",
-      chat_history: [],
-      updated_at: Date.now(),
-    })) as typeof AgencySwarmHistory.appendMessages
+    AgencySwarmHistory.appendMessages = (async (_scope, messages) => {
+      appendedHistory.push(...(Array.isArray(messages) ? messages : []))
+      return {
+        scope: "scope",
+        chat_history: appendedHistory as Record<string, unknown>[],
+        updated_at: Date.now(),
+      }
+    }) as typeof AgencySwarmHistory.appendMessages
     AgencySwarmHistory.setLastRunID = (async () => ({
       scope: "scope",
       chat_history: [],
@@ -2798,7 +2802,7 @@ describe("session.agency-swarm", () => {
       messagesSpy.mockRestore()
     }
 
-    expect(sentHistory).toEqual([
+    const rebuiltHistory = [
       {
         type: "message",
         role: "user",
@@ -2815,7 +2819,9 @@ describe("session.agency-swarm", () => {
         callerAgent: null,
         timestamp: 2,
       },
-    ])
+    ]
+    expect(sentHistory).toEqual(rebuiltHistory)
+    expect(appendedHistory).toEqual(rebuiltHistory)
   })
 
   test("stream persists handed off recipient from session history", async () => {
@@ -3708,6 +3714,71 @@ describe("session.agency-swarm", () => {
     expect(events.some((event) => event.type === "finish-step")).toBeFalse()
     expect(events.some((event) => event.type === "finish")).toBeFalse()
     expect(events.at(-1)?.type).toBe("error")
+  })
+
+  test("stream completes Agency Swarm handoff output items instead of leaving transfer tools aborted", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "2",
+            item: {
+              type: "function_call",
+              id: "fc_handoff",
+              call_id: "call_handoff",
+              name: "transfer_to_slides_agent",
+              arguments: "{}",
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "2",
+            item: {
+              type: "function_call",
+              id: "fc_handoff",
+              call_id: "call_handoff",
+              name: "transfer_to_slides_agent",
+              arguments: "{}",
+            },
+          },
+        },
+      }
+      yield {
+        type: "messages",
+        payload: {
+          new_messages: [
+            {
+              type: "handoff_output_item",
+              call_id: "call_handoff",
+              output: '{"assistant":"Slides Agent"}',
+            },
+          ],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    expect(events.some((event) => event.type === "tool-error")).toBeFalse()
+    expect(events.some((event) => event.type === "error")).toBeFalse()
+    expect(events.find((event) => event.type === "tool-result")?.toolCallId).toBe("call_handoff")
+    expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("stop")
   })
 
   test("stream sends cancel after meta when user cancels before run id is known", async () => {

@@ -11,6 +11,7 @@ import { Log } from "../util"
 
 import semver from "semver"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
+import { InstallationDistribution } from "./distribution"
 
 const log = Log.create({ service: "installation" })
 
@@ -54,7 +55,7 @@ export const Info = z
   })
 export type Info = z.infer<typeof Info>
 
-export const USER_AGENT = `opencode/${InstallationChannel}/${InstallationVersion}/${Flag.OPENCODE_CLIENT}`
+export const USER_AGENT = `${InstallationDistribution.packageName}/${InstallationChannel}/${InstallationVersion}/${Flag.OPENCODE_CLIENT}`
 
 export function isPreview() {
   return InstallationChannel !== "latest"
@@ -71,14 +72,6 @@ export class UpgradeFailedError extends Schema.TaggedErrorClass<UpgradeFailedErr
 // Response schemas for external version APIs
 const GitHubRelease = Schema.Struct({ tag_name: Schema.String })
 const NpmPackage = Schema.Struct({ version: Schema.String })
-const BrewFormula = Schema.Struct({ versions: Schema.Struct({ stable: Schema.String }) })
-const BrewInfoV2 = Schema.Struct({
-  formulae: Schema.Array(Schema.Struct({ versions: Schema.Struct({ stable: Schema.String }) })),
-})
-const ChocoPackage = Schema.Struct({
-  d: Schema.Struct({ results: Schema.Array(Schema.Struct({ Version: Schema.String })) }),
-})
-const ScoopManifest = NpmPackage
 
 export interface Interface {
   readonly info: () => Effect.Effect<Info>
@@ -144,17 +137,9 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
         return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.String))(result.stdout)
       })
 
-      const getBrewFormula = Effect.fnUntraced(function* () {
-        const tapFormula = yield* text(["brew", "list", "--formula", "anomalyco/tap/opencode"])
-        if (tapFormula.includes("opencode")) return "anomalyco/tap/opencode"
-        const coreFormula = yield* text(["brew", "list", "--formula", "opencode"])
-        if (coreFormula.includes("opencode")) return "opencode"
-        return "opencode"
-      })
-
       const upgradeCurl = Effect.fnUntraced(
         function* (target: string) {
-          const response = yield* httpOk.execute(HttpClientRequest.get("https://opencode.ai/install"))
+          const response = yield* httpOk.execute(HttpClientRequest.get(InstallationDistribution.installURL))
           const body = yield* response.text
           const bodyBytes = new TextEncoder().encode(body)
           const proc = ChildProcess.make("bash", [], {
@@ -182,7 +167,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
           }
         }),
         method: Effect.fn("Installation.method")(function* () {
-          if (process.execPath.includes(path.join(".opencode", "bin"))) return "curl" as Method
+          if (process.execPath.includes(path.join(InstallationDistribution.installDir, "bin"))) return "curl" as Method
           if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
           const exec = process.execPath.toLowerCase()
 
@@ -206,9 +191,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
 
           for (const check of checks) {
             const output = yield* check.command()
-            const installedName =
-              check.name === "brew" || check.name === "choco" || check.name === "scoop" ? "opencode" : "opencode-ai"
-            if (output.includes(installedName)) {
+            if (output.includes(InstallationDistribution.packageName)) {
               return check.name
             }
           }
@@ -218,50 +201,25 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
         latest: Effect.fn("Installation.latest")(function* (installMethod?: Method) {
           const detectedMethod = installMethod || (yield* result.method())
 
-          if (detectedMethod === "brew") {
-            const formula = yield* getBrewFormula()
-            if (formula.includes("/")) {
-              const infoJson = yield* text(["brew", "info", "--json=v2", formula])
-              const info = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(BrewInfoV2))(infoJson)
-              return info.formulae[0].versions.stable
-            }
-            const response = yield* httpOk.execute(
-              HttpClientRequest.get("https://formulae.brew.sh/api/formula/opencode.json").pipe(
-                HttpClientRequest.acceptJson,
-              ),
-            )
-            const data = yield* HttpClientResponse.schemaBodyJson(BrewFormula)(response)
-            return data.versions.stable
+          if (
+            detectedMethod === "brew" ||
+            detectedMethod === "choco" ||
+            detectedMethod === "scoop" ||
+            detectedMethod === "yarn"
+          ) {
+            return yield* new UpgradeFailedError({
+              stderr: `${InstallationDistribution.packageName} is not published to ${detectedMethod}. Use npm, pnpm, bun, or curl instead.`,
+            })
           }
 
           if (detectedMethod === "npm" || detectedMethod === "bun" || detectedMethod === "pnpm") {
-            return yield* viewVersion(detectedMethod, `opencode-ai@${InstallationChannel}`)
-          }
-
-          if (detectedMethod === "choco") {
-            const response = yield* httpOk.execute(
-              HttpClientRequest.get(
-                "https://community.chocolatey.org/api/v2/Packages?$filter=Id%20eq%20%27opencode%27%20and%20IsLatestVersion&$select=Version",
-              ).pipe(HttpClientRequest.setHeaders({ Accept: "application/json;odata=verbose" })),
-            )
-            const data = yield* HttpClientResponse.schemaBodyJson(ChocoPackage)(response)
-            return data.d.results[0].Version
-          }
-
-          if (detectedMethod === "scoop") {
-            const response = yield* httpOk.execute(
-              HttpClientRequest.get(
-                "https://raw.githubusercontent.com/ScoopInstaller/Main/master/bucket/opencode.json",
-              ).pipe(HttpClientRequest.setHeaders({ Accept: "application/json" })),
-            )
-            const data = yield* HttpClientResponse.schemaBodyJson(ScoopManifest)(response)
-            return data.version
+            return yield* viewVersion(detectedMethod, `${InstallationDistribution.packageName}@${InstallationChannel}`)
           }
 
           const response = yield* httpOk.execute(
-            HttpClientRequest.get("https://api.github.com/repos/anomalyco/opencode/releases/latest").pipe(
-              HttpClientRequest.acceptJson,
-            ),
+            HttpClientRequest.get(
+              `https://api.github.com/repos/${InstallationDistribution.releaseRepo}/releases/latest`,
+            ).pipe(HttpClientRequest.acceptJson),
           )
           const data = yield* HttpClientResponse.schemaBodyJson(GitHubRelease)(response)
           return data.tag_name.replace(/^v/, "")
@@ -273,47 +231,39 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
               upgradeResult = yield* upgradeCurl(target)
               break
             case "npm":
-              upgradeResult = yield* run(["npm", "install", "-g", `opencode-ai@${target}`])
+              upgradeResult = yield* run(["npm", "install", "-g", `${InstallationDistribution.packageName}@${target}`])
               break
             case "pnpm":
-              upgradeResult = yield* run(["pnpm", "install", "-g", `opencode-ai@${target}`])
+              upgradeResult = yield* run(["pnpm", "install", "-g", `${InstallationDistribution.packageName}@${target}`])
               break
             case "bun":
-              upgradeResult = yield* run(["bun", "install", "-g", `opencode-ai@${target}`])
+              upgradeResult = yield* run(["bun", "install", "-g", `${InstallationDistribution.packageName}@${target}`])
               break
-            case "brew": {
-              const formula = yield* getBrewFormula()
-              const env = { HOMEBREW_NO_AUTO_UPDATE: "1" }
-              if (formula.includes("/")) {
-                const tap = yield* run(["brew", "tap", "anomalyco/tap"], { env })
-                if (tap.code !== 0) {
-                  upgradeResult = tap
-                  break
-                }
-                const repo = yield* text(["brew", "--repo", "anomalyco/tap"])
-                const dir = repo.trim()
-                if (dir) {
-                  const pull = yield* run(["git", "pull", "--ff-only"], { cwd: dir, env })
-                  if (pull.code !== 0) {
-                    upgradeResult = pull
-                    break
-                  }
-                }
-              }
-              upgradeResult = yield* run(["brew", "upgrade", formula], { env })
+            case "brew":
+              return yield* new UpgradeFailedError({
+                stderr: `${InstallationDistribution.packageName} is not published to Homebrew. Use npm, pnpm, bun, or curl instead.`,
+              })
               break
-            }
             case "choco":
-              upgradeResult = yield* run(["choco", "upgrade", "opencode", `--version=${target}`, "-y"])
+              return yield* new UpgradeFailedError({
+                stderr: `${InstallationDistribution.packageName} is not published to Chocolatey. Use npm, pnpm, bun, or curl instead.`,
+              })
               break
             case "scoop":
-              upgradeResult = yield* run(["scoop", "install", `opencode@${target}`])
+              return yield* new UpgradeFailedError({
+                stderr: `${InstallationDistribution.packageName} is not published to Scoop. Use npm, pnpm, bun, or curl instead.`,
+              })
+              break
+            case "yarn":
+              return yield* new UpgradeFailedError({
+                stderr: `${InstallationDistribution.packageName} is not published to Yarn. Use npm, pnpm, bun, or curl instead.`,
+              })
               break
             default:
               return yield* new UpgradeFailedError({ stderr: `Unknown method: ${m}` })
           }
           if (!upgradeResult || upgradeResult.code !== 0) {
-            const stderr = m === "choco" ? "not running from an elevated command shell" : upgradeResult?.stderr || ""
+            const stderr = upgradeResult?.stderr || ""
             return yield* new UpgradeFailedError({ stderr })
           }
           log.info("upgraded", {

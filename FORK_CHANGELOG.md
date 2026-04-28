@@ -19,9 +19,11 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 ## Upstream Baseline Anchor
 
-- Upstream baseline: `origin/dev` at `301ecb185e06a230c6d720845b04effa84450976`
-- Fork baseline: `vrsen/dev` at `764f9033269ff096d2c9ac3511f7fa1baf11c718`
-- Ahead/behind count: `origin/dev...vrsen/dev` = `932 281`
+- Last upstream sync merged `origin/dev` commit `35734b42fe3094c41b09ec81d3836944a8dd1d89` into the fork.
+- The upstream sync includes release tag `v1.14.28` at `acd8783a36d8642ade7038f34ca4f2f2ac3cc824`.
+- Fork merge commit: `8c24d21569620713c438b68e38a6a53fbbc66b68`.
+- Current fork head when this anchor was refreshed: `vrsen/dev` at `ca32b473a217c4158858400a115b73ac7e7db93d`.
+- Current comparison count: `origin/dev...vrsen/dev` = `61 311`.
 
 ## Branding/Packaging
 

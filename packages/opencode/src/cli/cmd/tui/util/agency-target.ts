@@ -15,6 +15,7 @@ export type AgencyProviderOptions = {
 
 export type AgencyTargetSelection = {
   agency: string
+  agencyLabel?: string
   recipientAgent: string
   label: string
 }
@@ -66,6 +67,7 @@ export function resolveAgencyTargetSelection(input: {
 
   return {
     agency: agency.id,
+    agencyLabel: agency.name,
     recipientAgent: recipient.id,
     label: recipient.name,
   }
@@ -92,8 +94,30 @@ export function cycleAgencyTargetSelection(input: {
 
   return {
     agency: agency.id,
+    agencyLabel: agency.name,
     recipientAgent: next.id,
     label: next.name,
+  }
+}
+
+export function resolveAgencyTargetFromPicker(input: {
+  agencies: AgencySwarmAdapter.AgencyDescriptor[]
+  selectedAgency: string
+  selectedRecipient?: string
+}): AgencyTargetSelection | undefined {
+  const agency = input.agencies.find((item) => item.id === input.selectedAgency)
+  if (!agency) return undefined
+
+  const recipient = input.selectedRecipient
+    ? agency.agents.find((agent) => agent.id === input.selectedRecipient)
+    : defaultAgencyRecipient(agency)
+  if (!recipient) return undefined
+
+  return {
+    agency: agency.id,
+    agencyLabel: agency.name,
+    recipientAgent: recipient.id,
+    label: recipient.name,
   }
 }
 

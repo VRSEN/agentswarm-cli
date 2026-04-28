@@ -254,7 +254,7 @@ function DialogRemoveCredential() {
             providerID: provider.id,
           })
           await refreshAfterProviderAuth({
-            sessionStatus: sync.data.session_status,
+            sessionStatus: () => sync.data.session_status,
             dispose: () => sdk.client.instance.dispose(),
             bootstrap: () => sync.bootstrap(),
           })
@@ -582,7 +582,7 @@ export function DialogAgencySwarmConnect() {
       { throwOnError: true },
     )
     await refreshAfterProviderAuth({
-      sessionStatus: sync.data.session_status,
+      sessionStatus: () => sync.data.session_status,
       dispose: () => sdk.client.instance.dispose(),
       bootstrap: () => sync.bootstrap(),
     })
@@ -633,7 +633,7 @@ export function DialogAgencySwarmConnect() {
             .then(clearConfigToken)
             .then(() =>
               refreshAfterProviderAuth({
-                sessionStatus: sync.data.session_status,
+                sessionStatus: () => sync.data.session_status,
                 dispose: () => sdk.client.instance.dispose(),
                 bootstrap: () => sync.bootstrap(),
               }),
@@ -660,7 +660,7 @@ export function DialogAgencySwarmConnect() {
       .then(clearConfigToken)
       .then(() =>
         refreshAfterProviderAuth({
-          sessionStatus: sync.data.session_status,
+          sessionStatus: () => sync.data.session_status,
           dispose: () => sdk.client.instance.dispose(),
           bootstrap: () => sync.bootstrap(),
         }),
@@ -826,7 +826,7 @@ function AutoMethod(props: AutoMethodProps) {
     }
     try {
       await refreshAfterProviderAuth({
-        sessionStatus: sync.data.session_status,
+        sessionStatus: () => sync.data.session_status,
         dispose: () => sdk.client.instance.dispose(),
         bootstrap: () => sync.bootstrap(),
       })
@@ -913,7 +913,7 @@ function CodeMethod(props: CodeMethodProps) {
         if (!error) {
           try {
             await refreshAfterProviderAuth({
-              sessionStatus: sync.data.session_status,
+              sessionStatus: () => sync.data.session_status,
               dispose: () => sdk.client.instance.dispose(),
               bootstrap: () => sync.bootstrap(),
             })
@@ -1048,7 +1048,7 @@ function ApiMethod(props: ApiMethodProps) {
         }
         try {
           await refreshAfterProviderAuth({
-            sessionStatus: sync.data.session_status,
+            sessionStatus: () => sync.data.session_status,
             dispose: () => sdk.client.instance.dispose(),
             bootstrap: () => sync.bootstrap(),
           })

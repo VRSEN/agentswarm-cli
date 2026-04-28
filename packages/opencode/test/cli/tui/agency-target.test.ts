@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   buildAgencyTargetOptions,
+  resolveAgencyTargetFromPicker,
   shouldAdoptAgencyHandoffRecipient,
 } from "../../../src/cli/cmd/tui/util/agency-target"
 
@@ -46,6 +47,35 @@ describe("agency target options", () => {
         assistantAgent: "ExampleAgent2",
       }),
     ).toBe(true)
+  })
+
+  test("agency picker rows resolve to the live agency name and default recipient", () => {
+    const selected = resolveAgencyTargetFromPicker({
+      agencies: [
+        {
+          id: "local-agency",
+          name: "Default Agency",
+          description: "Local project agency",
+          metadata: {},
+          agents: [
+            {
+              id: "orchestrator",
+              name: "Orchestrator",
+              description: "Entry point",
+              isEntryPoint: true,
+            },
+          ],
+        },
+      ],
+      selectedAgency: "local-agency",
+    })
+
+    expect(selected).toEqual({
+      agency: "local-agency",
+      agencyLabel: "Default Agency",
+      recipientAgent: "orchestrator",
+      label: "Orchestrator",
+    })
   })
 
   test("does not re-adopt when agent is unchanged or matches build", () => {

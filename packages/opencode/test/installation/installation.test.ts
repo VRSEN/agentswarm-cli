@@ -3,6 +3,7 @@ import { Effect, Layer, Stream } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { Installation } from "../../src/installation"
+import { InstallationDistribution } from "../../src/installation/distribution"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
 
 const encoder = new TextEncoder()
@@ -52,12 +53,17 @@ function testLayer(
 describe("installation", () => {
   describe("latest", () => {
     test("reads release version from GitHub releases", async () => {
-      const layer = testLayer(() => jsonResponse({ tag_name: "v1.2.3" }))
+      const urls: string[] = []
+      const layer = testLayer((request) => {
+        urls.push(request.url)
+        return jsonResponse({ tag_name: "v1.2.3" })
+      })
 
       const result = await Effect.runPromise(
         Installation.Service.use((svc) => svc.latest("unknown")).pipe(Effect.provide(layer)),
       )
       expect(result).toBe("1.2.3")
+      expect(urls).toEqual([`https://api.github.com/repos/${InstallationDistribution.releaseRepo}/releases/latest`])
     })
 
     test("strips v prefix from GitHub release tag", async () => {
@@ -86,7 +92,13 @@ describe("installation", () => {
         Installation.Service.use((svc) => svc.latest("npm")).pipe(Effect.provide(layer)),
       )
       expect(result).toBe("1.5.0")
-      expect(calls).toContainEqual(["npm", "view", `opencode-ai@${InstallationChannel}`, "version", "--json"])
+      expect(calls).toContainEqual([
+        "npm",
+        "view",
+        `${InstallationDistribution.packageName}@${InstallationChannel}`,
+        "version",
+        "--json",
+      ])
     })
 
     test("reads npm versions via bun pm view", async () => {
@@ -106,7 +118,14 @@ describe("installation", () => {
         Installation.Service.use((svc) => svc.latest("bun")).pipe(Effect.provide(layer)),
       )
       expect(result).toBe("1.6.0")
-      expect(calls).toContainEqual(["bun", "pm", "view", `opencode-ai@${InstallationChannel}`, "version", "--json"])
+      expect(calls).toContainEqual([
+        "bun",
+        "pm",
+        "view",
+        `${InstallationDistribution.packageName}@${InstallationChannel}`,
+        "version",
+        "--json",
+      ])
     })
 
     test("reads npm versions via pnpm view", async () => {
@@ -126,61 +145,53 @@ describe("installation", () => {
         Installation.Service.use((svc) => svc.latest("pnpm")).pipe(Effect.provide(layer)),
       )
       expect(result).toBe("1.7.0")
-      expect(calls).toContainEqual(["pnpm", "view", `opencode-ai@${InstallationChannel}`, "version", "--json"])
+      expect(calls).toContainEqual([
+        "pnpm",
+        "view",
+        `${InstallationDistribution.packageName}@${InstallationChannel}`,
+        "version",
+        "--json",
+      ])
     })
 
-    test("reads scoop manifest versions", async () => {
-      const layer = testLayer(() => jsonResponse({ version: "2.3.4" }))
-
-      const result = await Effect.runPromise(
-        Installation.Service.use((svc) => svc.latest("scoop")).pipe(Effect.provide(layer)),
-      )
-      expect(result).toBe("2.3.4")
-    })
-
-    test("reads chocolatey feed versions", async () => {
-      const layer = testLayer(() => jsonResponse({ d: { results: [{ Version: "3.4.5" }] } }))
-
-      const result = await Effect.runPromise(
-        Installation.Service.use((svc) => svc.latest("choco")).pipe(Effect.provide(layer)),
-      )
-      expect(result).toBe("3.4.5")
-    })
-
-    test("reads brew formulae API versions", async () => {
-      const layer = testLayer(
-        () => jsonResponse({ versions: { stable: "2.0.0" } }),
-        (cmd, args) => {
-          // getBrewFormula: return core formula (no tap)
-          if (cmd === "brew" && args.includes("--formula") && args.includes("anomalyco/tap/opencode")) return ""
-          if (cmd === "brew" && args.includes("--formula") && args.includes("opencode")) return "opencode"
-          return ""
-        },
-      )
-
-      const result = await Effect.runPromise(
-        Installation.Service.use((svc) => svc.latest("brew")).pipe(Effect.provide(layer)),
-      )
-      expect(result).toBe("2.0.0")
-    })
-
-    test("reads brew tap info JSON via CLI", async () => {
-      const brewInfoJson = JSON.stringify({
-        formulae: [{ versions: { stable: "2.1.0" } }],
+    test("does not read unsupported package-manager release feeds", async () => {
+      const urls: string[] = []
+      const layer = testLayer((request) => {
+        urls.push(request.url)
+        return jsonResponse({})
       })
+
+      await Effect.runPromise(Installation.Service.use((svc) => svc.latest("scoop")).pipe(Effect.provide(layer))).catch(
+        () => {},
+      )
+      await Effect.runPromise(Installation.Service.use((svc) => svc.latest("choco")).pipe(Effect.provide(layer))).catch(
+        () => {},
+      )
+      await Effect.runPromise(Installation.Service.use((svc) => svc.latest("brew")).pipe(Effect.provide(layer))).catch(
+        () => {},
+      )
+      await Effect.runPromise(Installation.Service.use((svc) => svc.latest("yarn")).pipe(Effect.provide(layer))).catch(
+        () => {},
+      )
+      expect(urls).toEqual([])
+    })
+  })
+
+  describe("upgrade", () => {
+    test("installs the fork npm package", async () => {
+      const calls: string[][] = []
       const layer = testLayer(
-        () => jsonResponse({}), // HTTP not used for tap formula
+        () => jsonResponse({}),
         (cmd, args) => {
-          if (cmd === "brew" && args.includes("anomalyco/tap/opencode") && args.includes("--formula")) return "opencode"
-          if (cmd === "brew" && args.includes("--json=v2")) return brewInfoJson
+          calls.push([cmd, ...args])
           return ""
         },
       )
 
-      const result = await Effect.runPromise(
-        Installation.Service.use((svc) => svc.latest("brew")).pipe(Effect.provide(layer)),
+      await Effect.runPromise(
+        Installation.Service.use((svc) => svc.upgrade("npm", "1.2.3")).pipe(Effect.provide(layer)),
       )
-      expect(result).toBe("2.1.0")
+      expect(calls).toContainEqual(["npm", "install", "-g", `${InstallationDistribution.packageName}@1.2.3`])
     })
   })
 })

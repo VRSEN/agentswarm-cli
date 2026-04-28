@@ -197,6 +197,19 @@ test("getStoredProviderAuthMethod returns 'config' for config-backed providers",
   ).toBe("config")
 })
 
+test("getStoredProviderAuthMethod ignores config-only provider options without an API key", () => {
+  expect(
+    getStoredProviderAuthMethod({
+      id: "openai",
+      name: "OpenAI",
+      source: "config",
+      env: [],
+      options: { whitelist: ["gpt-4.1"] },
+      models: {},
+    }),
+  ).toBeUndefined()
+})
+
 test("getStoredProviderAuthMethod returns 'oauth' for OAUTH_DUMMY_KEY-marked custom providers", () => {
   expect(
     getStoredProviderAuthMethod({

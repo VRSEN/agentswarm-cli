@@ -12,6 +12,7 @@ import { isAgencySwarmFrameworkMode } from "../session-error"
 import {
   buildAgencyTargetOptions,
   readAgencyProviderOptions,
+  resolveAgencyTargetFromPicker,
   resolveAgencyTargetSelection,
 } from "../util/agency-target"
 
@@ -244,10 +245,15 @@ export function DialogAgent() {
 
   async function setAgencySwarmTarget(value: Extract<AgentOptionValue, { kind: "agency" | "recipient" }>) {
     const options = providerOptions()
+    const selected = resolveAgencyTargetFromPicker({
+      agencies: discovery()?.agencies ?? [],
+      selectedAgency: value.agency,
+      selectedRecipient: value.kind === "recipient" ? value.recipientAgent : undefined,
+    })
     const nextOptions = buildAgencyTargetOptions({
       providerOptions: options,
       agency: value.agency,
-      recipientAgent: value.kind === "recipient" ? value.recipientAgent : null,
+      recipientAgent: selected?.recipientAgent ?? null,
     })
 
     await sdk.client.global.config.update(
@@ -271,13 +277,12 @@ export function DialogAgent() {
     await sync.bootstrap()
     dialog.clear()
 
-    const selected =
-      value.kind === "recipient"
-        ? `Selected ${value.recipientAgent} in agency ${value.agency}`
-        : `Selected agency ${value.agency}`
+    const selectedMessage = selected
+      ? `Selected ${selected.label} in agency ${selected.agencyLabel ?? selected.agency}`
+      : `Selected agency ${value.agency}`
     toast.show({
       variant: "success",
-      message: selected,
+      message: selectedMessage,
       duration: 3000,
     })
   }

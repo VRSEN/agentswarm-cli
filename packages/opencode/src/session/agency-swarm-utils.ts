@@ -37,7 +37,7 @@ export function extractFunctionCallOutputs(newMessages: unknown[]): Array<{ call
   for (const raw of newMessages) {
     const message = asRecord(raw)
     if (!message) continue
-    if (asString(message["type"]) !== "function_call_output") continue
+    if (!isAgencyToolOutputType(asString(message["type"]))) continue
     const callID = asString(message["call_id"])
     if (!callID) continue
     outputs.push({
@@ -46,6 +46,10 @@ export function extractFunctionCallOutputs(newMessages: unknown[]): Array<{ call
     })
   }
   return outputs
+}
+
+export function isAgencyToolOutputType(value: string | undefined) {
+  return value === "function_call_output" || value === "tool_call_output_item" || value === "handoff_output_item"
 }
 
 export function parseToolInput(raw: unknown): Record<string, unknown> {

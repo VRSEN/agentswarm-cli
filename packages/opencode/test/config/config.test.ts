@@ -202,6 +202,34 @@ test("branded .agentswarm workspace overrides same-level legacy .opencode worksp
   })
 })
 
+test("explicit branded workspace config still overrides same-level legacy workspace config", async () => {
+  const originalConfigDir = process.env["OPENCODE_CONFIG_DIR"]
+  try {
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await fs.mkdir(path.join(dir, ".agentswarm"), { recursive: true })
+        await fs.mkdir(path.join(dir, ".opencode"), { recursive: true })
+        await writeConfig(path.join(dir, ".agentswarm"), { share: "disabled" }, "agentswarm.json")
+        await writeConfig(path.join(dir, ".opencode"), { share: "manual" }, "opencode.json")
+      },
+    })
+    process.env["OPENCODE_CONFIG_DIR"] = path.join(tmp.path, ".agentswarm")
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const config = await load()
+        expect(config.share).toBe("disabled")
+      },
+    })
+  } finally {
+    if (originalConfigDir === undefined) {
+      delete process.env["OPENCODE_CONFIG_DIR"]
+    } else {
+      process.env["OPENCODE_CONFIG_DIR"] = originalConfigDir
+    }
+  }
+})
+
 test("loads shell config field", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
