@@ -37,36 +37,44 @@ describe("agency target options", () => {
     })
   })
 
-  test("adopts completed handoff agent as selected run target", () => {
+  test("adopts handoff agent as soon as the assistant message reports a new agent", () => {
     expect(
       shouldAdoptAgencyHandoffRecipient({
         frameworkMode: true,
         agency: "my-agency",
         currentRecipient: "ExampleAgent",
         assistantAgent: "ExampleAgent2",
-        completed: true,
       }),
     ).toBe(true)
   })
 
-  test("does not adopt incomplete or unchanged handoff agent", () => {
-    expect(
-      shouldAdoptAgencyHandoffRecipient({
-        frameworkMode: true,
-        agency: "my-agency",
-        currentRecipient: "ExampleAgent",
-        assistantAgent: "ExampleAgent2",
-        completed: false,
-      }),
-    ).toBe(false)
+  test("does not re-adopt when agent is unchanged or matches build", () => {
     expect(
       shouldAdoptAgencyHandoffRecipient({
         frameworkMode: true,
         agency: "my-agency",
         currentRecipient: "ExampleAgent",
         assistantAgent: "ExampleAgent",
-        completed: true,
       }),
     ).toBe(false)
+    expect(
+      shouldAdoptAgencyHandoffRecipient({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: "ExampleAgent",
+        assistantAgent: "build",
+      }),
+    ).toBe(false)
+  })
+
+  test("requires framework mode, agency context, and an assistant agent", () => {
+    const base = {
+      agency: "my-agency",
+      currentRecipient: "ExampleAgent",
+      assistantAgent: "ExampleAgent2",
+    }
+    expect(shouldAdoptAgencyHandoffRecipient({ frameworkMode: false, ...base })).toBe(false)
+    expect(shouldAdoptAgencyHandoffRecipient({ frameworkMode: true, ...base, agency: undefined })).toBe(false)
+    expect(shouldAdoptAgencyHandoffRecipient({ frameworkMode: true, ...base, assistantAgent: undefined })).toBe(false)
   })
 })

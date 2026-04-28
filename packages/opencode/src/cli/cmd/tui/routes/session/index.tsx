@@ -527,6 +527,8 @@ export function Session() {
       value: "session.undo",
       keybind: "messages_undo",
       category: "Session",
+      enabled: !frameworkMode(),
+      hidden: frameworkMode(),
       slash: {
         name: "undo",
       },
@@ -565,7 +567,8 @@ export function Session() {
       value: "session.redo",
       keybind: "messages_redo",
       category: "Session",
-      enabled: !!session()?.revert?.messageID,
+      enabled: !!session()?.revert?.messageID && !frameworkMode(),
+      hidden: frameworkMode(),
       slash: {
         name: "redo",
       },

@@ -224,7 +224,6 @@ export function Prompt(props: PromptProps) {
           agency: options.agency,
           currentRecipient: options.recipientAgent,
           assistantAgent: info.agent,
-          completed: !!info.time.completed,
         })
       ) {
         return

@@ -143,14 +143,14 @@ export function DialogAgent() {
 
     const agencies = discovered?.agencies ?? []
     for (const agency of agencies) {
-      const category = `Agency: ${agency.id}`
+      const category = `Agency: ${agency.name}`
       result.push({
         value: {
           kind: "agency",
           agency: agency.id,
         },
-        title: agency.id,
-        description: agency.description || `Use ${agency.name}`,
+        title: agency.name,
+        description: agency.description,
         category,
       })
       for (const recipient of agency.agents) {
@@ -216,7 +216,7 @@ export function DialogAgent() {
 
   return (
     <DialogSelect
-      title={agencySwarmEnabled() ? "Select agency-swarm target" : "Select agent"}
+      title={agencySwarmEnabled() ? "Select swarm" : "Select agent"}
       current={current()}
       options={options()}
       onSelect={(option) => {

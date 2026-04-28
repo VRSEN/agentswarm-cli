@@ -15,7 +15,11 @@ import { useKeyboard } from "@opentui/solid"
 import * as Clipboard from "@tui/util/clipboard"
 import { useToast } from "../ui/toast"
 import { CONSOLE_MANAGED_ICON, isConsoleManagedProvider } from "@tui/util/provider-origin"
-import { getVisibleProviderAuthMethods, hasStoredProviderCredential } from "@tui/util/provider-auth"
+import {
+  getStoredProviderAuthMethod,
+  getVisibleProviderAuthMethods,
+  hasStoredProviderCredential,
+} from "@tui/util/provider-auth"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { isAgencySwarmFrameworkMode, isSupportedAgencyAuthProvider } from "../session-error"
 import { errorMessage as toErrorMessage } from "@/util/error"
@@ -83,15 +87,24 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
         const consoleManaged = isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, provider.id)
         const connected = sync.data.provider_next.connected.includes(provider.id)
 
-        return {
-          title: provider.name,
-          value: provider.id,
-          description: {
+        const storedAuthMethod = connected ? getStoredProviderAuthMethod(provider) : undefined
+        const description = ((): string | undefined => {
+          if (provider.id === "openai" && storedAuthMethod) {
+            if (storedAuthMethod === "oauth") return "(Browser sign-in)"
+            if (storedAuthMethod === "api") return "(API key)"
+            if (storedAuthMethod === "env") return "(API key from env)"
+          }
+          return {
             opencode: "(Recommended)",
             anthropic: "(API key)",
             openai: "(Browser sign-in or API key)",
             "opencode-go": "Low cost subscription for everyone",
-          }[provider.id],
+          }[provider.id]
+        })()
+        return {
+          title: provider.name,
+          value: provider.id,
+          description,
           footer: consoleManaged ? sync.data.console_state.activeOrgName : undefined,
           category: provider.id in PROVIDER_PRIORITY ? "Popular" : "Other",
           gutter: consoleManaged ? (
