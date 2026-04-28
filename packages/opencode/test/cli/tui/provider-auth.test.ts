@@ -184,6 +184,19 @@ test("getStoredProviderAuthMethod returns 'env' for env-backed providers", () =>
   ).toBe("env")
 })
 
+test("getStoredProviderAuthMethod returns 'config' for config-backed providers", () => {
+  expect(
+    getStoredProviderAuthMethod({
+      id: "openai",
+      name: "OpenAI",
+      source: "config",
+      env: [],
+      options: { apiKey: "sk-config" },
+      models: {},
+    }),
+  ).toBe("config")
+})
+
 test("getStoredProviderAuthMethod returns 'oauth' for OAUTH_DUMMY_KEY-marked custom providers", () => {
   expect(
     getStoredProviderAuthMethod({
