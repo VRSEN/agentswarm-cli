@@ -144,6 +144,64 @@ test("loads JSON config file", async () => {
   })
 })
 
+test("branded project config overrides legacy config in the same directory", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await writeConfig(dir, {
+        $schema: "https://opencode.ai/config.json",
+        share: "manual",
+      })
+      await writeConfig(
+        dir,
+        {
+          $schema: "https://opencode.ai/config.json",
+          share: "disabled",
+        },
+        "agentswarm.json",
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const config = await load()
+      expect(config.share).toBe("disabled")
+    },
+  })
+})
+
+test("branded .agentswarm workspace overrides same-level legacy .opencode workspace", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await fs.mkdir(path.join(dir, ".agentswarm"), { recursive: true })
+      await fs.mkdir(path.join(dir, ".opencode"), { recursive: true })
+      await writeConfig(
+        path.join(dir, ".agentswarm"),
+        {
+          $schema: "https://opencode.ai/config.json",
+          share: "disabled",
+        },
+        "agentswarm.json",
+      )
+      await writeConfig(
+        path.join(dir, ".opencode"),
+        {
+          $schema: "https://opencode.ai/config.json",
+          share: "manual",
+        },
+        "opencode.json",
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const config = await load()
+      expect(config.share).toBe("disabled")
+    },
+  })
+})
+
 test("loads shell config field", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {

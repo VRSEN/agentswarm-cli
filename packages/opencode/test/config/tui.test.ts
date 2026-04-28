@@ -496,6 +496,30 @@ test("loads .opencode/tui.json", async () => {
   expect(config.diff_style).toBe("stacked")
 })
 
+test("loads .agentswarm/tui.json", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await fs.mkdir(path.join(dir, ".agentswarm"), { recursive: true })
+      await Bun.write(path.join(dir, ".agentswarm", "tui.json"), JSON.stringify({ diff_style: "stacked" }, null, 2))
+    },
+  })
+  const config = await getTuiConfig(tmp.path)
+  expect(config.diff_style).toBe("stacked")
+})
+
+test("branded .agentswarm/tui.json overrides same-level legacy .opencode/tui.json", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await fs.mkdir(path.join(dir, ".agentswarm"), { recursive: true })
+      await fs.mkdir(path.join(dir, ".opencode"), { recursive: true })
+      await Bun.write(path.join(dir, ".agentswarm", "tui.json"), JSON.stringify({ theme: "brand" }, null, 2))
+      await Bun.write(path.join(dir, ".opencode", "tui.json"), JSON.stringify({ theme: "legacy" }, null, 2))
+    },
+  })
+  const config = await getTuiConfig(tmp.path)
+  expect(config.theme).toBe("brand")
+})
+
 test("supports tuple plugin specs with options in tui.json", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
