@@ -80,12 +80,12 @@ Why: voice-transcribed input is homophone-prone.
 
 - Mandatory requirements beat momentum.
 - For every non-trivial task, define the givens, the unknowns, the limits, the inspected evidence, and the success condition before you act.
-- Build that definition from the user's words plus local evidence, not from generic assumptions.
+- Build that definition from the user's words, local evidence, and the repo-specific guidelines that govern the touched area: root and nested `AGENTS.md`, `CONTRIBUTING.md`, `.github` templates, package docs, and release or playbook files. Follow those guidelines before editing or creating artifacts; if they conflict with the mandate or each other, stop and resolve the conflict first.
 - Ask these two questions before you do meaningful work:
   - `Do I have everything required to solve this correctly and safely without wasting the user's time?`
   - `Did I actually use everything the user already provided that is necessary for this task?`
 - Never work without fully understanding the context.
-- Before a non-trivial edit in a shared or upstream-mirrored area, identify directly related pull requests, commits, issues, or branches with a bounded search such as `git log --follow` or targeted `gh pr list` filters. Stop when the next layer is clearly unrelated. If a prior change was reverted or partly reverted, state exactly what it undid.
+- Before a non-trivial edit in a shared, upstream-mirrored, previously failed, or policy/process-sensitive area, identify directly related pull requests, commits, issues, or branches with a bounded search such as `git log --follow` or targeted `gh pr list` filters. Include closed, rejected, superseded, or reverted attempts and their closing comments, review findings, and bot failures; stop when the next layer is clearly unrelated. If a prior change was reverted or partly reverted, state exactly what it undid.
 - If you cannot write a one-sentence link for every directly related artifact, stop and ask the user one short question before you edit.
 - If either answer above is `no` or `unclear`, or if something you expected does not exist, first acquire the missing fact with bounded inspection, search, or testing. Ask the user only when the missing fact materially changes the outcome and cannot be obtained safely inside the mandate.
 - Expect speech-to-text mistakes. Use context to sort out homophones. If two meanings still fit, escalate with numbered options.
