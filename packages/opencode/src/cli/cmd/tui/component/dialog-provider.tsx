@@ -94,6 +94,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
             if (storedAuthMethod === "oauth") return "(Browser sign-in)"
             if (storedAuthMethod === "api") return "(API key)"
             if (storedAuthMethod === "env") return "(API key from env)"
+            if (storedAuthMethod === "config") return "(API key from config)"
           }
           return {
             opencode: "(Recommended)",
