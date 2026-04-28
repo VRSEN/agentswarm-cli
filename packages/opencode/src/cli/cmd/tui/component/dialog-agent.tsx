@@ -216,7 +216,7 @@ export function DialogAgent() {
 
   return (
     <DialogSelect
-      title={agencySwarmEnabled() ? "Select agency-swarm target" : "Select agent"}
+      title={agencySwarmEnabled() ? "Select swarm" : "Select agent"}
       current={current()}
       options={options()}
       onSelect={(option) => {
