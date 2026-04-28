@@ -143,7 +143,7 @@ export async function startTui(input: {
 
   const args = input.args ?? (input.baseURL ? ["--model", "agency-swarm/default"] : [])
   const env = await scrubProviderEnv({
-    ...process.env,
+    ...allowedParentEnv(),
     CI: "1",
     TERM: "xterm-256color",
     HOME: path.join(root, "home"),
@@ -155,7 +155,9 @@ export async function startTui(input: {
     OPENCODE_DISABLE_AUTOUPDATE: "true",
     OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
     OPENCODE_DISABLE_MODELS_FETCH: "true",
+    OPENCODE_DISABLE_PROJECT_CONFIG: "true",
     OPENCODE_MODELS_PATH: modelsFixture,
+    OPENCODE_PURE: "1",
     ...(configContent ? { OPENCODE_CONFIG_CONTENT: configContent } : {}),
     ...(input.env ?? {}),
   })
@@ -251,6 +253,13 @@ function cleanEnv(env: Record<string, string | undefined>) {
   for (const [key, value] of Object.entries(env)) {
     if (value !== undefined) result[key] = value
   }
+  return result
+}
+
+function allowedParentEnv() {
+  const names = ["PATH", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "LC_CTYPE"] as const
+  const result: Record<string, string | undefined> = {}
+  for (const name of names) result[name] = process.env[name]
   return result
 }
 
