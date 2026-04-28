@@ -20,6 +20,7 @@ import {
   getVisibleProviderAuthMethods,
   hasStoredProviderCredential,
 } from "@tui/util/provider-auth"
+import { refreshAfterProviderAuth } from "@tui/util/provider-auth-refresh"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { isAgencySwarmFrameworkMode, isSupportedAgencyAuthProvider } from "../session-error"
 import { errorMessage as toErrorMessage } from "@/util/error"
@@ -251,8 +252,11 @@ function DialogRemoveCredential() {
           await sdk.client.auth.remove({
             providerID: provider.id,
           })
-          await sdk.client.instance.dispose()
-          await sync.bootstrap()
+          await refreshAfterProviderAuth({
+            sessionStatus: sync.data.session_status,
+            dispose: () => sdk.client.instance.dispose(),
+            bootstrap: () => sync.bootstrap(),
+          })
           toast.show({
             variant: "success",
             message: `${provider.name} credential removed`,
@@ -576,8 +580,11 @@ export function DialogAgencySwarmConnect() {
       },
       { throwOnError: true },
     )
-    await sdk.client.instance.dispose()
-    await sync.bootstrap()
+    await refreshAfterProviderAuth({
+      sessionStatus: sync.data.session_status,
+      dispose: () => sdk.client.instance.dispose(),
+      bootstrap: () => sync.bootstrap(),
+    })
     dialog.clear()
     toast.show({
       variant: "success",
@@ -623,8 +630,13 @@ export function DialogAgencySwarmConnect() {
               },
             })
             .then(clearConfigToken)
-            .then(() => sdk.client.instance.dispose())
-            .then(() => sync.bootstrap())
+            .then(() =>
+              refreshAfterProviderAuth({
+                sessionStatus: sync.data.session_status,
+                dispose: () => sdk.client.instance.dispose(),
+                bootstrap: () => sync.bootstrap(),
+              }),
+            )
             .then(() => {
               toast.show({
                 variant: "success",
@@ -645,8 +657,13 @@ export function DialogAgencySwarmConnect() {
         providerID: AgencySwarmAdapter.PROVIDER_ID,
       })
       .then(clearConfigToken)
-      .then(() => sdk.client.instance.dispose())
-      .then(() => sync.bootstrap())
+      .then(() =>
+        refreshAfterProviderAuth({
+          sessionStatus: sync.data.session_status,
+          dispose: () => sdk.client.instance.dispose(),
+          bootstrap: () => sync.bootstrap(),
+        }),
+      )
       .then(() => {
         toast.show({
           variant: "success",
@@ -807,8 +824,11 @@ function AutoMethod(props: AutoMethodProps) {
       return
     }
     try {
-      await sdk.client.instance.dispose()
-      await sync.bootstrap()
+      await refreshAfterProviderAuth({
+        sessionStatus: sync.data.session_status,
+        dispose: () => sdk.client.instance.dispose(),
+        bootstrap: () => sync.bootstrap(),
+      })
       if (frameworkMode()) {
         dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
         return
@@ -891,8 +911,11 @@ function CodeMethod(props: CodeMethodProps) {
         })
         if (!error) {
           try {
-            await sdk.client.instance.dispose()
-            await sync.bootstrap()
+            await refreshAfterProviderAuth({
+              sessionStatus: sync.data.session_status,
+              dispose: () => sdk.client.instance.dispose(),
+              bootstrap: () => sync.bootstrap(),
+            })
             if (frameworkMode()) {
               dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
               return
@@ -1023,8 +1046,11 @@ function ApiMethod(props: ApiMethodProps) {
           return
         }
         try {
-          await sdk.client.instance.dispose()
-          await sync.bootstrap()
+          await refreshAfterProviderAuth({
+            sessionStatus: sync.data.session_status,
+            dispose: () => sdk.client.instance.dispose(),
+            bootstrap: () => sync.bootstrap(),
+          })
           if (frameworkMode()) {
             dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
             return

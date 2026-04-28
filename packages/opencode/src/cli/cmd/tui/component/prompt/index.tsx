@@ -71,6 +71,7 @@ import {
   shouldBlockAgencyPromptSubmit,
   shouldOpenAgencyAuthDialog,
 } from "../../session-error"
+import { cancelQueuedRunModeMessages } from "../../util/run-queued-messages"
 import { errorMessage as toErrorMessage } from "@/util/error"
 import {
   buildAgencyTargetOptions,
@@ -475,9 +476,36 @@ export function Prompt(props: PromptProps) {
           }, 5000)
 
           if (store.interrupt >= 2) {
-            void sdk.client.session.abort({
-              sessionID: props.sessionID,
+            const sessionID = props.sessionID
+            void cancelQueuedRunModeMessages({
+              frameworkMode: frameworkMode(),
+              messages: sync.data.message[sessionID] ?? [],
+              parts: sync.data.part,
+              abort: async () => {
+                await sdk.client.session.abort({ sessionID })
+              },
+              deleteMessage: async (messageID) => {
+                await sdk.client.session.deleteMessage({
+                  sessionID,
+                  messageID,
+                })
+              },
             })
+              .then((queued) => {
+                if (queued.length === 0) return
+                toast.show({
+                  message: `Cancelled ${queued.length} queued message${queued.length === 1 ? "" : "s"}`,
+                  variant: "success",
+                  duration: 3000,
+                })
+              })
+              .catch((error) => {
+                toast.show({
+                  message: toErrorMessage(error),
+                  variant: "error",
+                  duration: 5000,
+                })
+              })
             setStore("interrupt", 0)
           }
           dialog.clear()
