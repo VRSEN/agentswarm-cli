@@ -1,143 +1,99 @@
-<p align="center">
-  <a href="https://opencode.ai">
-    <picture>
-      <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
-      <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
-    </picture>
-  </a>
-</p>
-<p align="center">The open source AI coding agent.</p>
-<p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
-</p>
+# Agent Swarm CLI
 
-<p align="center">
-  <a href="README.md">English</a> |
-  <a href="README.zh.md">简体中文</a> |
-  <a href="README.zht.md">繁體中文</a> |
-  <a href="README.ko.md">한국어</a> |
-  <a href="README.de.md">Deutsch</a> |
-  <a href="README.es.md">Español</a> |
-  <a href="README.fr.md">Français</a> |
-  <a href="README.it.md">Italiano</a> |
-  <a href="README.da.md">Dansk</a> |
-  <a href="README.ja.md">日本語</a> |
-  <a href="README.pl.md">Polski</a> |
-  <a href="README.ru.md">Русский</a> |
-  <a href="README.bs.md">Bosanski</a> |
-  <a href="README.ar.md">العربية</a> |
-  <a href="README.no.md">Norsk</a> |
-  <a href="README.br.md">Português (Brasil)</a> |
-  <a href="README.th.md">ไทย</a> |
-  <a href="README.tr.md">Türkçe</a> |
-  <a href="README.uk.md">Українська</a> |
-  <a href="README.bn.md">বাংলা</a> |
-  <a href="README.gr.md">Ελληνικά</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
-</p>
+Agent Swarm CLI is a terminal app for running and testing Agency Swarm projects.
+It is built on the OpenCode codebase, with Agent Swarm-specific packaging, branding, auth, and TUI flows.
 
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
+The main user path is **Run mode**: start the TUI from an Agency Swarm project, authenticate a model provider, connect to the local Agency Swarm server, and send prompts to your agency.
 
----
-
-### Installation
+## Install
 
 ```bash
-# YOLO
-curl -fsSL https://opencode.ai/install | bash
-
-# Package managers
-npm i -g opencode-ai@latest        # or bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS and Linux (recommended, always up to date)
-brew install opencode              # macOS and Linux (official brew formula, updated less)
-sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
-mise use -g opencode               # Any OS
-nix run nixpkgs#opencode           # or github:anomalyco/opencode for latest dev branch
+npm install -g agentswarm-cli
+agentswarm --version
 ```
 
-> [!TIP]
-> Remove versions older than 0.1.x before installing.
-
-### Desktop App (BETA)
-
-OpenCode is also available as a desktop application. Download directly from the [releases page](https://github.com/anomalyco/opencode/releases) or [opencode.ai/download](https://opencode.ai/download).
-
-| Platform              | Download                              |
-| --------------------- | ------------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-darwin-aarch64.dmg` |
-| macOS (Intel)         | `opencode-desktop-darwin-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe`    |
-| Linux                 | `.deb`, `.rpm`, or AppImage           |
+Other package managers can run the same published npm package:
 
 ```bash
-# macOS (Homebrew)
-brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
+bun install -g agentswarm-cli
+pnpm add -g agentswarm-cli
+yarn global add agentswarm-cli
 ```
 
-#### Installation Directory
+## Start
 
-The install script respects the following priority order for the installation path:
-
-1. `$OPENCODE_INSTALL_DIR` - Custom installation directory
-2. `$XDG_BIN_DIR` - XDG Base Directory Specification compliant path
-3. `$HOME/bin` - Standard user binary directory (if it exists or can be created)
-4. `$HOME/.opencode/bin` - Default fallback
+From an Agency Swarm project:
 
 ```bash
-# Examples
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
+agentswarm .
 ```
 
-### Agents
+You can also pass a project folder:
 
-agentswarm-cli includes two built-in agents you can switch between with the `Tab` key.
+```bash
+agentswarm /path/to/my-agency
+```
 
-- **Agent Builder** - Default, full-access agent for building and testing agents
-- **Plan** - Read-only agent for analysis and code exploration
-  - Denies file edits by default
-  - Asks permission before running bash commands
-  - Ideal for exploring unfamiliar codebases or planning changes
+On startup, the CLI can detect the project, prepare the project Python environment, start the local Agency Swarm server, and open the terminal UI.
 
-When the TUI connects to a running Agency Swarm server (via `agency.tui()` or the connect flow), it enters **Run mode**. In Run mode, the provider list is filtered to the providers Agency Swarm supports natively (OpenAI and Anthropic) and prompts route through that agency.
+## Main TUI Flows
 
-Also included is a **general** subagent for complex searches and multistep tasks.
-This is used internally and can be invoked using `@general` in messages.
+- `/auth` manages OpenAI and Anthropic credentials used by Agency Swarm runs.
+- `/connect` chooses a local or external Agency Swarm server.
+- `/agents` switches the active agency or recipient agent from live Agency Swarm metadata.
+- `/models` is limited in Run mode to providers that the Agency Swarm path supports.
 
-Learn more about [agents](https://opencode.ai/docs/agents).
+Agent Builder and Plan are preserved from the OpenCode backbone, but they are currently hidden from the normal Run mode surface.
 
-### Documentation
+## Sharing
 
-For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
+`/share` is still the upstream OpenCode share flow and currently posts to `https://opncd.ai`.
+This is intentional for now, so users can keep using upstream-compatible session links while a fork-hosted share service is not available.
 
-### Contributing
+Do not share sessions that contain secrets, private code, private customer data, or credentials.
 
-If you're interested in contributing to OpenCode, please read our [contributing docs](./CONTRIBUTING.md) before submitting a pull request.
+## Customizing Agent Swarm CLI
 
-### Building on OpenCode
+This repository is useful if you want to build a custom CLI for your own Agent Swarm distribution.
+Keep these rules in mind:
 
-If you are working on a project that's related to OpenCode and is using "opencode" as part of its name, for example "opencode-dashboard" or "opencode-mobile", please add a note to your README to clarify that it is not built by the OpenCode team and is not affiliated with us in any way.
+- Keep fork-specific behavior small and easy to audit.
+- Prefer reusing upstream OpenCode mechanisms over copying or rewriting them.
+- Keep Agent Swarm-specific code in clearly named modules when that does not make the code worse.
+- Update `FORK_CHANGELOG.md` when you intentionally keep behavior that differs from upstream.
+- Update `USER_FLOWS.md` when a user-facing flow changes.
+- Run the Agent Swarm-specific TUI tests before publishing your own build.
 
-### FAQ
+## Development
 
-#### How is this different from Claude Code?
+Install dependencies:
 
-It's very similar to Claude Code in terms of capability. Here are the key differences:
+```bash
+bun install
+```
 
-- 100% open source
-- Not coupled to any provider. Although we recommend the models we provide through [OpenCode Zen](https://opencode.ai/zen), OpenCode can be used with Claude, OpenAI, Google, or even local models. As models evolve, the gaps between them will close and pricing will drop, so being provider-agnostic is important.
-- Out-of-the-box LSP support
-- A focus on TUI. OpenCode is built by neovim users and the creators of [terminal.shop](https://terminal.shop); we are going to push the limits of what's possible in the terminal.
-- A client/server architecture. This, for example, can allow OpenCode to run on your computer while you drive it remotely from a mobile app, meaning that the TUI frontend is just one of the possible clients.
+Run focused tests from the package you changed:
 
----
+```bash
+cd packages/opencode
+bun test test/cli/tui
+```
 
-**Join our community** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+Run type-checks before pushing:
+
+```bash
+bun typecheck
+```
+
+## Relationship To OpenCode
+
+Agent Swarm CLI is a fork of OpenCode. OpenCode remains the upstream foundation for the TUI, session model, command system, and many developer workflows.
+
+The fork keeps the MIT license and preserves the upstream copyright notice. Fork-specific changes are tracked in `FORK_CHANGELOG.md` so the project can keep merging upstream safely.
+
+## Links
+
+- Agent Swarm CLI repository: <https://github.com/VRSEN/agentswarm-cli>
+- Agency Swarm docs: <https://agency-swarm.ai/>
+- Upstream OpenCode repository: <https://github.com/anomalyco/opencode>
+- npm package: <https://www.npmjs.com/package/agentswarm-cli>

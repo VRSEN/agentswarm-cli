@@ -141,7 +141,7 @@ describe("DialogAgent agency selection", () => {
     expect(options.recipientAgent).toBe("entry-agent")
     expect(toastShow).toHaveBeenCalledWith({
       variant: "success",
-      message: "Selected Entry Agent in agency Live Agency",
+      message: "Selected agency Live Agency",
       duration: 3000,
     })
   })

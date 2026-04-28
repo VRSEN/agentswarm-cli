@@ -6,6 +6,7 @@ import { firstBy } from "remeda"
 import { createMemo, createResource, createEffect, onMount, onCleanup, Index, Show, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useEditorContext } from "@tui/context/editor"
+import { useLocal } from "@tui/context/local"
 import { useSDK } from "@tui/context/sdk"
 import { useSync } from "@tui/context/sync"
 import { getScrollAcceleration } from "../../util/scroll"
@@ -17,6 +18,7 @@ import { useTerminalDimensions } from "@opentui/solid"
 import { Locale } from "@/util"
 import type { PromptInfo } from "./history"
 import { useFrecency } from "./frecency"
+import { isAgencySwarmFrameworkMode, shouldHideNativeCommandInRunMode } from "../../session-error"
 
 function removeLineRange(input: string) {
   const hashIndex = input.lastIndexOf("#")
@@ -80,6 +82,7 @@ export function Autocomplete(props: {
   promptPartTypeId: () => number
 }) {
   const editor = useEditorContext()
+  const local = useLocal()
   const sdk = useSDK()
   const sync = useSync()
   const command = useCommandDialog()
@@ -96,6 +99,13 @@ export function Autocomplete(props: {
   })
 
   const [positionTick, setPositionTick] = createSignal(0)
+  const frameworkMode = createMemo(() =>
+    isAgencySwarmFrameworkMode({
+      currentProviderID: local.model.current()?.providerID,
+      configuredModel: sync.data.config.model,
+      agentModel: local.agent.current()?.model,
+    }),
+  )
 
   createEffect(() => {
     if (store.visible) {
@@ -403,6 +413,15 @@ export function Autocomplete(props: {
 
     for (const serverCommand of sync.data.command) {
       if (serverCommand.source === "skill") continue
+      if (
+        shouldHideNativeCommandInRunMode({
+          frameworkMode: frameworkMode(),
+          name: serverCommand.name,
+          source: serverCommand.source,
+        })
+      ) {
+        continue
+      }
       const label = serverCommand.source === "mcp" ? ":mcp" : ""
       results.push({
         display: "/" + serverCommand.name + label,

@@ -4,7 +4,12 @@ import { useSync } from "@tui/context/sync"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { useDialog } from "@tui/ui/dialog"
-import { createDialogProviderOptions, createDialogProviderOptionsWithFilter, DialogProvider } from "./dialog-provider"
+import {
+  createDialogProviderOptions,
+  createDialogProviderOptionsWithFilter,
+  DialogAuth,
+  DialogProvider,
+} from "./dialog-provider"
 import { DialogVariant } from "./dialog-variant"
 import { useKeybind } from "../context/keybind"
 import { isAgencySupportedProvider, isAgencySwarmFrameworkMode } from "../session-error"
@@ -178,9 +183,9 @@ export function DialogModel(props: { providerID?: string }) {
       keybind={[
         {
           keybind: keybind.all.model_provider_list?.[0],
-          title: connected() ? "Connect provider" : "View all providers",
+          title: frameworkMode ? "Manage provider auth" : connected() ? "Connect provider" : "View all providers",
           onTrigger() {
-            dialog.replace(() => <DialogProvider />)
+            dialog.replace(() => (frameworkMode ? <DialogAuth /> : <DialogProvider />))
           },
         },
         {

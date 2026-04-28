@@ -277,9 +277,10 @@ export function DialogAgent() {
     await sync.bootstrap()
     dialog.clear()
 
-    const selectedMessage = selected
-      ? `Selected ${selected.label} in agency ${selected.agencyLabel ?? selected.agency}`
-      : `Selected agency ${value.agency}`
+    const selectedMessage =
+      value.kind === "agency"
+        ? `Selected agency ${selected?.agencyLabel ?? value.agency}`
+        : `Selected ${selected?.label ?? value.recipientAgent} in agency ${selected?.agencyLabel ?? value.agency}`
     toast.show({
       variant: "success",
       message: selectedMessage,

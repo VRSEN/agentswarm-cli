@@ -9,12 +9,21 @@ import {
   isAgencySupportedProvider,
   isSupportedAgencyAuthProvider,
   isAgencySwarmFrameworkMode,
+  shouldHideNativeCommandInRunMode,
   shouldOpenAgencyConnectDialog,
   shouldOpenStartupAuthDialog,
   describeStreamAuthError,
 } from "../../../src/cli/cmd/tui/session-error"
 
 describe("agency session errors", () => {
+  test("hides native build commands in Run mode", () => {
+    expect(shouldHideNativeCommandInRunMode({ frameworkMode: true, name: "init", source: "command" })).toBe(true)
+    expect(shouldHideNativeCommandInRunMode({ frameworkMode: true, name: "review", source: "command" })).toBe(true)
+    expect(shouldHideNativeCommandInRunMode({ frameworkMode: true, name: "rename", source: "command" })).toBe(false)
+    expect(shouldHideNativeCommandInRunMode({ frameworkMode: false, name: "review", source: "command" })).toBe(false)
+    expect(shouldHideNativeCommandInRunMode({ frameworkMode: true, name: "review", source: "mcp" })).toBe(false)
+  })
+
   test("opens connect dialog for unreachable agency backend errors", () => {
     expect(
       shouldOpenAgencyConnectDialog({

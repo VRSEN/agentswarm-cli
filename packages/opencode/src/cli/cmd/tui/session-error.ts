@@ -235,6 +235,12 @@ export function shouldBlockAgencyPromptSubmit(input: {
   return shouldBlockAgencyPromptSend(input)
 }
 
+const RUN_MODE_NATIVE_COMMANDS = new Set(["init", "review"])
+
+export function shouldHideNativeCommandInRunMode(input: { frameworkMode: boolean; name: string; source?: string }) {
+  return input.frameworkMode && input.source === "command" && RUN_MODE_NATIVE_COMMANDS.has(input.name)
+}
+
 export function shouldOpenAgencyConnectDialog(input: { providerID?: string; message: string }) {
   if (input.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
   if (/cannot reach agency-swarm backend/i.test(input.message)) {
