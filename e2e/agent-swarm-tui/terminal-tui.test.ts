@@ -36,7 +36,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(currentTui.history()).not.toContain("Creating virtual environment")
   })
 
-  test("run-mode slash commands keep /auth and /connect separate and hide native editor commands", async () => {
+  test("run-mode slash commands keep /auth and /connect separate and hide native commands", async () => {
     currentServer = await startFakeAgencyServer()
     currentTui = await startTui({ baseURL: currentServer.baseURL })
 
@@ -50,6 +50,8 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(screen).toContain("/agents")
     expect(screen).not.toContain("/editor")
     expect(screen).not.toContain("/variants")
+    expect(screen).not.toContain("/init")
+    expect(screen).not.toContain("/review")
   })
 
   test("run-target picker uses live agency labels instead of local-agency ids", async () => {

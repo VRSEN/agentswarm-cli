@@ -5,7 +5,7 @@ Source of truth: `FORK_CHANGELOG.md` defines intentional fork behavior, and `USE
 ## Automated
 
 - `FORK_CHANGELOG.md` CLI/TUI UX: `/auth` and `/connect` stay separate in the real terminal UI.
-- `FORK_CHANGELOG.md` CLI/TUI UX: Run mode hides native `/editor` and `/variants` slash commands.
+- `FORK_CHANGELOG.md` CLI/TUI UX: Run mode hides native `/editor`, `/variants`, `/init`, and `/review` slash commands.
 - `FORK_CHANGELOG.md` CLI/TUI UX: run-target selection uses live agency and recipient labels, not `local-agency` ids.
 - `FORK_CHANGELOG.md` Agency Swarm Integration: prompt submit reaches a fake local Agency Swarm server with the configured recipient agent.
 - `USER_FLOWS.md` Auto-Start Detected Local Project: launcher mode shows the detected-project choice before `.venv` work begins.
