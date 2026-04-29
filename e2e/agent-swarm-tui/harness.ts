@@ -7,65 +7,45 @@ const repoRoot = path.resolve(import.meta.dir, "../..")
 const packageRoot = path.join(repoRoot, "packages", "opencode")
 const modelsFixture = path.join(packageRoot, "test", "tool", "fixtures", "models-api.json")
 
-export type FakeAgencyServer = {
+export type AgencyProtocolServer = {
   baseURL: string
   requests: Array<{ path: string; body: Record<string, unknown> }>
   stop(): void
 }
 
-export async function startFakeAgencyServer(): Promise<FakeAgencyServer> {
-  const requests: FakeAgencyServer["requests"] = []
+type AgencyServerScenario = "qa" | "tui-demo"
+
+export async function startAgencyProtocolServer(
+  input: { scenario?: AgencyServerScenario } = {},
+): Promise<AgencyProtocolServer> {
+  const scenario = input.scenario ?? "qa"
+  const requests: AgencyProtocolServer["requests"] = []
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch: async (request) => {
       const url = new URL(request.url)
+      const fixture = scenario === "tui-demo" ? tuiDemoAgencyFixture : qaAgencyFixture
+
       if (url.pathname === "/openapi.json") {
         return Response.json({
           openapi: "3.1.0",
           paths: {
-            "/local-agency/get_metadata": { get: {} },
-            "/local-agency/get_response_stream": { post: {} },
-            "/local-agency/cancel_response_stream": { post: {} },
+            [`/${fixture.agencyID}/get_metadata`]: { get: {} },
+            [`/${fixture.agencyID}/get_response_stream`]: { post: {} },
+            [`/${fixture.agencyID}/cancel_response_stream`]: { post: {} },
           },
         })
       }
 
-      if (url.pathname === "/local-agency/get_metadata") {
-        return Response.json({
-          metadata: {
-            agencyName: "Live QA Agency",
-            agents: ["entry-agent", "review-agent"],
-            entryPoints: ["entry-agent"],
-          },
-          nodes: [
-            {
-              id: "entry-agent",
-              type: "agent",
-              data: {
-                label: "Entry Agent",
-                description: "Primary QA route",
-                isEntryPoint: true,
-                model: "gpt-4o-mini",
-              },
-            },
-            {
-              id: "review-agent",
-              type: "agent",
-              data: {
-                label: "Review Agent",
-                description: "Review QA route",
-                model: "gpt-4o-mini",
-              },
-            },
-          ],
-        })
+      if (url.pathname === `/${fixture.agencyID}/get_metadata`) {
+        return Response.json(fixture.metadata)
       }
 
-      if (url.pathname === "/local-agency/get_response_stream") {
+      if (url.pathname === `/${fixture.agencyID}/get_response_stream`) {
         const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
         requests.push({ path: url.pathname, body })
-        return new Response(['event: meta\ndata: {"run_id":"run_e2e"}\n\n', "event: end\ndata: {}\n\n"].join(""), {
+        return new Response(fixture.stream(body, requests.length), {
           headers: {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
@@ -73,7 +53,7 @@ export async function startFakeAgencyServer(): Promise<FakeAgencyServer> {
         })
       }
 
-      if (url.pathname === "/local-agency/cancel_response_stream") {
+      if (url.pathname === `/${fixture.agencyID}/cancel_response_stream`) {
         return Response.json({ cancelled: true })
       }
 
@@ -88,6 +68,10 @@ export async function startFakeAgencyServer(): Promise<FakeAgencyServer> {
       server.stop(true)
     },
   }
+}
+
+export async function startTuiDemoAgencyServer(): Promise<AgencyProtocolServer> {
+  return startAgencyProtocolServer({ scenario: "tui-demo" })
 }
 
 export type TuiProcess = {
@@ -107,6 +91,7 @@ export async function startTui(input: {
   baseURL?: string
   agency?: string
   recipientAgent?: string
+  configSource?: "env" | "file"
 }): Promise<TuiProcess> {
   const root = await mkdtemp(path.join(os.tmpdir(), "agentswarm-tui-e2e-"))
   await mkdir(path.join(root, "home"), { recursive: true })
@@ -141,6 +126,12 @@ export async function startTui(input: {
       })
     : undefined
 
+  if (configContent && input.configSource === "file") {
+    const globalConfig = path.join(root, "config", "agentswarm")
+    await mkdir(globalConfig, { recursive: true })
+    await writeFile(path.join(globalConfig, "agentswarm.json"), configContent)
+  }
+
   const args = input.args ?? (input.baseURL ? ["--model", "agency-swarm/default"] : [])
   const env = await scrubProviderEnv({
     ...allowedParentEnv(),
@@ -158,7 +149,7 @@ export async function startTui(input: {
     OPENCODE_DISABLE_PROJECT_CONFIG: "true",
     OPENCODE_MODELS_PATH: modelsFixture,
     OPENCODE_PURE: "1",
-    ...(configContent ? { OPENCODE_CONFIG_CONTENT: configContent } : {}),
+    ...(configContent && input.configSource !== "file" ? { OPENCODE_CONFIG_CONTENT: configContent } : {}),
     ...(input.env ?? {}),
   })
   const proc = spawn(process.execPath, ["--conditions=browser", "./src/index.ts", ...args], {
@@ -223,6 +214,172 @@ export async function writeAgencyProject(dir: string) {
     path.join(dir, "agency.py"),
     ["from agency_swarm import Agency", "", "def create_agency():", "    return Agency()", ""].join("\n"),
   )
+}
+
+type AgencyFixture = {
+  agencyID: string
+  metadata: Record<string, unknown>
+  stream(body: Record<string, unknown>, requestCount: number): string
+}
+
+const qaAgencyFixture: AgencyFixture = {
+  agencyID: "local-agency",
+  metadata: {
+    metadata: {
+      agencyName: "Live QA Agency",
+      agents: ["entry-agent", "review-agent"],
+      entryPoints: ["entry-agent"],
+    },
+    nodes: [
+      {
+        id: "entry-agent",
+        type: "agent",
+        data: {
+          label: "Entry Agent",
+          description: "Primary QA route",
+          isEntryPoint: true,
+          model: "gpt-4o-mini",
+        },
+      },
+      {
+        id: "review-agent",
+        type: "agent",
+        data: {
+          label: "Review Agent",
+          description: "Review QA route",
+          model: "gpt-4o-mini",
+        },
+      },
+    ],
+  },
+  stream(_body, requestCount) {
+    return sse([
+      ["meta", { run_id: `run_e2e_${requestCount}` }],
+      ["end", {}],
+    ])
+  },
+}
+
+// Mirrors the two-agent shape of VRSEN/agency-swarm examples/interactive/tui.py
+// without depending on Python, network installs, or live LLM credentials.
+const tuiDemoAgencyFixture: AgencyFixture = {
+  agencyID: "tui-demo-agency",
+  metadata: {
+    metadata: {
+      agencyName: "TuiDemoAgency",
+      agents: ["UserSupportAgent", "MathAgent"],
+      entryPoints: ["UserSupportAgent"],
+      agency_swarm_version: "1.9.3",
+    },
+    nodes: [
+      {
+        id: "UserSupportAgent",
+        type: "agent",
+        data: {
+          label: "UserSupportAgent",
+          description: "Receives user requests and coordinates reasoning, search, and file work.",
+          isEntryPoint: true,
+          model: "gpt-5.4-mini",
+        },
+      },
+      {
+        id: "MathAgent",
+        type: "agent",
+        data: {
+          label: "MathAgent",
+          description: "Handles arithmetic and calculation-heavy requests.",
+          model: "gpt-5.4-mini",
+        },
+      },
+    ],
+  },
+  stream(body, requestCount) {
+    const message = typeof body.message === "string" ? body.message.toLowerCase() : ""
+    if (message.includes("handoff")) {
+      return sse([
+        ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+        [
+          "data",
+          {
+            type: "raw_response_event",
+            agent: "UserSupportAgent",
+            data: {
+              type: "response.output_item.added",
+              output_index: "1",
+              item: {
+                type: "function_call",
+                id: "fc_transfer_math",
+                call_id: "call_transfer_math",
+                name: "transfer_to_math_agent",
+                arguments: "{}",
+              },
+            },
+          },
+        ],
+        [
+          "messages",
+          {
+            new_messages: [
+              {
+                type: "handoff_output_item",
+                call_id: "call_transfer_math",
+                output: '{"assistant":"MathAgent"}',
+              },
+            ],
+          },
+        ],
+        [
+          "data",
+          {
+            type: "agent_updated_stream_event",
+            agent: "MathAgent",
+            new_agent: {
+              id: "MathAgent",
+              name: "MathAgent",
+            },
+          },
+        ],
+        [
+          "messages",
+          {
+            new_messages: [
+              {
+                id: `msg_math_${requestCount}`,
+                type: "message",
+                role: "assistant",
+                agent: "MathAgent",
+                content: [{ type: "output_text", text: "Math agent now has control." }],
+              },
+            ],
+          },
+        ],
+        ["end", {}],
+      ])
+    }
+
+    return sse([
+      ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+      [
+        "messages",
+        {
+          new_messages: [
+            {
+              id: `msg_support_${requestCount}`,
+              type: "message",
+              role: "assistant",
+              agent: body.recipient_agent || "UserSupportAgent",
+              content: [{ type: "output_text", text: "TUI demo response complete." }],
+            },
+          ],
+        },
+      ],
+      ["end", {}],
+    ])
+  },
+}
+
+function sse(events: Array<[event: string, data: Record<string, unknown>]>) {
+  return events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("")
 }
 
 async function closeProcess(proc: Proc) {
