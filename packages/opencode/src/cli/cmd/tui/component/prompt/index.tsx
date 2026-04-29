@@ -1718,8 +1718,7 @@ export function Prompt(props: PromptProps) {
                     </Match>
                     <Match when={true}>
                       <text fg={theme.text}>
-                        {keybind.print("agent_cycle")}{" "}
-                        <span style={{ fg: theme.textMuted }}>{frameworkMode() ? "recipients" : "agents"}</span>
+                        {keybind.print("agent_cycle")} <span style={{ fg: theme.textMuted }}>agents</span>
                       </text>
                     </Match>
                   </Switch>

@@ -16,5 +16,7 @@ describe("AgencyProduct.tips", () => {
     expect(tips).not.toContain("Use {highlight}@agent-name{/highlight} in prompts to invoke specialized subagents")
     expect(tips).not.toContain("Use {highlight}/review{/highlight} to review uncommitted changes, branches, or PRs")
     expect(tips).toContain("Use {highlight}/compact{/highlight} for long agency-swarm sessions near context limits")
+    expect(tips).toContain("Use {highlight}/agents{/highlight} to pick the active swarm or agent from live metadata")
+    expect(tips.join("\n")).not.toContain("recipient")
   })
 })

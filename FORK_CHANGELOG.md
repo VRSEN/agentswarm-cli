@@ -77,9 +77,9 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `optionsFromProvider` and `readConfiguredBaseURL` in `packages/opencode/src/session/agency-swarm.ts`.
   - Added by: `635833ef`
 
-- **Persist handed-off recipient across turns**
-  - Intent: keep the current handoff target active until the user changes it.
-  - Behavior: the most recent assistant agent remains the preferred recipient candidate on later turns.
+- **Persist handed-off agent across turns**
+  - Intent: keep Agency Swarm handoff control active until the user changes it.
+  - Behavior: a `transfer_to_*` handoff switches control to the handed-off agent for later turns. This is not delegation; control does not return to the original agent unless the user or swarm changes it.
   - Implementation: `resolveSessionRecipient` in `packages/opencode/src/session/agency-swarm.ts`.
   - Added by: `708545a4`
 
@@ -181,9 +181,9 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `frameworkMode` and `cycleAgencyRunTarget` in `packages/opencode/src/cli/cmd/tui/app.tsx` plus `DialogAgent` in `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`.
   - Added by: `d6b9ed38`
 
-- **Tab cycles recipient agents in Run mode**
-  - Intent: speed up recipient switching during run sessions.
-  - Behavior: pressing Tab in Run mode cycles through available recipient agents.
+- **Tab switches agents in Run mode**
+  - Intent: speed up agent switching during run sessions.
+  - Behavior: pressing Tab in Run mode cycles through available agents.
   - Implementation: `cycleAgencyRunTarget` in `packages/opencode/src/cli/cmd/tui/app.tsx` and `cycleAgencyTargetSelection` in `packages/opencode/src/cli/cmd/tui/util/agency-target.ts`.
   - Added by: `d6b9ed38`
 

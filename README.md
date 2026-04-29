@@ -40,7 +40,7 @@ On startup, the CLI can detect the project, prepare the project Python environme
 
 - `/auth` manages OpenAI and Anthropic credentials used by Agency Swarm runs.
 - `/connect` chooses a local or external Agency Swarm server.
-- `/agents` switches the active agency or recipient agent from live Agency Swarm metadata.
+- `/agents` switches the active swarm or agent from live Agency Swarm metadata.
 - `/models` is limited in Run mode to providers that the Agency Swarm path supports.
 
 Agent Builder and Plan are preserved from the OpenCode backbone, but they are currently hidden from the normal Run mode surface.

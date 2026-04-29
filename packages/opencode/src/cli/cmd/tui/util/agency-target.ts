@@ -16,7 +16,7 @@ export type AgencyProviderOptions = {
 export type AgencyTargetSelection = {
   agency: string
   agencyLabel?: string
-  recipientAgent: string
+  recipientAgent?: string
   label: string
 }
 
@@ -59,11 +59,23 @@ export function resolveAgencyTargetSelection(input: {
   const agency = resolveSelectableAgency(input.agencies, input.configuredAgency)
   if (!agency) return undefined
 
-  const current = input.configuredRecipient
-    ? agency.agents.find((agent) => agent.id === input.configuredRecipient)
-    : undefined
-  const recipient = current ?? defaultAgencyRecipient(agency)
-  if (!recipient) return undefined
+  if (!input.configuredRecipient) {
+    return {
+      agency: agency.id,
+      agencyLabel: agency.name,
+      label: agency.name,
+    }
+  }
+
+  const recipient = agency.agents.find((agent) => agent.id === input.configuredRecipient)
+  if (!recipient) {
+    return {
+      agency: agency.id,
+      agencyLabel: agency.name,
+      recipientAgent: input.configuredRecipient,
+      label: input.configuredRecipient,
+    }
+  }
 
   return {
     agency: agency.id,
@@ -108,9 +120,15 @@ export function resolveAgencyTargetFromPicker(input: {
   const agency = input.agencies.find((item) => item.id === input.selectedAgency)
   if (!agency) return undefined
 
-  const recipient = input.selectedRecipient
-    ? agency.agents.find((agent) => agent.id === input.selectedRecipient)
-    : defaultAgencyRecipient(agency)
+  if (!input.selectedRecipient) {
+    return {
+      agency: agency.id,
+      agencyLabel: agency.name,
+      label: agency.name,
+    }
+  }
+
+  const recipient = agency.agents.find((agent) => agent.id === input.selectedRecipient)
   if (!recipient) return undefined
 
   return {
@@ -132,7 +150,7 @@ export function buildAgencyTargetOptions(input: {
     discoveryTimeoutMs: input.providerOptions.discoveryTimeoutMs,
     agency: input.agency,
     recipientAgent: input.recipientAgent ?? null,
-    recipientAgentSelectedAt: input.recipientAgent ? Date.now() : null,
+    recipientAgentSelectedAt: Date.now(),
     recipient_agent: null,
     recipient_agent_selected_at: null,
   }

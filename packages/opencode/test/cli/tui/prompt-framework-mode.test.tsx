@@ -244,7 +244,9 @@ describe("prompt framework-mode footer", () => {
 
     const frame = rendered.captureCharFrame()
     expect(frame).toContain("Orchestrator")
+    expect(frame).toContain("tab agents")
     expect(frame).not.toContain("orchestrator-slug")
     expect(frame).not.toContain("Agent Builder")
+    expect(frame).not.toContain("recipients")
   })
 })
