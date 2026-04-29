@@ -575,6 +575,7 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
 
 - Model and tool availability varies by machine. Use the strongest available path that fits the task risk; when you substitute for a named model or tool, state the substitute and confidence before relying on it.
 - Use GPT-5.5 with `medium` or `high` reasoning when available for high-reliability bug fixing, root-cause investigation, policy updates, and feature implementation without a detailed technical plan.
+- Policy edits to `AGENTS.md`, `CLAUDE.md`, or `.agentswarm/skills/**` require the strongest available GPT-5.5 path with `xhigh` reasoning when available. If GPT-5.5 or `xhigh` is unavailable, use the strongest approved path, state the substitution, and do not treat weaker review as final proof for high-stakes policy.
 - Use `.agentswarm/skills/codex-cli-review` for Codex review artifacts and `.agentswarm/skills/claude-cli-review` for Claude CLI review artifacts.
 - Treat Claude output and duplicate weaker runs as supporting evidence, not final proof for high-reliability decisions.
 - Sonnet models are not allowed here. If no allowed model is available for the needed reliability, stop and escalate.
