@@ -241,6 +241,9 @@ def _load_archive(path: Path) -> list[dict[str, Any]]:
             raise LedgerError(f"invalid archive JSONL at {path}:{line_number}") from exc
         if not isinstance(item, dict):
             raise LedgerError(f"archive entry must be an object at {path}:{line_number}")
+        if "artifacts" not in item:
+            item = dict(item)
+            item["artifacts"] = []
         _validate_item(item, f"archive entry at {path}:{line_number}", ARCHIVE_STATUSES)
         items.append(item)
     return items

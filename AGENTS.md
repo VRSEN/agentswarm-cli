@@ -375,7 +375,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 ### Artifacts
 
 - Track every pull request, linked or open issue, branch, local-only commit, worktree, file, temp asset, release artifact, published binary, review artifact, screenshot, temp QA directory, and other open work artifact in the ledger.
-- Give every ledger item an `artifacts` list even when it is empty. Update it before other work continues when an owned artifact is created or changes state.
+- Give every new active ledger item an `artifacts` list even when it is empty. Update it before other work continues when an owned artifact is created or changes state.
 - Track GitHub issue links on the relevant ledger item. Public bug issues should preserve useful repro details, evidence, expected behavior, and related links unless the details are sensitive.
 - Ledger is the source of truth for active work. Missing ledger coverage is an ownership defect, not deletion proof.
 - Keep tracked artifacts active until they are shipped, clearly handed off, or clearly discarded. Clean up stale owned branches and worktrees only after ownership and merge state are clear.

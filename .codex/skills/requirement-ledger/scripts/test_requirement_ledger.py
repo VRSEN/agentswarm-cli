@@ -18,6 +18,38 @@ SPEC.loader.exec_module(MODULE)
 
 
 class RequirementLedgerCliTest(unittest.TestCase):
+    def test_add_writes_empty_artifacts_list_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ledger_dir = Path(tmpdir) / "ledger"
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                exit_code = MODULE.main(
+                    [
+                        "--ledger-dir",
+                        str(ledger_dir),
+                        "add",
+                        "--category",
+                        "tooling",
+                        "--title",
+                        "test",
+                        "--original",
+                        "Track the active requirement.",
+                        "--intent",
+                        "Keep state durable.",
+                        "--next-action",
+                        "Review the queue.",
+                        "--source-pointer",
+                        "chat:1",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(stderr.getvalue(), "")
+            active = json.loads((ledger_dir / "active.json").read_text(encoding="utf-8"))
+            self.assertEqual(active["items"][0]["artifacts"], [])
+
     def test_list_indents_multiline_original_file_content(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             ledger_dir = Path(tmpdir) / "ledger"
@@ -136,6 +168,40 @@ class RequirementLedgerCliTest(unittest.TestCase):
             self.assertEqual(exit_code, 2)
             self.assertEqual(stdout.getvalue(), "")
             self.assertIn("error: active ledger is missing artifacts", stderr.getvalue())
+
+    def test_archive_entries_without_artifacts_stay_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ledger_dir = Path(tmpdir) / "ledger"
+            ledger_dir.mkdir()
+            (ledger_dir / "active.json").write_text(
+                json.dumps({"schema": MODULE.SCHEMA_VERSION, "items": []}) + "\n",
+                encoding="utf-8",
+            )
+            archived = {
+                "id": "REQ-20260417-010",
+                "created_at": "2026-04-17T00:00:00Z",
+                "updated_at": "2026-04-17T00:00:00Z",
+                "archived_at": "2026-04-17T00:00:00Z",
+                "status": "completed",
+                "category": "tooling",
+                "title": "legacy",
+                "original": "Track the legacy requirement.",
+                "intent": "Keep old archive data readable.",
+                "next_action": "none",
+                "source_pointers": ["chat:1"],
+                "resolution": "Completed before artifacts were required.",
+            }
+            (ledger_dir / "archive.jsonl").write_text(json.dumps(archived) + "\n", encoding="utf-8")
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                exit_code = MODULE.main(["--ledger-dir", str(ledger_dir), "list", "--archive"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(stderr.getvalue(), "")
+            self.assertIn("Archive (1)", stdout.getvalue())
+            self.assertIn("- REQ-20260417-010 [completed/tooling] legacy", stdout.getvalue())
 
 
 if __name__ == "__main__":

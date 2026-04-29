@@ -37,7 +37,9 @@ Default files:
 
 Use `--ledger-dir <path>` for a temporary or task-specific ledger.
 
-Each ledger item must carry an `artifacts` list, even when it is empty. Use it for the live handles that already cover the work, such as `PR#123`, `branch:vrsen/dev`, `tag:v1.2.3`, `release:v1.2.3`, or `gist:abc123`, so the next agent finds existing work before creating anything new and archived items keep provenance.
+New active ledger items must carry an `artifacts` list, even when it is empty. Use it for the live handles that already cover the work, such as `PR#123`, `branch:vrsen/dev`, `tag:v1.2.3`, `release:v1.2.3`, or `gist:abc123`, so the next agent finds existing work before creating anything new.
+
+Legacy archive entries that predate `artifacts` stay readable; the tool treats missing archive artifacts as `[]` on read. Do not hand-edit archive data just to add the field.
 
 ## Commands
 
