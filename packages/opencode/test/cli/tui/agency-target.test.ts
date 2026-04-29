@@ -46,6 +46,7 @@ describe("agency target options", () => {
         agency: "my-agency",
         currentRecipient: "ExampleAgent",
         assistantAgent: "ExampleAgent2",
+        handoffEvidence: true,
       }),
     ).toBe(true)
   })
@@ -69,6 +70,17 @@ describe("agency target options", () => {
             },
           },
         ],
+        partsByMessage: {
+          message_1: [
+            {
+              type: "tool",
+              tool: "transfer_to_Agent2",
+              state: {
+                status: "completed",
+              },
+            },
+          ],
+        },
       }),
     ).toEqual({
       sessionID: "session_1",
@@ -76,6 +88,36 @@ describe("agency target options", () => {
       agent: "Agent2",
       selectedAt: 1,
     })
+  })
+
+  test("does not restore a normal assistant response as a handoff", () => {
+    expect(
+      resolveAgencyHandoffRecipientFromMessages({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: undefined,
+        currentRecipientSelectedAt: undefined,
+        sessionID: "session_1",
+        messages: [
+          {
+            id: "message_1",
+            role: "assistant",
+            providerID: "agency-swarm",
+            agent: "Agent1",
+            time: {
+              completed: 2,
+            },
+          },
+        ],
+        partsByMessage: {
+          message_1: [
+            {
+              type: "text",
+            },
+          ],
+        },
+      }),
+    ).toBeUndefined()
   })
 
   test("keeps later manual recipient selection over restored handoff", () => {
@@ -201,6 +243,7 @@ describe("agency target options", () => {
         agency: "my-agency",
         currentRecipient: "ExampleAgent",
         assistantAgent: "ExampleAgent",
+        handoffEvidence: true,
       }),
     ).toBe(false)
     expect(
@@ -209,6 +252,7 @@ describe("agency target options", () => {
         agency: "my-agency",
         currentRecipient: "ExampleAgent",
         assistantAgent: "build",
+        handoffEvidence: true,
       }),
     ).toBe(false)
   })
@@ -218,6 +262,7 @@ describe("agency target options", () => {
       agency: "my-agency",
       currentRecipient: "ExampleAgent",
       assistantAgent: "ExampleAgent2",
+      handoffEvidence: true,
     }
     expect(shouldAdoptAgencyHandoffRecipient({ frameworkMode: false, ...base })).toBe(false)
     expect(shouldAdoptAgencyHandoffRecipient({ frameworkMode: true, ...base, agency: undefined })).toBe(false)

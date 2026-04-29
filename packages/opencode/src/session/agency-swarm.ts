@@ -33,6 +33,7 @@ import {
   extractEventMeta,
   extractFunctionCallOutputs as extractFunctionCallOutputsFromMessages,
   findRecipientAgent,
+  hasAgencyHandoffEvidence,
   isAgencyToolOutputType,
   normalizeCallerAgent as normalizeCallerAgentValue,
   parseToolInput,
@@ -1625,6 +1626,19 @@ export namespace SessionAgencySwarm {
               input.assistantMessage.agent = maybeName
               input.assistantMessage.mode = maybeName
               await Session.updateMessage(input.assistantMessage)
+              await AgencySwarmHistory.appendMessages(scope, [
+                {
+                  type: "handoff_output_item",
+                  output: {
+                    assistant: maybeName,
+                  },
+                },
+                {
+                  type: "message",
+                  role: "assistant",
+                  agent: maybeName,
+                },
+              ])
             }
             continue
           }
@@ -2028,6 +2042,7 @@ export namespace SessionAgencySwarm {
         if (item.info.role !== "assistant") return false
         if (item.info.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
         if (item.info.summary) return false
+        if (!hasAgencyHandoffEvidence(item.parts)) return false
         return !!(resolveHandoffRecipientFromParts(item.parts) ?? item.info.agent)
       })
       if (!last) return
@@ -2064,8 +2079,13 @@ export namespace SessionAgencySwarm {
     return match?.[1]
   }
 
-  function readHandoffOutputAgent(output: string | undefined) {
+  function readHandoffOutputAgent(output: unknown) {
     if (!output) return undefined
+    if (typeof output !== "string") {
+      const parsed = asRecord(output)
+      if (!parsed) return undefined
+      return asString(parsed["assistant"] ?? parsed["agent"] ?? parsed["recipientAgent"] ?? parsed["recipient_agent"])
+    }
     try {
       const parsed = JSON.parse(output)
       if (!parsed || typeof parsed !== "object") return undefined
@@ -2088,15 +2108,20 @@ export namespace SessionAgencySwarm {
   }
 
   function resolveHandoffRecipientFromHistory(history: Array<Record<string, unknown>>) {
-    for (const item of history.toReversed()) {
+    for (let index = history.length - 1; index >= 0; index--) {
+      const item = history[index]
       const type = asString(item["type"])
       if (type === "handoff_output_item") {
-        const outputAgent = readHandoffOutputAgent(asString(item["output"]))
+        const outputAgent = readHandoffOutputAgent(item["output"])
         if (outputAgent) return outputAgent
-      }
-      if (type === "message" && asString(item["role"]) === "assistant") {
-        const agent = asString(item["agent"])
-        if (agent) return agent
+
+        for (let nextIndex = index + 1; nextIndex < history.length; nextIndex++) {
+          const message = history[nextIndex]
+          if (asString(message["type"]) !== "message") continue
+          if (asString(message["role"]) !== "assistant") continue
+          const agent = asString(message["agent"])
+          if (agent) return agent
+        }
       }
     }
     return undefined

@@ -52,6 +52,23 @@ export function isAgencyToolOutputType(value: string | undefined) {
   return value === "function_call_output" || value === "tool_call_output_item" || value === "handoff_output_item"
 }
 
+export function hasAgencyHandoffEvidence(parts: readonly unknown[] | undefined) {
+  if (!parts) return false
+  return parts.some((part) => {
+    const record = asRecord(part)
+    if (!record || asString(record["type"]) !== "tool") return false
+    if (isAgencyHandoffToolName(asString(record["tool"]))) return true
+
+    const state = asRecord(record["state"])
+    const metadata = asRecord(record["metadata"]) ?? asRecord(state?.["metadata"])
+    return asString(metadata?.["type"]) === "handoff_output_item"
+  })
+}
+
+export function isAgencyHandoffToolName(value: string | undefined) {
+  return !!value?.startsWith("transfer_to_")
+}
+
 export function parseToolInput(raw: unknown): Record<string, unknown> {
   const rawRecord = asRecord(raw)
   if (rawRecord) return rawRecord

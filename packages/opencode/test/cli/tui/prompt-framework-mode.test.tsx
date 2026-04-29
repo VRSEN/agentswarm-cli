@@ -183,6 +183,17 @@ describe("prompt framework-mode footer", () => {
           switchableOrgCount: 0,
         },
         message: {},
+        part: {
+          message_assistant_1: [
+            {
+              type: "tool",
+              tool: "transfer_to_slides_agent",
+              state: {
+                status: "completed",
+              },
+            },
+          ],
+        },
         provider: [
           {
             id: "agency-swarm",

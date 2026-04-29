@@ -77,10 +77,12 @@ import { errorMessage as toErrorMessage } from "@/util/error"
 import {
   displayRunOnlyAgentLabel,
   readAgencyProviderOptions,
+  resolveAgencyHandoffRecipientFromParts,
   resolveAgencyHandoffRecipientFromMessages,
   resolveAgencyTargetSelection,
   shouldAdoptAgencyHandoffRecipient,
 } from "../../util/agency-target"
+import { hasAgencyHandoffEvidence } from "@/session/agency-swarm-utils"
 import { DialogWorkspaceCreate, restoreWorkspaceSession } from "../dialog-workspace-create"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
 import { useArgs } from "@tui/context/args"
@@ -270,12 +272,15 @@ export function Prompt(props: PromptProps) {
       if (info.providerID !== AgencySwarmAdapter.PROVIDER_ID) return
 
       const options = agencyProviderOptions()
+      const parts = sync.data.part?.[info.id] ?? []
+      const handoffAgent = resolveAgencyHandoffRecipientFromParts(parts) ?? info.agent
       if (
         !shouldAdoptAgencyHandoffRecipient({
           frameworkMode: frameworkMode(),
           agency: options.agency,
           currentRecipient: options.recipientAgent,
-          assistantAgent: info.agent,
+          assistantAgent: handoffAgent,
+          handoffEvidence: hasAgencyHandoffEvidence(parts),
         })
       ) {
         return
@@ -284,7 +289,7 @@ export function Prompt(props: PromptProps) {
       setHandoffRecipient({
         sessionID: info.sessionID,
         messageID: info.id,
-        agent: info.agent,
+        agent: handoffAgent,
         selectedAt: options.recipientAgentSelectedAt,
       })
     }),
