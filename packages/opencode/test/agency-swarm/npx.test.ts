@@ -200,7 +200,7 @@ describe("agency-swarm npx onboarding", () => {
       "pip",
       "install",
       "--upgrade",
-      "agency-swarm[fastapi,litellm]>=1.9.4",
+      "agency-swarm[fastapi,litellm]>=1.9.5",
     ])
   })
 
