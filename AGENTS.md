@@ -50,8 +50,7 @@ Why: local-looking progress can still miss the real environment or objective.
 
 Why: mistakes repeat when rules are not tightened, and rule bloat creates new mistakes.
 
-- Every agent mistake means there is a rule gap.
-- When you make a mistake, diagnose the gap, tighten the rule, and record the fix in the same task.
+- When you make or identify a mistake from recent work, treat it as a prevention task: diagnose the largest applicable failure class, then tighten the right policy, skill, or ledger in the same task unless that would duplicate existing coverage or add harmful process cost.
 - On each user message, decide whether this file needs an update so the standing instruction can be derived from it next time.
 - When you add or change a rule, keep or add the concrete reason it exists. Review the local diff for duplication, conflict, and extra process cost. Tighten or move an old rule before you restate it.
 - Policy changes in `AGENTS.md` or `.agentswarm/skills/**` must reuse the active policy branch or artifact recorded in the ledger when one exists. Create a new policy branch, artifact, or pull request only when the user explicitly asks; otherwise push the policy branch and provide a compare link. Do not commit policy directly to `vrsen/dev` or mix it into feature pull requests.
@@ -84,6 +83,7 @@ Why: voice-transcribed input is homophone-prone.
   - `Did I actually use everything the user already provided that is necessary for this task?`
 - Never work without fully understanding the context.
 - Before a non-trivial edit in a shared, upstream-mirrored, previously failed, or policy-sensitive area, identify directly related pull requests, commits, issues, or branches with a bounded search such as `git log --follow` or targeted `gh pr list` filters. Include closed, rejected, superseded, or reverted attempts when they are directly related. Stop when the next layer is clearly unrelated. If a prior change was reverted or partly reverted, state exactly what it undid.
+- Before creating or materially changing a public durable artifact, first run a bounded search of existing source-of-truth artifacts: open and closed issues, directly related pull requests, recent history, and ledger entries. Reuse or update the existing artifact when it covers the work; if emergency response forces a skip, record the skip and repair the links immediately after.
 - If you cannot write a one-sentence link for every directly related artifact, stop and ask the user one short question before you edit.
 - If either answer above is `no` or `unclear`, or if something you expected does not exist, first acquire the missing fact with bounded inspection, search, or testing. Ask the user only when the missing fact materially changes the outcome and cannot be obtained safely inside the mandate.
 - Expect speech-to-text mistakes. Use context to sort out homophones. If two meanings still fit, escalate with numbered options.
