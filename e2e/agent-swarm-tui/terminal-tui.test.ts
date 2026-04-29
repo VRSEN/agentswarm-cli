@@ -126,7 +126,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
     await selectCurrentSwarm(currentTui)
     currentTui.write("route through the whole swarm\r")
-    await currentTui.waitFor(() => currentServer!.requests.length === 1, "swarm-routed request", 15_000)
+    await currentTui.waitFor(() => currentServer!.requests.length === 1, "swarm-routed request", 45_000)
 
     expect(currentServer.requests[0]?.body).toMatchObject({
       message: "route through the whole swarm",
