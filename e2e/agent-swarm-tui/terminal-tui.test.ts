@@ -47,7 +47,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({ baseURL: currentServer.baseURL })
 
-    await currentTui.waitForText("agent-swarm", 12_000)
+    await currentTui.waitForText("Agency Swarm", 12_000)
     currentTui.write("/")
     await currentTui.waitForText("/auth")
     const screen = await currentTui.waitForText("/connect")
@@ -67,7 +67,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       currentServer = await startAgencyProtocolServer()
       currentTui = await startTui({ baseURL: currentServer.baseURL })
 
-      await currentTui.waitForText("agent-swarm", 12_000)
+      await currentTui.waitForText("Agency Swarm", 12_000)
       currentTui.write(query)
       await currentTui.waitForText(query)
 
@@ -84,7 +84,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({ baseURL: currentServer.baseURL })
 
-    await currentTui.waitForText("agent-swarm", 12_000)
+    await currentTui.waitForText("Agency Swarm", 12_000)
     currentTui.write("/agents\r")
     const screen = await currentTui.waitForText("Live QA Agency")
 
@@ -102,7 +102,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       configSource: "file",
     })
 
-    await currentTui.waitForText("agent-swarm", 12_000)
+    await currentTui.waitForText("Agency Swarm", 12_000)
     currentTui.write("/agents\r")
     const screen = await currentTui.waitForText("TuiDemoAgency")
 
@@ -122,7 +122,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       configSource: "file",
     })
 
-    await currentTui.waitForText("agent-swarm", 12_000)
+    await currentTui.waitForText("Agency Swarm", 12_000)
     await selectCurrentSwarm(currentTui)
     currentTui.write("route through the whole swarm\r")
     await currentTui.waitFor(() => currentServer!.requests.length === 1, "swarm-routed request", 15_000)
@@ -142,7 +142,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       configSource: "file",
     })
 
-    await currentTui.waitForText("agent-swarm", 12_000)
+    await currentTui.waitForText("Agency Swarm", 12_000)
     await selectRunTarget(currentTui, "MathAgent", "Selected MathAgent in swarm TuiDemoAgency")
     currentTui.write("calculate through the selected agent\r")
     await currentTui.waitFor(() => currentServer!.requests.length === 1, "agent-routed request", 15_000)
@@ -162,7 +162,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       configSource: "file",
     })
 
-    await currentTui.waitForText("agent-swarm", 12_000)
+    await currentTui.waitForText("Agency Swarm", 12_000)
     currentTui.write("please handoff this calculation\r")
     await currentTui.waitForText("Math agent now has control.", 15_000)
     await currentTui.waitFor(() => currentServer!.requests.length === 1, "handoff request", 15_000)
@@ -184,7 +184,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({ baseURL: currentServer.baseURL })
 
-    await currentTui.waitForText("agent-swarm", 12_000)
+    await currentTui.waitForText("Agency Swarm", 12_000)
     currentTui.write("hello from terminal e2e\r")
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
@@ -209,7 +209,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       },
     })
 
-    await currentTui.waitForText("agent-swarm", 12_000)
+    await currentTui.waitForText("Agency Swarm", 12_000)
     currentTui.write("check env isolation\r")
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
