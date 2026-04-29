@@ -229,6 +229,7 @@ async function selectRunTarget(tui: TuiProcess, query: string, successMessage: s
   await tui.waitForText("Select swarm")
   tui.write(query)
   await tui.waitForText(query)
+  tui.write("\x1b[B")
   tui.write("\r")
   await tui.waitForText(successMessage, 15_000)
 }

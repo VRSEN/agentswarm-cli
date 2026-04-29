@@ -166,3 +166,47 @@ jobs:
             packages/app/e2e/junit-*.xml
             packages/app/e2e/test-results
             packages/app/e2e/playwright-report
+
+  agentswarm-e2e:
+    name: Agent Swarm e2e
+    if: github.repository == 'VRSEN/agentswarm-cli'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Run Agent Swarm e2e tests
+        run: bun --cwd packages/opencode test:agentswarm:e2e:ci
+        timeout-minutes: 10
+
+      - name: Publish Agent Swarm e2e report
+        if: always()
+        uses: mikepenz/action-junit-report@v6
+        with:
+          report_paths: packages/opencode/.artifacts/agentswarm-e2e/junit.xml
+          check_name: Agent Swarm e2e results
+          detailed_summary: true
+          include_time_in_summary: true
+          fail_on_failure: false
+
+      - name: Upload Agent Swarm e2e artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentswarm-e2e-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: packages/opencode/.artifacts/agentswarm-e2e/junit.xml
