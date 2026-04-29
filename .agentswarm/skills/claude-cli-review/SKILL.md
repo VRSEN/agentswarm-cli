@@ -7,10 +7,13 @@ description: Use when Claude CLI is the chosen local review worker for a bounded
 
 Use Claude CLI only when `AGENTS.md` and Tool And Model Policy allow it. Treat it as weaker evidence than GPT-5.5; managers must verify its output before final decisions.
 
+The current repo-approved Claude review model is Claude Opus 4.7. Keep the concrete CLI model ID in the health-check command variable below so future model updates have one obvious edit point.
+
 ## Health Check
 
 ```bash
-claude -p --model claude-opus-4-6 --effort high "Reply exactly with: ok"
+CLAUDE_REVIEW_MODEL=claude-opus-4-7
+claude -p --model "$CLAUDE_REVIEW_MODEL" --effort high "Reply exactly with: ok"
 ```
 
 Expected output: `ok`.

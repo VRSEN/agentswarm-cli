@@ -80,7 +80,7 @@ Why: incomplete requirements, stale artifacts, and misheard input cause correct-
   - `Did I actually use everything the user already provided that is necessary for this task?`
 - Never work without fully understanding the context.
 - Before a non-trivial edit in a shared, upstream-mirrored, previously failed, or policy-sensitive area, identify directly related pull requests, commits, issues, or branches with a bounded search such as `git log --follow` or targeted `gh pr list` filters. Include closed, rejected, superseded, or reverted attempts when they are directly related. Stop when the next layer is clearly unrelated. If a prior change was reverted or partly reverted, state exactly what it undid.
-- Before creating or materially changing a public durable artifact, first run a bounded search of existing source-of-truth artifacts: open and closed issues, directly related pull requests, recent history, and ledger entries. Reuse or update the existing artifact when it covers the work; if emergency response forces a skip, record the skip and repair the links immediately after.
+- Before creating or materially changing a public durable artifact, including an issue, pull request, docs page, or release note, first run a bounded search of existing source-of-truth artifacts: open and closed issues, directly related pull requests, recent history, and ledger entries. Reuse or update the existing artifact when it covers the work; if emergency response forces a skip, record the skip and repair the links immediately after.
 - If you cannot write a one-sentence link for every directly related artifact, stop and ask the user one short question before you edit.
 - If either answer above is `no` or `unclear`, or if something you expected does not exist, first acquire the missing fact with bounded inspection, search, or testing. Ask the user only when the missing fact materially changes the outcome and cannot be obtained safely inside the mandate.
 - Expect speech-to-text mistakes. Use context to sort out homophones. If two meanings still fit, escalate with numbered options.
@@ -152,7 +152,7 @@ Why: technical back-and-forth wastes user time.
 - If ambiguity changes user-visible behavior, scope, architecture, repo or branch, or release outcome, ask before acting. If only mechanics are unclear and the safe path is clear, proceed.
 - For drastic changes, like wide refactors, file moves, deletes, policy edits, or behavior changes, get confirmation before you start.
 - When you surface a decision, blocker, or tradeoff, use numbered options `(1)`, `(2)`, `(3)`. Give one sentence per option. End with `Recommendation: (N) - because ...`.
-- If the critical path is blocked on the user's answer or approval, add the exact user-facing escalation and its `artifacts` list to the ledger, surface the smallest ready-to-ship request right away, and re-raise it at each task boundary until it is resolved. Do not wait silently or drift to lower-priority work.
+- If the critical path is blocked on the user's answer or approval, add a sanitized record of the user-facing escalation and its `artifacts` list to the ledger, surface the smallest ready-to-ship request right away, and re-raise it at each task boundary until it is resolved. Do not wait silently or drift to lower-priority work.
 
 ## Tests, Examples, And Docs Are Key Evidence
 
@@ -353,6 +353,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - At every user message and work start, rebuild the critical path from the user's latest words, the active ledger, live blockers, running work, and the current mandate.
 - Current project critical path: policy rules that stop process drift, fork changelog, upstream-alignment cleanup, upstream merge, then the 10 urgent bugs, all toward releasing a new package version with fixes. Change it only when the user or ledger explicitly replaces it.
 - Use `.agentswarm/skills/requirement-ledger` for durable queue, archive, and artifact tracking. Do not hand-edit ledger files, commit them, or publish them.
+- Ledger entries must be proofread, privacy-preserving records with source pointers. Do not store exact private wording, profanity, speech errors, raw transcripts, or sensitive phrasing in durable ledger text.
 - Every user message requires ledger consideration. Review and update the ledger on task switches, meaningful progress, artifact state changes, before commits, before pull-request or release actions, and before you stop or send a substantive reply.
 - Keep the plan and ledger separate but aligned. Update the ledger when requirements, decisions, evidence, artifacts, blockers, or the critical path change.
 - Track new user requests and owned artifacts before they drift. Use targeted ledger item changes instead of whole-file rewrites.
@@ -589,7 +590,7 @@ Why: without a hardcoded source of truth, agents re-derive behavior from code ea
 - Fork Repo: `https://github.com/VRSEN/agentswarm-cli`
 - Upstream Repo: `https://github.com/anomalyco/opencode`
 - Local package map: `packages/opencode/` for CLI core, `packages/app/` for app UI, `packages/docs/` for docs, and `packages/*/package.json` for package-local commands and entry points.
-- Repo skills: `.agentswarm/skills/requirement-ledger`, `.agentswarm/skills/policy-maintenance`, `.agentswarm/skills/delegation-management`, `.agentswarm/skills/codex-cli-review`, and `.agentswarm/skills/claude-cli-review`.
+- Repo skills are checked-in instructions, not automatic behavior by themselves. `AGENTS.md` may route work to them by path or name; agents must read the relevant `SKILL.md` on demand unless the environment exposes the skill directly. Available repo skills: `.agentswarm/skills/requirement-ledger`, `.agentswarm/skills/policy-maintenance`, `.agentswarm/skills/delegation-management`, `.agentswarm/skills/codex-cli-review`, and `.agentswarm/skills/claude-cli-review`.
 
 ## Memory & Expectations
 

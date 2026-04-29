@@ -47,8 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("--status", choices=ACTIVE_STATUSES, default="open")
     add_parser.add_argument("--category", required=True)
     add_parser.add_argument("--title", required=True)
-    add_parser.add_argument("--original", help="Close original wording for auditability.")
-    add_parser.add_argument("--original-file", type=Path, help="Read the original wording from a UTF-8 text file.")
+    add_parser.add_argument("--original", help="Proofread, sanitized requirement wording for auditability.")
+    add_parser.add_argument("--original-file", type=Path, help="Read reviewed requirement wording from a UTF-8 text file.")
     add_parser.add_argument("--intent", required=True)
     add_parser.add_argument("--next-action", required=True)
     add_parser.add_argument("--source-pointer", action="append", required=True, help="Repeat for multiple sources.")
@@ -64,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     update_parser.add_argument("--category")
     update_parser.add_argument("--title")
     update_parser.add_argument("--original")
-    update_parser.add_argument("--original-file", type=Path, help="Read the original wording from a UTF-8 text file.")
+    update_parser.add_argument("--original-file", type=Path, help="Read reviewed requirement wording from a UTF-8 text file.")
     update_parser.add_argument("--intent")
     update_parser.add_argument("--next-action")
     update_parser.add_argument("--source-pointer", action="append", help="Append one or more source pointers.")
@@ -294,7 +294,7 @@ def _validate_item(item: dict[str, Any], location: str, allowed_statuses: tuple[
         raise LedgerError(f"{location} has unsupported status: {status!r}")
     original = item.get("original")
     if not isinstance(original, str) or not original.strip():
-        raise LedgerError(f"{location} is missing close original wording")
+        raise LedgerError(f"{location} is missing sanitized requirement wording")
     source_pointers = item.get("source_pointers")
     if not isinstance(source_pointers, list) or not source_pointers:
         raise LedgerError(f"{location} is missing source pointers")
@@ -337,7 +337,7 @@ def _required_text(field: str, value: str) -> str:
     return text
 
 
-def _required_verbatim_text(field: str, value: str) -> str:
+def _required_preserved_text(field: str, value: str) -> str:
     if not value.strip():
         raise LedgerError(f"{field} cannot be empty")
     return value
@@ -365,7 +365,7 @@ def _text_argument(
             raise LedgerError(f"{field} is required")
         return None
     if preserve_whitespace:
-        return _required_verbatim_text(field, value)
+        return _required_preserved_text(field, value)
     return _required_text(field, value)
 
 

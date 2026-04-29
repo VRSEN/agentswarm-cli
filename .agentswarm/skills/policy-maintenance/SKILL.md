@@ -5,21 +5,22 @@ description: Use when editing AGENTS.md, CLAUDE.md, or .agentswarm/skills/** pol
 
 # Policy Maintenance
 
-Use this skill for policy and repo-skill changes.
+Use this skill for policy and repo-skill changes. Repo skills are checked-in instructions; read the relevant `SKILL.md` when `AGENTS.md` routes work to one unless the environment exposes the skill directly.
 
 ## Workflow
 
 1. Read the live `AGENTS.md`, the current diff, and any directly related policy branch or skill.
-2. Preserve the active policy branch or artifact when one exists. Create a new branch or artifact only when the mandate needs one; create a pull request only when the user asks.
-3. Follow the policy-edit model floor in Tool And Model Policy.
-4. If the policy edit is self-initiated, ask the user before changing files.
-5. Stay tightly scoped: use `AGENTS.md`, the current diff, and directly authorized policy inputs. Avoid unrelated repo exploration unless the mandate requires it.
-6. Classify each rule before editing: universal policy, manager-only policy, repo-specific invariant, or skill procedure.
-7. Keep `AGENTS.md` for rules that apply most of the time. Move step-by-step playbooks, commands, and path-specific procedures into repo skills.
-8. Use the shortest coherent path: challenge the status quo, remove before adding, merge duplicates into one owner section, put intent before details, and compress without weakening behavior.
-9. Preserve public/private boundaries. Do not publish private chats, ledgers, internal drafts, or work-in-progress review artifacts unless the user asks.
-10. A manager must personally review the final policy diff, challenge every unexplained line, and iterate until the structure is coherent.
-11. Run a fresh review worker after implementation to check for distorted meaning, lost protections, duplicate rules, and regressions.
+2. When the edit responds to a recent mistake, fix the largest applicable failure class in the right owner section or skill, not just the literal symptom.
+3. Preserve the active policy branch or artifact when one exists. Create a new branch or artifact only when the mandate needs one; create a pull request only when the user asks.
+4. Follow the policy-edit model floor in Tool And Model Policy: strongest available GPT-5.5 with `xhigh` reasoning when available, with any substitution stated before relying on it.
+5. If the policy edit is self-initiated, ask the user before changing files.
+6. Stay tightly scoped: use `AGENTS.md`, the current diff, and directly authorized policy inputs. Avoid unrelated repo exploration unless the mandate requires it.
+7. Classify each rule before editing: universal policy, manager-only policy, repo-specific invariant, or skill procedure.
+8. Keep `AGENTS.md` for rules that apply most of the time. Move step-by-step playbooks, commands, and path-specific procedures into repo skills.
+9. Use the shortest coherent path: challenge the status quo, remove before adding, merge duplicates into one owner section, put intent before details, and compress without weakening behavior.
+10. Preserve public/private boundaries. Do not publish private chats, ledgers, internal drafts, or work-in-progress review artifacts unless the user asks.
+11. A manager must personally review the final policy diff, challenge every unexplained line, and iterate until the structure is coherent.
+12. Run a fresh review worker after implementation to check for distorted meaning, lost protections, duplicate rules, and regressions.
 
 ## Policy Branch Rules
 

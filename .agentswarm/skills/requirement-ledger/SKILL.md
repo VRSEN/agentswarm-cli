@@ -1,6 +1,6 @@
 ---
 name: requirement-ledger
-description: Use when a task needs a durable active requirement queue and archive workflow. Captures only real user requests or requirements with close original wording, source pointers, category, intent, status, next action, and linked artifacts; avoids noisy transcript dumps without erasing user intent.
+description: Use when a task needs a durable active requirement queue and archive workflow. Captures only real user requests or requirements with proofread, sanitized requirement text, source pointers, category, intent, status, next action, and linked artifacts; avoids noisy transcript dumps without erasing user intent.
 ---
 
 # Requirement Ledger
@@ -10,16 +10,17 @@ Use this skill when task state must survive beyond the current chat or when a re
 ## Workflow
 
 1. Record only real user requests, explicit requirements, blockers, or decisions that change the work.
-2. Preserve user wording close to the original in `original`; summarize only in `intent` after the auditable wording is captured.
+2. Store a proofread, privacy-preserving requirement restatement in `original`; do not copy exact private wording, profanity, speech errors, or raw transcript phrasing. Preserve meaning, source pointers, context, and auditability.
 3. Add a source pointer for each item, such as `chat:2026-04-15 user#2`, `PR#123 comment 456`, or `docs/foo.md:42`.
 4. Plan the strategy for tackling the active queue before editing it, then reread the full active ledger and reprioritize deliberately at each task boundary.
 5. Keep active unfulfilled work in strategic chronological order; do not randomize, convenience-sort, or group items away from their original sequence.
-6. Before presenting a revised ledger, list every active unfulfilled requirement with `original` and source pointers.
+6. Before presenting a revised ledger, list every active unfulfilled requirement with sanitized `original` and source pointers.
 7. When an item is done, run `complete` so it moves out of the active queue and into the archive.
 8. If a ledger revision is rejected, run `reject`; failed revision output is not source of truth and must be rebuilt from original sources.
 9. Register every active artifact you touch as a ledger-linked item or note: repos, worktrees, branches, PRs, conflicted states, temp artifacts, and generated review artifacts that still matter.
 10. Treat every unshipped or undiscarded artifact as a blocker; do not let it fall out of the active queue until it is shipped, explicitly discarded, or archived with resolution.
 11. Before opening a new PR for ongoing work, record the existing related PR and why it cannot be reused; if that reason is missing, reuse the existing PR instead.
+12. Before creating a public issue, pull request, docs page, or release note from ledger work, search the active ledger, archive, open and closed issues, related pull requests, and recent history; reuse or update existing artifacts when they cover the work.
 
 ## CLI
 
@@ -53,14 +54,14 @@ python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py add \
   --artifact "branch:vrsen/dev"
 ```
 
-For long verbatim user text, read `original` from a file instead of the shell:
+For long reviewed requirement text, read `original` from a file instead of the shell:
 
 ```bash
 python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py add \
   --category tooling \
-  --title "Ingest verbatim user requests" \
-  --original-file /tmp/verbatim_request.txt \
-  --intent "Keep the full user wording in the ledger without shell-length limits." \
+  --title "Ingest reviewed user requests" \
+  --original-file /tmp/sanitized_request.txt \
+  --intent "Keep proofread requirement text in the ledger without shell-length limits." \
   --next-action "Reconcile the transcript entry against the active ledger." \
   --source-pointer "chat:2026-04-22 user#1"
 ```
@@ -102,10 +103,10 @@ python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py list 
 
 ## Rules
 
-- Do not add raw user-message dumps, images, logs, stack traces, or private data unless the exact text is required.
+- Do not add raw user-message dumps, images, logs, stack traces, exact private wording, profanity, speech errors, or other private data to durable ledger text. If exact source text matters, keep it outside the ledger and point to it with a source pointer.
 - Noise reduction may remove non-requirement chatter and duplicates, but it must not delete, flatten, or overcompress the user's actual request.
-- Keep the tooling simple: validate required fields, but avoid arbitrary caps or normalization that distorts user wording.
-- Never rewrite the whole queue file. Use item-level `add`, `update`, `complete`, or `reject` operations so source pointers, original wording, and order survive.
+- Keep the tooling simple: validate required fields, but avoid arbitrary caps or normalization that distorts meaning.
+- Never rewrite the whole queue file. Use item-level `add`, `update`, `complete`, or `reject` operations so source pointers, sanitized requirement text, and order survive.
 - Avoid vague one-off labels such as "cleanup"; name the exact requirement set, source range, and intended ledger change.
 - Prefer one item per requirement; do not mix status notes, design choices, and implementation steps in one item.
 - Use `blocked` only when the next action truly needs a user decision or missing external input.
