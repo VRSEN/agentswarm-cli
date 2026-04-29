@@ -122,6 +122,36 @@ describe("session.agency-swarm", () => {
     return { appended, runs }
   }
 
+  const addCompletedTransferPart = async (input: {
+    sessionID: string
+    messageID: string
+    tool: string
+    callID?: string
+    output?: string
+    start?: number
+    end?: number
+  }) => {
+    await Session.updatePart({
+      id: PartID.ascending(),
+      messageID: input.messageID as any,
+      sessionID: input.sessionID as any,
+      type: "tool",
+      tool: input.tool,
+      callID: input.callID ?? "call_handoff",
+      state: {
+        status: "completed",
+        input: {},
+        output: input.output ?? "{}",
+        title: "",
+        metadata: {},
+        time: {
+          start: input.start ?? Date.now(),
+          end: input.end ?? Date.now(),
+        },
+      },
+    })
+  }
+
   test("optionsFromProvider applies defaults", () => {
     const options = SessionAgencySwarm.optionsFromProvider(undefined)
 
@@ -2198,6 +2228,96 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream does not treat a normal prior assistant agent as a handoff recipient", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        enabled_providers: ["agency-swarm"],
+        provider: {
+          "agency-swarm": {},
+        },
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        mockHistory()
+        let sentRecipient: string | undefined
+        AgencySwarmAdapter.getMetadata = (async () => ({
+          metadata: {
+            agents: ["ExampleAgent", "ExampleAgent2"],
+          },
+        })) as typeof AgencySwarmAdapter.getMetadata
+        AgencySwarmAdapter.streamRun = async function* (args) {
+          sentRecipient = args.recipientAgent ?? undefined
+          yield { type: "end" }
+        } as typeof AgencySwarmAdapter.streamRun
+
+        const session = await Session.create({ title: "normal assistant is not handoff" })
+        const created = Date.now()
+        const user = await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "user",
+          sessionID: session.id,
+          agent: "build",
+          model: {
+            providerID: ProviderID.make("agency-swarm"),
+            modelID: ModelID.make("default"),
+          },
+          time: {
+            created,
+          },
+        })
+        await Session.updatePart({
+          id: PartID.ascending(),
+          messageID: user.id,
+          sessionID: session.id,
+          type: "text",
+          text: "hello",
+        })
+        await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "assistant",
+          sessionID: session.id,
+          parentID: user.id,
+          modelID: "default",
+          providerID: "agency-swarm",
+          mode: "ExampleAgent",
+          agent: "ExampleAgent",
+          path: {
+            cwd: "/",
+            root: "/",
+          },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: {
+            created: created + 1,
+            completed: created + 2,
+          },
+        } as any)
+
+        const followup = helper()
+        followup.input.sessionID = session.id
+        followup.input.assistantMessage.sessionID = session.id
+        followup.input.userMessage.info.id = MessageID.ascending()
+        followup.input.userMessage.parts = [{ type: "text", text: "follow up", ignored: false }] as any
+
+        const stream = await SessionAgencySwarm.stream(followup.input)
+        for await (const _ of stream.fullStream) {
+        }
+
+        expect(sentRecipient).toBeUndefined()
+      },
+    })
+  })
+
   test("compactHistory rebuilds request history from the compacted session slice", () => {
     const msgs = [
       {
@@ -2984,7 +3104,7 @@ describe("session.agency-swarm", () => {
           type: "text",
           text: "hello",
         })
-        await Session.updateMessage({
+        const assistant = await Session.updateMessage({
           id: MessageID.ascending(),
           role: "assistant",
           sessionID: session.id,
@@ -3010,6 +3130,11 @@ describe("session.agency-swarm", () => {
             completed: Date.now(),
           },
         } as any)
+        await addCompletedTransferPart({
+          sessionID: session.id,
+          messageID: assistant.id,
+          tool: "transfer_to_support_agent",
+        })
 
         const { input } = helper()
         input.sessionID = session.id
@@ -3131,6 +3256,13 @@ describe("session.agency-swarm", () => {
         const firstStream = await SessionAgencySwarm.stream(first.input)
         for await (const _ of firstStream.fullStream) {
         }
+        await addCompletedTransferPart({
+          sessionID: session.id,
+          messageID: first.input.assistantMessage.id,
+          tool: "transfer_to_support_agent",
+          callID: "call_handoff",
+          output: '{"assistant":"support_agent"}',
+        })
 
         const second = helper()
         second.input.sessionID = session.id
@@ -3149,7 +3281,63 @@ describe("session.agency-swarm", () => {
     })
   })
 
-  test("stream routes next message to agent_updated handoff id", async () => {
+  test("stream routes next message from stored handoff output history", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        enabled_providers: ["agency-swarm"],
+        provider: {
+          "agency-swarm": {},
+        },
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        mockHistory()
+        AgencySwarmHistory.load = (async () => ({
+          scope: "http://127.0.0.1:8000|builder|session_1",
+          chat_history: [
+            {
+              type: "handoff_output_item",
+              call_id: "call_transfer_math",
+              output: '{"assistant":"MathAgent"}',
+            },
+            {
+              id: "msg_math_1",
+              type: "message",
+              role: "assistant",
+              agent: "MathAgent",
+              content: [{ type: "output_text", text: "Math agent now has control." }],
+            },
+          ],
+          updated_at: Date.now(),
+        })) as typeof AgencySwarmHistory.load
+        let sentRecipient: string | undefined
+        AgencySwarmAdapter.getMetadata = (async () => ({
+          metadata: {
+            agents: ["UserSupportAgent", "MathAgent"],
+          },
+        })) as typeof AgencySwarmAdapter.getMetadata
+        AgencySwarmAdapter.streamRun = async function* (args) {
+          sentRecipient = args.recipientAgent ?? undefined
+          yield { type: "end" }
+        } as typeof AgencySwarmAdapter.streamRun
+
+        const { input } = helper()
+        input.options.recipientAgent = "UserSupportAgent"
+
+        const stream = await SessionAgencySwarm.stream(input)
+        for await (const _ of stream.fullStream) {
+        }
+
+        expect(sentRecipient).toBe("MathAgent")
+      },
+    })
+  })
+
+  test("stream does not route next message from agent_updated without transfer handoff", async () => {
     await using tmp = await tmpdir({
       git: true,
       config: {
@@ -3200,7 +3388,7 @@ describe("session.agency-swarm", () => {
           yield { type: "end" }
         } as typeof AgencySwarmAdapter.streamRun
 
-        const session = await Session.create({ title: "handoff event recipient" })
+        const session = await Session.create({ title: "agent updated without handoff" })
         const user = await Session.updateMessage({
           id: MessageID.ascending(),
           role: "user",
@@ -3245,7 +3433,7 @@ describe("session.agency-swarm", () => {
         for await (const _ of secondStream.fullStream) {
         }
 
-        expect(sentRecipient).toBe("slides_agent")
+        expect(sentRecipient).toBeUndefined()
       },
     })
   })
@@ -3307,7 +3495,7 @@ describe("session.agency-swarm", () => {
           type: "text",
           text: "hello",
         })
-        await Session.updateMessage({
+        const assistant = await Session.updateMessage({
           id: MessageID.ascending(),
           role: "assistant",
           sessionID: session.id,
@@ -3333,6 +3521,13 @@ describe("session.agency-swarm", () => {
             completed: created + 2,
           },
         } as any)
+        await addCompletedTransferPart({
+          sessionID: session.id,
+          messageID: assistant.id,
+          tool: "transfer_to_support_agent",
+          start: created + 1,
+          end: created + 2,
+        })
 
         const { input } = helper()
         input.sessionID = session.id
@@ -3406,7 +3601,7 @@ describe("session.agency-swarm", () => {
           type: "text",
           text: "hello",
         })
-        await Session.updateMessage({
+        const assistant = await Session.updateMessage({
           id: MessageID.ascending(),
           role: "assistant",
           sessionID: session.id,
@@ -3432,6 +3627,13 @@ describe("session.agency-swarm", () => {
             completed: created + 2,
           },
         } as any)
+        await addCompletedTransferPart({
+          sessionID: session.id,
+          messageID: assistant.id,
+          tool: "transfer_to_support_agent",
+          start: created + 1,
+          end: created + 2,
+        })
 
         const { input } = helper()
         input.sessionID = session.id
@@ -3507,7 +3709,7 @@ describe("session.agency-swarm", () => {
           type: "text",
           text: "hello",
         })
-        await Session.updateMessage({
+        const assistant = await Session.updateMessage({
           id: MessageID.ascending(),
           role: "assistant",
           sessionID: session.id,
@@ -3533,6 +3735,13 @@ describe("session.agency-swarm", () => {
             completed: handoffCompletedAt,
           },
         } as any)
+        await addCompletedTransferPart({
+          sessionID: session.id,
+          messageID: assistant.id,
+          tool: "transfer_to_support_agent",
+          start: handoffStartedAt,
+          end: handoffCompletedAt,
+        })
 
         const { input } = helper()
         input.sessionID = session.id
@@ -3607,7 +3816,7 @@ describe("session.agency-swarm", () => {
           type: "text",
           text: "hello",
         })
-        await Session.updateMessage({
+        const assistant = await Session.updateMessage({
           id: MessageID.ascending(),
           role: "assistant",
           sessionID: session.id,
@@ -3633,6 +3842,11 @@ describe("session.agency-swarm", () => {
             completed: Date.now(),
           },
         } as any)
+        await addCompletedTransferPart({
+          sessionID: session.id,
+          messageID: assistant.id,
+          tool: "transfer_to_support_agent",
+        })
 
         const { input } = helper()
         input.sessionID = session.id

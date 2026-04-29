@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   buildAgencyTargetOptions,
+  hasAgencyHandoffEvidence,
   resolveAgencyTargetFromPicker,
   shouldAdoptAgencyHandoffRecipient,
 } from "../../../src/cli/cmd/tui/util/agency-target"
@@ -45,7 +46,57 @@ describe("agency target options", () => {
         agency: "my-agency",
         currentRecipient: "ExampleAgent",
         assistantAgent: "ExampleAgent2",
+        handoffEvidence: true,
       }),
+    ).toBe(true)
+  })
+
+  test("does not adopt a normal swarm/default assistant response as a handoff", () => {
+    expect(
+      shouldAdoptAgencyHandoffRecipient({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: undefined,
+        assistantAgent: "ExampleAgent",
+        handoffEvidence: false,
+      }),
+    ).toBe(false)
+    expect(
+      shouldAdoptAgencyHandoffRecipient({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: "ExampleAgent",
+        assistantAgent: "ExampleAgent2",
+        handoffEvidence: false,
+      }),
+    ).toBe(false)
+  })
+
+  test("handoff evidence requires transfer tool or handoff output", () => {
+    expect(
+      hasAgencyHandoffEvidence([
+        {
+          type: "tool",
+          tool: "file_search",
+          state: {
+            status: "completed",
+            metadata: { type: "function_call_output" },
+          },
+        },
+      ]),
+    ).toBe(false)
+    expect(hasAgencyHandoffEvidence([{ type: "tool", tool: "transfer_to_support_agent" }])).toBe(true)
+    expect(
+      hasAgencyHandoffEvidence([
+        {
+          type: "tool",
+          tool: "tool",
+          state: {
+            status: "completed",
+            metadata: { type: "handoff_output_item" },
+          },
+        },
+      ]),
     ).toBe(true)
   })
 
@@ -109,6 +160,7 @@ describe("agency target options", () => {
         agency: "my-agency",
         currentRecipient: "ExampleAgent",
         assistantAgent: "ExampleAgent",
+        handoffEvidence: true,
       }),
     ).toBe(false)
     expect(
@@ -117,6 +169,7 @@ describe("agency target options", () => {
         agency: "my-agency",
         currentRecipient: "ExampleAgent",
         assistantAgent: "build",
+        handoffEvidence: true,
       }),
     ).toBe(false)
   })
@@ -126,6 +179,7 @@ describe("agency target options", () => {
       agency: "my-agency",
       currentRecipient: "ExampleAgent",
       assistantAgent: "ExampleAgent2",
+      handoffEvidence: true,
     }
     expect(shouldAdoptAgencyHandoffRecipient({ frameworkMode: false, ...base })).toBe(false)
     expect(shouldAdoptAgencyHandoffRecipient({ frameworkMode: true, ...base, agency: undefined })).toBe(false)

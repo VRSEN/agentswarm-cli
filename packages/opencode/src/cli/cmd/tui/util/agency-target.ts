@@ -1,5 +1,6 @@
 import { displayAgentName } from "@/agent/display"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { hasAgencyHandoffEvidence } from "@/session/agency-swarm-utils"
 import * as Locale from "@/util/locale"
 
 export type AgencyProviderOptions = {
@@ -167,13 +168,17 @@ export function shouldAdoptAgencyHandoffRecipient(input: {
   agency?: string
   currentRecipient?: string
   assistantAgent?: string
+  handoffEvidence: boolean
 }) {
   if (!input.frameworkMode) return false
   if (!input.agency) return false
   if (!input.assistantAgent) return false
+  if (!input.handoffEvidence) return false
   if (input.assistantAgent === "build") return false
   return input.assistantAgent !== input.currentRecipient
 }
+
+export { hasAgencyHandoffEvidence }
 
 export function displayRunOnlyAgentLabel(input: {
   frameworkMode: boolean

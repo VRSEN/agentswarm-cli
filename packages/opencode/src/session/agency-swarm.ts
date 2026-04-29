@@ -33,6 +33,7 @@ import {
   extractEventMeta,
   extractFunctionCallOutputs as extractFunctionCallOutputsFromMessages,
   findRecipientAgent,
+  hasAgencyHandoffEvidence,
   isAgencyToolOutputType,
   normalizeCallerAgent as normalizeCallerAgentValue,
   parseToolInput,
@@ -1538,6 +1539,7 @@ export namespace SessionAgencySwarm {
         mentionedRecipient,
         configuredRecipient: input.options.recipientAgent,
         configuredRecipientSelectedAt: input.options.recipientAgentSelectedAt,
+        chatHistory: history.chat_history,
       })
       const sessionLitellmModel =
         input.sessionModel &&
@@ -1927,8 +1929,9 @@ export namespace SessionAgencySwarm {
     mentionedRecipient?: string
     configuredRecipient?: string
     configuredRecipientSelectedAt?: number
+    chatHistory?: Array<Record<string, unknown>>
   }): Promise<string | undefined> {
-    const sessionRecipient = await resolveSessionRecipient(input.sessionID)
+    const sessionRecipient = await resolveSessionRecipient(input.sessionID, input.chatHistory)
     if (
       !input.configuredRecipient &&
       input.configuredRecipientSelectedAt &&
@@ -2012,28 +2015,66 @@ export namespace SessionAgencySwarm {
     }
   }
 
-  async function resolveSessionRecipient(sessionID: SessionID) {
+  async function resolveSessionRecipient(sessionID: SessionID, chatHistory?: Array<Record<string, unknown>>) {
+    const historyRecipient = resolveHistoryHandoffRecipient(chatHistory)
     try {
       const messages = await Session.messages({ sessionID })
       const last = messages.findLast((item) => {
         if (item.info.role !== "assistant") return false
         if (item.info.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
         if (item.info.summary) return false
+        if (!hasAgencyHandoffEvidence(item.parts)) return false
         return !!item.info.agent
       })
-      if (!last) return
+      if (!last) return historyRecipient ? { agent: historyRecipient } : undefined
       if (last.info.role !== "assistant") return
       return {
         agent: last.info.agent,
         messageAt: last.info.time.completed ?? last.info.time.created,
       }
     } catch (error) {
-      log.warn("unable to load session recipient; skipping recipient override", {
+      log.warn("unable to load session recipient; using stored handoff history if available", {
         sessionID,
         error: error instanceof Error ? error.message : String(error),
       })
-      return undefined
+      return historyRecipient ? { agent: historyRecipient } : undefined
     }
+  }
+
+  function resolveHistoryHandoffRecipient(chatHistory?: Array<Record<string, unknown>>) {
+    if (!chatHistory) return undefined
+
+    for (let index = chatHistory.length - 1; index >= 0; index--) {
+      const item = asRecord(chatHistory[index])
+      if (!item || asString(item["type"]) !== "handoff_output_item") continue
+
+      const outputRecipient = resolveHandoffOutputRecipient(item["output"])
+      if (outputRecipient) return outputRecipient
+
+      for (let nextIndex = index + 1; nextIndex < chatHistory.length; nextIndex++) {
+        const message = asRecord(chatHistory[nextIndex])
+        if (!message || asString(message["type"]) !== "message") continue
+        if (asString(message["role"]) !== "assistant") continue
+        const agent = asString(message["agent"])
+        if (agent) return agent
+      }
+    }
+
+    return undefined
+  }
+
+  function resolveHandoffOutputRecipient(output: unknown) {
+    if (typeof output === "string") {
+      try {
+        return resolveHandoffOutputRecipient(JSON.parse(output))
+      } catch {
+        return undefined
+      }
+    }
+
+    const record = asRecord(output)
+    if (!record) return undefined
+    return asString(record["assistant"]) ?? asString(record["agent"])
   }
 
   export function compactHistory(input: { msgs: MessageV2.WithParts[]; currentID: string }) {
