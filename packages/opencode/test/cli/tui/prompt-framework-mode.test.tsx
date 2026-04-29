@@ -222,7 +222,9 @@ describe("prompt framework-mode footer", () => {
           connected: [],
           default: {},
         },
-        session_status: {},
+        session_status: {
+          session_1: { type: "busy" },
+        },
       },
       session: {
         get: () => undefined,
@@ -300,6 +302,27 @@ describe("prompt framework-mode footer", () => {
     eventHandlers["message.updated"]?.({
       properties: {
         info: {
+          id: "message_assistant_normal",
+          sessionID: "session_1",
+          role: "assistant",
+          providerID: "agency-swarm",
+          agent: "slides_agent",
+        },
+      },
+    })
+    await flushEffects()
+
+    promptRef!.set({ input: "normal follow-up", parts: [] })
+    await promptRef!.submit()
+    await flushEffects()
+
+    expect(prompt).toHaveBeenCalledTimes(1)
+    const calls = prompt.mock.calls as unknown as Array<[{ parts: unknown[]; $body_agencyRecipientAgent?: string }]>
+    expect(calls[0][0].$body_agencyRecipientAgent).toBeUndefined()
+
+    eventHandlers["message.updated"]?.({
+      properties: {
+        info: {
           id: "message_assistant_1",
           sessionID: "session_1",
           role: "assistant",
@@ -319,9 +342,8 @@ describe("prompt framework-mode footer", () => {
     await promptRef!.submit()
     await flushEffects()
 
-    expect(prompt).toHaveBeenCalledTimes(1)
-    const calls = prompt.mock.calls as unknown as Array<[{ parts: unknown[]; $body_agencyRecipientAgent?: string }]>
-    const payload = calls[0][0]
+    expect(prompt).toHaveBeenCalledTimes(2)
+    const payload = calls[1][0]
     expect(payload.parts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -332,6 +354,37 @@ describe("prompt framework-mode footer", () => {
     )
     expect(payload.parts).not.toContainEqual(expect.objectContaining({ type: "agent" }))
     expect(payload.$body_agencyRecipientAgent).toBe("slides_agent")
+
+    eventHandlers["message.updated"]?.({
+      properties: {
+        info: {
+          id: "message_assistant_live_update",
+          sessionID: "session_1",
+          role: "assistant",
+          providerID: "agency-swarm",
+          agent: "slides_agent",
+        },
+      },
+    })
+    eventHandlers["message.updated"]?.({
+      properties: {
+        info: {
+          id: "message_assistant_live_update",
+          sessionID: "session_1",
+          role: "assistant",
+          providerID: "agency-swarm",
+          agent: "support_agent",
+        },
+      },
+    })
+    await flushEffects()
+
+    promptRef!.set({ input: "after live handoff", parts: [] })
+    await promptRef!.submit()
+    await flushEffects()
+
+    expect(prompt).toHaveBeenCalledTimes(3)
+    expect(calls[2][0].$body_agencyRecipientAgent).toBe("support_agent")
   })
 
   test("sends agency handoff recipient through the generated sdk prompt body", async () => {

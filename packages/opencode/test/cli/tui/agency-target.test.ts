@@ -51,6 +51,18 @@ describe("agency target options", () => {
     ).toBe(true)
   })
 
+  test("does not adopt a new assistant agent without handoff evidence", () => {
+    expect(
+      shouldAdoptAgencyHandoffRecipient({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: undefined,
+        assistantAgent: "ExampleAgent2",
+        handoffEvidence: false,
+      }),
+    ).toBe(false)
+  })
+
   test("restores handed off recipient from synced session messages", () => {
     expect(
       resolveAgencyHandoffRecipientFromMessages({

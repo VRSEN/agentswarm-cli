@@ -167,6 +167,7 @@ export function Prompt(props: PromptProps) {
       }
     | undefined
   >()
+  const observedAssistantAgentsByMessage = new Map<string, string>()
   const activeOrgName = createMemo(() => sync.data.console_state.activeOrgName)
   const canSwitchOrgs = createMemo(() => sync.data.console_state.switchableOrgCount > 1)
   const frameworkMode = createMemo(() =>
@@ -251,7 +252,10 @@ export function Prompt(props: PromptProps) {
   createEffect(
     on(
       () => props.sessionID,
-      () => setHandoffRecipient(undefined),
+      () => {
+        setHandoffRecipient(undefined)
+        observedAssistantAgentsByMessage.clear()
+      },
     ),
   )
 
@@ -275,13 +279,22 @@ export function Prompt(props: PromptProps) {
       const parts = sync.data.part?.[info.id] ?? []
       const handoffAgent = resolveAgencyHandoffRecipientFromParts(parts) ?? info.agent
       const explicitHandoffEvidence = hasAgencyHandoffEvidence(parts)
+      const previousAssistantAgent = observedAssistantAgentsByMessage.get(info.id)
+      const liveAgentUpdatedEvidence =
+        !explicitHandoffEvidence &&
+        status().type !== "idle" &&
+        !!previousAssistantAgent &&
+        previousAssistantAgent !== handoffAgent
+      if (handoffAgent) {
+        observedAssistantAgentsByMessage.set(info.id, handoffAgent)
+      }
       if (
         !shouldAdoptAgencyHandoffRecipient({
           frameworkMode: frameworkMode(),
           agency: options.agency,
           currentRecipient: options.recipientAgent,
           assistantAgent: handoffAgent,
-          handoffEvidence: explicitHandoffEvidence || status().type !== "idle",
+          handoffEvidence: explicitHandoffEvidence || liveAgentUpdatedEvidence,
         })
       ) {
         return
@@ -291,7 +304,7 @@ export function Prompt(props: PromptProps) {
         sessionID: info.sessionID,
         messageID: info.id,
         agent: handoffAgent,
-        selectedAt: explicitHandoffEvidence ? options.recipientAgentSelectedAt : undefined,
+        selectedAt: options.recipientAgentSelectedAt,
       })
     }),
   )
