@@ -27,13 +27,13 @@ Use this skill when task state must survive beyond the current chat or when a re
 Run the bundled script from the repository root:
 
 ```bash
-python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py --help
+python .codex/skills/requirement-ledger/scripts/requirement_ledger.py --help
 ```
 
 Default files:
 
-- Active queue: `.agentswarm/requirements-ledger/active.json`
-- Archive: `.agentswarm/requirements-ledger/archive.jsonl`
+- Active queue: `.codex/requirements-ledger/active.json`
+- Archive: `.codex/requirements-ledger/archive.jsonl`
 
 Use `--ledger-dir <path>` for a temporary or task-specific ledger.
 
@@ -44,7 +44,7 @@ Each ledger item must carry an `artifacts` list, even when it is empty. Use it f
 Add an item:
 
 ```bash
-python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py add \
+python .codex/skills/requirement-ledger/scripts/requirement_ledger.py add \
   --category tooling \
   --title "Build reusable requirement ledger skill" \
   --original "build a durable active requirement queue and archive workflow" \
@@ -57,7 +57,7 @@ python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py add \
 For long reviewed requirement text, read `original` from a file instead of the shell:
 
 ```bash
-python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py add \
+python .codex/skills/requirement-ledger/scripts/requirement_ledger.py add \
   --category tooling \
   --title "Ingest reviewed user requests" \
   --original-file /tmp/sanitized_request.txt \
@@ -69,14 +69,14 @@ python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py add \
 Append linked artifacts on an existing item:
 
 ```bash
-python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py update REQ-20260415-001 \
+python .codex/skills/requirement-ledger/scripts/requirement_ledger.py update REQ-20260415-001 \
   --artifact "PR#123"
 ```
 
 Update active state:
 
 ```bash
-python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py update REQ-20260415-001 \
+python .codex/skills/requirement-ledger/scripts/requirement_ledger.py update REQ-20260415-001 \
   --status in_progress \
   --next-action "Run the focused smoke test."
 ```
@@ -84,21 +84,21 @@ python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py updat
 Move finished work to the archive:
 
 ```bash
-python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py complete REQ-20260415-001 \
+python .codex/skills/requirement-ledger/scripts/requirement_ledger.py complete REQ-20260415-001 \
   --resolution "Skill and CLI smoke test completed."
 ```
 
 Mark rejected ledger revision as failed:
 
 ```bash
-python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py reject REQ-20260415-001 \
+python .codex/skills/requirement-ledger/scripts/requirement_ledger.py reject REQ-20260415-001 \
   --resolution "Ledger revision was rejected and must be rebuilt from original sources."
 ```
 
 List current state:
 
 ```bash
-python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py list --archive
+python .codex/skills/requirement-ledger/scripts/requirement_ledger.py list --archive
 ```
 
 ## Rules

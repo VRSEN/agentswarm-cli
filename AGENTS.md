@@ -52,10 +52,12 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 
 - When you make or identify a material process mistake or repeated failure class, treat it as a prevention task: diagnose the largest durable rule or process gap, then tighten the right `AGENTS.md` section or repo skill in the same task unless existing coverage is enough or the process cost would exceed the risk. Use the ledger only for state tracking: active requests, decisions, blockers, evidence, artifacts, and source links.
 - On each user message, decide whether this file needs an update so the standing instruction can be derived from it next time.
-- For edits to `AGENTS.md`, `CLAUDE.md`, or `.agentswarm/skills/**`, use `.agentswarm/skills/policy-maintenance`.
+- For policy, repo-skill, or workflow-rule edits in `AGENTS.md`, `CLAUDE.md`, or `.codex/skills/**`, use `.codex/skills/policy-maintenance`.
 - Policy changes must reuse the active policy branch or artifact when one exists. Do not commit policy directly to `vrsen/dev`, mix policy into feature pull requests, or open policy pull requests unless the user asks.
 - For policy edits you start on your own, ask the user before changing files. Do not stop normal coding or test work for extra approval requests.
 - Keep only rules that apply most of the time in this file. Move path-specific procedures, command recipes, and detailed playbooks into repo skills.
+- Treat repo skills as first-class self-improvement artifacts for workflow-specific commands, playbooks, validations, and file procedures; keep `AGENTS.md` focused on routing, ownership, and cross-session rules.
+- Keep manager operating skills under `.codex/skills/**`; do not store them in product-discoverable config directories such as `.agentswarm/skills` or `.opencode/skills`.
 - Treat policy and durable docs as executable agent code. Prefer the shortest coherent path: challenge the status quo, remove or refactor before adding, merge repetition into its owner section, put intent before details, and compress bullets without losing enforceable behavior.
 - Each policy rule needs one owner section, one enforceable behavior, and a clear reason. Move path-specific procedures into skills, scoped rules, or linked docs; do not keep parallel rules.
 - Before shipping a policy diff, the manager must personally review and iterate, then use a fresh review worker to check for distorted meaning, lost protections, duplicate rules, and regressions.
@@ -110,7 +112,7 @@ Why: incomplete requirements, stale artifacts, and misheard input cause correct-
 - If a change breaks these rules, fix it right away with the smallest safe edit.
 - Think hard before you edit. Choose the smallest coherent diff that solves the real objective, not just the symptom in front of you.
 - Prefer repo tooling such as `bun`, package scripts, `turbo`, and the plan tool over ad-hoc commands.
-- Use the plan tool only for short execution plans. Durable queues and backlogs belong in `.agentswarm/skills/requirement-ledger`.
+- Use the plan tool only for short execution plans. Durable queues and backlogs belong in `.codex/skills/requirement-ledger`.
 - If a non-readonly command is blocked by sandboxing, rerun with escalated permissions when the mandate already covers it. Ask only when the escalation would cross the mandate or no allowed path exists.
 - Before you add or change a rule, reread the related rules and the prior diff. Make sure you did not drop anything valuable. Use `remove > update > add`. Never append blindly.
 - If missing old task details matter, recover the transcript or task history before you continue, including `.codex` session history when it is part of the source of truth.
@@ -151,8 +153,8 @@ Why: technical back-and-forth wastes user time.
 - Do not ask about mechanical steps you can safely do yourself.
 - If ambiguity changes user-visible behavior, scope, architecture, repo or branch, or release outcome, ask before acting. If only mechanics are unclear and the safe path is clear, proceed.
 - For drastic changes, like wide refactors, file moves, deletes, policy edits, or behavior changes, get confirmation before you start.
-- When you surface a decision, blocker, or tradeoff, use numbered options `(1)`, `(2)`, `(3)`. Give one sentence per option. End with `Recommendation: (N) - because ...`.
-- If the critical path is blocked on the user's answer or approval, add a sanitized record of the user-facing escalation and its `artifacts` list to the ledger, surface the smallest ready-to-ship request right away, and re-raise it at each task boundary until it is resolved. Do not wait silently or drift to lower-priority work.
+- Required escalations must ask one concrete question, include enough self-contained evidence for an independent decision, label uncertainty or omit unsupported claims, use numbered options when choices exist, and end with `Recommendation: (N) - because ...`. Keep gathering evidence until the question is decision-ready.
+- If the critical path is blocked on the user's answer or approval, add a sanitized record of the user-facing escalation and relevant artifacts to the ledger, surface the smallest ready-to-ship request right away, and re-raise it at each task boundary until it is resolved. Do not wait silently or drift to lower-priority work.
 
 ## Tests, Examples, And Docs Are Key Evidence
 
@@ -318,6 +320,7 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - Every fork-only line needs a concrete reason. If a line is not strictly required, remove it or restore the upstream shape. State why upstream behavior is not enough in the commit message or `FORK_CHANGELOG.md`.
 - Why: keep the fork rebuildable from upstream with a small, auditable delta.
 - Treat every divergence from upstream as expensive and risky. It should feel painful to add or keep fork-only code because every extra line increases rebase, release, and debugging risk.
+- In code, pull-request, and release-candidate reviews, unintentional, unexplained, excessive, or scope-creeping changes are blocking findings, not style notes. Mark them `P0` when they risk release harm, data loss, security, privacy, destructive behavior, or the core Agent Swarm/TUI release path; `P1` when they risk real regressions, user-visible behavior changes, or fork-minimality/upstream-alignment breakage; and `P2` when they add unjustified drift, unrelated churn, missing evidence, or unapproved fork delta.
 - Treat `FORK_CHANGELOG.md` and `USER_FLOWS.md` as the fork priming path for coding, review, release, and delegation. Read the relevant bounded sections before fork work; `FORK_CHANGELOG.md` approves intentional divergence, and `USER_FLOWS.md` owns fork user-flow expectations. If code differs from upstream and the behavior is not clearly covered there, looks unintentional, or changes a listed user flow without matching proof, stop and escalate before editing further.
 - Keep a line-or-hunk-level classification for every non-trivial fork delta before merge. The classification may live in an internal review artifact, PR review notes, or tests; `FORK_CHANGELOG.md` stays high-level and should summarize categories, not become a raw line dump.
 - If the needed feature or behavior already exists in `origin/dev`, use that implementation. Do not build a parallel path.
@@ -352,15 +355,16 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 - At every user message and work start, rebuild the critical path from the user's latest words, the active ledger, live blockers, running work, and the current mandate.
 - Current project critical path: policy rules that stop process drift, fork changelog, upstream-alignment cleanup, upstream merge, then the 10 urgent bugs, all toward releasing a new package version with fixes. Change it only when the user or ledger explicitly replaces it.
-- Use `.agentswarm/skills/requirement-ledger` for durable queue, archive, work-state, and artifact tracking. The ledger records work state; durable operating rules live in `AGENTS.md` or repo skills. Do not hand-edit ledger files, commit them, or publish them.
+- Use `.codex/skills/requirement-ledger` for durable queue, archive, work-state, and artifact tracking. The ledger records work state; durable operating rules live in `AGENTS.md` or repo skills. Do not hand-edit ledger files, commit them, or publish them.
 - Ledger entries must be proofread, privacy-preserving records with source pointers. Do not store exact private wording, profanity, speech errors, raw transcripts, or sensitive phrasing in durable ledger text.
 - Every user message requires ledger consideration. Review and update the ledger on task switches, meaningful progress, artifact state changes, before commits, before pull-request or release actions, and before you stop or send a substantive reply.
 - Keep the plan and ledger separate but aligned. Update the ledger when requirements, decisions, evidence, artifacts, blockers, or the critical path change.
 - Track new user requests and owned artifacts before they drift. Use targeted ledger item changes instead of whole-file rewrites.
+- Managers own skill and ledger operation mechanics. Do not ask the user to decide script fields, command shapes, or internal ledger storage unless they change user-visible behavior, public artifacts, destructive actions, visibility boundaries, or another closed escalation trigger.
 
 ### Delegation
 
-- Use `.agentswarm/skills/delegation-management` for subagent prompts, staged delegation, worker reuse or rotation, delegated permissions, and manager review of worker output.
+- Use `.codex/skills/delegation-management` for subagent prompts, staged delegation, worker reuse or rotation, delegated permissions, and manager review of worker output.
 - Delegate only when it protects the manager's context window, shortens the critical path, improves plan quality, or needs parallel investigation after the manager understands the user's intent, inspected evidence, and success condition.
 - Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
 - Choose local review, delegated worker, and assistant model paths through Tool And Model Policy before you delegate.
@@ -378,23 +382,24 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 ### Repo And Pull Requests
 
-- Docs-only and `FORK_CHANGELOG.md` edits go straight to `vrsen/dev`. Policy changes use `.agentswarm/skills/policy-maintenance` unless the user explicitly asks otherwise.
+- Docs-only and `FORK_CHANGELOG.md` edits go straight to `vrsen/dev`. Policy changes use `.codex/skills/policy-maintenance` unless the user explicitly asks otherwise.
 - After verifying the local remote model, if `origin/dev` is reachable, run `git fetch --all --prune` and work from a named branch based on `origin/dev` before analysis, edits, or tests. In this checkout, `origin/dev` means the upstream OpenCode `dev` branch and `vrsen/dev` means the canonical fork `dev` branch.
 - For pushes to `vrsen/dev`, verify the `origin/dev...vrsen/dev` counts before you push.
 - For public release work, verify that the exact release commit is already reachable from `vrsen/dev` and that the target version is already present in the release input files.
 - If the remote is unavailable, you may continue, but say that you are assuming the branch is already synced.
 - If the task spans more than one repo or worktree, run `git fetch origin`, `git status -sb`, and `git rev-parse --short HEAD`, or the repo-tooling equivalent, in each one and confirm the active branch before you edit.
+- Before opening, updating, merging, or releasing, read the live governance sources for that action: `AGENTS.md`, `CONTRIBUTING.md`, `.github/pull_request_template.md`, and the relevant `.github/workflows/*` for PR standards, compliance, typecheck, test, release, or publish. Also read `FORK_CHANGELOG.md` and `USER_FLOWS.md` when fork behavior, TUI, release QA, or user flows are touched.
 - If the target branch has an open pull request, read the latest comments, reviews, unresolved threads, and head SHA first. GitHub is the source of truth for live pull-request state.
 - If there is already an open pull request for the same work, reuse it unless it was clearly discarded or reuse is truly impossible.
-- Before you open, update, or merge a pull request, verify the source branch, base branch, head SHA, live diff, and PR-body compliance. On first push, the body must already include `Closes #<ID>` or the tracked REQ; the compliance bot auto-closes non-compliant PRs after 2 hours.
+- Before you open, update, or merge a pull request, verify the source branch, base branch, head SHA, live diff, PR title, linked issue or allowed exception, checked type, non-empty verification, checked checklist, and no unrelated changes. On first push, the body must already satisfy the live template and compliance workflow; `needs:compliance` comments or labels are critical-path blockers because non-compliant PRs are auto-closed after 2 hours.
 - Every pull-request merge has a human alignment gate. When a pull request is technically ready to merge, the manager must personally review the final diff, challenge every unexplained line, verify checks and unresolved threads, and state that it is technically ready. Then send the user an escalation/review guide for GitHub that groups the changes for quick review, explains why each group exists, asks the user to leave comments or questions on GitHub, and requests one alignment confirmation. Merge only after the user confirms alignment. Worker review can inform this gate but cannot replace it.
-- For pull-request-specific work or required local Codex review, including comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations, use `.agentswarm/skills/codex-cli-review`.
+- For pull-request-specific work or required local Codex review, including comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations, use `.codex/skills/codex-cli-review`.
 
 ### External Signals
 
 - For build-impact pull-request work, do not hand off as technically ready until the latest head has zero unresolved threads, a clean local Codex review artifact, and green required checks.
 - Pending GitHub checks, hosted reviews, unresolved pull-request comments, and other agent-visible workflows still count as open work.
-- If only outside signals are pending, report the exact waiting state and keep polling until terminal or blocked by a real external failure. Use `.agentswarm/skills/codex-cli-review` for pull-request review polling and stall handling.
+- If only outside signals are pending, report the exact waiting state and keep polling until terminal or blocked by a real external failure. Use `.codex/skills/codex-cli-review` for pull-request review polling and stall handling.
 
 ## Danger Zone: Public And Irreversible Operations
 
@@ -415,15 +420,16 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
   3. The user tests that local build by hand and gives explicit approval.
   4. Only then tag the release, create the GitHub Release, and publish to npm.
 - Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts changed.
+- Before release approval, prove the exact release commit satisfies the live repo gates or their local equivalents: `bun typecheck`, `bun turbo test:ci`, app e2e, Agent Swarm e2e when relevant, auth smoke when configured, and the repo-specific release or publish workflow requirements.
 - Before any release or safety claim, build and reinstall the CLI from the fresh local build, launch it against the maintainer's canonical local test agency, send a real first message through the connected conversation, and verify that a non-empty streaming assistant response renders.
 - Auth-smoke CI alone never passes this gate. Any launch failure, including environment, credential, dependency, or TUI transition issues, blocks the release until you reproduce it and find the root cause.
 - Why: release claims were repeated while the installed binary still failed before a usable conversation.
-- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit. Use `.agentswarm/skills/codex-cli-review` with base `vrsen/dev`; if it finds a blocking issue (`P1` or `P2`), stop and surface it to the user.
+- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit. Use `.codex/skills/codex-cli-review` with base `vrsen/dev`; if it finds a blocking issue (`P1` or `P2`), stop and surface it to the user.
 
 ## Documentation Rules
 
 - Keep private process out of public repo artifacts. Public pull-request descriptions, comments, issues, and docs must state final intent, technical facts, and reviewer-relevant context only. Do not mention private chats, ledgers, internal drafts, personal ownership cues, or wording that makes the work look externally misaligned.
-- Do not publish work-in-progress decision artifacts. Intermediate classification files, audit reports, keep/drop decision sheets, and other internal review artifacts stay internal. Keep them under `.agentswarm/internal/` (gitignored) or `/tmp/`. Exception: if the user explicitly asks for a public review artifact.
+- Do not publish work-in-progress decision artifacts. Intermediate classification files, audit reports, keep/drop decision sheets, and other internal review artifacts stay internal. Keep them under `.codex/internal/` (gitignored) or `/tmp/`. Exception: if the user explicitly asks for a public review artifact.
 - Why: public process exposure creates noise for reviewers, leaks internal unclassified problems, and muddles what the repo actually ships.
 - Do not mention upstream fork origins in user-facing docs unless the user asked for that comparison.
 - Point to the code files that match the documented behavior.
@@ -567,7 +573,7 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
 
 ### Pull Request Review Work
 
-- For pull-request-specific work, required Codex review artifacts, or hosted review polling, use `.agentswarm/skills/codex-cli-review`. Pull-request-specific work includes comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations.
+- For pull-request-specific work, required Codex review artifacts, or hosted review polling, use `.codex/skills/codex-cli-review`. Pull-request-specific work includes comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations.
 - Resolve every correct active thread finding and do not hand off while required checks, required reviews, or unresolved comments remain open.
 - Trigger `@codex review` only when local Codex review and suitable subagents are unavailable, when the user asked for it, or when merge-gate proof needs pull-request-bound Codex.
 - If your current input already came from pull-request comments that asked for `@codex review`, skip nested review loops and resolve the scoped comments directly.
@@ -575,9 +581,9 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
 ## Tool And Model Policy
 
 - Model and tool availability varies by machine. Use the strongest available path that fits the task risk; when you substitute for a named model or tool, state the substitute and confidence before relying on it.
-- Use GPT-5.5 with `medium` or `high` reasoning when available for high-reliability bug fixing, root-cause investigation, policy updates, and feature implementation without a detailed technical plan.
-- Policy edits to `AGENTS.md`, `CLAUDE.md`, or `.agentswarm/skills/**` require the strongest available GPT-5.5 path with `xhigh` reasoning when available. If GPT-5.5 or `xhigh` is unavailable, use the strongest approved path, state the substitution, and do not treat weaker review as final proof for high-stakes policy.
-- Use `.agentswarm/skills/codex-cli-review` for Codex review artifacts and `.agentswarm/skills/claude-cli-review` for Claude CLI review artifacts.
+- Use GPT-5.5 with `medium` or `high` reasoning when available for high-reliability bug fixing, root-cause investigation, and feature implementation without a detailed technical plan.
+- Policy, repo-skill, and workflow-rule edits to `AGENTS.md`, `CLAUDE.md`, or `.codex/skills/**` require an isolated worker or worktree and the strongest available GPT-5.5 path with `xhigh` reasoning when available. If GPT-5.5 or `xhigh` is unavailable, use the strongest approved path, state the substitution, and do not treat weaker review as final proof for high-stakes policy.
+- Use `.codex/skills/codex-cli-review` for Codex review artifacts and `.codex/skills/claude-cli-review` for Claude CLI review artifacts.
 - Treat Claude output and duplicate weaker runs as supporting evidence, not final proof for high-reliability decisions.
 - Sonnet models are not allowed here. If no allowed model is available for the needed reliability, stop and escalate.
 - Prefer the local `codex` command for small clear work, and keep delegated scopes as small as useful.
@@ -590,7 +596,7 @@ Why: without a hardcoded source of truth, agents re-derive behavior from code ea
 - Fork Repo: `https://github.com/VRSEN/agentswarm-cli`
 - Upstream Repo: `https://github.com/anomalyco/opencode`
 - Local package map: `packages/opencode/` for CLI core, `packages/app/` for app UI, `packages/docs/` for docs, and `packages/*/package.json` for package-local commands and entry points.
-- Repo skills are checked-in instructions, not automatic behavior by themselves. `AGENTS.md` may route work to them by path or name; agents must read the relevant `SKILL.md` on demand unless the environment exposes the skill directly. Available repo skills: `.agentswarm/skills/requirement-ledger`, `.agentswarm/skills/policy-maintenance`, `.agentswarm/skills/delegation-management`, `.agentswarm/skills/codex-cli-review`, and `.agentswarm/skills/claude-cli-review`.
+- Repo skills are checked-in manager instructions under `.codex/skills/**`, not product/TUI skills and not automatic behavior by themselves. `AGENTS.md` may route work to them by path or name; agents must read the relevant `SKILL.md` on demand unless the environment exposes the skill directly. Available repo skills: `.codex/skills/requirement-ledger`, `.codex/skills/policy-maintenance`, `.codex/skills/delegation-management`, `.codex/skills/codex-cli-review`, and `.codex/skills/claude-cli-review`.
 
 ## Memory & Expectations
 

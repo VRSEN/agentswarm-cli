@@ -294,7 +294,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 - **Artifact-aware requirement ledger**
   - Intent: keep active work tied to the branches, PRs, files, and other artifacts it creates.
   - Behavior: the ledger workflow records artifact lists on active requirements instead of leaving them implicit.
-  - Implementation: `command_add` and `command_update` in `.agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py`.
+  - Implementation: `command_add` and `command_update` in `.codex/skills/requirement-ledger/scripts/requirement_ledger.py`.
   - Added by: `41f624ab`
 
 - **Fork divergence substantiation log**

@@ -7,6 +7,12 @@ description: Use when a local Codex CLI review, pull-request comment review loop
 
 Use this skill for local Codex review artifacts and pull-request review loops.
 
+## Governance Primer
+
+- Before opening, updating, merging, or release-reviewing a pull request, read `AGENTS.md`, `CONTRIBUTING.md`, `.github/pull_request_template.md`, and the relevant `.github/workflows/*` for PR standards, compliance, typecheck, test, release, or publish.
+- Also read `FORK_CHANGELOG.md` and `USER_FLOWS.md` when fork behavior, TUI, release QA, or user flows are touched.
+- Verify PR title, linked issue or allowed exception, checked type, non-empty verification, checked checklist, no unrelated changes, live comments, labels, unresolved threads, and required checks before handoff.
+
 ## Base Selection
 
 - Use the base explicitly requested by the user or policy.
@@ -28,8 +34,14 @@ If `codex review` is unavailable or stuck, use a narrow `codex exec` review prom
 Prompt shape:
 
 ```text
-Review the current diff against <base> for real correctness, regression, security, data-boundary, policy, and test-coverage issues. Ignore style nits. Return exactly "No findings." if clean.
+Review the current diff against <base> for real correctness, regression, security, data-boundary, policy, and test-coverage issues. Treat unintentional, unexplained, excessive, or scope-creeping changes as blocking findings with P0/P1/P2 severity by risk. Ignore style nits. Return exactly "No findings." if clean.
 ```
+
+## Finding Severity
+
+- `P0`: public release harm, data loss, security or privacy exposure, destructive behavior, or core Agent Swarm/TUI release-path breakage.
+- `P1`: real bug or regression risk, unapproved user-visible behavior change, or fork-minimality/upstream-alignment violation likely to break behavior or future merges.
+- `P2`: excessive or unjustified drift, unrelated code/docs/test churn, missing required evidence, or unapproved fork delta that increases maintenance or review risk.
 
 ## Pull-Request Review Loop
 

@@ -1,23 +1,23 @@
 ---
 name: policy-maintenance
-description: Use when editing AGENTS.md, CLAUDE.md, or .agentswarm/skills/** policy and skill files. Keeps durable operating rules concise, separates general policy from manager-only policy, and requires review for distorted meaning or regressions.
+description: Use when editing AGENTS.md, CLAUDE.md, or .codex/skills/** policy, workflow, and manager-skill files. Keeps durable operating rules concise, separates general policy from manager-only policy, and requires review for distorted meaning or regressions.
 ---
 
 # Policy Maintenance
 
-Use this skill for policy and repo-skill changes. Repo skills are checked-in instructions; read the relevant `SKILL.md` when `AGENTS.md` routes work to one unless the environment exposes the skill directly.
+Use this skill for policy, workflow-rule, and repo-skill changes. Repo skills are checked-in manager instructions under `.codex/skills/**`; read the relevant `SKILL.md` when `AGENTS.md` routes work to one unless the environment exposes the skill directly.
 
 ## Workflow
 
 1. Read the live `AGENTS.md`, the current diff, and any directly related policy branch or skill.
 2. When the edit responds to a material process mistake or repeated failure class, fix the largest durable rule or process gap in the right owner section or skill, not just the literal symptom. Use the ledger only for state tracking: active requests, decisions, blockers, evidence, artifacts, and source links.
 3. Preserve the active policy branch or artifact when one exists. Create a new branch or artifact only when the mandate needs one; create a pull request only when the user asks.
-4. Follow the policy-edit model floor in Tool And Model Policy: strongest available GPT-5.5 with `xhigh` reasoning when available, with any substitution stated before relying on it.
+4. Follow the policy, repo-skill, and workflow-rule model floor in Tool And Model Policy: isolated worker or worktree, strongest available GPT-5.5 with `xhigh` reasoning when available, with any substitution stated before relying on it.
 5. If the policy edit is self-initiated, ask the user before changing files.
 6. Stay tightly scoped: use `AGENTS.md`, the current diff, and directly authorized policy inputs. Avoid unrelated repo exploration unless the mandate requires it.
 7. Classify each rule before editing: universal policy, manager-only policy, repo-specific invariant, or skill procedure.
-8. Keep `AGENTS.md` for rules that apply most of the time. Move step-by-step playbooks, commands, and path-specific procedures into repo skills.
-9. Use the shortest coherent path: challenge the status quo, remove before adding, merge duplicates into one owner section, put intent before details, and compress without weakening behavior.
+8. Keep `AGENTS.md` for rules that apply most of the time. Move step-by-step playbooks, commands, and path-specific procedures into repo skills under `.codex/skills/**`, not product-discoverable config directories such as `.agentswarm/skills` or `.opencode/skills`.
+9. Treat "add this rule" or feedback as "ensure policy enforces this"; use the shortest coherent path regardless of input length: remove, merge, strengthen, move to a skill, or add text only when needed.
 10. Preserve public/private boundaries. Do not publish private chats, ledgers, internal drafts, or work-in-progress review artifacts unless the user asks.
 11. A manager must personally review the final policy diff, challenge every unexplained line, and iterate until the structure is coherent.
 12. Run a fresh review worker after implementation to check for distorted meaning, lost protections, duplicate rules, and regressions.
@@ -35,7 +35,9 @@ Run these before commit:
 
 ```bash
 git diff --check
-bun x prettier --check AGENTS.md .agentswarm/skills/*/SKILL.md
+bun x prettier --check AGENTS.md .codex/skills/*/SKILL.md
 ```
 
 For repo-skill changes, also reread the changed `SKILL.md` files and verify their descriptions trigger only the intended work.
+
+Before shipping, record the policy gates in your own review notes: line-referenced check for lost or changed protections, proof that the user request is enforced, proof that mandate and privacy constraints are met, and a judgment that the change improves agent efficiency. If any gate fails, refine the implementation instead of asking the user to decide skill or script mechanics.

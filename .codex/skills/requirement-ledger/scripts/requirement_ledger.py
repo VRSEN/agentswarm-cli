@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = "agentswarm-requirement-ledger/v2"
-DEFAULT_LEDGER_DIR = Path(".agentswarm/requirements-ledger")
+DEFAULT_LEDGER_DIR = Path(".codex/requirements-ledger")
 ACTIVE_FILE = "active.json"
 ARCHIVE_FILE = "archive.jsonl"
 ACTIVE_STATUSES = ("open", "in_progress", "blocked", "waiting", "deferred")
