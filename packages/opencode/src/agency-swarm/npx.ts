@@ -673,13 +673,17 @@ async function ensureProjectPython(directory: string) {
         corruptedVenv = true
       }
       if (!corruptedVenv) {
+        prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
         let healthy = false
         try {
           healthy = await venvCanaryPasses([venvPython])
         } catch {
           healthy = false
         }
-        if (healthy) return [venvPython]
+        if (healthy) {
+          prompts.log.success("Python environment ready")
+          return [venvPython]
+        }
         corruptedVenv = true
       }
     }
@@ -757,6 +761,7 @@ async function ensureProjectPython(directory: string) {
   if (install.code !== 0) {
     throw new Error(formatCommandFailure(install, "Dependency install failed"))
   }
+  prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
   const canary = await venvCanaryPasses([venvPython], { cwd: directory, includeStderr: true })
   if (!canary.healthy) {
     throw new Error(await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr))
