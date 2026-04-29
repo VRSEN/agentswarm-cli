@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "1.4.6",
+  "version": "1.4.26",
   "name": "agentswarm-cli",
   "platformScope": "@vrsen",
   "description": "Agent Swarm CLI for the terminal.",
