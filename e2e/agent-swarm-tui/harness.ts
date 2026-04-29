@@ -383,10 +383,28 @@ function sse(events: Array<[event: string, data: Record<string, unknown>]>) {
 }
 
 async function closeProcess(proc: Proc) {
+  let exited = false
+  let dispose: (() => void) | undefined
+  const exit = new Promise<void>((resolve) => {
+    const disp = proc.onExit(() => {
+      exited = true
+      dispose?.()
+      resolve()
+    })
+    dispose = () => disp.dispose()
+  })
+  const wait = (timeoutMs: number) =>
+    Promise.race([exit.then(() => true), new Promise<false>((resolve) => setTimeout(() => resolve(false), timeoutMs))])
+
   proc.write("\x03")
-  await new Promise((resolve) => setTimeout(resolve, 100))
+  if (await wait(1000)) return
+
   proc.kill("SIGTERM")
-  await new Promise((resolve) => setTimeout(resolve, 100))
+  if (await wait(2000)) return
+
+  if (!exited) proc.kill("SIGKILL")
+  await wait(1000)
+  dispose?.()
 }
 
 async function waitFor(predicate: () => boolean, failure: () => string, timeoutMs: number) {

@@ -1538,6 +1538,7 @@ export namespace SessionAgencySwarm {
         timeoutMs: input.options.discoveryTimeoutMs,
         mentionedRecipient,
         promptRecipient: input.recipientAgent,
+        historyRecipient: resolveHandoffRecipientFromHistory(chatHistory),
         configuredRecipient: input.options.recipientAgent,
         configuredRecipientSelectedAt: input.options.recipientAgentSelectedAt,
       })
@@ -1928,6 +1929,7 @@ export namespace SessionAgencySwarm {
     timeoutMs: number
     mentionedRecipient?: string
     promptRecipient?: string
+    historyRecipient?: string
     configuredRecipient?: string
     configuredRecipientSelectedAt?: number
   }): Promise<string | undefined> {
@@ -1944,12 +1946,13 @@ export namespace SessionAgencySwarm {
         agent: string
         messageAt?: number
       }
-      source: "message" | "prompt" | "config" | "session"
+      source: "message" | "prompt" | "history" | "config" | "session"
     }
     const candidates = [
       input.mentionedRecipient ? { value: { agent: input.mentionedRecipient }, source: "message" } : undefined,
       input.promptRecipient ? { value: { agent: input.promptRecipient }, source: "prompt" } : undefined,
       sessionRecipient ? { value: sessionRecipient, source: "session" } : undefined,
+      input.historyRecipient ? { value: { agent: input.historyRecipient }, source: "history" } : undefined,
       input.configuredRecipient ? { value: { agent: input.configuredRecipient }, source: "config" } : undefined,
     ]
       .filter((candidate): candidate is RecipientCandidate => !!candidate?.value.agent)
@@ -2010,9 +2013,10 @@ export namespace SessionAgencySwarm {
       if (candidate.source === "prompt") return 1
       if (candidate.source === "config" && input.configuredRecipientSelectedAt) {
         const sessionCompletedAt = sessionRecipient?.completedAt
-        if (sessionCompletedAt && input.configuredRecipientSelectedAt > sessionCompletedAt) return 2
+        if ((sessionCompletedAt && input.configuredRecipientSelectedAt > sessionCompletedAt) || input.historyRecipient)
+          return 2
       }
-      if (candidate.source === "session") return 3
+      if (candidate.source === "session" || candidate.source === "history") return 3
       return 4
     }
   }
@@ -2081,6 +2085,21 @@ export namespace SessionAgencySwarm {
     return asString(
       metadata["assistant"] ?? metadata["agent"] ?? metadata["recipientAgent"] ?? metadata["recipient_agent"],
     )
+  }
+
+  function resolveHandoffRecipientFromHistory(history: Array<Record<string, unknown>>) {
+    for (const item of history.toReversed()) {
+      const type = asString(item["type"])
+      if (type === "handoff_output_item") {
+        const outputAgent = readHandoffOutputAgent(asString(item["output"]))
+        if (outputAgent) return outputAgent
+      }
+      if (type === "message" && asString(item["role"]) === "assistant") {
+        const agent = asString(item["agent"])
+        if (agent) return agent
+      }
+    }
+    return undefined
   }
 
   export function compactHistory(input: { msgs: MessageV2.WithParts[]; currentID: string }) {
