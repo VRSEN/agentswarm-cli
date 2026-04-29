@@ -15,9 +15,6 @@ Default bias to correct: agents can look productive while solving only the local
 - `ledger`: the durable list of active requests, blockers, artifacts, and linked state.
 - `artifact`: any output you create, including a file, branch, pull request, review file, screenshot, release item, local-only commit, temp asset, or published item.
 - `non-trivial task`: anything bigger than a one-line edit or one obvious action.
-- `current Codex model`: the Codex model named in the canonical Codex review command.
-- `reasoning levels`: `medium` for routine scoped work, `high` for ambiguous or decision-heavy work, and extra-high (`xhigh`) for policy edits.
-- `canonical Codex review`: `codex review --base <base> -m gpt-5.5 -c model_reasoning_effort="medium" > /tmp/codex_review_<short_sha>.txt 2>&1`.
 
 ## Requirement And Truth First
 
@@ -57,10 +54,10 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 - When you make a mistake, diagnose the gap, tighten the rule, and record the fix in the same task.
 - On each user message, decide whether this file needs an update so the standing instruction can be derived from it next time.
 - When you add or change a rule, keep or add the concrete reason it exists. Review the local diff for duplication, conflict, and extra process cost. Tighten or move an old rule before you restate it.
-- Agents and subagents must not open pull requests for policy changes in `AGENTS.md` or `.agentswarm/skills/**` unless the user explicitly asks for a PR. Push the policy branch and provide a compare link by default; do not commit policy directly to `vrsen/dev` or mix policy into feature pull requests.
+- Policy changes in `AGENTS.md` or `.agentswarm/skills/**` must reuse the active policy branch or artifact recorded in the ledger when one exists. Create a new policy branch, artifact, or pull request only when the user explicitly asks; otherwise push the policy branch and provide a compare link. Do not commit policy directly to `vrsen/dev` or mix it into feature pull requests.
 - Before editing policy, treat it as harder than normal implementation work: read the whole live policy more than once, read the current diff, inspect directly related rules, and challenge whether the requested change belongs here.
 - Policy-editing agents stay tightly scoped: read `AGENTS.md`, the current policy diff, and only directly authorized policy inputs. Avoid unrelated repo exploration unless the mandate requires it.
-- Policy edits require the current Codex model with `xhigh` reasoning. Reuse the existing policy worker for same-task follow-ups only while continuity improves quality; replace the worker or tool when evidence shows saturation, regressions, or unreliable results.
+- Policy edits require the policy-editing path defined in Tool And Model Policy. Reuse the existing policy worker for same-task follow-ups only while continuity improves quality; replace the worker or tool when evidence shows saturation, regressions, or unreliable results.
 - Treat policy as executable agent code. Improve it by entropy reduction first: find the smallest coherent shape, surgically refactor when behavior stays the same, split mixed-category lists, remove stale or duplicate lines, and add new text only when those fail.
 - Each policy rule needs one owner section, one enforceable behavior, and a clear reason. Merge duplicate behavior there; do not keep parallel rules. Move path-specific procedures into skills, scoped rules, or linked docs.
 - Before shipping a policy diff, check for contradictions, lost protections, duplicate rules, needless review noise, and whether section lists stay readable, ideally under 10 to 15 bullets.
@@ -72,7 +69,8 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 - Universal rules apply to both managers and workers. Manager-only rules apply only to managers.
 - Workers complete their scoped mandate, validate it, and return evidence. Workers do not manage the global queue, merge, release, or treat their own output as final.
 - Managers review 100% of worker and subagent output. The manager may use that output as evidence, but must verify it before relying on it or presenting it as final.
-- Sonnet models are not allowed here. Only Opus 4.7 may manage. Workers and subagents must use the current Codex model. Any agent on a disallowed model must stop at once.
+- For this user and repo, managers must not author non-trivial code or test edits themselves. They delegate implementation; managers may inspect, review, run tests, integrate worker output, and perform mechanical git operations. Any exception needs explicit user approval.
+- Model eligibility and reliability tiers live in Tool And Model Policy. If the active model is outside that policy, stop at once.
 
 ## Requirement Completeness Gate
 
@@ -85,7 +83,7 @@ Why: voice-transcribed input is homophone-prone.
   - `Do I have everything required to solve this correctly and safely without wasting the user's time?`
   - `Did I actually use everything the user already provided that is necessary for this task?`
 - Never work without fully understanding the context.
-- Before a non-trivial edit in a shared or upstream-mirrored area, identify directly related pull requests, commits, issues, or branches with a bounded search such as `git log --follow` or targeted `gh pr list` filters. Stop when the next layer is clearly unrelated. If a prior change was reverted or partly reverted, state exactly what it undid.
+- Before a non-trivial edit in a shared, upstream-mirrored, previously failed, or policy-sensitive area, identify directly related pull requests, commits, issues, or branches with a bounded search such as `git log --follow` or targeted `gh pr list` filters. Include closed, rejected, superseded, or reverted attempts when they are directly related. Stop when the next layer is clearly unrelated. If a prior change was reverted or partly reverted, state exactly what it undid.
 - If you cannot write a one-sentence link for every directly related artifact, stop and ask the user one short question before you edit.
 - If either answer above is `no` or `unclear`, or if something you expected does not exist, first acquire the missing fact with bounded inspection, search, or testing. Ask the user only when the missing fact materially changes the outcome and cannot be obtained safely inside the mandate.
 - Expect speech-to-text mistakes. Use context to sort out homophones. If two meanings still fit, escalate with numbered options.
@@ -322,7 +320,7 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - Every fork-only line needs a concrete reason. If a line is not strictly required, remove it or restore the upstream shape. State why upstream behavior is not enough in the commit message or `FORK_CHANGELOG.md`.
 - Why: keep the fork rebuildable from upstream with a small, auditable delta.
 - Treat every divergence from upstream as expensive and risky. It should feel painful to add or keep fork-only code because every extra line increases rebase, release, and debugging risk.
-- Treat `FORK_CHANGELOG.md` as the approval map for intentional fork behavior. If code differs from upstream and the behavior is not clearly covered there, or looks unintentional against it, stop and escalate before editing further.
+- Treat `FORK_CHANGELOG.md` and `USER_FLOWS.md` as the fork priming path for coding, review, release, and delegation. Read the relevant bounded sections before fork work; `FORK_CHANGELOG.md` approves intentional divergence, and `USER_FLOWS.md` owns fork user-flow expectations. If code differs from upstream and the behavior is not clearly covered there, looks unintentional, or changes a listed user flow without matching proof, stop and escalate before editing further.
 - Keep a line-or-hunk-level classification for every non-trivial fork delta before merge. The classification may live in an internal review artifact, PR review notes, or tests; `FORK_CHANGELOG.md` stays high-level and should summarize categories, not become a raw line dump.
 - If the needed feature or behavior already exists in `origin/dev`, use that implementation. Do not build a parallel path.
 - Keep the clean test checkout clean and current before you use it as proof. If that checkout is stale or has unowned local changes, escalate before you rely on it.
@@ -353,6 +351,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Current project critical path: policy rules that stop process drift, fork changelog, upstream-alignment cleanup, upstream merge, then the 10 urgent bugs, all toward releasing a new package version with fixes. Change it only when the user or ledger explicitly replaces it.
 - The ledger is the number-one control tool for active work. Keep it current with running work, blockers, current critical path, pull requests, commits, branches, subagents, and tracked artifacts.
 - Use `.agentswarm/skills/requirement-ledger` for durable ledger changes. Do not hand-edit ledger files.
+- Requirement ledger files are private control artifacts. Do not commit or publish them.
 - Keep the plan and the ledger separate but aligned.
 - Every user message requires ledger consideration. Update the ledger unless the message adds no requirement, decision, assumption change, evidence change, artifact state, blocker, or critical-path change.
 - Review and update the ledger on every task switch, after meaningful progress, before commits, before pull-request or release actions, and before you stop or send a substantive reply.
@@ -367,8 +366,8 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Stay at manager height: coordinate, reprioritize, review, make key calls, and verify the critical path.
 - Delegate only when it protects the manager's context window, shortens the critical path, or needs parallel investigation after the manager understands the user's intent, inspected evidence, and success condition.
 - Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
-- Use the current Codex model with `medium` reasoning for routine, well-scoped tasks and `high` reasoning for ambiguous, high-level, or decision-heavy tasks.
-- Prefer the local `codex` command for small clear work. Use the smallest useful delegated scope, default to one worker, and split only when one worker cannot cover the task cleanly.
+- Choose local review, delegated worker, and assistant model paths through Tool And Model Policy before you delegate.
+- Before launching a worker for an active category, especially policy, read the ledger and existing artifacts or branches; route follow-ups to the active artifact instead of creating competing work.
 - After you delegate, do not interrupt, rush, or keep pinging workers unless the user changes scope or you have clear proof of failure.
 - Start each delegated task with the exact user ask, needed background, directly related artifacts, inspected evidence, missing facts to acquire, the higher goal, required result, and hard limits.
 - Workers may create branches, commits, and pull requests inside their mandate. They must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager explicitly delegates that exact action for that exact artifact after review.
@@ -379,6 +378,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 - Keep one live list of the artifacts you own, and give every ledger item an `artifacts` list even when it is empty.
 - Track every pull request, linked issue, branch, local-only commit, worktree, file, temp asset, release artifact, published binary, open GitHub issue, review artifact, screenshot, temp QA directory, and other open work artifact.
+- Track GitHub issue links on the relevant ledger item. Public bug issues should preserve useful repro details, evidence, expected behavior, and related links unless the details are sensitive.
 - The moment an artifact exists, add it to the relevant ledger item's `artifacts` list. Create a separate ledger item only when the artifact represents independent open work.
 - Any state change on a tracked artifact must update the ledger before other work continues.
 - Ledger is the source of truth for active work. Missing ledger coverage is an ownership defect, not deletion proof.
@@ -399,12 +399,13 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - If the target branch has an open pull request, read the latest comments, reviews, unresolved threads, and head SHA first. GitHub is the source of truth for live pull-request state.
 - If there is already an open pull request for the same work, reuse it unless it was clearly discarded or reuse is truly impossible.
 - Before you open, update, or merge a pull request, verify the source branch, base branch, head SHA, live diff, and PR-body compliance. On first push, the body must already include `Closes #<ID>` or the tracked REQ; the compliance bot auto-closes non-compliant PRs after 2 hours.
-- Before any pull-request merge, the manager must personally review the final diff, challenge every unexplained line, verify checks and unresolved threads, and state that the PR should merge. Worker review can inform this gate but cannot replace it. For pull-request comment work, follow the PR Comment Review Loop.
+- Every pull-request merge has a human alignment gate. When a pull request is technically ready to merge, the manager must personally review the final diff, challenge every unexplained line, verify checks and unresolved threads, and state that it is technically ready. Then send the user an escalation/review guide for GitHub that groups the changes for quick review, explains why each group exists, asks the user to leave comments or questions on GitHub, and requests one alignment confirmation. Merge only after the user confirms alignment. Worker review can inform this gate but cannot replace it.
+- For pull-request comment work, follow the PR Comment Review Loop.
 
 ### External Signals
 
-- For build-impact pull-request work, do not hand off as done until the latest head is review-complete.
-- Review-complete means zero unresolved threads, a clean local Codex review artifact, green required checks, and explicit approval or thumbs up on the latest head.
+- For build-impact pull-request work, do not hand off as technically ready until the latest head is technical-review-complete.
+- Technical-review-complete means zero unresolved threads, a clean local Codex review artifact, and green required checks. Human alignment belongs to the Repo And Pull Requests merge gate.
 - Pending GitHub checks, pending pull-request Codex review, unresolved pull-request comments, and other agent-visible outside workflows still count as open work.
 - If only outside signals are pending, report the exact waiting state and keep polling.
 - If the next step is polling, keep doing it until the workflow ends or you can prove a real outside block. If a delegated worker stalls with no new output, take over on the manager thread or escalate.
@@ -438,7 +439,8 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 ## Documentation Rules
 
-- Do not publish kitchen artifacts. Intermediate classification files, audit reports, keep/drop decision sheets, and other work-in-progress decision artifacts stay internal. Keep them under `.agentswarm/internal/` (gitignored) or `/tmp/`. Public PRs and issues are for final results only: the user-facing outcome, not the team's thinking process. Exception: if the user explicitly asks for a public review artifact.
+- Keep private process out of public repo artifacts. Public pull-request descriptions, comments, issues, and docs must state final intent, technical facts, and reviewer-relevant context only. Do not mention private chats, ledgers, internal drafts, personal ownership cues, or wording that makes the work look externally misaligned.
+- Do not publish work-in-progress decision artifacts. Intermediate classification files, audit reports, keep/drop decision sheets, and other internal review artifacts stay internal. Keep them under `.agentswarm/internal/` (gitignored) or `/tmp/`. Exception: if the user explicitly asks for a public review artifact.
 - Why: public process exposure creates noise for reviewers, leaks internal unclassified problems, and muddles what the repo actually ships.
 - Do not mention upstream fork origins in user-facing docs unless the user asked for that comparison.
 - Point to the code files that match the documented behavior.
@@ -511,7 +513,8 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Use the standard test tools and patterns already used here.
 - Use isolated file systems and temp directories.
 - Avoid slow or hanging tests. If you must skip one, leave a clear `FIXME`.
-- Follow existing package-local test structure and naming. Do not run tests from the repo root. Use package directories like `packages/opencode`.
+- Follow existing package-local test structure and naming. Upstream tests still matter, but Agent Swarm-specific behavior needs named fork-owned coverage mapped to `FORK_CHANGELOG.md` or `USER_FLOWS.md`; keep that coverage separate from upstream tests when feasible so expected fork divergence or upstream test drift cannot mask fork regressions. Do not run tests from the repo root. Use package directories like `packages/opencode`.
+- Agent Swarm TUI fixes need real automated TUI evidence against a real Agency Swarm swarm when feasible; handoff fixes especially need proof that the handoff path works, or a recorded blocker explaining why that proof was not feasible.
 - Avoid tests that give false confidence. Startup auth, CLI/app wiring, streaming, persistence, and workspace flow need integration or end-to-end coverage plus direct inspection of the user path when practical, not unit-only proof.
 - Retire unit tests that hide gaps in real behavior.
 - Remove dead code when it is in scope.
@@ -594,9 +597,20 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
   - If a required hosted check or pull-request Codex review is still pending and you can still observe, retrigger, or fix it, do not hand off a partial state.
   - If a fallback local Codex review or pull-request Codex stays non-terminal for 15 minutes, or a required GitHub check stays non-terminal for 30 minutes, inspect the latest output, logs, comments, and reactions, retrigger once if the service looks stuck, and continue.
   - Escalate only after you can point to a real service failure, outage, or missing human approval.
-  - Repeat until the latest head has zero unresolved threads, a clean local or subagent review, green required checks, and explicit approval or thumbs up.
-  - Only then hand off to the user.
+  - Repeat until the latest head has zero unresolved threads, a clean local or subagent review, and green required checks.
+  - Only then hand off through the human review gate in Repo And Pull Requests.
 - If your current input already came from pull-request comments that asked for `@codex review`, skip this loop to avoid a loop inside a loop.
+
+## Tool And Model Policy
+
+- Model and tool availability varies by machine. Use the strongest available path that fits the task risk; when you substitute for a named model or tool, state the substitute and confidence before relying on it.
+- Use GPT-5.5 with `medium` or `high` reasoning when available for high-reliability bug fixing, root-cause investigation, policy updates, and feature implementation without a detailed technical plan. Use `medium` for routine scoped work and `high` for ambiguous or decision-heavy work; reserve `xhigh` for explicitly requested legal-style policy review when available and useful.
+- Claude CLI with Opus 4.7 max may be used for cheap long-running extraction, summarization, broad scans, artifact drafting, and easy well-defined reasoning. Treat it as weaker evidence than GPT-5.5; managers must verify its output before final decisions.
+- GPT-5.4-mini is acceptable for summarization and extraction when stronger cheap tools are unavailable.
+- When reliability is uncertain on a task that does not require GPT-5.5 with `high` reasoning or stronger, you may run the same task twice and compare results. Do not treat duplicate weaker runs as final proof for high-reliability decisions.
+- Sonnet models are not allowed here. If no allowed model is available for the needed reliability, stop and escalate.
+- Prefer the local `codex` command for small clear work, and keep delegated scopes as small as useful.
+- Canonical Codex review uses GPT-5.5 when available: `codex review --base <base> -m gpt-5.5 -c model_reasoning_effort="medium" > /tmp/codex_review_<short_sha>.txt 2>&1`. If GPT-5.5 is unavailable, use the strongest available GPT-5.x review path, record the exact model, and do not rely on unknown defaults.
 
 ## References
 
