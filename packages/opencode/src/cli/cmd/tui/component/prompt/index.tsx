@@ -274,13 +274,14 @@ export function Prompt(props: PromptProps) {
       const options = agencyProviderOptions()
       const parts = sync.data.part?.[info.id] ?? []
       const handoffAgent = resolveAgencyHandoffRecipientFromParts(parts) ?? info.agent
+      const explicitHandoffEvidence = hasAgencyHandoffEvidence(parts)
       if (
         !shouldAdoptAgencyHandoffRecipient({
           frameworkMode: frameworkMode(),
           agency: options.agency,
           currentRecipient: options.recipientAgent,
           assistantAgent: handoffAgent,
-          handoffEvidence: hasAgencyHandoffEvidence(parts),
+          handoffEvidence: explicitHandoffEvidence || status().type !== "idle",
         })
       ) {
         return
@@ -290,7 +291,7 @@ export function Prompt(props: PromptProps) {
         sessionID: info.sessionID,
         messageID: info.id,
         agent: handoffAgent,
-        selectedAt: options.recipientAgentSelectedAt,
+        selectedAt: explicitHandoffEvidence ? options.recipientAgentSelectedAt : undefined,
       })
     }),
   )
