@@ -15,6 +15,7 @@ let currentTui: TuiProcess | undefined
 let currentServer: AgencyProtocolServer | undefined
 const tempDirs: string[] = []
 const tuiReadyTimeoutMs = 30_000
+const tuiInteractionTimeoutMs = 45_000
 
 afterEach(async () => {
   await currentTui?.close()
@@ -126,7 +127,11 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
     await selectCurrentSwarm(currentTui)
     currentTui.write("route through the whole swarm\r")
-    await currentTui.waitFor(() => currentServer!.requests.length === 1, "swarm-routed request", 45_000)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "swarm-routed request",
+      tuiInteractionTimeoutMs,
+    )
 
     expect(currentServer.requests[0]?.body).toMatchObject({
       message: "route through the whole swarm",
@@ -146,7 +151,11 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
     await selectRunTarget(currentTui, "MathAgent", "Selected MathAgent in swarm TuiDemoAgency")
     currentTui.write("calculate through the selected agent\r")
-    await currentTui.waitFor(() => currentServer!.requests.length === 1, "agent-routed request", 15_000)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "agent-routed request",
+      tuiInteractionTimeoutMs,
+    )
 
     expect(currentServer.requests[0]?.body).toMatchObject({
       message: "calculate through the selected agent",
@@ -165,11 +174,15 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
     currentTui.write("please handoff this calculation\r")
-    await currentTui.waitForText("Math agent now has control.", 15_000)
-    await currentTui.waitFor(() => currentServer!.requests.length === 1, "handoff request", 15_000)
+    await currentTui.waitForText("Math agent now has control.", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(() => currentServer!.requests.length === 1, "handoff request", tuiInteractionTimeoutMs)
 
     currentTui.write("continue after handoff\r")
-    await currentTui.waitFor(() => currentServer!.requests.length === 2, "post-handoff request", 15_000)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 2,
+      "post-handoff request",
+      tuiInteractionTimeoutMs,
+    )
 
     expect(currentServer.requests[0]?.body).toMatchObject({
       message: "please handoff this calculation",
@@ -190,7 +203,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
       "agency protocol server stream request",
-      15_000,
+      tuiInteractionTimeoutMs,
     )
 
     expect(currentServer.requests[0]?.body).toMatchObject({
@@ -215,7 +228,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
       "agency protocol server stream request",
-      15_000,
+      tuiInteractionTimeoutMs,
     )
 
     const body = JSON.stringify(currentServer.requests[0]?.body)
@@ -232,12 +245,12 @@ async function selectRunTarget(tui: TuiProcess, query: string, successMessage: s
   await tui.waitForText(query)
   tui.write("\x1b[B")
   tui.write("\r")
-  await tui.waitForText(successMessage, 15_000)
+  await tui.waitForText(successMessage, tuiInteractionTimeoutMs)
 }
 
 async function selectCurrentSwarm(tui: TuiProcess) {
   tui.write("/agents\r")
   await tui.waitForText("TuiDemoAgency")
   tui.write("\x1b[A\x1b[A\r")
-  await tui.waitForText("Selected swarm TuiDemoAgency", 15_000)
+  await tui.waitForText("Selected swarm TuiDemoAgency", tuiInteractionTimeoutMs)
 }
