@@ -85,6 +85,13 @@ Run type-checks before pushing:
 bun typecheck
 ```
 
+Run the contained Agent Swarm TUI e2e suite when TUI behavior changes:
+
+```bash
+cd packages/opencode
+bun run test:agentswarm:e2e
+```
+
 ## Relationship To OpenCode
 
 Agent Swarm CLI is a fork of OpenCode. OpenCode remains the upstream foundation for the TUI, session model, command system, and many developer workflows.
