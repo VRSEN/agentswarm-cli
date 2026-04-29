@@ -54,7 +54,7 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 - When you make a mistake, diagnose the gap, tighten the rule, and record the fix in the same task.
 - On each user message, decide whether this file needs an update so the standing instruction can be derived from it next time.
 - When you add or change a rule, keep or add the concrete reason it exists. Review the local diff for duplication, conflict, and extra process cost. Tighten or move an old rule before you restate it.
-- Agents and subagents must not open pull requests for policy changes in `AGENTS.md` or `.agentswarm/skills/**` unless the user explicitly asks for a PR. Push the policy branch and provide a compare link by default; do not commit policy directly to `vrsen/dev` or mix policy into feature pull requests.
+- Policy changes in `AGENTS.md` or `.agentswarm/skills/**` must reuse the active policy branch or artifact recorded in the ledger when one exists. Create a new policy branch, artifact, or pull request only when the user explicitly asks; otherwise push the policy branch and provide a compare link. Do not commit policy directly to `vrsen/dev` or mix it into feature pull requests.
 - Before editing policy, treat it as harder than normal implementation work: read the whole live policy more than once, read the current diff, inspect directly related rules, and challenge whether the requested change belongs here.
 - Policy-editing agents stay tightly scoped: read `AGENTS.md`, the current policy diff, and only directly authorized policy inputs. Avoid unrelated repo exploration unless the mandate requires it.
 - Policy edits require the policy-editing path defined in Tool And Model Policy. Reuse the existing policy worker for same-task follow-ups only while continuity improves quality; replace the worker or tool when evidence shows saturation, regressions, or unreliable results.
@@ -69,6 +69,7 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 - Universal rules apply to both managers and workers. Manager-only rules apply only to managers.
 - Workers complete their scoped mandate, validate it, and return evidence. Workers do not manage the global queue, merge, release, or treat their own output as final.
 - Managers review 100% of worker and subagent output. The manager may use that output as evidence, but must verify it before relying on it or presenting it as final.
+- For this user and repo, managers must not author non-trivial code or test edits themselves. They delegate implementation; managers may inspect, review, run tests, integrate worker output, and perform mechanical git operations. Any exception needs explicit user approval.
 - Model eligibility and reliability tiers live in Tool And Model Policy. If the active model is outside that policy, stop at once.
 
 ## Requirement Completeness Gate
@@ -350,6 +351,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Current project critical path: policy rules that stop process drift, fork changelog, upstream-alignment cleanup, upstream merge, then the 10 urgent bugs, all toward releasing a new package version with fixes. Change it only when the user or ledger explicitly replaces it.
 - The ledger is the number-one control tool for active work. Keep it current with running work, blockers, current critical path, pull requests, commits, branches, subagents, and tracked artifacts.
 - Use `.agentswarm/skills/requirement-ledger` for durable ledger changes. Do not hand-edit ledger files.
+- Requirement ledger files are private control artifacts. Do not commit or publish them.
 - Keep the plan and the ledger separate but aligned.
 - Every user message requires ledger consideration. Update the ledger unless the message adds no requirement, decision, assumption change, evidence change, artifact state, blocker, or critical-path change.
 - Review and update the ledger on every task switch, after meaningful progress, before commits, before pull-request or release actions, and before you stop or send a substantive reply.
@@ -365,6 +367,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Delegate only when it protects the manager's context window, shortens the critical path, or needs parallel investigation after the manager understands the user's intent, inspected evidence, and success condition.
 - Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
 - Choose local review, delegated worker, and assistant model paths through Tool And Model Policy before you delegate.
+- Before launching a worker for an active category, especially policy, read the ledger and existing artifacts or branches; route follow-ups to the active artifact instead of creating competing work.
 - After you delegate, do not interrupt, rush, or keep pinging workers unless the user changes scope or you have clear proof of failure.
 - Start each delegated task with the exact user ask, needed background, directly related artifacts, inspected evidence, missing facts to acquire, the higher goal, required result, and hard limits.
 - Workers may create branches, commits, and pull requests inside their mandate. They must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager explicitly delegates that exact action for that exact artifact after review.
@@ -375,6 +378,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 - Keep one live list of the artifacts you own, and give every ledger item an `artifacts` list even when it is empty.
 - Track every pull request, linked issue, branch, local-only commit, worktree, file, temp asset, release artifact, published binary, open GitHub issue, review artifact, screenshot, temp QA directory, and other open work artifact.
+- Track GitHub issue links on the relevant ledger item. Public bug issues should preserve useful repro details, evidence, expected behavior, and related links unless the details are sensitive.
 - The moment an artifact exists, add it to the relevant ledger item's `artifacts` list. Create a separate ledger item only when the artifact represents independent open work.
 - Any state change on a tracked artifact must update the ledger before other work continues.
 - Ledger is the source of truth for active work. Missing ledger coverage is an ownership defect, not deletion proof.
@@ -510,6 +514,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Use isolated file systems and temp directories.
 - Avoid slow or hanging tests. If you must skip one, leave a clear `FIXME`.
 - Follow existing package-local test structure and naming. Upstream tests still matter, but Agent Swarm-specific behavior needs named fork-owned coverage mapped to `FORK_CHANGELOG.md` or `USER_FLOWS.md`; keep that coverage separate from upstream tests when feasible so expected fork divergence or upstream test drift cannot mask fork regressions. Do not run tests from the repo root. Use package directories like `packages/opencode`.
+- Agent Swarm TUI fixes need real automated TUI evidence against a real Agency Swarm swarm when feasible; handoff fixes especially need proof that the handoff path works, or a recorded blocker explaining why that proof was not feasible.
 - Avoid tests that give false confidence. Startup auth, CLI/app wiring, streaming, persistence, and workspace flow need integration or end-to-end coverage plus direct inspection of the user path when practical, not unit-only proof.
 - Retire unit tests that hide gaps in real behavior.
 - Remove dead code when it is in scope.
