@@ -220,6 +220,7 @@ export function Prompt(props: PromptProps) {
       currentRecipientSelectedAt: options.recipientAgentSelectedAt,
       sessionID: props.sessionID,
       messages: sync.data.message[props.sessionID] ?? [],
+      partsByMessage: sync.data.part,
     })
   })
   const effectiveHandoffRecipient = createMemo(() => {
@@ -1109,76 +1110,69 @@ export function Prompt(props: PromptProps) {
       })
     } else {
       const handoff = effectiveHandoffRecipient()
-      const handoffAgent =
+      const agencyRecipientAgent =
         frameworkMode() && handoff?.sessionID === sessionID && !nonTextParts.some((part) => part.type === "agent")
           ? handoff.agent
           : undefined
-      sdk.client.session
-        .prompt({
-          sessionID,
-          ...selectedModel,
-          messageID,
-          agent: effectiveAgentName(),
-          model: selectedModel,
-          variant,
-          parts: [
-            ...editorParts,
-            {
-              id: PartID.ascending(),
-              type: "text",
-              text: inputText,
-            },
-            ...(handoffAgent
-              ? [
-                  {
-                    id: PartID.ascending(),
-                    type: "agent" as const,
-                    name: handoffAgent,
-                  },
-                ]
-              : []),
-            ...nonTextParts.map(assign),
-          ],
+      const promptPayload: Parameters<typeof sdk.client.session.prompt>[0] & {
+        $body_agencyRecipientAgent?: string
+      } = {
+        sessionID,
+        ...selectedModel,
+        messageID,
+        agent: effectiveAgentName(),
+        model: selectedModel,
+        variant,
+        $body_agencyRecipientAgent: agencyRecipientAgent,
+        parts: [
+          ...editorParts,
+          {
+            id: PartID.ascending(),
+            type: "text",
+            text: inputText,
+          },
+          ...nonTextParts.map(assign),
+        ],
+      }
+      sdk.client.session.prompt(promptPayload).catch((error) => {
+        setStore("prompt", savedPrompt)
+        input.setText(savedPrompt.input)
+        restoreExtmarksFromParts(savedPrompt.parts)
+        const message = toErrorMessage(error)
+        const shouldReopenAuth = shouldOpenAgencyAuthDialog({
+          providerID: selectedModel.providerID,
+          message,
         })
-        .catch((error) => {
-          setStore("prompt", savedPrompt)
-          input.setText(savedPrompt.input)
-          restoreExtmarksFromParts(savedPrompt.parts)
-          const message = toErrorMessage(error)
-          const shouldReopenAuth = shouldOpenAgencyAuthDialog({
-            providerID: selectedModel.providerID,
-            message,
+        if (navigateTimer) {
+          clearTimeout(navigateTimer)
+          navigateTimer = undefined
+        }
+        if (createdSessionID && shouldReopenAuth) {
+          if (navigatedToCreatedSession) {
+            route.navigate({
+              type: "home",
+              prompt: submittedPrompt,
+            })
+          }
+          void sdk.client.session.delete({
+            sessionID: createdSessionID,
           })
-          if (navigateTimer) {
-            clearTimeout(navigateTimer)
-            navigateTimer = undefined
-          }
-          if (createdSessionID && shouldReopenAuth) {
-            if (navigatedToCreatedSession) {
-              route.navigate({
-                type: "home",
-                prompt: submittedPrompt,
-              })
-            }
-            void sdk.client.session.delete({
-              sessionID: createdSessionID,
-            })
-          }
-          if (shouldReopenAuth) {
-            toast.show({
-              variant: "error",
-              message: describeAgencyAuthFailure(message),
-              duration: 5000,
-            })
-            dialog.replace(() => <DialogAuth />)
-            return
-          }
+        }
+        if (shouldReopenAuth) {
           toast.show({
             variant: "error",
-            message,
+            message: describeAgencyAuthFailure(message),
             duration: 5000,
           })
+          dialog.replace(() => <DialogAuth />)
+          return
+        }
+        toast.show({
+          variant: "error",
+          message,
+          duration: 5000,
         })
+      })
     }
 
     clearSubmittedPrompt(currentMode)

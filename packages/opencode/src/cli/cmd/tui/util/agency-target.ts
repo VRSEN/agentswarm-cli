@@ -13,6 +13,16 @@ export type AgencyHandoffMessage = {
   }
 }
 
+export type AgencyHandoffPart = {
+  type: string
+  tool?: string
+  state?: {
+    status?: string
+    output?: string
+    metadata?: Record<string, unknown>
+  }
+}
+
 export type AgencyProviderOptions = {
   baseURL: string
   token?: string
@@ -193,11 +203,16 @@ export function resolveAgencyHandoffRecipientFromMessages(input: {
   currentRecipientSelectedAt?: number
   sessionID: string
   messages: AgencyHandoffMessage[]
+  partsByMessage?: Record<string, AgencyHandoffPart[] | undefined>
 }) {
-  const assistant = input.messages.findLast(
-    (item) => item.role === "assistant" && item.providerID === AgencySwarmAdapter.PROVIDER_ID,
-  )
+  const assistant = input.messages.findLast((item) => {
+    if (item.role !== "assistant") return false
+    if (item.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
+    const handoffAgent = resolveAgencyHandoffRecipientFromParts(input.partsByMessage?.[item.id] ?? [])
+    return !!(handoffAgent ?? item.agent)
+  })
   if (!assistant) return undefined
+  const agent = resolveAgencyHandoffRecipientFromParts(input.partsByMessage?.[assistant.id] ?? []) ?? assistant.agent
   if (
     input.currentRecipientSelectedAt &&
     assistant.time.completed &&
@@ -210,7 +225,7 @@ export function resolveAgencyHandoffRecipientFromMessages(input: {
       frameworkMode: input.frameworkMode,
       agency: input.agency,
       currentRecipient: input.currentRecipient,
-      assistantAgent: assistant.agent,
+      assistantAgent: agent,
     })
   ) {
     return undefined
@@ -218,9 +233,48 @@ export function resolveAgencyHandoffRecipientFromMessages(input: {
   return {
     sessionID: input.sessionID,
     messageID: assistant.id,
-    agent: assistant.agent!,
+    agent: agent!,
     selectedAt: input.currentRecipientSelectedAt,
   }
+}
+
+export function resolveAgencyHandoffRecipientFromParts(parts: AgencyHandoffPart[]) {
+  for (const part of parts.toReversed()) {
+    if (part.type !== "tool") continue
+    const outputAgent = readHandoffOutputAgent(part.state?.output) ?? readHandoffMetadataAgent(part.state?.metadata)
+    if (outputAgent) return outputAgent
+    const toolAgent = readTransferToolAgent(part.tool)
+    if (toolAgent) return toolAgent
+  }
+  return undefined
+}
+
+function readTransferToolAgent(tool: string | undefined) {
+  const match = /^transfer_to_(.+)$/.exec(tool ?? "")
+  return match?.[1]
+}
+
+function readHandoffOutputAgent(output: string | undefined) {
+  if (!output) return undefined
+  try {
+    const parsed = JSON.parse(output)
+    if (!parsed || typeof parsed !== "object") return undefined
+    return readString(
+      (parsed as Record<string, unknown>)["assistant"] ??
+        (parsed as Record<string, unknown>)["agent"] ??
+        (parsed as Record<string, unknown>)["recipientAgent"] ??
+        (parsed as Record<string, unknown>)["recipient_agent"],
+    )
+  } catch {
+    return undefined
+  }
+}
+
+function readHandoffMetadataAgent(metadata: Record<string, unknown> | undefined) {
+  if (!metadata) return undefined
+  return readString(
+    metadata["assistant"] ?? metadata["agent"] ?? metadata["recipientAgent"] ?? metadata["recipient_agent"],
+  )
 }
 
 export function displayRunOnlyAgentLabel(input: {

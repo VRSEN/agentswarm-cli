@@ -2256,6 +2256,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "format" },
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
+            { in: "body", key: "agencyRecipientAgent" },
             { in: "body", key: "parts" },
           ],
         },

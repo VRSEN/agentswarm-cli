@@ -23,6 +23,7 @@ import * as ToastModule from "../../../src/cli/cmd/tui/ui/toast"
 import * as AutocompleteModule from "../../../src/cli/cmd/tui/component/prompt/autocomplete"
 import { DialogProvider } from "../../../src/cli/cmd/tui/ui/dialog"
 import { AgencySwarmAdapter } from "../../../src/agency-swarm/adapter"
+import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 
 function flushEffects() {
   return Promise.resolve().then(() => Promise.resolve())
@@ -308,15 +309,51 @@ describe("prompt framework-mode footer", () => {
     await flushEffects()
 
     expect(prompt).toHaveBeenCalledTimes(1)
-    const calls = prompt.mock.calls as unknown as Array<[{ parts: unknown[] }]>
+    const calls = prompt.mock.calls as unknown as Array<[{ parts: unknown[]; $body_agencyRecipientAgent?: string }]>
     const payload = calls[0][0]
     expect(payload.parts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: "agent",
-          name: "slides_agent",
+          type: "text",
+          text: "continue",
         }),
       ]),
     )
+    expect(payload.parts).not.toContainEqual(expect.objectContaining({ type: "agent" }))
+    expect(payload.$body_agencyRecipientAgent).toBe("slides_agent")
+  })
+
+  test("sends agency handoff recipient through the generated sdk prompt body", async () => {
+    let body: any
+    const client = createOpencodeClient({
+      baseUrl: "http://localhost",
+      fetch: (async (request: Request) => {
+        body = await request.json()
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      }) as typeof fetch,
+    })
+
+    await client.session.prompt({
+      sessionID: "session",
+      model: {
+        providerID: "opencode",
+        modelID: "agency-swarm",
+      },
+      agent: "orchestrator",
+      $body_agencyRecipientAgent: "slides_agent",
+      parts: [
+        {
+          id: "part",
+          type: "text",
+          text: "continue",
+        },
+      ],
+    } as Parameters<typeof client.session.prompt>[0] & { $body_agencyRecipientAgent?: string })
+
+    expect(body.agencyRecipientAgent).toBe("slides_agent")
+    expect(body.parts).not.toContainEqual(expect.objectContaining({ type: "agent" }))
   })
 })

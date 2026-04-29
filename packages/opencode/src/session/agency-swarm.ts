@@ -70,6 +70,7 @@ export namespace SessionAgencySwarm {
     abort: AbortSignal
     /** Session UI model for this turn; forwarded as `client_config.model` (bare id for OpenAI, else `litellm/...`) for server-side override. */
     sessionModel?: { providerID: string; modelID: string }
+    recipientAgent?: string
   }
 
   type Usage = {
@@ -1536,6 +1537,7 @@ export namespace SessionAgencySwarm {
         token: input.options.token,
         timeoutMs: input.options.discoveryTimeoutMs,
         mentionedRecipient,
+        promptRecipient: input.recipientAgent,
         configuredRecipient: input.options.recipientAgent,
         configuredRecipientSelectedAt: input.options.recipientAgentSelectedAt,
       })
@@ -1925,6 +1927,7 @@ export namespace SessionAgencySwarm {
     token?: string
     timeoutMs: number
     mentionedRecipient?: string
+    promptRecipient?: string
     configuredRecipient?: string
     configuredRecipientSelectedAt?: number
   }): Promise<string | undefined> {
@@ -1941,10 +1944,11 @@ export namespace SessionAgencySwarm {
         agent: string
         messageAt?: number
       }
-      source: "message" | "config" | "session"
+      source: "message" | "prompt" | "config" | "session"
     }
     const candidates = [
       input.mentionedRecipient ? { value: { agent: input.mentionedRecipient }, source: "message" } : undefined,
+      input.promptRecipient ? { value: { agent: input.promptRecipient }, source: "prompt" } : undefined,
       sessionRecipient ? { value: sessionRecipient, source: "session" } : undefined,
       input.configuredRecipient ? { value: { agent: input.configuredRecipient }, source: "config" } : undefined,
     ]
@@ -2003,12 +2007,13 @@ export namespace SessionAgencySwarm {
 
     function candidateRank(candidate: RecipientCandidate) {
       if (candidate.source === "message") return 0
+      if (candidate.source === "prompt") return 1
       if (candidate.source === "config" && input.configuredRecipientSelectedAt) {
         const sessionCompletedAt = sessionRecipient?.completedAt
-        if (sessionCompletedAt && input.configuredRecipientSelectedAt > sessionCompletedAt) return 1
+        if (sessionCompletedAt && input.configuredRecipientSelectedAt > sessionCompletedAt) return 2
       }
-      if (candidate.source === "session") return 2
-      return 3
+      if (candidate.source === "session") return 3
+      return 4
     }
   }
 
@@ -2019,12 +2024,12 @@ export namespace SessionAgencySwarm {
         if (item.info.role !== "assistant") return false
         if (item.info.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
         if (item.info.summary) return false
-        return !!item.info.agent
+        return !!(resolveHandoffRecipientFromParts(item.parts) ?? item.info.agent)
       })
       if (!last) return
       if (last.info.role !== "assistant") return
       return {
-        agent: last.info.agent,
+        agent: resolveHandoffRecipientFromParts(last.parts) ?? last.info.agent,
         messageAt: last.info.time.completed ?? last.info.time.created,
         completedAt: last.info.time.completed,
       }
@@ -2035,6 +2040,47 @@ export namespace SessionAgencySwarm {
       })
       return undefined
     }
+  }
+
+  function resolveHandoffRecipientFromParts(parts: MessageV2.Part[]) {
+    for (const part of parts.toReversed()) {
+      if (part.type !== "tool") continue
+      const outputAgent =
+        readHandoffOutputAgent(part.state.status === "completed" ? part.state.output : undefined) ??
+        readHandoffMetadataAgent("metadata" in part.state ? part.state.metadata : undefined)
+      if (outputAgent) return outputAgent
+      const toolAgent = readTransferToolAgent(part.tool)
+      if (toolAgent) return toolAgent
+    }
+    return undefined
+  }
+
+  function readTransferToolAgent(tool: string | undefined) {
+    const match = /^transfer_to_(.+)$/.exec(tool ?? "")
+    return match?.[1]
+  }
+
+  function readHandoffOutputAgent(output: string | undefined) {
+    if (!output) return undefined
+    try {
+      const parsed = JSON.parse(output)
+      if (!parsed || typeof parsed !== "object") return undefined
+      return asString(
+        (parsed as Record<string, unknown>)["assistant"] ??
+          (parsed as Record<string, unknown>)["agent"] ??
+          (parsed as Record<string, unknown>)["recipientAgent"] ??
+          (parsed as Record<string, unknown>)["recipient_agent"],
+      )
+    } catch {
+      return undefined
+    }
+  }
+
+  function readHandoffMetadataAgent(metadata: Record<string, unknown> | undefined) {
+    if (!metadata) return undefined
+    return asString(
+      metadata["assistant"] ?? metadata["agent"] ?? metadata["recipientAgent"] ?? metadata["recipient_agent"],
+    )
   }
 
   export function compactHistory(input: { msgs: MessageV2.WithParts[]; currentID: string }) {
