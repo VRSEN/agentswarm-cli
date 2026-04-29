@@ -57,8 +57,8 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 - Before editing policy, treat it as harder than normal implementation work: read the whole live policy more than once, read the current diff, inspect directly related rules, and challenge whether the requested change belongs here.
 - Policy-editing agents stay tightly scoped: read `AGENTS.md`, the current policy diff, and only directly authorized policy inputs. Avoid unrelated repo exploration unless the mandate requires it.
 - Policy edits require the policy-editing path defined in Tool And Model Policy. Reuse the existing policy worker for same-task follow-ups only while continuity improves quality; replace the worker or tool when evidence shows saturation, regressions, or unreliable results.
-- Treat policy as executable agent code. Improve it by entropy reduction first: find the smallest coherent shape, surgically refactor when behavior stays the same, split mixed-category lists, remove stale or duplicate lines, and add new text only when those fail.
-- Each policy rule needs one owner section, one enforceable behavior, and a clear reason. Merge duplicate behavior there; do not keep parallel rules. Move path-specific procedures into skills, scoped rules, or linked docs.
+- Treat policy and durable docs as executable agent code. Prefer the shortest coherent path: challenge the status quo, remove or refactor before adding, merge repetition into its owner section, put intent before details, and compress bullets without losing enforceable behavior.
+- Each policy rule needs one owner section, one enforceable behavior, and a clear reason. Move path-specific procedures into skills, scoped rules, or linked docs; do not keep parallel rules.
 - Before shipping a policy diff, check for contradictions, lost protections, duplicate rules, needless review noise, and whether section lists stay readable, ideally under 10 to 15 bullets.
 - For policy edits you start on your own, ask the user before you change the file. Do not stop normal coding or test work for extra approval requests.
 
@@ -66,14 +66,13 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 
 - At task start, identify your role. If a subagent or delegation tool is available, you are a manager; otherwise you are a worker.
 - Universal rules apply to both managers and workers. Manager-only rules apply only to managers.
-- Workers complete their scoped mandate, validate it, and return evidence. Workers do not manage the global queue, merge, release, or treat their own output as final.
-- Managers review 100% of worker and subagent output. The manager may use that output as evidence, but must verify it before relying on it or presenting it as final.
-- For this user and repo, managers must not author non-trivial code or test edits themselves. They delegate implementation; managers may inspect, review, run tests, integrate worker output, and perform mechanical git operations. Any exception needs explicit user approval.
+- Workers complete their scoped mandate, validate it, and return evidence. They may ask for missing facts or return a blocker when the mandate cannot be completed safely. Workers do not manage the global queue, merge, release, or treat their own output as final.
+- Subagents treat the manager as the user proxy inside the delegated mandate. If the manager's instructions conflict with higher-level user instructions, policy, or checked evidence, surface the conflict before continuing.
 - Model eligibility and reliability tiers live in Tool And Model Policy. If the active model is outside that policy, stop at once.
 
 ## Requirement Completeness Gate
 
-Why: voice-transcribed input is homophone-prone.
+Why: incomplete requirements, stale artifacts, and misheard input cause correct-looking work on the wrong target.
 
 - Mandatory requirements beat momentum.
 - For every non-trivial task, define the givens, the unknowns, the limits, the inspected evidence, and the success condition before you act.
@@ -344,6 +343,12 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 
 These rules apply to managers. Workers follow the scoped mandate and return evidence.
 
+### Manager Role
+
+- Stay at manager height: coordinate, reprioritize, review, make key calls, and verify the critical path.
+- Managers review 100% of worker and subagent output. The manager may use that output as evidence, but must verify it before relying on it or presenting it as final.
+- For this user and repo, managers must not author non-trivial code or test edits themselves. They delegate implementation; managers may inspect, review, run tests, integrate worker output, and perform mechanical git operations. Any exception needs explicit user approval.
+
 ### Queue Control
 
 - If a request has several parts, or needs more than one simple step, use the plan tool only for the short execution plan for the current task. Do not use it as the durable backlog.
@@ -363,11 +368,13 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 ### Delegation
 
-- Stay at manager height: coordinate, reprioritize, review, make key calls, and verify the critical path.
-- Delegate only when it protects the manager's context window, shortens the critical path, or needs parallel investigation after the manager understands the user's intent, inspected evidence, and success condition.
+- Delegate only when it protects the manager's context window, shortens the critical path, improves plan quality, or needs parallel investigation after the manager understands the user's intent, inspected evidence, and success condition.
 - Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
 - Choose local review, delegated worker, and assistant model paths through Tool And Model Policy before you delegate.
 - Before launching a worker for an active category, especially policy, read the ledger and existing artifacts or branches; route follow-ups to the active artifact instead of creating competing work.
+- Before manager-owned editing decisions, especially policy, docs, or coherence work, use a higher-reasoning planning or discussion worker when it can materially improve structure, expose contradictions, or reduce risk. Skip this only when the change is mechanical and checked evidence is enough.
+- Stage large delegated work when useful: analysis or discussion first, implementation second, review or polish third. Each stage may return questions, blockers, and tradeoffs instead of forcing immediate delivery.
+- Reuse a worker when saved priming and loaded context improve quality. Rotate to a fresh worker when context is overloaded, contaminated, mistake-prone, stale, or when independent review matters more than continuity.
 - After you delegate, do not interrupt, rush, or keep pinging workers unless the user changes scope or you have clear proof of failure.
 - Start each delegated task with the exact user ask, needed background, directly related artifacts, inspected evidence, missing facts to acquire, the higher goal, required result, and hard limits.
 - Workers may create branches, commits, and pull requests inside their mandate. They must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager explicitly delegates that exact action for that exact artifact after review.
