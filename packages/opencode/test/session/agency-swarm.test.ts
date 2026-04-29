@@ -2094,6 +2094,110 @@ describe("session.agency-swarm", () => {
     expect(events.find((event) => event.type === "finish-step")?.finishReason).toBe("stop")
   })
 
+  test("stream clears stale handoff routing for later swarm selection and honors ExampleAgent2 selection", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        enabled_providers: ["agency-swarm"],
+        provider: {
+          "agency-swarm": {},
+        },
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        mockHistory()
+        const sentRecipients: Array<string | undefined> = []
+        AgencySwarmAdapter.getMetadata = (async () => ({
+          metadata: {
+            agents: ["ExampleAgent", "ExampleAgent2"],
+          },
+        })) as typeof AgencySwarmAdapter.getMetadata
+        AgencySwarmAdapter.streamRun = async function* (args) {
+          sentRecipients.push(args.recipientAgent ?? undefined)
+          yield { type: "end" }
+        } as typeof AgencySwarmAdapter.streamRun
+
+        const session = await Session.create({ title: "swarm selection clears stale handoff" })
+        const created = Date.now()
+        const user = await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "user",
+          sessionID: session.id,
+          agent: "build",
+          model: {
+            providerID: ProviderID.make("agency-swarm"),
+            modelID: ModelID.make("default"),
+          },
+          time: {
+            created,
+          },
+        })
+        await Session.updatePart({
+          id: PartID.ascending(),
+          messageID: user.id,
+          sessionID: session.id,
+          type: "text",
+          text: "hello",
+        })
+        await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "assistant",
+          sessionID: session.id,
+          parentID: user.id,
+          modelID: "default",
+          providerID: "agency-swarm",
+          mode: "ExampleAgent",
+          agent: "ExampleAgent",
+          path: {
+            cwd: "/",
+            root: "/",
+          },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: {
+            created: created + 1,
+            completed: created + 2,
+          },
+        } as any)
+
+        const swarmSelection = helper()
+        swarmSelection.input.sessionID = session.id
+        swarmSelection.input.assistantMessage.sessionID = session.id
+        swarmSelection.input.options.recipientAgent = undefined
+        ;(swarmSelection.input.options as any).recipientAgentSelectedAt = created + 3
+        swarmSelection.input.userMessage.info.id = MessageID.ascending()
+        swarmSelection.input.userMessage.parts = [{ type: "text", text: "use the swarm", ignored: false }] as any
+
+        const swarmStream = await SessionAgencySwarm.stream(swarmSelection.input)
+        for await (const _ of swarmStream.fullStream) {
+        }
+
+        const agentSelection = helper()
+        agentSelection.input.sessionID = session.id
+        agentSelection.input.assistantMessage.sessionID = session.id
+        agentSelection.input.options.recipientAgent = "ExampleAgent2"
+        ;(agentSelection.input.options as any).recipientAgentSelectedAt = created + 4
+        agentSelection.input.userMessage.info.id = MessageID.ascending()
+        agentSelection.input.userMessage.parts = [{ type: "text", text: "use agent 2", ignored: false }] as any
+
+        const agentStream = await SessionAgencySwarm.stream(agentSelection.input)
+        for await (const _ of agentStream.fullStream) {
+        }
+
+        expect(sentRecipients).toEqual([undefined, "ExampleAgent2"])
+      },
+    })
+  })
+
   test("compactHistory rebuilds request history from the compacted session slice", () => {
     const msgs = [
       {
@@ -2947,6 +3051,35 @@ describe("session.agency-swarm", () => {
           turn++
           sentRecipient = args.recipientAgent ?? undefined
           if (turn === 1) {
+            yield {
+              type: "data",
+              payload: {
+                type: "raw_response_event",
+                data: {
+                  type: "response.output_item.added",
+                  output_index: "1",
+                  item: {
+                    type: "function_call",
+                    id: "fc_handoff",
+                    call_id: "call_handoff",
+                    name: "transfer_to_support_agent",
+                    arguments: "{}",
+                  },
+                },
+              },
+            }
+            yield {
+              type: "messages",
+              payload: {
+                new_messages: [
+                  {
+                    type: "handoff_output_item",
+                    call_id: "call_handoff",
+                    output: '{"assistant":"support_agent"}',
+                  },
+                ],
+              },
+            }
             yield {
               type: "messages",
               payload: {

@@ -1929,6 +1929,13 @@ export namespace SessionAgencySwarm {
     configuredRecipientSelectedAt?: number
   }): Promise<string | undefined> {
     const sessionRecipient = await resolveSessionRecipient(input.sessionID)
+    if (
+      !input.configuredRecipient &&
+      input.configuredRecipientSelectedAt &&
+      input.configuredRecipientSelectedAt > (sessionRecipient?.messageAt ?? 0)
+    ) {
+      return undefined
+    }
     type RecipientCandidate = {
       value: {
         agent: string

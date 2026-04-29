@@ -33,7 +33,7 @@ export namespace AgencyProduct {
   const add = [
     "Use {highlight}/auth{/highlight} to sign in to OpenAI or add API keys for supported providers",
     "Use {highlight}/connect{/highlight} to choose the local agency-swarm server you want to use",
-    "Use {highlight}/agents{/highlight} to pick the active agency and recipient agent from live metadata",
+    "Use {highlight}/agents{/highlight} to pick the active swarm or agent from live metadata",
     "Set {highlight}provider.agency-swarm.options.baseURL{/highlight} in config to pin a default local server",
     "Use {highlight}/connect{/highlight} to configure local server ports and your Agency token",
   ]

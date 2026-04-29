@@ -19,7 +19,7 @@ describe("DialogAgent agency selection", () => {
     mock.restore()
   })
 
-  test("selecting an agency row uses live labels and keeps the entry recipient selected", async () => {
+  test("selecting a swarm row uses live labels without forcing an agent", async () => {
     let selectProps: DialogSelectModule.DialogSelectProps<any> | undefined
     const configUpdate = mock(async (_input: unknown, _options?: unknown) => ({ data: undefined }))
     const dispose = mock(async () => undefined)
@@ -31,14 +31,19 @@ describe("DialogAgent agency selection", () => {
         {
           id: "local-agency",
           name: "Live Agency",
-          description: "Current live agency",
+          description: "Primary route",
           metadata: {},
           agents: [
             {
-              id: "entry-agent",
-              name: "Entry Agent",
+              id: "ExampleAgent",
+              name: "ExampleAgent",
               description: "Primary route",
               isEntryPoint: true,
+            },
+            {
+              id: "ExampleAgent2",
+              name: "ExampleAgent2",
+              isEntryPoint: false,
             },
           ],
         },
@@ -129,6 +134,8 @@ describe("DialogAgent agency selection", () => {
 
     const agencyOption = selectProps?.options.find((option) => option.title === "Live Agency")
     expect(agencyOption).toBeDefined()
+    expect(agencyOption?.category).toBe("Swarm: Live Agency")
+    expect(agencyOption?.description).toBeUndefined()
 
     selectProps!.onSelect!(agencyOption!)
     await flushEffects()
@@ -138,11 +145,26 @@ describe("DialogAgent agency selection", () => {
     const updateInput = configUpdate.mock.calls[0]?.[0] as any
     const options = updateInput.config.provider[AgencySwarmAdapter.PROVIDER_ID].options
     expect(options.agency).toBe("local-agency")
-    expect(options.recipientAgent).toBe("entry-agent")
+    expect(options.recipientAgent).toBeNull()
+    expect(typeof options.recipientAgentSelectedAt).toBe("number")
     expect(toastShow).toHaveBeenCalledWith({
       variant: "success",
-      message: "Selected agency Live Agency",
+      message: "Selected swarm Live Agency",
       duration: 3000,
     })
+
+    const agentOption = selectProps?.options.find((option) => option.title === "- ExampleAgent2")
+    expect(agentOption).toBeDefined()
+
+    selectProps!.onSelect!(agentOption!)
+    await flushEffects()
+    await Bun.sleep(0)
+    await flushEffects()
+
+    const agentUpdateInput = configUpdate.mock.calls[1]?.[0] as any
+    const agentOptions = agentUpdateInput.config.provider[AgencySwarmAdapter.PROVIDER_ID].options
+    expect(agentOptions.agency).toBe("local-agency")
+    expect(agentOptions.recipientAgent).toBe("ExampleAgent2")
+    expect(typeof agentOptions.recipientAgentSelectedAt).toBe("number")
   })
 })

@@ -464,7 +464,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     await sync.bootstrap()
     toast.show({
       variant: "info",
-      message: `Run target: ${input.label}`,
+      message: `Agent: ${input.label}`,
       duration: 2000,
     })
   }
@@ -488,8 +488,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         variant: "warning",
         message:
           !providerOptions.agency && discovered.agencies.length > 1
-            ? "Select an agency first with /agents"
-            : "No recipient agents are available to cycle",
+            ? "Select a swarm first with /agents"
+            : "No agents are available to cycle",
         duration: 3000,
       })
       return
@@ -584,7 +584,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
     },
     {
-      title: frameworkMode() ? "Switch run target" : "Switch agent",
+      title: "Switch agent",
       value: "agent.list",
       keybind: "agent_list",
       category: "Agent",
@@ -607,7 +607,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
     },
     {
-      title: frameworkMode() ? "Run target cycle" : "Agent cycle",
+      title: frameworkMode() ? "Switch agent" : "Agent cycle",
       value: "agent.cycle",
       keybind: "agent_cycle",
       category: "Agent",
@@ -652,7 +652,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
     },
     {
-      title: frameworkMode() ? "Run target cycle reverse" : "Agent cycle reverse",
+      title: frameworkMode() ? "Switch agent reverse" : "Agent cycle reverse",
       value: "agent.cycle.reverse",
       keybind: "agent_cycle_reverse",
       category: "Agent",
