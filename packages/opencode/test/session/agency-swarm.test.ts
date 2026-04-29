@@ -3551,6 +3551,106 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream prefers in-progress handoff over recipient selected before completion", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        enabled_providers: ["agency-swarm"],
+        provider: {
+          "agency-swarm": {},
+        },
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        mockHistory()
+        let sentRecipient: string | undefined
+        AgencySwarmAdapter.getMetadata = (async () => ({
+          metadata: {
+            agents: ["support_agent", "MathAgent"],
+          },
+          nodes: [
+            {
+              id: "support_agent",
+              type: "agent",
+              data: {
+                label: "UserSupportAgent",
+              },
+            },
+          ],
+        })) as typeof AgencySwarmAdapter.getMetadata
+        AgencySwarmAdapter.streamRun = async function* (args) {
+          sentRecipient = args.recipientAgent ?? undefined
+          yield { type: "end" }
+        } as typeof AgencySwarmAdapter.streamRun
+
+        const session = await Session.create({ title: "in-progress handoff override" })
+        const created = Date.now()
+        const user = await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "user",
+          sessionID: session.id,
+          agent: "build",
+          model: {
+            providerID: ProviderID.make("agency-swarm"),
+            modelID: ModelID.make("default"),
+          },
+          time: {
+            created,
+          },
+        })
+        await Session.updatePart({
+          id: PartID.ascending(),
+          messageID: user.id,
+          sessionID: session.id,
+          type: "text",
+          text: "hello",
+        })
+        await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "assistant",
+          sessionID: session.id,
+          parentID: user.id,
+          modelID: "default",
+          providerID: "agency-swarm",
+          mode: "UserSupportAgent",
+          agent: "UserSupportAgent",
+          path: {
+            cwd: "/",
+            root: "/",
+          },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: {
+            created: created + 1,
+          },
+        } as any)
+
+        const { input } = helper()
+        input.sessionID = session.id
+        input.assistantMessage.sessionID = session.id
+        input.options.recipientAgent = "MathAgent"
+        ;(input.options as any).recipientAgentSelectedAt = created + 2
+        input.userMessage.info.id = MessageID.ascending()
+        input.userMessage.parts = [{ type: "text", text: "follow up", ignored: false }] as any
+
+        const stream = await SessionAgencySwarm.stream(input)
+        for await (const _ of stream.fullStream) {
+        }
+
+        expect(sentRecipient).toBe("support_agent")
+      },
+    })
+  })
+
   test("stream prefers explicit mention over persisted handed off recipient", async () => {
     await using tmp = await tmpdir({
       git: true,

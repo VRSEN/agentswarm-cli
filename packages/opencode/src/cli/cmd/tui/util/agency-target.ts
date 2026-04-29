@@ -2,6 +2,17 @@ import { displayAgentName } from "@/agent/display"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import * as Locale from "@/util/locale"
 
+export type AgencyHandoffMessage = {
+  id: string
+  role: string
+  providerID?: string
+  agent?: string
+  time: {
+    created?: number
+    completed?: number
+  }
+}
+
 export type AgencyProviderOptions = {
   baseURL: string
   token?: string
@@ -173,6 +184,43 @@ export function shouldAdoptAgencyHandoffRecipient(input: {
   if (!input.assistantAgent) return false
   if (input.assistantAgent === "build") return false
   return input.assistantAgent !== input.currentRecipient
+}
+
+export function resolveAgencyHandoffRecipientFromMessages(input: {
+  frameworkMode: boolean
+  agency?: string
+  currentRecipient?: string
+  currentRecipientSelectedAt?: number
+  sessionID: string
+  messages: AgencyHandoffMessage[]
+}) {
+  const assistant = input.messages.findLast(
+    (item) => item.role === "assistant" && item.providerID === AgencySwarmAdapter.PROVIDER_ID,
+  )
+  if (!assistant) return undefined
+  if (
+    input.currentRecipientSelectedAt &&
+    assistant.time.completed &&
+    input.currentRecipientSelectedAt > assistant.time.completed
+  ) {
+    return undefined
+  }
+  if (
+    !shouldAdoptAgencyHandoffRecipient({
+      frameworkMode: input.frameworkMode,
+      agency: input.agency,
+      currentRecipient: input.currentRecipient,
+      assistantAgent: assistant.agent,
+    })
+  ) {
+    return undefined
+  }
+  return {
+    sessionID: input.sessionID,
+    messageID: assistant.id,
+    agent: assistant.agent!,
+    selectedAt: input.currentRecipientSelectedAt,
+  }
 }
 
 export function displayRunOnlyAgentLabel(input: {

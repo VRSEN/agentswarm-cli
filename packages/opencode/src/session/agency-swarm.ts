@@ -2004,8 +2004,8 @@ export namespace SessionAgencySwarm {
     function candidateRank(candidate: RecipientCandidate) {
       if (candidate.source === "message") return 0
       if (candidate.source === "config" && input.configuredRecipientSelectedAt) {
-        const sessionMessageAt = sessionRecipient?.messageAt ?? 0
-        if (input.configuredRecipientSelectedAt > sessionMessageAt) return 1
+        const sessionCompletedAt = sessionRecipient?.completedAt
+        if (sessionCompletedAt && input.configuredRecipientSelectedAt > sessionCompletedAt) return 1
       }
       if (candidate.source === "session") return 2
       return 3
@@ -2026,6 +2026,7 @@ export namespace SessionAgencySwarm {
       return {
         agent: last.info.agent,
         messageAt: last.info.time.completed ?? last.info.time.created,
+        completedAt: last.info.time.completed,
       }
     } catch (error) {
       log.warn("unable to load session recipient; skipping recipient override", {
