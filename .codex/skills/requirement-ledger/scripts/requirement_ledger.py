@@ -300,18 +300,17 @@ def _validate_item(item: dict[str, Any], location: str, allowed_statuses: tuple[
         raise LedgerError(f"{location} is missing source pointers")
     if not all(isinstance(source, str) and source.strip() for source in source_pointers):
         raise LedgerError(f"{location} has invalid source pointers")
-    artifacts = item.get("artifacts")
-    if artifacts is not None:
-        if not isinstance(artifacts, list):
-            raise LedgerError(f"{location} has invalid artifacts")
-        if not all(isinstance(artifact, str) and artifact.strip() for artifact in artifacts):
-            raise LedgerError(f"{location} has invalid artifacts")
+    _read_artifacts(item, location)
 
 
-def _read_artifacts(item: dict[str, Any]) -> list[str]:
+def _read_artifacts(item: dict[str, Any], location: str = "ledger item") -> list[str]:
     artifacts = item.get("artifacts")
     if artifacts is None:
-        return []
+        raise LedgerError(f"{location} is missing artifacts")
+    if not isinstance(artifacts, list):
+        raise LedgerError(f"{location} has invalid artifacts")
+    if not all(isinstance(artifact, str) and artifact.strip() for artifact in artifacts):
+        raise LedgerError(f"{location} has invalid artifacts")
     return list(artifacts)
 
 

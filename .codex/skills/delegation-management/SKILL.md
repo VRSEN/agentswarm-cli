@@ -17,9 +17,10 @@ Use this skill when delegation affects correctness, queue control, review qualit
 
 1. Delegate only when it protects the manager context window, shortens the critical path, improves plan quality, or enables parallel investigation.
 2. Start each task with the exact user ask, relevant artifacts, inspected evidence, unknowns to acquire, success condition, output format, and hard limits.
-3. For large work, use staged delegation when useful: analysis or discussion first, implementation second, review or polish third.
-4. Let workers ask questions, return blockers, and surface tradeoffs. Do not force immediate delivery when missing facts could change the result.
-5. Keep local environment repair, credentials, and machine-specific setup on the manager thread unless the user delegates that work explicitly.
+3. If the prompt carries context from another conversation, name that source explicitly; write "the end user told the manager" or "the manager's previous response", not bare "the user" or "previous response" when the worker cannot see that speaker.
+4. For large work, use staged delegation when useful: analysis or discussion first, implementation second, review or polish third.
+5. Let workers ask questions, return blockers, and surface tradeoffs. Do not force immediate delivery when missing facts could change the result.
+6. Keep local environment repair, credentials, and machine-specific setup on the manager thread unless the user delegates that work explicitly.
 
 ## Planning Worker Tradeoff
 

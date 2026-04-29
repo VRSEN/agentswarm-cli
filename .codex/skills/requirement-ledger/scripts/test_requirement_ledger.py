@@ -52,6 +52,7 @@ class RequirementLedgerCliTest(unittest.TestCase):
             self.assertEqual(add_stderr.getvalue(), "")
             active_data = json.loads((ledger_dir / "active.json").read_text(encoding="utf-8"))
             self.assertEqual(active_data["items"][0]["original"], original_text)
+            self.assertEqual(active_data["items"][0]["artifacts"], [])
 
             list_stdout = io.StringIO()
             list_stderr = io.StringIO()
@@ -96,6 +97,45 @@ class RequirementLedgerCliTest(unittest.TestCase):
             self.assertEqual(exit_code, 2)
             self.assertEqual(stdout.getvalue(), "")
             self.assertIn("error: cannot decode original file as UTF-8:", stderr.getvalue())
+
+    def test_active_items_require_artifacts_list(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ledger_dir = Path(tmpdir) / "ledger"
+            ledger_dir.mkdir()
+            (ledger_dir / "active.json").write_text(
+                json.dumps(
+                    {
+                        "schema": MODULE.SCHEMA_VERSION,
+                        "items": [
+                            {
+                                "id": "REQ-20260429-001",
+                                "created_at": "2026-04-29T00:00:00Z",
+                                "updated_at": "2026-04-29T00:00:00Z",
+                                "status": "open",
+                                "category": "tooling",
+                                "title": "test",
+                                "original": "Track the active requirement.",
+                                "intent": "Keep state durable.",
+                                "next_action": "Review the queue.",
+                                "source_pointers": ["chat:1"],
+                            }
+                        ],
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (ledger_dir / "archive.jsonl").write_text("", encoding="utf-8")
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                exit_code = MODULE.main(["--ledger-dir", str(ledger_dir), "list"])
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("error: active ledger is missing artifacts", stderr.getvalue())
 
 
 if __name__ == "__main__":
