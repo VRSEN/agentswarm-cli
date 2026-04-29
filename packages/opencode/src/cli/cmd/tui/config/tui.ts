@@ -133,14 +133,13 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
 
   // ConfigPaths.directories returns each parent's [.agentswarm, .opencode] pair in that order.
   // mergeDeep makes later entries win, so swap each adjacent same-parent pair so legacy `.opencode`
-  // loads before branded `.agentswarm` and branded wins at the same workspace level. Skip the swap
-  // when either side is OPENCODE_CONFIG_DIR so the explicit env override keeps its existing position.
+  // loads before branded `.agentswarm` and branded wins at the same workspace level. Keep an explicit
+  // legacy `.opencode` override in place, but still let an explicit branded `.agentswarm` override its legacy sibling.
   const ordered = dirs.slice()
   for (let i = 0; i < ordered.length - 1; i++) {
     const a = ordered[i]
     const b = ordered[i + 1]
     if (
-      a !== Flag.OPENCODE_CONFIG_DIR &&
       b !== Flag.OPENCODE_CONFIG_DIR &&
       a.endsWith(AgencyBrand.workspace) &&
       b.endsWith(AgencyBrand.legacyWorkspace) &&

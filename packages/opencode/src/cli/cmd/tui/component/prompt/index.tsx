@@ -69,6 +69,7 @@ import {
   describeAgencyAuthFailure,
   isAgencySwarmFrameworkMode,
   shouldBlockAgencyPromptSubmit,
+  shouldHideNativeCommandInRunMode,
   shouldOpenAgencyAuthDialog,
 } from "../../session-error"
 import { cancelQueuedRunModeMessages } from "../../util/run-queued-messages"
@@ -915,12 +916,30 @@ export function Prompt(props: PromptProps) {
     // Capture mode before it gets reset
     const currentMode = store.mode
     const variant = local.model.variant.current()
-    const isServerSlashCommand =
-      inputText.startsWith("/") &&
-      iife(() => {
-        const commandName = firstWord.slice(1)
-        return sync.data.command.some((x) => x.name === commandName)
+    const serverSlashCommand = inputText.startsWith("/")
+      ? iife(() => {
+          const commandName = firstWord.slice(1)
+          return sync.data.command.find((x) => x.name === commandName)
+        })
+      : undefined
+
+    if (
+      serverSlashCommand &&
+      shouldHideNativeCommandInRunMode({
+        frameworkMode: frameworkMode(),
+        name: serverSlashCommand.name,
+        source: serverSlashCommand.source,
       })
+    ) {
+      toast.show({
+        variant: "warning",
+        message: `/${serverSlashCommand.name} is available in Agent Builder or Plan mode.`,
+        duration: 4000,
+      })
+      return
+    }
+
+    const isServerSlashCommand = !!serverSlashCommand
 
     if (
       shouldBlockAgencyPromptSubmit({
@@ -1699,8 +1718,7 @@ export function Prompt(props: PromptProps) {
                     </Match>
                     <Match when={true}>
                       <text fg={theme.text}>
-                        {keybind.print("agent_cycle")}{" "}
-                        <span style={{ fg: theme.textMuted }}>{frameworkMode() ? "recipients" : "agents"}</span>
+                        {keybind.print("agent_cycle")} <span style={{ fg: theme.textMuted }}>agents</span>
                       </text>
                     </Match>
                   </Switch>

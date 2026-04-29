@@ -71,7 +71,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
   const local = useLocal()
   const { theme } = useTheme()
   const onboarded = useConnected()
-  const allowed = createMemo(() => new Set(props.providerIDs ?? []))
+  const allowed = createMemo(() => (props.providerIDs ? new Set(props.providerIDs) : undefined))
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
       currentProviderID: local.model.current()?.providerID,
@@ -82,7 +82,10 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
   const options = createMemo(() => {
     return pipe(
       sync.data.provider_next.all,
-      (items) => (allowed().size ? items.filter((item) => allowed().has(item.id)) : items),
+      (items) => {
+        const allowedIDs = allowed()
+        return allowedIDs ? items.filter((item) => allowedIDs.has(item.id)) : items
+      },
       sortBy((x) => PROVIDER_PRIORITY[x.id] ?? 99),
       map((provider) => {
         const consoleManaged = isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, provider.id)
@@ -254,7 +257,7 @@ function DialogRemoveCredential() {
             providerID: provider.id,
           })
           await refreshAfterProviderAuth({
-            sessionStatus: sync.data.session_status,
+            sessionStatus: () => sync.data.session_status,
             dispose: () => sdk.client.instance.dispose(),
             bootstrap: () => sync.bootstrap(),
           })
@@ -582,7 +585,7 @@ export function DialogAgencySwarmConnect() {
       { throwOnError: true },
     )
     await refreshAfterProviderAuth({
-      sessionStatus: sync.data.session_status,
+      sessionStatus: () => sync.data.session_status,
       dispose: () => sdk.client.instance.dispose(),
       bootstrap: () => sync.bootstrap(),
     })
@@ -633,7 +636,7 @@ export function DialogAgencySwarmConnect() {
             .then(clearConfigToken)
             .then(() =>
               refreshAfterProviderAuth({
-                sessionStatus: sync.data.session_status,
+                sessionStatus: () => sync.data.session_status,
                 dispose: () => sdk.client.instance.dispose(),
                 bootstrap: () => sync.bootstrap(),
               }),
@@ -660,7 +663,7 @@ export function DialogAgencySwarmConnect() {
       .then(clearConfigToken)
       .then(() =>
         refreshAfterProviderAuth({
-          sessionStatus: sync.data.session_status,
+          sessionStatus: () => sync.data.session_status,
           dispose: () => sdk.client.instance.dispose(),
           bootstrap: () => sync.bootstrap(),
         }),
@@ -826,7 +829,7 @@ function AutoMethod(props: AutoMethodProps) {
     }
     try {
       await refreshAfterProviderAuth({
-        sessionStatus: sync.data.session_status,
+        sessionStatus: () => sync.data.session_status,
         dispose: () => sdk.client.instance.dispose(),
         bootstrap: () => sync.bootstrap(),
       })
@@ -913,7 +916,7 @@ function CodeMethod(props: CodeMethodProps) {
         if (!error) {
           try {
             await refreshAfterProviderAuth({
-              sessionStatus: sync.data.session_status,
+              sessionStatus: () => sync.data.session_status,
               dispose: () => sdk.client.instance.dispose(),
               bootstrap: () => sync.bootstrap(),
             })
@@ -1048,7 +1051,7 @@ function ApiMethod(props: ApiMethodProps) {
         }
         try {
           await refreshAfterProviderAuth({
-            sessionStatus: sync.data.session_status,
+            sessionStatus: () => sync.data.session_status,
             dispose: () => sdk.client.instance.dispose(),
             bootstrap: () => sync.bootstrap(),
           })

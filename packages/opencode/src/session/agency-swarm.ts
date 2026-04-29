@@ -33,6 +33,7 @@ import {
   extractEventMeta,
   extractFunctionCallOutputs as extractFunctionCallOutputsFromMessages,
   findRecipientAgent,
+  isAgencyToolOutputType,
   normalizeCallerAgent as normalizeCallerAgentValue,
   parseToolInput,
   stringifyToolOutput,
@@ -746,6 +747,8 @@ export namespace SessionAgencySwarm {
       return stringifyToolOutput(item)
     }
 
+    const isToolOutputItem = (itemType: string) => itemType.endsWith("_output") || isAgencyToolOutputType(itemType)
+
     const findCallID = (event: Record<string, unknown>, item: Record<string, unknown> | undefined) => {
       const direct = asString(event["call_id"])
       if (direct) return direct
@@ -1254,7 +1257,7 @@ export namespace SessionAgencySwarm {
         )
       }
 
-      if (itemType.endsWith("_output")) {
+      if (isToolOutputItem(itemType)) {
         const callID = asString(item["call_id"])
         if (!callID) return []
         const tool = ensureTool(callID, toolNameFor(callID))
@@ -1303,7 +1306,7 @@ export namespace SessionAgencySwarm {
           })
       }
 
-      if (itemType.endsWith("_output")) {
+      if (isToolOutputItem(itemType)) {
         const callID = asString(item["call_id"])
         if (!callID) return []
         const tool = ensureTool(callID, toolNameFor(callID))
@@ -1500,6 +1503,7 @@ export namespace SessionAgencySwarm {
       yield { type: "start" }
       yield { type: "start-step" }
       let streamError: Error | undefined
+      let rebuiltHistoryFromMessages: Array<Record<string, unknown>> | undefined
 
       const history = await AgencySwarmHistory.load(scope)
       const chatHistory = await Session.messages({ sessionID: input.sessionID })
@@ -1511,7 +1515,10 @@ export namespace SessionAgencySwarm {
           // is empty and prior messages are all agency-swarm.
           if (history.chat_history.length === 0) {
             const rebuilt = buildAgencyHistoryFromMessages({ msgs, currentID: input.userMessage.info.id })
-            if (rebuilt && rebuilt.length > 0) return rebuilt
+            if (rebuilt && rebuilt.length > 0) {
+              rebuiltHistoryFromMessages = rebuilt
+              return rebuilt
+            }
           }
           return history.chat_history
         })
@@ -1544,6 +1551,10 @@ export namespace SessionAgencySwarm {
         input.options.forwardUpstreamCredentials,
         sessionLitellmModel,
       )
+
+      if (rebuiltHistoryFromMessages) {
+        await AgencySwarmHistory.appendMessages(scope, rebuiltHistoryFromMessages)
+      }
 
       try {
         for await (const frame of AgencySwarmAdapter.streamRun({
@@ -1918,6 +1929,13 @@ export namespace SessionAgencySwarm {
     configuredRecipientSelectedAt?: number
   }): Promise<string | undefined> {
     const sessionRecipient = await resolveSessionRecipient(input.sessionID)
+    if (
+      !input.configuredRecipient &&
+      input.configuredRecipientSelectedAt &&
+      input.configuredRecipientSelectedAt > (sessionRecipient?.messageAt ?? 0)
+    ) {
+      return undefined
+    }
     type RecipientCandidate = {
       value: {
         agent: string

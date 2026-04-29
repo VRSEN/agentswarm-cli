@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   buildAgencyTargetOptions,
+  resolveAgencyTargetFromPicker,
   shouldAdoptAgencyHandoffRecipient,
 } from "../../../src/cli/cmd/tui/util/agency-target"
 
@@ -46,6 +47,59 @@ describe("agency target options", () => {
         assistantAgent: "ExampleAgent2",
       }),
     ).toBe(true)
+  })
+
+  test("agency picker rows resolve to the live agency name without forcing an agent", () => {
+    const selected = resolveAgencyTargetFromPicker({
+      agencies: [
+        {
+          id: "local-agency",
+          name: "Default Agency",
+          description: "Local project agency",
+          metadata: {},
+          agents: [
+            {
+              id: "orchestrator",
+              name: "Orchestrator",
+              description: "Entry point",
+              isEntryPoint: true,
+            },
+          ],
+        },
+      ],
+      selectedAgency: "local-agency",
+    })
+
+    expect(selected).toEqual({
+      agency: "local-agency",
+      agencyLabel: "Default Agency",
+      recipientAgent: undefined,
+      label: "Default Agency",
+    })
+  })
+
+  test("swarm row selection clears stale agent state with a fresh timestamp", () => {
+    const options = buildAgencyTargetOptions({
+      providerOptions: {
+        baseURL: "http://127.0.0.1:18080",
+        token: undefined,
+        configToken: undefined,
+        agency: "my-agency",
+        recipientAgent: "ExampleAgent",
+        discoveryTimeoutMs: 5000,
+        rawOptions: {
+          baseURL: "http://127.0.0.1:18080",
+          agency: "my-agency",
+          recipientAgent: "ExampleAgent",
+          recipientAgentSelectedAt: 1,
+        },
+      },
+      agency: "my-agency",
+      recipientAgent: null,
+    })
+
+    expect(options.recipientAgent).toBeNull()
+    expect(typeof options.recipientAgentSelectedAt).toBe("number")
   })
 
   test("does not re-adopt when agent is unchanged or matches build", () => {

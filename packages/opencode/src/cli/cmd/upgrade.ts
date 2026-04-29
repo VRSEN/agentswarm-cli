@@ -4,10 +4,11 @@ import * as prompts from "@clack/prompts"
 import { AppRuntime } from "@/effect/app-runtime"
 import { Installation } from "../../installation"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { InstallationDistribution } from "@/installation/distribution"
 
 export const UpgradeCommand = {
   command: "upgrade [target]",
-  describe: "upgrade opencode to the latest or a specific version",
+  describe: `upgrade ${InstallationDistribution.packageName} to the latest or a specific version`,
   builder: (yargs: Argv) => {
     return yargs
       .positional("target", {
@@ -29,7 +30,9 @@ export const UpgradeCommand = {
     const detectedMethod = await AppRuntime.runPromise(Installation.Service.use((svc) => svc.method()))
     const method = (args.method as Installation.Method) ?? detectedMethod
     if (method === "unknown") {
-      prompts.log.error(`opencode is installed to ${process.execPath} and may be managed by a package manager`)
+      prompts.log.error(
+        `${InstallationDistribution.packageName} is installed to ${process.execPath} and may be managed by a package manager`,
+      )
       const install = await prompts.select({
         message: "Install anyways?",
         options: [
@@ -44,12 +47,23 @@ export const UpgradeCommand = {
       }
     }
     prompts.log.info("Using method: " + method)
-    const target = args.target
+    const targetResult = args.target
       ? args.target.replace(/^v/, "")
-      : await AppRuntime.runPromise(Installation.Service.use((svc) => svc.latest()))
+      : await AppRuntime.runPromise(Installation.Service.use((svc) => svc.latest(method))).catch((err) => err)
+    if (targetResult instanceof Installation.UpgradeFailedError) {
+      prompts.log.error(targetResult.stderr)
+      prompts.outro("Done")
+      return
+    }
+    if (targetResult instanceof Error) {
+      prompts.log.error(targetResult.message)
+      prompts.outro("Done")
+      return
+    }
+    const target = targetResult
 
     if (InstallationVersion === target) {
-      prompts.log.warn(`opencode upgrade skipped: ${target} is already installed`)
+      prompts.log.warn(`${InstallationDistribution.packageName} upgrade skipped: ${target} is already installed`)
       prompts.outro("Done")
       return
     }

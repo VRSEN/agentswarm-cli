@@ -520,6 +520,29 @@ test("branded .agentswarm/tui.json overrides same-level legacy .opencode/tui.jso
   expect(config.theme).toBe("brand")
 })
 
+test("explicit branded workspace tui config still overrides same-level legacy workspace tui config", async () => {
+  const originalConfigDir = process.env.OPENCODE_CONFIG_DIR
+  try {
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await fs.mkdir(path.join(dir, ".agentswarm"), { recursive: true })
+        await fs.mkdir(path.join(dir, ".opencode"), { recursive: true })
+        await Bun.write(path.join(dir, ".agentswarm", "tui.json"), JSON.stringify({ theme: "brand" }, null, 2))
+        await Bun.write(path.join(dir, ".opencode", "tui.json"), JSON.stringify({ theme: "legacy" }, null, 2))
+      },
+    })
+    process.env.OPENCODE_CONFIG_DIR = path.join(tmp.path, ".agentswarm")
+    const config = await getTuiConfig(tmp.path)
+    expect(config.theme).toBe("brand")
+  } finally {
+    if (originalConfigDir === undefined) {
+      delete process.env.OPENCODE_CONFIG_DIR
+    } else {
+      process.env.OPENCODE_CONFIG_DIR = originalConfigDir
+    }
+  }
+})
+
 test("supports tuple plugin specs with options in tui.json", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {

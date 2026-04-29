@@ -13,7 +13,10 @@ export namespace AgencyProduct {
     "Run {highlight}/share{/highlight}",
     "Press {highlight}Ctrl+X E{/highlight} or {highlight}/editor{/highlight}",
     "Run {highlight}/init{/highlight}",
+    "Use {highlight}/review{/highlight}",
     "Run {highlight}/models{/highlight}",
+    "Add {highlight}.md{/highlight} files to {highlight}.agentswarm/agent/{/highlight}",
+    "Use {highlight}@agent-name{/highlight} in prompts to invoke specialized subagents",
     "Run {highlight}/connect{/highlight} to add API keys for 75+ supported LLM providers",
     "Press {highlight}F2{/highlight}",
     "Configure {highlight}model{/highlight}",
@@ -30,7 +33,7 @@ export namespace AgencyProduct {
   const add = [
     "Use {highlight}/auth{/highlight} to sign in to OpenAI or add API keys for supported providers",
     "Use {highlight}/connect{/highlight} to choose the local agency-swarm server you want to use",
-    "Use {highlight}/agents{/highlight} to pick the active agency and recipient agent from live metadata",
+    "Use {highlight}/agents{/highlight} to pick the active swarm or agent from live metadata",
     "Set {highlight}provider.agency-swarm.options.baseURL{/highlight} in config to pin a default local server",
     "Use {highlight}/connect{/highlight} to configure local server ports and your Agency token",
   ]

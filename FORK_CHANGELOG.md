@@ -19,9 +19,11 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 ## Upstream Baseline Anchor
 
-- Upstream baseline: `origin/dev` at `301ecb185e06a230c6d720845b04effa84450976`
-- Fork baseline: `vrsen/dev` at `764f9033269ff096d2c9ac3511f7fa1baf11c718`
-- Ahead/behind count: `origin/dev...vrsen/dev` = `932 281`
+- Last upstream sync merged `origin/dev` commit `35734b42fe3094c41b09ec81d3836944a8dd1d89` into the fork.
+- The upstream sync includes release tag `v1.14.28` at `acd8783a36d8642ade7038f34ca4f2f2ac3cc824`.
+- Fork merge commit: `8c24d21569620713c438b68e38a6a53fbbc66b68`.
+- Current fork head when this anchor was refreshed: `vrsen/dev` at `ca32b473a217c4158858400a115b73ac7e7db93d`.
+- Current comparison count: `origin/dev...vrsen/dev` = `71 311`.
 
 ## Branding/Packaging
 
@@ -75,9 +77,9 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `optionsFromProvider` and `readConfiguredBaseURL` in `packages/opencode/src/session/agency-swarm.ts`.
   - Added by: `635833ef`
 
-- **Persist handed-off recipient across turns**
-  - Intent: keep the current handoff target active until the user changes it.
-  - Behavior: the most recent assistant agent remains the preferred recipient candidate on later turns.
+- **Persist handed-off agent across turns**
+  - Intent: keep Agency Swarm handoff control active until the user changes it.
+  - Behavior: a `transfer_to_*` handoff switches control to the handed-off agent for later turns. This is not delegation; control does not return to the original agent unless the user or swarm changes it.
   - Implementation: `resolveSessionRecipient` in `packages/opencode/src/session/agency-swarm.ts`.
   - Added by: `708545a4`
 
@@ -179,9 +181,9 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `frameworkMode` and `cycleAgencyRunTarget` in `packages/opencode/src/cli/cmd/tui/app.tsx` plus `DialogAgent` in `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`.
   - Added by: `d6b9ed38`
 
-- **Tab cycles recipient agents in Run mode**
-  - Intent: speed up recipient switching during run sessions.
-  - Behavior: pressing Tab in Run mode cycles through available recipient agents.
+- **Tab switches agents in Run mode**
+  - Intent: speed up agent switching during run sessions.
+  - Behavior: pressing Tab in Run mode cycles through available agents.
   - Implementation: `cycleAgencyRunTarget` in `packages/opencode/src/cli/cmd/tui/app.tsx` and `cycleAgencyTargetSelection` in `packages/opencode/src/cli/cmd/tui/util/agency-target.ts`.
   - Added by: `d6b9ed38`
 
@@ -197,10 +199,10 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: model selection logic in `packages/opencode/src/cli/cmd/tui/context/local.tsx`.
   - Added by: `PR #51`
 
-- **Run mode hides native OpenCode editor menus and limits model selection**
+- **Run mode hides native OpenCode menus and limits model selection**
   - Intent: keep Run mode on the connected Agency Swarm surface while preserving native OpenCode menus for Builder and Plan when those modes are available again.
-  - Behavior: Run mode hides native `/editor`; model-selection surfaces remain but are limited to intended Agent Swarm / Agency Swarm models.
-  - Implementation: framework-mode command gating in `packages/opencode/src/cli/cmd/tui/app.tsx`.
+  - Behavior: Run mode hides native `/editor`, `/variants`, `/init`, and `/review`; model-selection and provider-auth surfaces remain but are limited to intended Agent Swarm / Agency Swarm providers.
+  - Implementation: framework-mode command gating in `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/component/prompt/autocomplete.tsx`, `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`, and `packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx`.
   - Added by: `PR #81`
 
 - **Run-target labels use live agency names**
@@ -249,7 +251,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 - **Upgrade only supports published `agentswarm-cli` channels**
   - Intent: prevent upgrade flows from claiming support for package-manager channels where the fork is not published.
-  - Behavior: upgrade supports npm, yarn, pnpm, bun, and curl; Homebrew, Chocolatey, and Scoop return a clear unsupported-channel message.
+  - Behavior: upgrade supports npm, pnpm, bun, and curl; Yarn, Homebrew, Chocolatey, and Scoop return a clear unsupported-channel message.
   - Implementation: `latestImpl` and `upgradeImpl` in `packages/opencode/src/installation/index.ts` with `UpgradeCommand` in `packages/opencode/src/cli/cmd/upgrade.ts`.
   - Added by: `9d86d959`
 
@@ -266,6 +268,12 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Behavior: `USER_FLOWS.md` defines the main onboarding, auth, connection, and agency-run flows and serves as the full release QA source of truth.
   - Implementation: the named flow sections in `USER_FLOWS.md`.
   - Added by: `b591c478`
+
+- **Upstream OpenCode share service carry-forward**
+  - Intent: keep session sharing usable while the fork does not yet host its own share backend.
+  - Behavior: `/share` remains available and posts to the upstream-compatible `https://opncd.ai` share service; users must not share sessions containing secrets, private code, private customer data, or credentials.
+  - Implementation: `ShareNext.share` in `packages/opencode/src/share/share-next.ts`, session share command registration in `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`, and PR share import in `packages/opencode/src/cli/cmd/pr.ts`.
+  - Added by: upstream carry-forward, approved as intentional fork behavior on 2026-04-28.
 
 ## Release/CI
 

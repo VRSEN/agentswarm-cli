@@ -12,6 +12,7 @@ import { isAgencySwarmFrameworkMode } from "../session-error"
 import {
   buildAgencyTargetOptions,
   readAgencyProviderOptions,
+  resolveAgencyTargetFromPicker,
   resolveAgencyTargetSelection,
 } from "../util/agency-target"
 
@@ -143,25 +144,28 @@ export function DialogAgent() {
 
     const agencies = discovered?.agencies ?? []
     for (const agency of agencies) {
-      const category = `Agency: ${agency.name}`
+      const category = `Swarm: ${agency.name}`
+      const entry = agency.agents.find((agent) => agent.isEntryPoint) ?? agency.agents[0]
+      const description =
+        agency.description && agency.description !== entry?.description ? agency.description : undefined
       result.push({
         value: {
           kind: "agency",
           agency: agency.id,
         },
         title: agency.name,
-        description: agency.description,
+        description,
         category,
       })
-      for (const recipient of agency.agents) {
+      for (const agent of agency.agents) {
         result.push({
           value: {
             kind: "recipient",
             agency: agency.id,
-            recipientAgent: recipient.id,
+            recipientAgent: agent.id,
           },
-          title: `- ${recipient.name}`,
-          description: recipient.description || (recipient.isEntryPoint ? "Entry point" : undefined),
+          title: `- ${agent.name}`,
+          description: agent.description || (agent.isEntryPoint ? "Entry point" : undefined),
           category,
         })
       }
@@ -197,6 +201,12 @@ export function DialogAgent() {
       configuredRecipient: providerOptions().recipientAgent,
     })
     if (selected) {
+      if (!selected.recipientAgent) {
+        return {
+          kind: "agency",
+          agency: selected.agency,
+        }
+      }
       return {
         kind: "recipient",
         agency: selected.agency,
@@ -244,10 +254,15 @@ export function DialogAgent() {
 
   async function setAgencySwarmTarget(value: Extract<AgentOptionValue, { kind: "agency" | "recipient" }>) {
     const options = providerOptions()
+    const selected = resolveAgencyTargetFromPicker({
+      agencies: discovery()?.agencies ?? [],
+      selectedAgency: value.agency,
+      selectedRecipient: value.kind === "recipient" ? value.recipientAgent : undefined,
+    })
     const nextOptions = buildAgencyTargetOptions({
       providerOptions: options,
       agency: value.agency,
-      recipientAgent: value.kind === "recipient" ? value.recipientAgent : null,
+      recipientAgent: selected?.recipientAgent ?? null,
     })
 
     await sdk.client.global.config.update(
@@ -271,13 +286,13 @@ export function DialogAgent() {
     await sync.bootstrap()
     dialog.clear()
 
-    const selected =
-      value.kind === "recipient"
-        ? `Selected ${value.recipientAgent} in agency ${value.agency}`
-        : `Selected agency ${value.agency}`
+    const selectedMessage =
+      value.kind === "agency"
+        ? `Selected swarm ${selected?.agencyLabel ?? value.agency}`
+        : `Selected ${selected?.label ?? value.recipientAgent} in swarm ${selected?.agencyLabel ?? value.agency}`
     toast.show({
       variant: "success",
-      message: selected,
+      message: selectedMessage,
       duration: 3000,
     })
   }

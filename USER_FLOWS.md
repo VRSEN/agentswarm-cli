@@ -136,7 +136,7 @@ Use this file when changing the fork-owned launch, resume, auth, connect, and ru
 - Step-by-step:
   - Poll known local servers by fetching `openapi.json`.
   - Show available servers, local-port add flow, token set flow, and token clear flow.
-  - Persist the selected base URL, agency, recipient agent, and local-server memory in global config.
+  - Persist the selected base URL, swarm, agent, and local-server memory in global config.
   - Persist the bearer token through the auth store when needed.
   - Dispose the current instance and re-bootstrap sync.
 - End state: The current TUI reconnects with updated local-server settings.
@@ -258,9 +258,9 @@ Use this file when changing the fork-owned launch, resume, auth, connect, and ru
 - Step-by-step:
   - Compute framework mode with `isAgencySwarmFrameworkMode()`.
   - Filter auth to supported providers.
-  - Hide `/editor`, `/variants`, and some model controls while framework mode stays active.
+  - Hide `/editor`, `/variants`, `/init`, `/review`, and some model controls while framework mode stays active.
   - Route prompts through the Agency provider.
-  - Let agent selection discover agencies and recipient agents from the backend.
+  - Let agent selection discover swarms and agents from the backend.
   - Offer `/connect` when discovery fails.
 - End state: The TUI behaves as a connected Agency run surface instead of a local Agent Builder-only surface.
 - Notable error paths:
