@@ -34,7 +34,10 @@ export async function cancelQueuedRunModeMessages(input: {
   deleteMessage: (messageID: string) => Promise<void>
 }) {
   const queued = input.frameworkMode ? collectQueuedRunModeMessages(input) : []
-  await input.abort()
+  if (queued.length === 0) {
+    await input.abort()
+    return queued
+  }
   for (const item of queued) {
     await input.deleteMessage(item.message.id)
   }
