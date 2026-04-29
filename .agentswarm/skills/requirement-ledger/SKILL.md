@@ -5,7 +5,7 @@ description: Use when a task needs a durable active requirement queue and archiv
 
 # Requirement Ledger
 
-Use this skill when task state must survive beyond the current chat or when a request has several requirements that can drift.
+Use this skill when task state must survive beyond the current chat or when a request has several requirements that can drift. The ledger records work state; durable operating rules live in `AGENTS.md` or the relevant repo skill.
 
 ## Workflow
 
@@ -112,3 +112,4 @@ python .agentswarm/skills/requirement-ledger/scripts/requirement_ledger.py list 
 - Use `blocked` only when the next action truly needs a user decision or missing external input.
 - Use `complete` or `reject` instead of setting active items to a terminal status; the archive is the terminal-work record.
 - Keep artifact state current at task boundaries so the ledger always reflects the real critical path, not a stale memory of it.
+- Do not use the ledger as policy storage. If work exposes a durable process gap, update `AGENTS.md` or the relevant repo skill; use the ledger only for state tracking: active requests, decisions, blockers, evidence, artifacts, and source links.

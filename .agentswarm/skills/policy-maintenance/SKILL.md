@@ -10,7 +10,7 @@ Use this skill for policy and repo-skill changes. Repo skills are checked-in ins
 ## Workflow
 
 1. Read the live `AGENTS.md`, the current diff, and any directly related policy branch or skill.
-2. When the edit responds to a recent mistake, fix the largest applicable failure class in the right owner section or skill, not just the literal symptom.
+2. When the edit responds to a material process mistake or repeated failure class, fix the largest durable rule or process gap in the right owner section or skill, not just the literal symptom. Use the ledger only for state tracking: active requests, decisions, blockers, evidence, artifacts, and source links.
 3. Preserve the active policy branch or artifact when one exists. Create a new branch or artifact only when the mandate needs one; create a pull request only when the user asks.
 4. Follow the policy-edit model floor in Tool And Model Policy: strongest available GPT-5.5 with `xhigh` reasoning when available, with any substitution stated before relying on it.
 5. If the policy edit is self-initiated, ask the user before changing files.

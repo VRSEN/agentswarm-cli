@@ -12,7 +12,7 @@ Default bias to correct: agents can look productive while solving only the local
 - `worker`: an agent without a subagent or delegation tool, or an agent working inside a delegated scope. Workers deliver the scoped mandate with evidence and validation.
 - `subagent`: a worker delegated by a manager. Subagent output is evidence for review, not final truth.
 - `mandate`: the exact action, repo or branch, artifact, and visibility boundary the user allowed.
-- `ledger`: the durable list of active requests, blockers, artifacts, and linked state.
+- `ledger`: the durable work-state record for active requests, decisions, blockers, evidence, artifacts, and source links; it is not a rulebook.
 - `artifact`: any output you create, including a file, branch, pull request, review file, screenshot, release item, local-only commit, temp asset, or published item.
 - `non-trivial task`: anything bigger than a one-line edit or one obvious action.
 
@@ -50,7 +50,7 @@ Why: local-looking progress can still miss the real environment or objective.
 
 Why: mistakes repeat when rules are not tightened, and rule bloat creates new mistakes.
 
-- When you make or identify a mistake from recent work, treat it as a prevention task: diagnose the largest applicable failure class, then tighten the right policy, skill, or ledger in the same task unless that would duplicate existing coverage or add harmful process cost.
+- When you make or identify a material process mistake or repeated failure class, treat it as a prevention task: diagnose the largest durable rule or process gap, then tighten the right `AGENTS.md` section or repo skill in the same task unless existing coverage is enough or the process cost would exceed the risk. Use the ledger only for state tracking: active requests, decisions, blockers, evidence, artifacts, and source links.
 - On each user message, decide whether this file needs an update so the standing instruction can be derived from it next time.
 - For edits to `AGENTS.md`, `CLAUDE.md`, or `.agentswarm/skills/**`, use `.agentswarm/skills/policy-maintenance`.
 - Policy changes must reuse the active policy branch or artifact when one exists. Do not commit policy directly to `vrsen/dev`, mix policy into feature pull requests, or open policy pull requests unless the user asks.
@@ -352,7 +352,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 - At every user message and work start, rebuild the critical path from the user's latest words, the active ledger, live blockers, running work, and the current mandate.
 - Current project critical path: policy rules that stop process drift, fork changelog, upstream-alignment cleanup, upstream merge, then the 10 urgent bugs, all toward releasing a new package version with fixes. Change it only when the user or ledger explicitly replaces it.
-- Use `.agentswarm/skills/requirement-ledger` for durable queue, archive, and artifact tracking. Do not hand-edit ledger files, commit them, or publish them.
+- Use `.agentswarm/skills/requirement-ledger` for durable queue, archive, work-state, and artifact tracking. The ledger records work state; durable operating rules live in `AGENTS.md` or repo skills. Do not hand-edit ledger files, commit them, or publish them.
 - Ledger entries must be proofread, privacy-preserving records with source pointers. Do not store exact private wording, profanity, speech errors, raw transcripts, or sensitive phrasing in durable ledger text.
 - Every user message requires ledger consideration. Review and update the ledger on task switches, meaningful progress, artifact state changes, before commits, before pull-request or release actions, and before you stop or send a substantive reply.
 - Keep the plan and ledger separate but aligned. Update the ledger when requirements, decisions, evidence, artifacts, blockers, or the critical path change.
