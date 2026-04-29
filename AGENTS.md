@@ -52,15 +52,13 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 
 - When you make or identify a mistake from recent work, treat it as a prevention task: diagnose the largest applicable failure class, then tighten the right policy, skill, or ledger in the same task unless that would duplicate existing coverage or add harmful process cost.
 - On each user message, decide whether this file needs an update so the standing instruction can be derived from it next time.
-- When you add or change a rule, keep or add the concrete reason it exists. Review the local diff for duplication, conflict, and extra process cost. Tighten or move an old rule before you restate it.
-- Policy changes in `AGENTS.md` or `.agentswarm/skills/**` must reuse the active policy branch or artifact recorded in the ledger when one exists. Create a new policy branch, artifact, or pull request only when the user explicitly asks; otherwise push the policy branch and provide a compare link. Do not commit policy directly to `vrsen/dev` or mix it into feature pull requests.
-- Before editing policy, treat it as harder than normal implementation work: read the whole live policy more than once, read the current diff, inspect directly related rules, and challenge whether the requested change belongs here.
-- Policy-editing agents stay tightly scoped: read `AGENTS.md`, the current policy diff, and only directly authorized policy inputs. Avoid unrelated repo exploration unless the mandate requires it.
-- Policy edits require the policy-editing path defined in Tool And Model Policy. Reuse the existing policy worker for same-task follow-ups only while continuity improves quality; replace the worker or tool when evidence shows saturation, regressions, or unreliable results.
+- For edits to `AGENTS.md`, `CLAUDE.md`, or `.agentswarm/skills/**`, use `.agentswarm/skills/policy-maintenance`.
+- Policy changes must reuse the active policy branch or artifact when one exists. Do not commit policy directly to `vrsen/dev`, mix policy into feature pull requests, or open policy pull requests unless the user asks.
+- For policy edits you start on your own, ask the user before changing files. Do not stop normal coding or test work for extra approval requests.
+- Keep only rules that apply most of the time in this file. Move path-specific procedures, command recipes, and detailed playbooks into repo skills.
 - Treat policy and durable docs as executable agent code. Prefer the shortest coherent path: challenge the status quo, remove or refactor before adding, merge repetition into its owner section, put intent before details, and compress bullets without losing enforceable behavior.
 - Each policy rule needs one owner section, one enforceable behavior, and a clear reason. Move path-specific procedures into skills, scoped rules, or linked docs; do not keep parallel rules.
-- Before shipping a policy diff, check for contradictions, lost protections, duplicate rules, needless review noise, and whether section lists stay readable, ideally under 10 to 15 bullets.
-- For policy edits you start on your own, ask the user before you change the file. Do not stop normal coding or test work for extra approval requests.
+- Before shipping a policy diff, the manager must personally review and iterate, then use a fresh review worker to check for distorted meaning, lost protections, duplicate rules, and regressions.
 
 ## Role Boundary
 
@@ -112,6 +110,7 @@ Why: incomplete requirements, stale artifacts, and misheard input cause correct-
 - If a change breaks these rules, fix it right away with the smallest safe edit.
 - Think hard before you edit. Choose the smallest coherent diff that solves the real objective, not just the symptom in front of you.
 - Prefer repo tooling such as `bun`, package scripts, `turbo`, and the plan tool over ad-hoc commands.
+- Use the plan tool only for short execution plans. Durable queues and backlogs belong in `.agentswarm/skills/requirement-ledger`.
 - If a non-readonly command is blocked by sandboxing, rerun with escalated permissions when the mandate already covers it. Ask only when the escalation would cross the mandate or no allowed path exists.
 - Before you add or change a rule, reread the related rules and the prior diff. Make sure you did not drop anything valuable. Use `remove > update > add`. Never append blindly.
 - If missing old task details matter, recover the transcript or task history before you continue, including `.codex` session history when it is part of the source of truth.
@@ -351,53 +350,34 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 ### Queue Control
 
-- If a request has several parts, or needs more than one simple step, use the plan tool only for the short execution plan for the current task. Do not use it as the durable backlog.
 - At every user message and work start, rebuild the critical path from the user's latest words, the active ledger, live blockers, running work, and the current mandate.
 - Current project critical path: policy rules that stop process drift, fork changelog, upstream-alignment cleanup, upstream merge, then the 10 urgent bugs, all toward releasing a new package version with fixes. Change it only when the user or ledger explicitly replaces it.
-- The ledger is the number-one control tool for active work. Keep it current with running work, blockers, current critical path, pull requests, commits, branches, subagents, and tracked artifacts.
-- Use `.agentswarm/skills/requirement-ledger` for durable ledger changes. Do not hand-edit ledger files.
-- Requirement ledger files are private control artifacts. Do not commit or publish them.
-- Keep the plan and the ledger separate but aligned.
-- Every user message requires ledger consideration. Update the ledger unless the message adds no requirement, decision, assumption change, evidence change, artifact state, blocker, or critical-path change.
-- Review and update the ledger on every task switch, after meaningful progress, before commits, before pull-request or release actions, and before you stop or send a substantive reply.
-- Before you edit a durable queue, choose the strategy on purpose and keep active items in their real strategic order. At task boundaries, reread the whole active ledger before you pick the next step.
-- Keep the ledger active-only. Move done, deferred, failed, and noise items into a short archive that keeps wording and source pointers.
-- Add every new user request to the active list right away. A new request does not interrupt higher-priority work unless it changes the critical path.
-- Do not rewrite the whole queue file. Use targeted add, update, complete, or reject changes.
-- Before you present a revised ledger, list every active unfinished requirement with source pointers and near-original wording. If a ledger revision is rejected, rebuild it from the original sources.
+- Use `.agentswarm/skills/requirement-ledger` for durable queue, archive, and artifact tracking. Do not hand-edit ledger files, commit them, or publish them.
+- Every user message requires ledger consideration. Review and update the ledger on task switches, meaningful progress, artifact state changes, before commits, before pull-request or release actions, and before you stop or send a substantive reply.
+- Keep the plan and ledger separate but aligned. Update the ledger when requirements, decisions, evidence, artifacts, blockers, or the critical path change.
+- Track new user requests and owned artifacts before they drift. Use targeted ledger item changes instead of whole-file rewrites.
 
 ### Delegation
 
+- Use `.agentswarm/skills/delegation-management` for subagent prompts, staged delegation, worker reuse or rotation, delegated permissions, and manager review of worker output.
 - Delegate only when it protects the manager's context window, shortens the critical path, improves plan quality, or needs parallel investigation after the manager understands the user's intent, inspected evidence, and success condition.
 - Keep local environment blockers like venv repair, bun-link cleanup, harness setup, and missing local `.env` credentials on the manager thread; Codex is for code work, not environment triage.
 - Choose local review, delegated worker, and assistant model paths through Tool And Model Policy before you delegate.
-- Before launching a worker for an active category, especially policy, read the ledger and existing artifacts or branches; route follow-ups to the active artifact instead of creating competing work.
-- Before manager-owned editing decisions, especially policy, docs, or coherence work, use a higher-reasoning planning or discussion worker when it can materially improve structure, expose contradictions, or reduce risk. Skip this only when the change is mechanical and checked evidence is enough.
-- Stage large delegated work when useful: analysis or discussion first, implementation second, review or polish third. Each stage may return questions, blockers, and tradeoffs instead of forcing immediate delivery.
-- Reuse a worker when saved priming and loaded context improve quality. Rotate to a fresh worker when context is overloaded, contaminated, mistake-prone, stale, or when independent review matters more than continuity.
+- Keep pull-request-specific work off the manager thread when possible. Prefer a bounded local Codex pass when it cleanly covers the task; otherwise use one fitting worker. Surface a blocker only if neither path works.
 - After you delegate, do not interrupt, rush, or keep pinging workers unless the user changes scope or you have clear proof of failure.
-- Start each delegated task with the exact user ask, needed background, directly related artifacts, inspected evidence, missing facts to acquire, the higher goal, required result, and hard limits.
 - Workers may create branches, commits, and pull requests inside their mandate. They must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager explicitly delegates that exact action for that exact artifact after review.
-- Managers own clearly agent-owned shells, tmux sessions, Codex resume sessions, and polling loops spawned by them or delegated workers. Reclaim or close them at task boundaries.
-- Keep pull-request work off the manager thread when possible. Prefer a bounded local Codex pass when it cleanly covers the task; otherwise use one fitting worker. Surface a blocker only if neither path works.
 
 ### Artifacts
 
-- Keep one live list of the artifacts you own, and give every ledger item an `artifacts` list even when it is empty.
-- Track every pull request, linked issue, branch, local-only commit, worktree, file, temp asset, release artifact, published binary, open GitHub issue, review artifact, screenshot, temp QA directory, and other open work artifact.
+- Track every pull request, linked or open issue, branch, local-only commit, worktree, file, temp asset, release artifact, published binary, review artifact, screenshot, temp QA directory, and other open work artifact in the ledger.
+- Give every ledger item an `artifacts` list even when it is empty. Update it before other work continues when an owned artifact is created or changes state.
 - Track GitHub issue links on the relevant ledger item. Public bug issues should preserve useful repro details, evidence, expected behavior, and related links unless the details are sensitive.
-- The moment an artifact exists, add it to the relevant ledger item's `artifacts` list. Create a separate ledger item only when the artifact represents independent open work.
-- Any state change on a tracked artifact must update the ledger before other work continues.
 - Ledger is the source of truth for active work. Missing ledger coverage is an ownership defect, not deletion proof.
-- Before deleting an agent-attributable artifact, verify that it is shipped, clearly handed off, clearly discarded, or stale and unneeded. If any agent-owned artifact lacks a ledger item, fix the ledger first.
-- Keep each tracked artifact on the relevant active ledger item until it is shipped, clearly handed off, or clearly discarded.
-- A pull request, branch, or local-only commit you created is still an open task. Never forget it.
-- Clean up old artifacts you created when a newer artifact fully replaces them and the older one is no longer needed for rollback or proof.
-- After your work lands on `vrsen/dev`, or is otherwise closed, clean up stale local branches and worktrees you own before you start new work. If ownership or merge state is unclear, escalate before cleanup.
+- Keep tracked artifacts active until they are shipped, clearly handed off, or clearly discarded. Clean up stale owned branches and worktrees only after ownership and merge state are clear.
 
 ### Repo And Pull Requests
 
-- Docs-only and `FORK_CHANGELOG.md` edits go straight to `vrsen/dev`. Policy changes follow the policy-maintenance branch-and-compare rule unless the user explicitly asks otherwise.
+- Docs-only and `FORK_CHANGELOG.md` edits go straight to `vrsen/dev`. Policy changes use `.agentswarm/skills/policy-maintenance` unless the user explicitly asks otherwise.
 - After verifying the local remote model, if `origin/dev` is reachable, run `git fetch --all --prune` and work from a named branch based on `origin/dev` before analysis, edits, or tests. In this checkout, `origin/dev` means the upstream OpenCode `dev` branch and `vrsen/dev` means the canonical fork `dev` branch.
 - For pushes to `vrsen/dev`, verify the `origin/dev...vrsen/dev` counts before you push.
 - For public release work, verify that the exact release commit is already reachable from `vrsen/dev` and that the target version is already present in the release input files.
@@ -407,18 +387,13 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - If there is already an open pull request for the same work, reuse it unless it was clearly discarded or reuse is truly impossible.
 - Before you open, update, or merge a pull request, verify the source branch, base branch, head SHA, live diff, and PR-body compliance. On first push, the body must already include `Closes #<ID>` or the tracked REQ; the compliance bot auto-closes non-compliant PRs after 2 hours.
 - Every pull-request merge has a human alignment gate. When a pull request is technically ready to merge, the manager must personally review the final diff, challenge every unexplained line, verify checks and unresolved threads, and state that it is technically ready. Then send the user an escalation/review guide for GitHub that groups the changes for quick review, explains why each group exists, asks the user to leave comments or questions on GitHub, and requests one alignment confirmation. Merge only after the user confirms alignment. Worker review can inform this gate but cannot replace it.
-- For pull-request comment work, follow the PR Comment Review Loop.
+- For pull-request-specific work or required local Codex review, including comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations, use `.agentswarm/skills/codex-cli-review`.
 
 ### External Signals
 
-- For build-impact pull-request work, do not hand off as technically ready until the latest head is technical-review-complete.
-- Technical-review-complete means zero unresolved threads, a clean local Codex review artifact, and green required checks. Human alignment belongs to the Repo And Pull Requests merge gate.
-- Pending GitHub checks, pending pull-request Codex review, unresolved pull-request comments, and other agent-visible outside workflows still count as open work.
-- If only outside signals are pending, report the exact waiting state and keep polling.
-- If the next step is polling, keep doing it until the workflow ends or you can prove a real outside block. If a delegated worker stalls with no new output, take over on the manager thread or escalate.
-- When polling is next, keep a live wait loop or session and poll at least once a minute with `sleep 60`.
-- If pull-request Codex stays non-terminal for 15 minutes, inspect the latest state and retrigger once if needed.
-- Wait up to 30 minutes for GitHub CI, which means automated GitHub checks, before you call it stalled.
+- For build-impact pull-request work, do not hand off as technically ready until the latest head has zero unresolved threads, a clean local Codex review artifact, and green required checks.
+- Pending GitHub checks, hosted reviews, unresolved pull-request comments, and other agent-visible workflows still count as open work.
+- If only outside signals are pending, report the exact waiting state and keep polling until terminal or blocked by a real external failure. Use `.agentswarm/skills/codex-cli-review` for pull-request review polling and stall handling.
 
 ## Danger Zone: Public And Irreversible Operations
 
@@ -442,7 +417,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Before any release or safety claim, build and reinstall the CLI from the fresh local build, launch it against the maintainer's canonical local test agency, send a real first message through the connected conversation, and verify that a non-empty streaming assistant response renders.
 - Auth-smoke CI alone never passes this gate. Any launch failure, including environment, credential, dependency, or TUI transition issues, blocks the release until you reproduce it and find the root cause.
 - Why: release claims were repeated while the installed binary still failed before a usable conversation.
-- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit. Use the canonical Codex review with base `vrsen/dev`; if it finds a blocking issue (`P1` or `P2`), stop and surface it to the user.
+- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit. Use `.agentswarm/skills/codex-cli-review` with base `vrsen/dev`; if it finds a blocking issue (`P1` or `P2`), stop and surface it to the user.
 
 ## Documentation Rules
 
@@ -589,35 +564,21 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
 - If you do not know what a mention will trigger, look it up before you post. When in doubt, do not post.
 - Why: a recent free-form PR comment paged the maintainer and re-triggered the Codex bot unnecessarily; `@` on GitHub is a side effect, not prose.
 
-### PR Comment Review Loop (Mandatory For Local Coding Work)
+### Pull Request Review Work
 
-- If you are doing local coding work for an open pull request and you can post GitHub comments, you must run this loop:
-  - Open the pull request and resolve every correct active thread finding.
-  - Route pull-request-specific work through one bounded local Codex pass by default when it cleanly covers the task.
-  - Keep the manager on the local critical path. Use a subagent only when broader judgment or orchestration is really needed.
-  - Pull-request-specific work includes comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations.
-  - If a bounded local Codex pass cannot cover the task and no good subagent is available, stop and surface the blocker.
-  - Use the canonical Codex review with base `origin/dev`; if it is unavailable, use an equivalent `codex exec` diff review and save it to the same artifact pattern. Do not rely on unknown model defaults.
-  - Do not stream the full Codex output in updates. Read only the needed excerpts.
-  - Trigger `@codex review` only when both the local Codex path and suitable subagents are unavailable, when the user asked for it, or when merge-gate proof needs pull-request-bound Codex.
-  - While hosted checks or pull-request Codex are pending, poll at least once a minute with `sleep 60`.
-  - If a required hosted check or pull-request Codex review is still pending and you can still observe, retrigger, or fix it, do not hand off a partial state.
-  - If a fallback local Codex review or pull-request Codex stays non-terminal for 15 minutes, or a required GitHub check stays non-terminal for 30 minutes, inspect the latest output, logs, comments, and reactions, retrigger once if the service looks stuck, and continue.
-  - Escalate only after you can point to a real service failure, outage, or missing human approval.
-  - Repeat until the latest head has zero unresolved threads, a clean local or subagent review, and green required checks.
-  - Only then hand off through the human review gate in Repo And Pull Requests.
-- If your current input already came from pull-request comments that asked for `@codex review`, skip this loop to avoid a loop inside a loop.
+- For pull-request-specific work, required Codex review artifacts, or hosted review polling, use `.agentswarm/skills/codex-cli-review`. Pull-request-specific work includes comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations.
+- Resolve every correct active thread finding and do not hand off while required checks, required reviews, or unresolved comments remain open.
+- Trigger `@codex review` only when local Codex review and suitable subagents are unavailable, when the user asked for it, or when merge-gate proof needs pull-request-bound Codex.
+- If your current input already came from pull-request comments that asked for `@codex review`, skip nested review loops and resolve the scoped comments directly.
 
 ## Tool And Model Policy
 
 - Model and tool availability varies by machine. Use the strongest available path that fits the task risk; when you substitute for a named model or tool, state the substitute and confidence before relying on it.
-- Use GPT-5.5 with `medium` or `high` reasoning when available for high-reliability bug fixing, root-cause investigation, policy updates, and feature implementation without a detailed technical plan. Use `medium` for routine scoped work and `high` for ambiguous or decision-heavy work; reserve `xhigh` for explicitly requested legal-style policy review when available and useful.
-- Claude CLI with Opus 4.7 max may be used for cheap long-running extraction, summarization, broad scans, artifact drafting, and easy well-defined reasoning. Treat it as weaker evidence than GPT-5.5; managers must verify its output before final decisions.
-- GPT-5.4-mini is acceptable for summarization and extraction when stronger cheap tools are unavailable.
-- When reliability is uncertain on a task that does not require GPT-5.5 with `high` reasoning or stronger, you may run the same task twice and compare results. Do not treat duplicate weaker runs as final proof for high-reliability decisions.
+- Use GPT-5.5 with `medium` or `high` reasoning when available for high-reliability bug fixing, root-cause investigation, policy updates, and feature implementation without a detailed technical plan.
+- Use `.agentswarm/skills/codex-cli-review` for Codex review artifacts and `.agentswarm/skills/claude-cli-review` for Claude CLI review artifacts.
+- Treat Claude output and duplicate weaker runs as supporting evidence, not final proof for high-reliability decisions.
 - Sonnet models are not allowed here. If no allowed model is available for the needed reliability, stop and escalate.
 - Prefer the local `codex` command for small clear work, and keep delegated scopes as small as useful.
-- Canonical Codex review uses GPT-5.5 when available: `codex review --base <base> -m gpt-5.5 -c model_reasoning_effort="medium" > /tmp/codex_review_<short_sha>.txt 2>&1`. If GPT-5.5 is unavailable, use the strongest available GPT-5.x review path, record the exact model, and do not rely on unknown defaults.
 
 ## References
 
@@ -627,6 +588,7 @@ Why: without a hardcoded source of truth, agents re-derive behavior from code ea
 - Fork Repo: `https://github.com/VRSEN/agentswarm-cli`
 - Upstream Repo: `https://github.com/anomalyco/opencode`
 - Local package map: `packages/opencode/` for CLI core, `packages/app/` for app UI, `packages/docs/` for docs, and `packages/*/package.json` for package-local commands and entry points.
+- Repo skills: `.agentswarm/skills/requirement-ledger`, `.agentswarm/skills/policy-maintenance`, `.agentswarm/skills/delegation-management`, `.agentswarm/skills/codex-cli-review`, and `.agentswarm/skills/claude-cli-review`.
 
 ## Memory & Expectations
 
