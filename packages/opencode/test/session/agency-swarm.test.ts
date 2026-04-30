@@ -3173,6 +3173,7 @@ describe("session.agency-swarm", () => {
         mockHistory()
         let turn = 0
         let sentRecipient: string | undefined
+        const sentHistories: unknown[][] = []
         AgencySwarmAdapter.getMetadata = (async () => ({
           metadata: {
             agents: ["support_agent", "MathAgent"],
@@ -3181,6 +3182,7 @@ describe("session.agency-swarm", () => {
         AgencySwarmAdapter.streamRun = async function* (args) {
           turn++
           sentRecipient = args.recipientAgent ?? undefined
+          sentHistories.push(args.chatHistory)
           if (turn === 1) {
             yield {
               type: "data",
@@ -3277,6 +3279,7 @@ describe("session.agency-swarm", () => {
         }
 
         expect(sentRecipient).toBe("support_agent")
+        expect(sentHistories[1]?.some((item) => (item as any)?.type === "handoff_output_item")).toBeFalse()
       },
     })
   })

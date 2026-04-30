@@ -1559,13 +1559,14 @@ export namespace SessionAgencySwarm {
       if (rebuiltHistoryFromMessages) {
         await AgencySwarmHistory.appendMessages(scope, rebuiltHistoryFromMessages)
       }
+      const transportChatHistory = sanitizeAgencyHistoryForTransport(chatHistory)
 
       try {
         for await (const frame of AgencySwarmAdapter.streamRun({
           baseURL: input.options.baseURL,
           agency,
           message: outgoingMessage,
-          chatHistory,
+          chatHistory: transportChatHistory,
           recipientAgent,
           additionalInstructions: input.options.additionalInstructions,
           userContext: input.options.userContext,
@@ -2194,6 +2195,19 @@ export namespace SessionAgencySwarm {
         timestamp: msg.info.time.created,
       },
     ]
+  }
+
+  function sanitizeAgencyHistoryForTransport(history: Array<Record<string, unknown>>) {
+    return history.filter((item) => {
+      const type = asString(item["type"])
+      if (type === "handoff_output_item") return false
+      if (type !== "message") return true
+      if (asString(item["role"]) !== "assistant") return true
+      const content = item["content"]
+      if (Array.isArray(content)) return content.length > 0
+      if (typeof content === "string") return content.length > 0
+      return content !== undefined && content !== null
+    })
   }
 
   function extractCallerAgent(msg: MessageV2.WithParts): string | null {
