@@ -2,6 +2,27 @@ import { displayAgentName } from "@/agent/display"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import * as Locale from "@/util/locale"
 
+export type AgencyHandoffMessage = {
+  id: string
+  role: string
+  providerID?: string
+  agent?: string
+  time: {
+    created?: number
+    completed?: number
+  }
+}
+
+export type AgencyHandoffPart = {
+  type: string
+  tool?: string
+  state?: {
+    status?: string
+    output?: string
+    metadata?: Record<string, unknown>
+  }
+}
+
 export type AgencyProviderOptions = {
   baseURL: string
   token?: string
@@ -173,6 +194,87 @@ export function shouldAdoptAgencyHandoffRecipient(input: {
   if (!input.assistantAgent) return false
   if (input.assistantAgent === "build") return false
   return input.assistantAgent !== input.currentRecipient
+}
+
+export function resolveAgencyHandoffRecipientFromMessages(input: {
+  frameworkMode: boolean
+  agency?: string
+  currentRecipient?: string
+  currentRecipientSelectedAt?: number
+  sessionID: string
+  messages: AgencyHandoffMessage[]
+  partsByMessage?: Record<string, AgencyHandoffPart[] | undefined>
+}) {
+  const assistant = input.messages.findLast((item) => {
+    if (item.role !== "assistant") return false
+    if (item.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
+    const handoffAgent = resolveAgencyHandoffRecipientFromParts(input.partsByMessage?.[item.id] ?? [])
+    return !!(handoffAgent ?? item.agent)
+  })
+  if (!assistant) return undefined
+  const agent = resolveAgencyHandoffRecipientFromParts(input.partsByMessage?.[assistant.id] ?? []) ?? assistant.agent
+  if (
+    input.currentRecipientSelectedAt &&
+    assistant.time.completed &&
+    input.currentRecipientSelectedAt > assistant.time.completed
+  ) {
+    return undefined
+  }
+  if (
+    !shouldAdoptAgencyHandoffRecipient({
+      frameworkMode: input.frameworkMode,
+      agency: input.agency,
+      currentRecipient: input.currentRecipient,
+      assistantAgent: agent,
+    })
+  ) {
+    return undefined
+  }
+  return {
+    sessionID: input.sessionID,
+    messageID: assistant.id,
+    agent: agent!,
+    selectedAt: input.currentRecipientSelectedAt,
+  }
+}
+
+export function resolveAgencyHandoffRecipientFromParts(parts: AgencyHandoffPart[]) {
+  for (const part of parts.toReversed()) {
+    if (part.type !== "tool") continue
+    const outputAgent = readHandoffOutputAgent(part.state?.output) ?? readHandoffMetadataAgent(part.state?.metadata)
+    if (outputAgent) return outputAgent
+    const toolAgent = readTransferToolAgent(part.tool)
+    if (toolAgent) return toolAgent
+  }
+  return undefined
+}
+
+function readTransferToolAgent(tool: string | undefined) {
+  const match = /^transfer_to_(.+)$/.exec(tool ?? "")
+  return match?.[1]
+}
+
+function readHandoffOutputAgent(output: string | undefined) {
+  if (!output) return undefined
+  try {
+    const parsed = JSON.parse(output)
+    if (!parsed || typeof parsed !== "object") return undefined
+    return readString(
+      (parsed as Record<string, unknown>)["assistant"] ??
+        (parsed as Record<string, unknown>)["agent"] ??
+        (parsed as Record<string, unknown>)["recipientAgent"] ??
+        (parsed as Record<string, unknown>)["recipient_agent"],
+    )
+  } catch {
+    return undefined
+  }
+}
+
+function readHandoffMetadataAgent(metadata: Record<string, unknown> | undefined) {
+  if (!metadata) return undefined
+  return readString(
+    metadata["assistant"] ?? metadata["agent"] ?? metadata["recipientAgent"] ?? metadata["recipient_agent"],
+  )
 }
 
 export function displayRunOnlyAgentLabel(input: {

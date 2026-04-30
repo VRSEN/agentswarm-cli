@@ -75,9 +75,9 @@ import {
 import { cancelQueuedRunModeMessages } from "../../util/run-queued-messages"
 import { errorMessage as toErrorMessage } from "@/util/error"
 import {
-  buildAgencyTargetOptions,
   displayRunOnlyAgentLabel,
   readAgencyProviderOptions,
+  resolveAgencyHandoffRecipientFromMessages,
   resolveAgencyTargetSelection,
   shouldAdoptAgencyHandoffRecipient,
 } from "../../util/agency-target"
@@ -156,6 +156,15 @@ export function Prompt(props: PromptProps) {
   const list = createMemo(() => props.placeholders?.normal ?? [])
   const shell = createMemo(() => props.placeholders?.shell ?? [])
   const [auto, setAuto] = createSignal<AutocompleteRef>()
+  const [handoffRecipient, setHandoffRecipient] = createSignal<
+    | {
+        sessionID: string
+        messageID: string
+        agent: string
+        selectedAt?: number
+      }
+    | undefined
+  >()
   const activeOrgName = createMemo(() => sync.data.console_state.activeOrgName)
   const canSwitchOrgs = createMemo(() => sync.data.console_state.switchableOrgCount > 1)
   const frameworkMode = createMemo(() =>
@@ -201,9 +210,34 @@ export function Prompt(props: PromptProps) {
       initialValue: [],
     },
   )
+  const sessionHandoffRecipient = createMemo(() => {
+    if (!props.sessionID) return undefined
+    const options = agencyProviderOptions()
+    return resolveAgencyHandoffRecipientFromMessages({
+      frameworkMode: frameworkMode(),
+      agency: options.agency,
+      currentRecipient: options.recipientAgent,
+      currentRecipientSelectedAt: options.recipientAgentSelectedAt,
+      sessionID: props.sessionID,
+      messages: sync.data.message[props.sessionID] ?? [],
+      partsByMessage: sync.data.part,
+    })
+  })
+  const effectiveHandoffRecipient = createMemo(() => {
+    const handoff = handoffRecipient()
+    if (handoff && handoff.sessionID === props.sessionID) return handoff
+    return sessionHandoffRecipient()
+  })
   const frameworkRecipientLabel = createMemo(() => {
     if (!frameworkMode()) return undefined
     const options = agencyProviderOptions()
+    const handoff = effectiveHandoffRecipient()
+    if (handoff) {
+      const agency = frameworkRecipientDiscovery().find((item) => item.id === options.agency)
+      const recipient = agency?.agents.find((agent) => agent.id === handoff.agent)
+      return recipient?.name ?? handoff.agent
+    }
+
     const selection = resolveAgencyTargetSelection({
       agencies: frameworkRecipientDiscovery(),
       configuredAgency: options.agency,
@@ -211,7 +245,23 @@ export function Prompt(props: PromptProps) {
     })
     return selection?.label ?? options.recipientAgent
   })
-  const adoptedAgencyRecipients = new Set<string>()
+
+  createEffect(
+    on(
+      () => props.sessionID,
+      () => setHandoffRecipient(undefined),
+    ),
+  )
+
+  createEffect(() => {
+    const handoff = handoffRecipient()
+    if (!handoff) return
+    const options = agencyProviderOptions()
+    if (options.recipientAgentSelectedAt === handoff.selectedAt) return
+    if (options.recipientAgent === handoff.agent) return
+    setHandoffRecipient(undefined)
+  })
+
   onCleanup(
     event.on("message.updated", (evt) => {
       const info = evt.properties.info
@@ -231,39 +281,12 @@ export function Prompt(props: PromptProps) {
         return
       }
 
-      const key = `${info.sessionID}:${info.id}:${info.agent}`
-      if (adoptedAgencyRecipients.has(key)) return
-      adoptedAgencyRecipients.add(key)
-
-      void sdk.client.global.config
-        .update(
-          {
-            config: {
-              model: `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
-              provider: {
-                [AgencySwarmAdapter.PROVIDER_ID]: {
-                  name: "agency-swarm",
-                  options: buildAgencyTargetOptions({
-                    providerOptions: options,
-                    agency: options.agency!,
-                    recipientAgent: info.agent,
-                  }),
-                },
-              },
-            },
-          },
-          {
-            throwOnError: true,
-          },
-        )
-        .then(() => sync.bootstrap())
-        .catch((error) => {
-          toast.show({
-            variant: "error",
-            message: error instanceof Error ? error.message : String(error),
-            duration: 4000,
-          })
-        })
+      setHandoffRecipient({
+        sessionID: info.sessionID,
+        messageID: info.id,
+        agent: info.agent,
+        selectedAt: options.recipientAgentSelectedAt,
+      })
     }),
   )
   const editorPath = createMemo(() => editor.selection()?.filePath)
@@ -1086,63 +1109,70 @@ export function Prompt(props: PromptProps) {
           })),
       })
     } else {
-      sdk.client.session
-        .prompt({
-          sessionID,
-          ...selectedModel,
-          messageID,
-          agent: effectiveAgentName(),
-          model: selectedModel,
-          variant,
-          parts: [
-            ...editorParts,
-            {
-              id: PartID.ascending(),
-              type: "text",
-              text: inputText,
-            },
-            ...nonTextParts.map(assign),
-          ],
+      const handoff = effectiveHandoffRecipient()
+      const agencyRecipientAgent =
+        frameworkMode() && handoff?.sessionID === sessionID && !nonTextParts.some((part) => part.type === "agent")
+          ? handoff.agent
+          : undefined
+      const promptPayload: Parameters<typeof sdk.client.session.prompt>[0] & {
+        $body_agencyRecipientAgent?: string
+      } = {
+        sessionID,
+        ...selectedModel,
+        messageID,
+        agent: effectiveAgentName(),
+        model: selectedModel,
+        variant,
+        $body_agencyRecipientAgent: agencyRecipientAgent,
+        parts: [
+          ...editorParts,
+          {
+            id: PartID.ascending(),
+            type: "text",
+            text: inputText,
+          },
+          ...nonTextParts.map(assign),
+        ],
+      }
+      sdk.client.session.prompt(promptPayload).catch((error) => {
+        setStore("prompt", savedPrompt)
+        input.setText(savedPrompt.input)
+        restoreExtmarksFromParts(savedPrompt.parts)
+        const message = toErrorMessage(error)
+        const shouldReopenAuth = shouldOpenAgencyAuthDialog({
+          providerID: selectedModel.providerID,
+          message,
         })
-        .catch((error) => {
-          setStore("prompt", savedPrompt)
-          input.setText(savedPrompt.input)
-          restoreExtmarksFromParts(savedPrompt.parts)
-          const message = toErrorMessage(error)
-          const shouldReopenAuth = shouldOpenAgencyAuthDialog({
-            providerID: selectedModel.providerID,
-            message,
+        if (navigateTimer) {
+          clearTimeout(navigateTimer)
+          navigateTimer = undefined
+        }
+        if (createdSessionID && shouldReopenAuth) {
+          if (navigatedToCreatedSession) {
+            route.navigate({
+              type: "home",
+              prompt: submittedPrompt,
+            })
+          }
+          void sdk.client.session.delete({
+            sessionID: createdSessionID,
           })
-          if (navigateTimer) {
-            clearTimeout(navigateTimer)
-            navigateTimer = undefined
-          }
-          if (createdSessionID && shouldReopenAuth) {
-            if (navigatedToCreatedSession) {
-              route.navigate({
-                type: "home",
-                prompt: submittedPrompt,
-              })
-            }
-            void sdk.client.session.delete({
-              sessionID: createdSessionID,
-            })
-          }
-          if (shouldReopenAuth) {
-            toast.show({
-              variant: "error",
-              message: describeAgencyAuthFailure(message),
-              duration: 5000,
-            })
-            dialog.replace(() => <DialogAuth />)
-            return
-          }
+        }
+        if (shouldReopenAuth) {
           toast.show({
             variant: "error",
-            message,
+            message: describeAgencyAuthFailure(message),
             duration: 5000,
           })
+          dialog.replace(() => <DialogAuth />)
+          return
+        }
+        toast.show({
+          variant: "error",
+          message,
+          duration: 5000,
         })
+      })
     }
 
     clearSubmittedPrompt(currentMode)

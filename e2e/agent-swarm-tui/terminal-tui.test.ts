@@ -133,10 +133,9 @@ describe("Agent Swarm terminal TUI e2e", () => {
       tuiInteractionTimeoutMs,
     )
 
-    expect(currentServer.requests[0]?.body).toMatchObject({
-      message: "route through the whole swarm",
-    })
-    expect(currentServer.requests[0]?.body).not.toHaveProperty("recipient_agent")
+    const body = currentServer.requests[0]?.body
+    expect(body?.message).toContain("route through the whole swarm")
+    expect(body).not.toHaveProperty("recipient_agent")
   })
 
   test("selecting a specific agent routes the next prompt to that agent", async () => {
@@ -157,8 +156,9 @@ describe("Agent Swarm terminal TUI e2e", () => {
       tuiInteractionTimeoutMs,
     )
 
-    expect(currentServer.requests[0]?.body).toMatchObject({
-      message: "calculate through the selected agent",
+    const body = currentServer.requests[0]?.body
+    expect(body?.message).toContain("calculate through the selected agent")
+    expect(body).toMatchObject({
       recipient_agent: "MathAgent",
     })
   })
@@ -184,12 +184,14 @@ describe("Agent Swarm terminal TUI e2e", () => {
       tuiInteractionTimeoutMs,
     )
 
-    expect(currentServer.requests[0]?.body).toMatchObject({
-      message: "please handoff this calculation",
+    const handoffBody = currentServer.requests[0]?.body
+    expect(handoffBody?.message).toContain("please handoff this calculation")
+    expect(handoffBody).toMatchObject({
       recipient_agent: "UserSupportAgent",
     })
-    expect(currentServer.requests[1]?.body).toMatchObject({
-      message: "continue after handoff",
+    const nextBody = currentServer.requests[1]?.body
+    expect(nextBody?.message).toContain("continue after handoff")
+    expect(nextBody).toMatchObject({
       recipient_agent: "MathAgent",
     })
   })
@@ -206,8 +208,9 @@ describe("Agent Swarm terminal TUI e2e", () => {
       tuiInteractionTimeoutMs,
     )
 
-    expect(currentServer.requests[0]?.body).toMatchObject({
-      message: "hello from terminal e2e",
+    const body = currentServer.requests[0]?.body
+    expect(body?.message).toContain("hello from terminal e2e")
+    expect(body).toMatchObject({
       recipient_agent: "entry-agent",
     })
   })

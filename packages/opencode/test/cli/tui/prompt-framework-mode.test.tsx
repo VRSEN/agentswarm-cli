@@ -23,6 +23,7 @@ import * as ToastModule from "../../../src/cli/cmd/tui/ui/toast"
 import * as AutocompleteModule from "../../../src/cli/cmd/tui/component/prompt/autocomplete"
 import { DialogProvider } from "../../../src/cli/cmd/tui/ui/dialog"
 import { AgencySwarmAdapter } from "../../../src/agency-swarm/adapter"
+import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 
 function flushEffects() {
   return Promise.resolve().then(() => Promise.resolve())
@@ -34,6 +35,11 @@ describe("prompt framework-mode footer", () => {
   })
 
   test("shows the agency recipient display name instead of the configured id or local Agent Builder label", async () => {
+    const eventHandlers: Record<string, (event: any) => void> = {}
+    const updateGlobalConfig = mock(async () => ({}))
+    const prompt = mock(async () => ({}))
+    let promptRef: import("../../../src/cli/cmd/tui/component/prompt").PromptRef | undefined
+
     spyOn(AgencySwarmAdapter, "discover").mockResolvedValue({
       agencies: [
         {
@@ -44,6 +50,11 @@ describe("prompt framework-mode footer", () => {
               id: "orchestrator-slug",
               name: "Orchestrator",
               isEntryPoint: true,
+            },
+            {
+              id: "slides_agent",
+              name: "Slides Agent",
+              isEntryPoint: false,
             },
           ],
           metadata: {},
@@ -82,7 +93,10 @@ describe("prompt framework-mode footer", () => {
     } as any)
     spyOn(EventContext, "useEvent").mockReturnValue({
       subscribe: () => () => {},
-      on: () => () => {},
+      on: (type: string, handler: (event: any) => void) => {
+        eventHandlers[type] = handler
+        return () => {}
+      },
     } as any)
     spyOn(AgencySwarmConnectionContext, "useAgencySwarmConnection").mockReturnValue({
       requiresReconnect: () => false,
@@ -133,7 +147,14 @@ describe("prompt framework-mode footer", () => {
     } as any)
     spyOn(SDKContext, "useSDK").mockReturnValue({
       client: {
-        session: {},
+        global: {
+          config: {
+            update: updateGlobalConfig,
+          },
+        },
+        session: {
+          prompt,
+        },
       },
       event: {
         on: () => () => {},
@@ -149,6 +170,7 @@ describe("prompt framework-mode footer", () => {
               options: {
                 agency: "demo",
                 recipientAgent: "orchestrator-slug",
+                recipientAgentSelectedAt: 1,
                 baseURL: "http://127.0.0.1:8000",
               },
             },
@@ -167,17 +189,32 @@ describe("prompt framework-mode footer", () => {
             name: "Agency Swarm",
             source: "config",
             env: [],
+            key: undefined,
+            options: {},
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "api",
+            env: ["OPENAI_API_KEY"],
+            key: "sk-test",
             options: {},
             models: {},
           },
         ],
-        provider_auth: {},
+        provider_auth: {
+          openai: [{ type: "api", label: "API key" }],
+        },
         provider_next: {
           all: [],
           connected: [],
           default: {},
         },
         session_status: {},
+      },
+      session: {
+        get: () => undefined,
       },
     } as any)
     spyOn(ThemeContext, "useTheme").mockReturnValue({
@@ -232,7 +269,7 @@ describe("prompt framework-mode footer", () => {
       () => (
         <RouteProvider>
           <DialogProvider>
-            <Prompt showPlaceholder={false} />
+            <Prompt sessionID="session_1" showPlaceholder={false} ref={(ref) => (promptRef = ref)} />
           </DialogProvider>
         </RouteProvider>
       ),
@@ -248,5 +285,75 @@ describe("prompt framework-mode footer", () => {
     expect(frame).not.toContain("orchestrator-slug")
     expect(frame).not.toContain("Agent Builder")
     expect(frame).not.toContain("recipients")
+
+    eventHandlers["message.updated"]?.({
+      properties: {
+        info: {
+          id: "message_assistant_1",
+          sessionID: "session_1",
+          role: "assistant",
+          providerID: "agency-swarm",
+          agent: "slides_agent",
+        },
+      },
+    })
+    await flushEffects()
+    await rendered.renderOnce()
+
+    const handoffFrame = rendered.captureCharFrame()
+    expect(handoffFrame).toContain("Slides Agent")
+    expect(updateGlobalConfig).not.toHaveBeenCalled()
+
+    promptRef!.set({ input: "continue", parts: [] })
+    await promptRef!.submit()
+    await flushEffects()
+
+    expect(prompt).toHaveBeenCalledTimes(1)
+    const calls = prompt.mock.calls as unknown as Array<[{ parts: unknown[]; $body_agencyRecipientAgent?: string }]>
+    const payload = calls[0][0]
+    expect(payload.parts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "text",
+          text: "continue",
+        }),
+      ]),
+    )
+    expect(payload.parts).not.toContainEqual(expect.objectContaining({ type: "agent" }))
+    expect(payload.$body_agencyRecipientAgent).toBe("slides_agent")
+  })
+
+  test("sends agency handoff recipient through the generated sdk prompt body", async () => {
+    let body: any
+    const client = createOpencodeClient({
+      baseUrl: "http://localhost",
+      fetch: (async (request: Request) => {
+        body = await request.json()
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      }) as typeof fetch,
+    })
+
+    await client.session.prompt({
+      sessionID: "session",
+      model: {
+        providerID: "opencode",
+        modelID: "agency-swarm",
+      },
+      agent: "orchestrator",
+      $body_agencyRecipientAgent: "slides_agent",
+      parts: [
+        {
+          id: "part",
+          type: "text",
+          text: "continue",
+        },
+      ],
+    } as Parameters<typeof client.session.prompt>[0] & { $body_agencyRecipientAgent?: string })
+
+    expect(body.agencyRecipientAgent).toBe("slides_agent")
+    expect(body.parts).not.toContainEqual(expect.objectContaining({ type: "agent" }))
   })
 })

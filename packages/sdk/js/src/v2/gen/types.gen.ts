@@ -3833,6 +3833,7 @@ export type SessionPromptData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    agencyRecipientAgent?: string
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {

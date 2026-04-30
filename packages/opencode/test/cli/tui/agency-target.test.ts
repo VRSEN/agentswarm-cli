@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   buildAgencyTargetOptions,
+  resolveAgencyHandoffRecipientFromMessages,
   resolveAgencyTargetFromPicker,
   shouldAdoptAgencyHandoffRecipient,
 } from "../../../src/cli/cmd/tui/util/agency-target"
@@ -47,6 +48,97 @@ describe("agency target options", () => {
         assistantAgent: "ExampleAgent2",
       }),
     ).toBe(true)
+  })
+
+  test("restores handed off recipient from synced session messages", () => {
+    expect(
+      resolveAgencyHandoffRecipientFromMessages({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: "Agent1",
+        currentRecipientSelectedAt: 1,
+        sessionID: "session_1",
+        messages: [
+          {
+            id: "message_1",
+            role: "assistant",
+            providerID: "agency-swarm",
+            agent: "Agent2",
+            time: {
+              completed: 2,
+            },
+          },
+        ],
+      }),
+    ).toEqual({
+      sessionID: "session_1",
+      messageID: "message_1",
+      agent: "Agent2",
+      selectedAt: 1,
+    })
+  })
+
+  test("keeps later manual recipient selection over restored handoff", () => {
+    expect(
+      resolveAgencyHandoffRecipientFromMessages({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: "Agent1",
+        currentRecipientSelectedAt: 3,
+        sessionID: "session_1",
+        messages: [
+          {
+            id: "message_1",
+            role: "assistant",
+            providerID: "agency-swarm",
+            agent: "Agent2",
+            time: {
+              completed: 2,
+            },
+          },
+        ],
+      }),
+    ).toBeUndefined()
+  })
+
+  test("restores handed off recipient from transfer tool parts when assistant agent is stale", () => {
+    expect(
+      resolveAgencyHandoffRecipientFromMessages({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: "Agent1",
+        currentRecipientSelectedAt: 1,
+        sessionID: "session_1",
+        messages: [
+          {
+            id: "message_1",
+            role: "assistant",
+            providerID: "agency-swarm",
+            agent: "Agent1",
+            time: {
+              completed: 2,
+            },
+          },
+        ],
+        partsByMessage: {
+          message_1: [
+            {
+              type: "tool",
+              tool: "transfer_to_Agent2",
+              state: {
+                status: "completed",
+                output: '{"assistant":"Agent2"}',
+              },
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      sessionID: "session_1",
+      messageID: "message_1",
+      agent: "Agent2",
+      selectedAt: 1,
+    })
   })
 
   test("agency picker rows resolve to the live agency name without forcing an agent", () => {
