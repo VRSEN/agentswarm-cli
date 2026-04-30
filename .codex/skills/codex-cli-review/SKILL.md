@@ -35,26 +35,26 @@ If `codex review` is unavailable or stuck, use a narrow `codex exec` review prom
 Prompt shape:
 
 ```text
-Review the current diff against <base> for real correctness, regression, security, data-boundary, policy, and test-coverage issues. Treat unintentional, unexplained, excessive, or scope-creeping changes as blocking findings with P0/P1/P2 severity by risk. Ignore style nits. Return exactly "No findings." if clean.
+Review the current diff against <base> for real correctness, regression, security, data-boundary, policy, repo-rule, PR compliance, review-gate, test/QA evidence, fork-minimality, excessive-scope, and unintentional-divergence issues. Treat real issues as P0/P1/P2 findings by risk, including missing required gates or evidence. Ignore style nits. Return exactly "No findings." if clean.
 ```
 
 ## Finding Severity
 
 - `P0`: public release harm, data loss, security or privacy exposure, destructive behavior, or core Agent Swarm/TUI release-path breakage.
-- `P1`: real bug or regression risk, unapproved user-visible behavior change, or fork-minimality/upstream-alignment violation likely to break behavior or future merges.
-- `P2`: excessive or unjustified drift, unrelated code/docs/test churn, missing required evidence, or unapproved fork delta that increases maintenance or review risk.
+- `P1`: real bug or regression risk, unapproved user-visible behavior change, missing or invalid merge/release gate likely to ship bad state, or fork-minimality/upstream-alignment violation likely to break behavior or future merges.
+- `P2`: excessive or unjustified drift, unrelated code/docs/test churn, PR compliance failure, missing required evidence, stale or mismatched review artifact, or unapproved fork delta that increases maintenance or review risk.
 
 ## Pull-Request Review Loop
 
 1. Read the pull request, latest head SHA, active review comments, unresolved threads, and required checks.
-2. Resolve every correct active thread finding locally.
+2. Resolve every correct active thread or official review finding locally, or record the manager's checked-evidence downgrade or override.
 3. Pull-request-specific work includes comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations.
 4. Keep pull-request-specific work on the local critical path when a bounded Codex pass covers it; use a subagent only when broader orchestration is needed.
 5. Trigger `@codex review` only when local Codex review and suitable subagents are unavailable, when the user asked for it, or when merge-gate proof needs pull-request-bound Codex.
 6. If the current input already came from pull-request comments that asked for `@codex review`, skip nested review loops and resolve the scoped comments directly.
 7. Poll hosted checks or pull-request Codex at least once a minute while they are pending.
 8. If local Codex or pull-request Codex stays non-terminal for 15 minutes, inspect state and retrigger once if it looks stuck. If required GitHub checks stay non-terminal for 30 minutes, inspect logs and continue or escalate with proof of a real service blocker.
-9. Do not hand off build-impact pull-request work until the latest head has zero unresolved threads, a clean local Codex review artifact, and green required checks. Then use the human review gate in `AGENTS.md`.
+9. Do not hand off build-impact pull-request work until the latest head has zero unresolved threads, a clean local Codex review artifact, and green required checks. Stale, interrupted, wrong-base, wrong-head, or pre-final review artifacts do not satisfy this gate; any later commit or merge invalidates it. Then use the human review gate in `AGENTS.md`.
 
 ## Output
 

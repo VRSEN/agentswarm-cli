@@ -28,7 +28,7 @@ Expected output: `ok`.
 Prompt shape:
 
 ```text
-Review this git diff for real correctness, regression, security, data-boundary, policy, and test-coverage issues. Ignore style nits. Return exactly "No findings." if clean.
+Review this git diff for real correctness, regression, security, data-boundary, policy, repo-rule, PR compliance, review-gate, test/QA evidence, fork-minimality, excessive-scope, and unintentional-divergence issues. Treat real issues as P0/P1/P2 findings by risk under AGENTS.md. Ignore style nits. Return exactly "No findings." if clean.
 ```
 
 ## Scope Control

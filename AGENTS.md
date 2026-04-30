@@ -317,7 +317,7 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - Every fork-only line needs a concrete reason. If a line is not strictly required, remove it or restore the upstream shape. State why upstream behavior is not enough in the commit message or `FORK_CHANGELOG.md`.
 - Why: keep the fork rebuildable from upstream with a small, auditable delta.
 - Treat every divergence from upstream as expensive and risky. It should feel painful to add or keep fork-only code because every extra line increases rebase, release, and debugging risk.
-- In code, pull-request, and release-candidate reviews, unintentional, unexplained, excessive, or scope-creeping changes are blocking findings, not style notes. Mark them `P0` when they risk release harm, data loss, security, privacy, destructive behavior, or the core Agent Swarm/TUI release path; `P1` when they risk real regressions, user-visible behavior changes, or fork-minimality/upstream-alignment breakage; and `P2` when they add unjustified drift, unrelated churn, missing evidence, or unapproved fork delta.
+- In code, pull-request, and release-candidate reviews, treat code bugs, repo-rule violations, PR compliance failures, missing official review gates, missing required QA or evidence, fork-minimality drift, excessive scope, and unintentional divergence as findings, not style notes. Mark them `P0` when they risk release harm, data loss, security, privacy, destructive behavior, or the core Agent Swarm/TUI release path; `P1` when they risk real regressions, user-visible behavior changes, or fork-minimality/upstream-alignment breakage; and `P2` when they add unjustified drift, unrelated churn, missing evidence, or unapproved fork delta.
 - Treat `FORK_CHANGELOG.md` and `USER_FLOWS.md` as the fork priming path for coding, review, release, and delegation. Read the relevant bounded sections before fork work; `FORK_CHANGELOG.md` approves intentional divergence, and `USER_FLOWS.md` owns fork user-flow expectations. If code differs from upstream and the behavior is not clearly covered there, looks unintentional, or changes a listed user flow without matching proof, stop and escalate before editing further.
 - Keep a line-or-hunk-level classification for every non-trivial fork delta before merge. The classification may live in an internal review artifact, PR review notes, or tests; `FORK_CHANGELOG.md` stays high-level and should summarize categories, not become a raw line dump.
 - If the needed feature or behavior already exists in `origin/dev`, use that implementation. Do not build a parallel path.
@@ -383,7 +383,8 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 ### External Signals
 
-- Pending GitHub checks, hosted reviews, unresolved pull-request comments, and other agent-visible workflows are open work. Build-impact PRs are not technically ready until the latest head has zero unresolved threads, a clean local Codex review artifact, and green required checks.
+- Pending GitHub checks, hosted reviews, unresolved pull-request comments, unresolved official review findings, and other agent-visible workflows are open work. Build-impact PRs are not technically ready until the latest head has zero unresolved threads, a clean local Codex review artifact, and green required checks.
+- Every official review finding stays open until the manager fixes it or explicitly downgrades or overrules it with checked evidence. A stale, interrupted, wrong-base, wrong-head, or pre-final review artifact is not a green gate; any later commit or merge invalidates a review gate for merge or release.
 - Use `.codex/skills/codex-cli-review` for outside-signal polling and stall handling.
 
 ## Danger Zone: Public And Irreversible Operations
@@ -409,7 +410,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Before any release or safety claim, build and reinstall the CLI from the fresh local build, launch it against the maintainer's canonical local test agency, send a real first message through the connected conversation, and verify that a non-empty streaming assistant response renders.
 - Auth-smoke CI alone never passes this gate. Any launch failure, including environment, credential, dependency, or TUI transition issues, blocks the release until you reproduce it and find the root cause.
 - Why: release claims were repeated while the installed binary still failed before a usable conversation.
-- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit. Use `.codex/skills/codex-cli-review` with base `vrsen/dev`; if it finds a blocking issue (`P1` or `P2`), stop and surface it to the user.
+- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit. Use `.codex/skills/codex-cli-review` with base `vrsen/dev`; if any review finding remains, stop and surface it to the user.
 
 ## Documentation Rules
 
@@ -489,7 +490,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Avoid slow or hanging tests. If you must skip one, leave a clear `FIXME`.
 - Follow existing package-local test structure and naming. Upstream tests still matter, but Agent Swarm-specific behavior needs named fork-owned coverage mapped to `FORK_CHANGELOG.md` or `USER_FLOWS.md`; keep that coverage separate from upstream tests when feasible so expected fork divergence or upstream test drift cannot mask fork regressions. Do not run tests from the repo root. Use package directories like `packages/opencode`.
 - Agent Swarm TUI fixes need real automated TUI evidence against a real Agency Swarm swarm when feasible; handoff fixes especially need proof that the handoff path works, or a recorded blocker explaining why that proof was not feasible.
-- Protocol, bridge, or history changes need tests for local UI or routing behavior and the exact outbound payload at the external transport boundary; filter fork-only internal markers before transport.
+- When persisted state, queued work, history, fork-only metadata, SDK payloads, UI state, or similar internal state crosses a process, API, or transport boundary, validation must prove both local behavior and the exact serialized outbound payload or boundary contract.
 - Avoid tests that give false confidence. Startup auth, CLI/app wiring, streaming, persistence, and workspace flow need integration or end-to-end coverage plus direct inspection of the user path when practical, not unit-only proof.
 - Retire unit tests that hide gaps in real behavior.
 - Remove dead code when it is in scope.
