@@ -1,10 +1,9 @@
-# Instruction File
+# Agent Operating Contract
 
-AGENTS.md is the consistency constitution. It is the short rule book that keeps work steady across sessions and agents. Keep it tight, clear, and easy to fix. If you find a rule gap, tighten the rule. Do not patch the gap with filler.
-CLAUDE.md is a symlink to AGENTS.md.
-Work hard. Finish what the user actually needed, not just the local task fragment. Use tests, logs, diffs, live state, or a clear spec as proof. Cut extra code and extra words when you can.
-You guard this codebase. Protect its patterns. Use checked facts, not guesses. Every user message is work. Managers keep the active queue; workers finish the scoped mandate with evidence.
-Default bias to correct: agents can look productive while solving only the local task, missing the larger environment, stale assumptions, hidden constraints, better data sources, or the real user goal. User words outrank agent summaries and agent prose. Reconcile the user's exact words against policy, the ledger, inspected evidence, and live state before action. If their exact words fight checked facts, say so and challenge the conflict.
+AGENTS.md is the governing operating contract for this repo. CLAUDE.md must stay a symlink to AGENTS.md.
+Work from checked evidence, preserve the user's real intent, protect codebase patterns, and finish scoped mandates with proof.
+User words outrank agent summaries and agent prose. Reconcile them against this contract, the ledger, inspected evidence, and live state before action. If they fight checked facts, say so and challenge the conflict.
+Managers own queue control, delegation, final review, merge decisions, release decisions, and destructive-action decisions. Workers finish the scoped mandate with evidence.
 
 ## Definitions
 
@@ -39,11 +38,12 @@ Why: local-looking progress can still miss the real environment or objective.
 - Escalate when judgment exceeds evidence. Do not present a guess, worker finding, stale summary, or untested hypothesis as truth.
 - Before finalizing, ask whether the work solved the user's real problem or only produced a local-looking answer.
 
-## Instruction File Maintenance
+## Operating Contract Maintenance
 
-- Treat this file as the top maintenance file. Keep only rules that matter in every session. Keep it short, practical, and easy to read. Move path-specific or step-by-step playbooks into skills, scoped rules, or linked docs.
-- After any chat summary or compaction, reread the live file from the default branch before you continue.
+- Treat AGENTS.md as the top operating contract. Keep only rules that matter in every session. Move path-specific or step-by-step playbooks into skills, scoped rules, or linked docs.
+- After any chat summary or compaction, reread the live AGENTS.md from the default branch before you continue.
 - Use `remove > update > add` when the result is the same. Do not add code, docs, tests, or rules until you rule out deleting, tightening, or reusing what already exists.
+- Keep policy text hierarchical: one list equals one category, list items must be comparable, and mixed long bullets must be split by owner, trigger, action, evidence, and exception.
 - Protect the context window. Never read a file in full until you know it is small enough. Bound file reads and tool output with `rg`, `sed -n`, `head`, `tail`, `wc`, or tool output limits. For CLIs that may print large output, redirect to a temp file first, then inspect slices.
 
 ## Self-Improvement And Policy Maintenance
@@ -213,51 +213,26 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - When you talk about pull requests, branches, issues, docs pages, or other user-openable artifacts, include links unless the user asked for no links.
 - Never put sensitive information in deliverables.
 
-## Safety Protocols
+## Evidence And Validation
 
-### Mandatory Workflow
-
-#### Step 0: Build Full Codebase Structure And Review Change Scope
-
-`rg --files`
-
-- Use `rg --files`, `git status -sb`, and focused diffs when you need structure discovery. Skip them when they do not help.
-- Keep the plan aligned with the latest diff. Update it when the diff changes.
-- If the user changes the working tree, never reapply those changes unless they ask.
-- Follow the approval triggers in this file. Do not invent extra gates that slow work down.
-
-#### Step 1: Proactive Analysis
-
-- Search for similar patterns, global related changes, and live evidence that could disprove the local plan. Prefer one consistent fix over scattered fixes unless scope or risk says otherwise.
-- Before you change runtime code, check whether upstream libraries already give you typed models, enums, errors, helpers, or protocols you can reuse.
-- Be clear on the real objective, what you will change, why it is needed, what local evidence supports it, and what proof will close it. If you cannot explain that plan, escalate before you continue.
-- Validate outside assumptions, like servers, ports, tokens, dependency behavior, and current upstream state, with real probes when you can.
+- Use `rg --files`, `git status -sb`, and focused diffs when structure discovery or change-scope review helps. Skip them when they do not.
+- Keep the plan aligned with the latest diff. If the user changes the working tree, never reapply those changes unless they ask.
+- Before edits, search related patterns, global changes, and live evidence that could disprove the plan. Prefer one consistent fix unless scope or risk says otherwise.
+- Before runtime code changes, check whether upstream libraries already provide typed models, enums, errors, helpers, or protocols you can reuse.
+- Know the real objective, planned change, reason, supporting evidence, and closing proof. If you cannot explain a safe plan, escalate before you continue.
+- Validate external assumptions, like servers, ports, tokens, dependency behavior, and current upstream state, with real probes when you can.
 - Share failures and root causes as soon as you find them. Do not do silent fixes.
-- Debug in a system: source analysis, logging, and minimal focused tests.
-- Before you fix any error, reproduce it yourself first with the same command or test.
-- End-user proof is the only proof that closes a bug.
-- To call a bug fixed, rerun the exact user flow that failed, on the same kind of build that failed, with the same starting state and commands, and confirm the failure is gone.
-- Unit tests and pull-request checks are needed, but they are not enough by themselves.
-- If the bug came from a TUI, which means the terminal UI, or from another visual flow, save a real screenshot from the installed release. Text-only dumps do not count.
-- If the bug came from a CLI, which means the command-line app, rerun that exact command against the released build or a fresh install of the package.
-- Do not claim a fix is done, and do not close a REQ, until that end-user proof exists and is cited.
-- For bug fixes, add the report as an automated test before you touch runtime code, and confirm it fails first.
-- Edit in small steps. Validate as you go.
-- After a change that affects data flow or ordering, scan related patterns and remove old ones when they are in scope.
+- Reproduce reported errors before fixing them; for bug fixes, add the report as a failing automated test before runtime code changes.
+- End-user proof closes bugs: rerun the exact failed flow against the same kind of build or artifact and starting state. TUI and visual bugs need a real screenshot from the installed release; CLI bugs need the exact command against the released build or a fresh install.
+- Do not claim a fix is done, and do not close a REQ, until end-user proof exists and is cited. Unit tests and pull-request checks are necessary but not sufficient.
+- Edit in small steps and validate as you go. After data-flow or ordering changes, scan related patterns and remove obsolete ones when in scope.
+- After each meaningful tool call or edit, validate the result, then proceed or self-correct.
 - Ask for approval before workarounds or behavior changes. If a request adds mess, say so.
-- Take the shortest safe path. Cut unnecessary commands, files, and chatter.
-
-#### Step 2: Validation
-
-`cd packages/<pkg> && bun test <target>` Run the most relevant tests first.
-`bun x prettier --write <paths>` Format touched files before each commit.
-`bun typecheck` Type-check before staging or committing.
-`bun turbo test:ci` Run the full suite before pull requests, merges, or repo-wide health claims.
-
-- After each meaningful tool call or code edit, validate the result in one or two lines and then proceed or self-correct.
-- After each change, run the touched formatter when needed, then `bun typecheck`, then the most relevant focused tests.
-- For repo-wide health or shipping, run `bun turbo test:ci`.
-- If the change is docs-only or formatting-only, run a formatter or linter instead of tests.
+- Run the most relevant tests first: `cd packages/<pkg> && bun test <target>`.
+- Format touched files before each commit: `bun x prettier --write <paths>`.
+- Type-check before staging or committing: `bun typecheck`.
+- Run `bun turbo test:ci` before pull requests, merges, or repo-wide health claims.
+- For docs-only or formatting-only edits, run a formatter or linter instead of tests.
 - Do not continue if a required command fails.
 
 ### Prohibited Practices
@@ -378,12 +353,18 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - If the remote is unavailable, you may continue, but say that you are assuming the branch is already synced.
 - If the task spans more than one repo or worktree, run `git fetch origin`, `git status -sb`, and `git rev-parse --short HEAD`, or the repo-tooling equivalent, in each one and confirm the active branch before you edit.
 - Before opening, updating, merging, or releasing, follow `.codex/skills/codex-cli-review` governance: live standards, current PR state, existing PR reuse, compliance, required checks, source/base/head SHA, live diff, title, issue link or exception, type, verification, checklist, and unrelated-change checks.
-- Every pull-request merge has a human QA and alignment gate. When any pull request is technically ready to merge, the manager must personally review the final diff, challenge every unexplained line, verify checks and unresolved threads, and state that it is technically ready. Then send the user an escalation/review guide for GitHub that groups the changes for quick review, explains why each group exists, asks the user to leave comments or questions on GitHub, and requests one alignment confirmation. For bug-fix and feature pull requests, do not ask the user to approve a merge until the guide also gives enough to QA the exact change when QA is applicable: a locally installed build or exact testable artifact plus clear QA steps. Merge only after the user confirms alignment and any required QA, unless the user explicitly requested an emergency or shortened workflow for that pull request. Worker review can inform this gate but cannot replace it.
+- Every pull-request merge has a human QA and alignment gate. Worker review can inform this gate but cannot replace it.
+- Before requesting merge approval, the manager must:
+  - verify the final diff, source/base/head SHAs, required checks, unresolved threads, and official review findings.
+  - challenge every unexplained line with checked evidence.
+  - provide evidence that the latest head is merge-ready: clean current-head review, green required checks, and zero unresolved threads.
+  - use `.codex/skills/codex-cli-review` to prepare the user review and QA packet for bug-fix or feature pull requests when QA applies.
+- Merge only after the user confirms alignment and required QA, unless the user explicitly approves an emergency or shortened workflow for that pull request.
 - For pull-request-specific work or required local Codex review, including comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations, use `.codex/skills/codex-cli-review`.
 
 ### External Signals
 
-- Pending GitHub checks, hosted reviews, unresolved pull-request comments, unresolved official review findings, and other agent-visible workflows are open work. Build-impact PRs are not technically ready until the latest head has zero unresolved threads, a clean local Codex review artifact, and green required checks.
+- Pending GitHub checks, hosted reviews, unresolved pull-request comments, unresolved official review findings, and other agent-visible workflows are open work. Build-impact PRs are not merge-ready until the latest head has zero unresolved threads, a clean local Codex review artifact, and green required checks.
 - Every official review finding stays open until the manager fixes it or explicitly downgrades or overrules it with checked evidence. A stale, interrupted, wrong-base, wrong-head, or pre-final review artifact is not a green gate; any later commit or merge invalidates a review gate for merge or release.
 - Use `.codex/skills/codex-cli-review` for outside-signal polling and stall handling.
 
@@ -582,7 +563,7 @@ Why: without a hardcoded source of truth, agents re-derive behavior from code ea
 
 - The user expects directness, a test-first mindset, concise updates, and no routine intermediate chatter.
 - After negative feedback or a protocol breach, tighten approvals, present minimal options, and wait for explicit approval before you change files.
-- Re-run Step 1 before and after edits in that stricter mode.
+- Re-run evidence analysis before and after edits in that stricter mode.
 - Memory files are for durable facts only. Do not use them as SOPs, run logs, journals, or transcripts.
 - Work with urgency and ownership. Carry tasks to completion.
 - When you learn something that makes this file clearer, fold it into the existing sections instead of adding scattered new rules.

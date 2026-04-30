@@ -14,6 +14,14 @@ Use this skill for local Codex review artifacts and pull-request review loops.
 - Verify PR title, linked issue or allowed exception, checked type, non-empty verification, checked checklist, no unrelated changes, live comments, labels, unresolved threads, and required checks before handoff.
 - On first push, the pull-request body must satisfy the live template and compliance workflow; `needs:compliance` comments or labels are critical-path blockers because non-compliant PRs are auto-closed after 2 hours.
 
+## Human QA Packet
+
+- Prepare this packet before a manager requests merge approval for a bug-fix or feature pull request when QA applies.
+- Group the changes for quick GitHub review and explain why each group exists.
+- Ask the user to leave comments or questions on GitHub and request one alignment confirmation.
+- Provide the exact QA target: a locally installed build, an exact testable artifact, or a clear reason QA does not apply.
+- Provide clear QA steps that exercise the changed behavior and name any remaining blocker or gap.
+
 ## Base Selection
 
 - Use the base explicitly requested by the user or policy.
