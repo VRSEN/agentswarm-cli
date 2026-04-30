@@ -96,17 +96,20 @@ describe("session.agency-swarm", () => {
   const mockHistory = (lastRunID?: string) => {
     const appended: unknown[][] = []
     const runs: (string | undefined)[] = []
+    const chatHistory: unknown[] = []
     AgencySwarmHistory.load = (async () => ({
       scope: "http://127.0.0.1:8000|builder|session_1",
-      chat_history: [],
+      chat_history: chatHistory,
       last_run_id: lastRunID,
       updated_at: Date.now(),
     })) as typeof AgencySwarmHistory.load
     AgencySwarmHistory.appendMessages = (async (_scope, newMessages) => {
-      appended.push(Array.isArray(newMessages) ? newMessages : [])
+      const messages = Array.isArray(newMessages) ? newMessages : []
+      appended.push(messages)
+      chatHistory.push(...messages)
       return {
         scope: "scope",
-        chat_history: [],
+        chat_history: chatHistory,
         updated_at: Date.now(),
       }
     }) as typeof AgencySwarmHistory.appendMessages
@@ -120,6 +123,35 @@ describe("session.agency-swarm", () => {
       }
     }) as typeof AgencySwarmHistory.setLastRunID
     return { appended, runs }
+  }
+
+  const addCompletedTransferPart = async (input: {
+    sessionID: string
+    messageID: string
+    tool: string
+    output?: string
+    start?: number
+    end?: number
+  }) => {
+    await Session.updatePart({
+      id: PartID.ascending(),
+      messageID: input.messageID as any,
+      sessionID: input.sessionID as any,
+      type: "tool",
+      callID: "call_handoff",
+      tool: input.tool,
+      state: {
+        status: "completed",
+        input: {},
+        output: input.output ?? "{}",
+        title: "",
+        metadata: {},
+        time: {
+          start: input.start ?? Date.now(),
+          end: input.end ?? Date.now(),
+        },
+      },
+    })
   }
 
   test("optionsFromProvider applies defaults", () => {
@@ -2198,6 +2230,99 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream does not route to a normal prior assistant agent after local cache reset", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        enabled_providers: ["agency-swarm"],
+        provider: {
+          "agency-swarm": {},
+        },
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        mockHistory()
+        let sentRecipient: string | undefined
+        AgencySwarmAdapter.getMetadata = (async () => ({
+          metadata: {
+            agents: ["ExampleAgent", "ExampleAgent2"],
+          },
+        })) as typeof AgencySwarmAdapter.getMetadata
+        AgencySwarmAdapter.streamRun = async function* (args) {
+          sentRecipient = args.recipientAgent ?? undefined
+          yield { type: "end" }
+        } as typeof AgencySwarmAdapter.streamRun
+
+        const session = await Session.create({ title: "normal assistant after cache reset" })
+        const created = Date.now()
+        const user = await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "user",
+          sessionID: session.id,
+          agent: "build",
+          model: {
+            providerID: ProviderID.make("agency-swarm"),
+            modelID: ModelID.make("default"),
+          },
+          time: {
+            created,
+          },
+        })
+        await Session.updatePart({
+          id: PartID.ascending(),
+          messageID: user.id,
+          sessionID: session.id,
+          type: "text",
+          text: "hello",
+        })
+        await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "assistant",
+          sessionID: session.id,
+          parentID: user.id,
+          modelID: "default",
+          providerID: "agency-swarm",
+          mode: "ExampleAgent",
+          agent: "ExampleAgent",
+          path: {
+            cwd: "/",
+            root: "/",
+          },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: {
+            created: created + 1,
+            completed: created + 2,
+          },
+        } as any)
+
+        const followUp = helper()
+        followUp.input.sessionID = session.id
+        followUp.input.assistantMessage.sessionID = session.id
+        followUp.input.options.recipientAgent = undefined
+        followUp.input.userMessage.info.id = MessageID.ascending()
+        followUp.input.userMessage.parts = [
+          { type: "text", text: "first prompt after cache reset", ignored: false },
+        ] as any
+
+        const stream = await SessionAgencySwarm.stream(followUp.input)
+        for await (const _ of stream.fullStream) {
+        }
+
+        expect(sentRecipient).toBeUndefined()
+      },
+    })
+  })
+
   test("compactHistory rebuilds request history from the compacted session slice", () => {
     const msgs = [
       {
@@ -2984,7 +3109,7 @@ describe("session.agency-swarm", () => {
           type: "text",
           text: "hello",
         })
-        await Session.updateMessage({
+        const assistant = await Session.updateMessage({
           id: MessageID.ascending(),
           role: "assistant",
           sessionID: session.id,
@@ -3010,6 +3135,12 @@ describe("session.agency-swarm", () => {
             completed: Date.now(),
           },
         } as any)
+        await addCompletedTransferPart({
+          sessionID: session.id,
+          messageID: assistant.id,
+          tool: "transfer_to_support_agent",
+          output: '{"assistant":"support_agent"}',
+        })
 
         const { input } = helper()
         input.sessionID = session.id
@@ -3461,7 +3592,7 @@ describe("session.agency-swarm", () => {
           type: "text",
           text: "hello",
         })
-        await Session.updateMessage({
+        const assistant = await Session.updateMessage({
           id: MessageID.ascending(),
           role: "assistant",
           sessionID: session.id,
@@ -3487,6 +3618,14 @@ describe("session.agency-swarm", () => {
             completed: created + 2,
           },
         } as any)
+        await addCompletedTransferPart({
+          sessionID: session.id,
+          messageID: assistant.id,
+          tool: "transfer_to_support_agent",
+          output: '{"assistant":"support_agent"}',
+          start: created + 1,
+          end: created + 2,
+        })
 
         const { input } = helper()
         input.sessionID = session.id
@@ -3661,7 +3800,7 @@ describe("session.agency-swarm", () => {
           type: "text",
           text: "hello",
         })
-        await Session.updateMessage({
+        const assistant = await Session.updateMessage({
           id: MessageID.ascending(),
           role: "assistant",
           sessionID: session.id,
@@ -3687,6 +3826,14 @@ describe("session.agency-swarm", () => {
             completed: handoffCompletedAt,
           },
         } as any)
+        await addCompletedTransferPart({
+          sessionID: session.id,
+          messageID: assistant.id,
+          tool: "transfer_to_support_agent",
+          output: '{"assistant":"support_agent"}',
+          start: handoffStartedAt,
+          end: handoffCompletedAt,
+        })
 
         const { input } = helper()
         input.sessionID = session.id
@@ -3762,7 +3909,7 @@ describe("session.agency-swarm", () => {
           type: "text",
           text: "hello",
         })
-        await Session.updateMessage({
+        const assistant = await Session.updateMessage({
           id: MessageID.ascending(),
           role: "assistant",
           sessionID: session.id,
@@ -3787,6 +3934,14 @@ describe("session.agency-swarm", () => {
             created: created + 1,
           },
         } as any)
+        await addCompletedTransferPart({
+          sessionID: session.id,
+          messageID: assistant.id,
+          tool: "transfer_to_support_agent",
+          output: '{"assistant":"support_agent"}',
+          start: created + 1,
+          end: created + 1,
+        })
 
         const { input } = helper()
         input.sessionID = session.id

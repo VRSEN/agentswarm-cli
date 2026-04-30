@@ -1,5 +1,6 @@
 import { displayAgentName } from "@/agent/display"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { hasAgencyHandoffEvidence } from "@/session/agency-swarm-utils"
 import * as Locale from "@/util/locale"
 
 export type AgencyHandoffMessage = {
@@ -188,10 +189,12 @@ export function shouldAdoptAgencyHandoffRecipient(input: {
   agency?: string
   currentRecipient?: string
   assistantAgent?: string
+  handoffEvidence: boolean
 }) {
   if (!input.frameworkMode) return false
   if (!input.agency) return false
   if (!input.assistantAgent) return false
+  if (!input.handoffEvidence) return false
   if (input.assistantAgent === "build") return false
   return input.assistantAgent !== input.currentRecipient
 }
@@ -208,11 +211,14 @@ export function resolveAgencyHandoffRecipientFromMessages(input: {
   const assistant = input.messages.findLast((item) => {
     if (item.role !== "assistant") return false
     if (item.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
-    const handoffAgent = resolveAgencyHandoffRecipientFromParts(input.partsByMessage?.[item.id] ?? [])
+    const parts = input.partsByMessage?.[item.id] ?? []
+    if (!hasAgencyHandoffEvidence(parts)) return false
+    const handoffAgent = resolveAgencyHandoffRecipientFromParts(parts)
     return !!(handoffAgent ?? item.agent)
   })
   if (!assistant) return undefined
-  const agent = resolveAgencyHandoffRecipientFromParts(input.partsByMessage?.[assistant.id] ?? []) ?? assistant.agent
+  const parts = input.partsByMessage?.[assistant.id] ?? []
+  const agent = resolveAgencyHandoffRecipientFromParts(parts) ?? assistant.agent
   if (
     input.currentRecipientSelectedAt &&
     assistant.time.completed &&
@@ -226,6 +232,7 @@ export function resolveAgencyHandoffRecipientFromMessages(input: {
       agency: input.agency,
       currentRecipient: input.currentRecipient,
       assistantAgent: agent,
+      handoffEvidence: hasAgencyHandoffEvidence(parts),
     })
   ) {
     return undefined

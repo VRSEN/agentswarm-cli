@@ -10,6 +10,7 @@ import {
   compactMetadata,
   extractEventMeta,
   findRecipientAgent,
+  hasAgencyHandoffEvidence,
   parseToolInput,
 } from "../../src/session/agency-swarm-utils"
 
@@ -171,5 +172,64 @@ describe("session.agency-swarm-utils", () => {
         ]),
       ),
     ).toBe("Reviewer")
+  })
+
+  test("hasAgencyHandoffEvidence accepts handoff output item metadata", () => {
+    expect(
+      hasAgencyHandoffEvidence([
+        {
+          type: "tool",
+          tool: "tool",
+          state: {
+            status: "completed",
+            metadata: {
+              item_type: "handoff_output_item",
+            },
+          },
+        },
+      ]),
+    ).toBeTrue()
+    expect(
+      hasAgencyHandoffEvidence([
+        {
+          type: "tool",
+          tool: "tool",
+          metadata: {
+            type: "handoff_output_item",
+          },
+        },
+      ]),
+    ).toBeTrue()
+  })
+
+  test("hasAgencyHandoffEvidence rejects non-handoff metadata", () => {
+    expect(
+      hasAgencyHandoffEvidence([
+        {
+          type: "tool",
+          tool: "tool",
+          state: {
+            status: "completed",
+            metadata: {
+              item_type: "function_call_output",
+            },
+          },
+        },
+        {
+          type: "tool",
+          tool: "tool",
+          metadata: {
+            item_type: "tool_call_output_item",
+          },
+        },
+        {
+          type: "text",
+          text: "assistant response",
+          metadata: {
+            item_type: "handoff_output_item",
+          },
+        },
+      ]),
+    ).toBeFalse()
   })
 })

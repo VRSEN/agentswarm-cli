@@ -46,8 +46,21 @@ describe("agency target options", () => {
         agency: "my-agency",
         currentRecipient: "ExampleAgent",
         assistantAgent: "ExampleAgent2",
+        handoffEvidence: true,
       }),
     ).toBe(true)
+  })
+
+  test("does not adopt a new assistant agent without handoff evidence", () => {
+    expect(
+      shouldAdoptAgencyHandoffRecipient({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: undefined,
+        assistantAgent: "ExampleAgent2",
+        handoffEvidence: false,
+      }),
+    ).toBe(false)
   })
 
   test("restores handed off recipient from synced session messages", () => {
@@ -69,6 +82,17 @@ describe("agency target options", () => {
             },
           },
         ],
+        partsByMessage: {
+          message_1: [
+            {
+              type: "tool",
+              tool: "transfer_to_Agent2",
+              state: {
+                status: "completed",
+              },
+            },
+          ],
+        },
       }),
     ).toEqual({
       sessionID: "session_1",
@@ -76,6 +100,79 @@ describe("agency target options", () => {
       agent: "Agent2",
       selectedAt: 1,
     })
+  })
+
+  test("restores handed off recipient from handoff output item metadata", () => {
+    expect(
+      resolveAgencyHandoffRecipientFromMessages({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: "Agent1",
+        currentRecipientSelectedAt: 1,
+        sessionID: "session_1",
+        messages: [
+          {
+            id: "message_1",
+            role: "assistant",
+            providerID: "agency-swarm",
+            agent: "Agent2",
+            time: {
+              completed: 2,
+            },
+          },
+        ],
+        partsByMessage: {
+          message_1: [
+            {
+              type: "tool",
+              tool: "tool",
+              state: {
+                status: "completed",
+                metadata: {
+                  item_type: "handoff_output_item",
+                  assistant: "Agent2",
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      sessionID: "session_1",
+      messageID: "message_1",
+      agent: "Agent2",
+      selectedAt: 1,
+    })
+  })
+
+  test("does not restore a normal assistant response as a handoff", () => {
+    expect(
+      resolveAgencyHandoffRecipientFromMessages({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: undefined,
+        currentRecipientSelectedAt: undefined,
+        sessionID: "session_1",
+        messages: [
+          {
+            id: "message_1",
+            role: "assistant",
+            providerID: "agency-swarm",
+            agent: "Agent1",
+            time: {
+              completed: 2,
+            },
+          },
+        ],
+        partsByMessage: {
+          message_1: [
+            {
+              type: "text",
+            },
+          ],
+        },
+      }),
+    ).toBeUndefined()
   })
 
   test("keeps later manual recipient selection over restored handoff", () => {
@@ -201,6 +298,7 @@ describe("agency target options", () => {
         agency: "my-agency",
         currentRecipient: "ExampleAgent",
         assistantAgent: "ExampleAgent",
+        handoffEvidence: true,
       }),
     ).toBe(false)
     expect(
@@ -209,6 +307,7 @@ describe("agency target options", () => {
         agency: "my-agency",
         currentRecipient: "ExampleAgent",
         assistantAgent: "build",
+        handoffEvidence: true,
       }),
     ).toBe(false)
   })
@@ -218,6 +317,7 @@ describe("agency target options", () => {
       agency: "my-agency",
       currentRecipient: "ExampleAgent",
       assistantAgent: "ExampleAgent2",
+      handoffEvidence: true,
     }
     expect(shouldAdoptAgencyHandoffRecipient({ frameworkMode: false, ...base })).toBe(false)
     expect(shouldAdoptAgencyHandoffRecipient({ frameworkMode: true, ...base, agency: undefined })).toBe(false)

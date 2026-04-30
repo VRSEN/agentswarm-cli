@@ -77,10 +77,12 @@ import { errorMessage as toErrorMessage } from "@/util/error"
 import {
   displayRunOnlyAgentLabel,
   readAgencyProviderOptions,
+  resolveAgencyHandoffRecipientFromParts,
   resolveAgencyHandoffRecipientFromMessages,
   resolveAgencyTargetSelection,
   shouldAdoptAgencyHandoffRecipient,
 } from "../../util/agency-target"
+import { hasAgencyHandoffEvidence } from "@/session/agency-swarm-utils"
 import { DialogWorkspaceCreate, restoreWorkspaceSession } from "../dialog-workspace-create"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
 import { useArgs } from "@tui/context/args"
@@ -165,6 +167,7 @@ export function Prompt(props: PromptProps) {
       }
     | undefined
   >()
+  const observedAssistantAgentsByMessage = new Map<string, string>()
   const activeOrgName = createMemo(() => sync.data.console_state.activeOrgName)
   const canSwitchOrgs = createMemo(() => sync.data.console_state.switchableOrgCount > 1)
   const frameworkMode = createMemo(() =>
@@ -249,7 +252,10 @@ export function Prompt(props: PromptProps) {
   createEffect(
     on(
       () => props.sessionID,
-      () => setHandoffRecipient(undefined),
+      () => {
+        setHandoffRecipient(undefined)
+        observedAssistantAgentsByMessage.clear()
+      },
     ),
   )
 
@@ -270,12 +276,25 @@ export function Prompt(props: PromptProps) {
       if (info.providerID !== AgencySwarmAdapter.PROVIDER_ID) return
 
       const options = agencyProviderOptions()
+      const parts = sync.data.part?.[info.id] ?? []
+      const handoffAgent = resolveAgencyHandoffRecipientFromParts(parts) ?? info.agent
+      const explicitHandoffEvidence = hasAgencyHandoffEvidence(parts)
+      const previousAssistantAgent = observedAssistantAgentsByMessage.get(info.id)
+      const liveAgentUpdatedEvidence =
+        !explicitHandoffEvidence &&
+        status().type !== "idle" &&
+        !!previousAssistantAgent &&
+        previousAssistantAgent !== handoffAgent
+      if (handoffAgent) {
+        observedAssistantAgentsByMessage.set(info.id, handoffAgent)
+      }
       if (
         !shouldAdoptAgencyHandoffRecipient({
           frameworkMode: frameworkMode(),
           agency: options.agency,
           currentRecipient: options.recipientAgent,
-          assistantAgent: info.agent,
+          assistantAgent: handoffAgent,
+          handoffEvidence: explicitHandoffEvidence || liveAgentUpdatedEvidence,
         })
       ) {
         return
@@ -284,7 +303,7 @@ export function Prompt(props: PromptProps) {
       setHandoffRecipient({
         sessionID: info.sessionID,
         messageID: info.id,
-        agent: info.agent,
+        agent: handoffAgent,
         selectedAt: options.recipientAgentSelectedAt,
       })
     }),
