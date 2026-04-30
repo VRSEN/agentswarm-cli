@@ -931,6 +931,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         },
         system: input.system,
         format: input.format,
+        ...(input.agencyRecipientAgent ? { agencyRecipientAgent: input.agencyRecipientAgent } : {}),
       }
 
       yield* Effect.addFinalizer(() => instruction.clear(info.id))
@@ -1450,7 +1451,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                     providerID: lastUser.model.providerID,
                     modelID: lastUser.model.modelID,
                   },
-                  recipientAgent: input.agencyRecipientAgent,
+                  recipientAgent: lastUser.agencyRecipientAgent ?? input.agencyRecipientAgent,
                 }),
             })
             if (result === "stop") return "break" as const

@@ -2026,8 +2026,7 @@ export namespace SessionAgencySwarm {
       if (candidate.source === "message") return 0
       if (candidate.source === "prompt") return 1
       if (candidate.source === "config" && input.configuredRecipientSelectedAt) {
-        const sessionCompletedAt = sessionRecipient?.completedAt
-        if ((sessionCompletedAt && input.configuredRecipientSelectedAt > sessionCompletedAt) || input.historyRecipient)
+        if (sessionRecipient?.completedAt && input.configuredRecipientSelectedAt > sessionRecipient.completedAt)
           return 2
       }
       if (candidate.source === "session" || candidate.source === "history") return 3

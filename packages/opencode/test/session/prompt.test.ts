@@ -22,6 +22,7 @@ import { Session } from "../../src/session"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { SessionCompaction } from "../../src/session/compaction"
 import { SessionSummary } from "../../src/session/summary"
 import { Instruction } from "../../src/session/instruction"
@@ -441,6 +442,105 @@ it.live("static loop consumes queued replies across turns", () =>
     }),
     { git: true, config: providerCfg },
   ),
+)
+
+it.live(
+  "queued agency prompts keep their own recipient overrides",
+  () =>
+    provideTmpdirInstance(
+      (_dir) =>
+        Effect.gen(function* () {
+          const originalMetadata = AgencySwarmAdapter.getMetadata
+          const originalStream = AgencySwarmAdapter.streamRun
+          const firstStarted = defer<void>()
+          const finishFirst = defer<void>()
+          const recipients: (string | undefined)[] = []
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              AgencySwarmAdapter.getMetadata = originalMetadata
+              AgencySwarmAdapter.streamRun = originalStream
+            }),
+          )
+          AgencySwarmAdapter.getMetadata = (async () => ({
+            metadata: {
+              agents: ["MathAgent", "support_agent"],
+            },
+          })) as typeof AgencySwarmAdapter.getMetadata
+          AgencySwarmAdapter.streamRun = async function* (args) {
+            recipients.push(args.recipientAgent ?? undefined)
+            if (recipients.length === 1) {
+              firstStarted.resolve()
+              await finishFirst.promise
+            }
+            yield { type: "end" }
+          } as typeof AgencySwarmAdapter.streamRun
+
+          const prompt = yield* SessionPrompt.Service
+          const sessions = yield* Session.Service
+          const chat = yield* sessions.create({
+            title: "Queued agency recipients",
+            permission: [{ permission: "*", pattern: "*", action: "allow" }],
+          })
+          const model = {
+            providerID: ProviderID.make("agency-swarm"),
+            modelID: ModelID.make("default"),
+          }
+
+          const first = yield* prompt
+            .prompt({
+              sessionID: chat.id,
+              agent: "build",
+              model,
+              agencyRecipientAgent: "MathAgent",
+              parts: [{ type: "text", text: "first" }],
+            })
+            .pipe(Effect.forkChild)
+          yield* Effect.promise(() => firstStarted.promise)
+
+          const second = yield* prompt
+            .prompt({
+              sessionID: chat.id,
+              agent: "build",
+              model,
+              agencyRecipientAgent: "support_agent",
+              parts: [{ type: "text", text: "second" }],
+            })
+            .pipe(Effect.forkChild)
+          yield* waitForQueuedUser()
+          finishFirst.resolve()
+
+          const [firstExit, secondExit] = yield* Effect.all([Fiber.await(first), Fiber.await(second)])
+          expect(Exit.isSuccess(firstExit)).toBe(true)
+          expect(Exit.isSuccess(secondExit)).toBe(true)
+          expect(recipients).toEqual(["MathAgent", "support_agent"])
+
+          function waitForQueuedUser() {
+            return Effect.gen(function* () {
+              for (let attempt = 0; attempt < 20; attempt++) {
+                const messages = yield* sessions.messages({ sessionID: chat.id })
+                if (messages.filter((item) => item.info.role === "user").length === 2) return
+                yield* Effect.sleep(10)
+              }
+              throw new Error("Queued prompt was not persisted before the active run completed")
+            })
+          }
+        }),
+      {
+        git: true,
+        config: {
+          model: "agency-swarm/default",
+          provider: {
+            "agency-swarm": {
+              options: {
+                baseURL: "http://127.0.0.1:8000",
+                agency: "builder",
+              },
+            },
+          },
+        },
+      },
+    ),
+  3_000,
 )
 
 it.live("loop continues when finish is tool-calls", () =>
