@@ -15,13 +15,14 @@ Use this skill for local Codex review artifacts and pull-request review loops.
 - The pull-request body must satisfy the live template and compliance workflow when the pull request is opened and stay compliant after edits or synchronize events.
 - `needs:compliance` comments or labels are critical-path blockers because non-compliant PRs are auto-closed after 2 hours from the compliance comment.
 
-## Human QA Packet
+## Human Review And QA Packet
 
-- Prepare this packet before a manager requests merge approval for a bug-fix or feature pull request when QA applies.
+- Prepare this packet before a manager requests merge approval.
 - Group the changes for quick GitHub review and explain why each group exists.
 - Ask the user to leave comments or questions on GitHub and request one alignment confirmation.
-- Provide the exact QA target: a locally installed build, an exact testable artifact, or a clear reason QA does not apply.
-- Provide clear QA steps that exercise the changed behavior and name any remaining blocker or gap.
+- For bug-fix, feature, and any other pull request with user-testable behavior, provide one concrete QA target, for example a locally installed build, exact testable artifact, preview environment; name the changed user flow it exercises.
+- For non-runtime pull requests, such as docs-only and policy-only changes, state that product QA is not applicable because no user-testable behavior changed; still request alignment confirmation.
+- For user-testable behavior, provide clear QA steps that exercise the changed behavior and name any remaining blocker or gap.
 
 ## Base Selection
 

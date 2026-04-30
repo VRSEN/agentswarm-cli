@@ -375,13 +375,13 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - If the remote is unavailable, you may continue, but say that you are assuming the branch is already synced.
 - If the task spans more than one repo or worktree, run `git fetch origin`, `git status -sb`, and `git rev-parse --short HEAD`, or the repo-tooling equivalent, in each one and confirm the active branch before you edit.
 - Before opening, updating, merging, or releasing, follow `.codex/skills/codex-cli-review` governance: live standards, current PR state, existing PR reuse, compliance, required checks, source/base/head SHA, live diff, title, issue link or exception, type, verification, checklist, and unrelated-change checks.
-- Every pull-request merge has a human QA and alignment gate. Worker review can inform this gate but cannot replace it.
+- Every pull-request merge has explicit user approval and a human alignment gate. Pull requests with user-testable behavior also have a human QA gate. Worker review can inform these gates but cannot replace them.
 - Before requesting merge approval, the manager must:
   - verify the final diff, source/base/head SHAs, required checks, unresolved threads, and official review findings.
   - challenge every unexplained line with checked evidence.
   - provide evidence that the latest head is merge-ready: clean current-head review, green required checks, and zero unresolved threads.
-  - use `.codex/skills/codex-cli-review` to prepare the user review and QA packet for bug-fix or feature pull requests when QA applies.
-- Merge only after the user explicitly approves that merge and confirms required alignment or QA, unless the user explicitly approves an emergency or shortened workflow for that pull request.
+  - use `.codex/skills/codex-cli-review` to prepare the user alignment request for every pull request, with a QA packet only when changed behavior is user-testable.
+- Merge only after the user explicitly approves that merge, confirms required alignment, and completes the user QA gate for pull requests with user-testable behavior, unless the user explicitly approves a merge-gate exception for that pull request.
 - For pull-request-specific work or required local Codex review, including comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations, use `.codex/skills/codex-cli-review`.
 
 ### External Signals
