@@ -12,6 +12,7 @@ Use this skill for local Codex review artifacts and pull-request review loops.
 - Before opening, updating, merging, or release-reviewing a pull request, read `AGENTS.md`, `CONTRIBUTING.md`, `.github/pull_request_template.md`, and the relevant `.github/workflows/*` for PR standards, compliance, typecheck, test, release, or publish.
 - Also read `FORK_CHANGELOG.md` and `USER_FLOWS.md` when fork behavior, TUI, release QA, or user flows are touched.
 - Verify PR title, linked issue or allowed exception, checked type, non-empty verification, checked checklist, no unrelated changes, live comments, labels, unresolved threads, and required checks before handoff.
+- On first push, the pull-request body must satisfy the live template and compliance workflow; `needs:compliance` comments or labels are critical-path blockers because non-compliant PRs are auto-closed after 2 hours.
 
 ## Base Selection
 

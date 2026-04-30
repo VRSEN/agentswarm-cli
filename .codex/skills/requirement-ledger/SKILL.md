@@ -17,10 +17,12 @@ Use this skill when task state must survive beyond the current chat or when a re
 6. Before presenting a revised ledger, list every active unfulfilled requirement with sanitized `original` and source pointers.
 7. When an item is done, run `complete` so it moves out of the active queue and into the archive.
 8. If a ledger revision is rejected, run `reject`; failed revision output is not source of truth and must be rebuilt from original sources.
-9. Register every active artifact you touch as a ledger-linked item or note: repos, worktrees, branches, PRs, conflicted states, temp artifacts, and generated review artifacts that still matter.
-10. Treat every unshipped or undiscarded artifact as a blocker; do not let it fall out of the active queue until it is shipped, explicitly discarded, or archived with resolution.
-11. Before opening a new PR for ongoing work, record the existing related PR and why it cannot be reused; if that reason is missing, reuse the existing PR instead.
-12. Before creating a public issue, pull request, docs page, or release note from ledger work, search the active ledger, archive, open and closed issues, related pull requests, and recent history; reuse or update existing artifacts when they cover the work.
+9. Review and update the ledger on every user message, task switch, meaningful progress point, artifact state change, before commits, before pull-request or release actions, and before a substantive reply or stop.
+10. Register every active artifact you touch as a ledger-linked item or note: repos, worktrees, branches, PRs, conflicted states, temp artifacts, and generated review artifacts that still matter.
+11. Treat every unshipped or undiscarded artifact as a blocker; do not let it fall out of the active queue until it is shipped, explicitly discarded, or archived with resolution.
+12. Before opening a new PR for ongoing work, record the existing related PR and why it cannot be reused; if that reason is missing, reuse the existing PR instead.
+13. Before creating a public issue, pull request, docs page, or release note from ledger work, search the active ledger, archive, open and closed issues, related pull requests, and recent history; reuse or update existing artifacts when they cover the work.
+14. Track GitHub issue links on the relevant ledger item. Public bug issues should preserve useful repro details, evidence, expected behavior, and related links unless the details are sensitive.
 
 ## CLI
 
@@ -114,4 +116,6 @@ python .codex/skills/requirement-ledger/scripts/requirement_ledger.py list --arc
 - Use `blocked` only when the next action truly needs a user decision or missing external input.
 - Use `complete` or `reject` instead of setting active items to a terminal status; the archive is the terminal-work record.
 - Keep artifact state current at task boundaries so the ledger always reflects the real critical path, not a stale memory of it.
+- Clean up stale owned branches and worktrees only after ownership and merge state are clear.
 - Do not use the ledger as policy storage. If work exposes a durable process gap, update `AGENTS.md` or the relevant repo skill; use the ledger only for state tracking: active requests, decisions, blockers, evidence, artifacts, and source links.
+- Own ledger mechanics inside the agent workflow. Do not ask the user to decide script fields, command shapes, or internal storage unless they change user-visible behavior, public artifacts, destructive actions, visibility boundaries, or another `AGENTS.md` escalation trigger.
