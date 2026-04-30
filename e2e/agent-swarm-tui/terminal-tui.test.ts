@@ -194,6 +194,12 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(nextBody).toMatchObject({
       recipient_agent: "MathAgent",
     })
+    expect(nextBody?.chat_history.some((item: any) => item?.type === "handoff_output_item")).toBeFalse()
+    expect(
+      nextBody?.chat_history.some(
+        (item: any) => item?.type === "message" && item?.role === "assistant" && !item?.content,
+      ),
+    ).toBeFalse()
   })
 
   test("prompt submit reaches the agency protocol server with the configured agent", async () => {
