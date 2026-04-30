@@ -3156,7 +3156,7 @@ describe("session.agency-swarm", () => {
     })
   })
 
-  test("stream persists handed off recipient from final messages payload", async () => {
+  test("stream persists handed off recipient from final messages payload over stale configured selection", async () => {
     await using tmp = await tmpdir({
       git: true,
       config: {
@@ -3270,6 +3270,7 @@ describe("session.agency-swarm", () => {
         second.input.userMessage.info.id = MessageID.ascending()
         second.input.userMessage.parts = [{ type: "text", text: "follow up", ignored: false }] as any
         second.input.options.recipientAgent = "MathAgent"
+        ;(second.input.options as any).recipientAgentSelectedAt = 1
 
         const secondStream = await SessionAgencySwarm.stream(second.input)
         for await (const _ of secondStream.fullStream) {
