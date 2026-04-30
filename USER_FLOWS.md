@@ -153,6 +153,8 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
 - Expected path:
   - Route prompts through the Agency Swarm adapter.
   - Discover swarms and agents from the backend.
+  - Pass compatible configured provider credentials into Agency runs through the credential bridge.
+  - Cancel in-flight Agency runs through the Agency Swarm bridge.
   - Preserve handoff-selected recipient agents across turns.
   - Preserve caller agent identity during history compaction.
   - Recover loopback history across local Agency server URL or port changes.
@@ -198,7 +200,7 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
   - `connect` stores normalized backend config and optional bearer token.
   - `agencies` discovers available agencies.
   - `use` pins a default agency id.
-  - `agent` manages recipient-agent helpers.
+  - `agent` provides Agent Builder scaffold helpers.
 - Expected failures:
   - URL normalization and discovery failures surface in the CLI command.
 
