@@ -32,10 +32,14 @@ test("load falls back to legacy opencode storage and migrates entry", async () =
   }) as typeof Storage.write
   Bun.file = ((file: string) => ({
     json: async () => {
-      expect(file.endsWith(`/opencode/storage/agency_swarm_history/${hash}.json`)).toBeTrue()
+      expect(file.replaceAll("\\", "/").endsWith(`/opencode/storage/agency_swarm_history/${hash}.json`)).toBeTrue()
       return {
         scope: scopedKey,
-        chat_history: [{ type: "message", role: "assistant" }],
+        chat_history: [
+          { type: "message", role: "assistant", content: "kept" },
+          { type: "handoff_output_item", output: { assistant: "bad" } },
+          { type: "message", role: "assistant", agent: "bad" },
+        ],
         last_run_id: "run_1",
         updated_at: 123,
       }
@@ -46,7 +50,7 @@ test("load falls back to legacy opencode storage and migrates entry", async () =
 
   expect(entry).toEqual({
     scope: scopedKey,
-    chat_history: [{ type: "message", role: "assistant" }],
+    chat_history: [{ type: "message", role: "assistant", content: "kept" }],
     last_run_id: "run_1",
     updated_at: 123,
   })

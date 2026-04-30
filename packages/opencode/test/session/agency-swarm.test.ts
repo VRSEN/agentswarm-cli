@@ -3204,7 +3204,7 @@ describe("session.agency-swarm", () => {
               payload: {
                 new_messages: [
                   {
-                    type: "handoff_output_item",
+                    type: "function_call_output",
                     call_id: "call_handoff",
                     output: '{"assistant":"support_agent"}',
                   },
@@ -3435,7 +3435,7 @@ describe("session.agency-swarm", () => {
     })
   })
 
-  test("stream routes next message to agent_updated handoff id", async () => {
+  test("stream does not persist agent_updated events as request history", async () => {
     await using tmp = await tmpdir({
       git: true,
       config: {
@@ -3466,8 +3466,10 @@ describe("session.agency-swarm", () => {
           ],
         })) as typeof AgencySwarmAdapter.getMetadata
         let turn = 0
+        const sentHistories: Array<Array<Record<string, unknown>>> = []
         AgencySwarmAdapter.streamRun = async function* (args) {
           turn++
+          sentHistories.push(args.chatHistory)
           if (turn === 1) {
             yield {
               type: "data",
@@ -3531,7 +3533,9 @@ describe("session.agency-swarm", () => {
         for await (const _ of secondStream.fullStream) {
         }
 
-        expect(sentRecipient).toBe("slides_agent")
+        expect(sentRecipient).toBeUndefined()
+        expect(sentHistories[1]?.some((item) => item.type === "handoff_output_item")).toBeFalse()
+        expect(sentHistories[1]?.some((item) => item.type === "message" && !("content" in item))).toBeFalse()
       },
     })
   })

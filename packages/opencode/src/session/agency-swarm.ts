@@ -1626,19 +1626,6 @@ export namespace SessionAgencySwarm {
               input.assistantMessage.agent = maybeName
               input.assistantMessage.mode = maybeName
               await Session.updateMessage(input.assistantMessage)
-              await AgencySwarmHistory.appendMessages(scope, [
-                {
-                  type: "handoff_output_item",
-                  output: {
-                    assistant: maybeName,
-                  },
-                },
-                {
-                  type: "message",
-                  role: "assistant",
-                  agent: maybeName,
-                },
-              ])
             }
             continue
           }
@@ -2110,7 +2097,7 @@ export namespace SessionAgencySwarm {
     for (let index = history.length - 1; index >= 0; index--) {
       const item = history[index]
       const type = asString(item["type"])
-      if (type === "handoff_output_item") {
+      if (type === "function_call_output" || type === "handoff_output_item") {
         const outputAgent = readHandoffOutputAgent(item["output"])
         if (outputAgent) return outputAgent
 

@@ -95,9 +95,13 @@ export namespace AgencySwarmHistory {
 
   function asHistory(input: unknown): Array<Record<string, unknown>> {
     if (!Array.isArray(input)) return []
-    return input.filter(
-      (item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item),
-    )
+    return input.filter((item): item is Record<string, unknown> => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return false
+      const record = item as Record<string, unknown>
+      if (record["type"] === "handoff_output_item") return false
+      if (record["type"] === "message" && !Object.prototype.hasOwnProperty.call(record, "content")) return false
+      return true
+    })
   }
 
   async function loadLegacy(scope: Scope): Promise<Entry | undefined> {
