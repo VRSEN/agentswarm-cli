@@ -368,8 +368,8 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 ### Repo And Pull Requests
 
-- Docs-only and `FORK_CHANGELOG.md` edits go straight to `vrsen/dev`. Policy changes use `.codex/skills/policy-maintenance` unless the user explicitly asks otherwise.
-- After verifying the local remote model, if `origin/dev` is reachable, run `git fetch --all --prune` and work from a named branch based on `origin/dev` before analysis, edits, or tests. In this checkout, `origin/dev` means the upstream OpenCode `dev` branch and `vrsen/dev` means the canonical fork `dev` branch.
+- Docs-only and `FORK_CHANGELOG.md` edits do not need product QA, but mutating `vrsen/dev` for them still needs explicit user approval. Policy changes use `.codex/skills/policy-maintenance` unless the user explicitly asks otherwise.
+- After verifying the local remote model, if the relevant remotes are reachable, run `git fetch --all --prune` and work from a named branch based on the mandated target branch before analysis, edits, or tests. In this checkout, `origin/dev` means the upstream OpenCode `dev` branch and `vrsen/dev` means the canonical fork `dev` branch.
 - For pushes to `vrsen/dev`, verify the `origin/dev...vrsen/dev` counts before you push.
 - For public release work, verify that the exact release commit is already reachable from `vrsen/dev` and that the target version is already present in the release input files.
 - If the remote is unavailable, you may continue, but say that you are assuming the branch is already synced.
