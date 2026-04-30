@@ -102,6 +102,49 @@ describe("agency target options", () => {
     })
   })
 
+  test("restores handed off recipient from handoff output item metadata", () => {
+    expect(
+      resolveAgencyHandoffRecipientFromMessages({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: "Agent1",
+        currentRecipientSelectedAt: 1,
+        sessionID: "session_1",
+        messages: [
+          {
+            id: "message_1",
+            role: "assistant",
+            providerID: "agency-swarm",
+            agent: "Agent2",
+            time: {
+              completed: 2,
+            },
+          },
+        ],
+        partsByMessage: {
+          message_1: [
+            {
+              type: "tool",
+              tool: "tool",
+              state: {
+                status: "completed",
+                metadata: {
+                  item_type: "handoff_output_item",
+                  assistant: "Agent2",
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      sessionID: "session_1",
+      messageID: "message_1",
+      agent: "Agent2",
+      selectedAt: 1,
+    })
+  })
+
   test("does not restore a normal assistant response as a handoff", () => {
     expect(
       resolveAgencyHandoffRecipientFromMessages({

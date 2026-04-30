@@ -61,8 +61,15 @@ export function hasAgencyHandoffEvidence(parts: readonly unknown[] | undefined) 
 
     const state = asRecord(record["state"])
     const metadata = asRecord(record["metadata"]) ?? asRecord(state?.["metadata"])
-    return asString(metadata?.["type"]) === "handoff_output_item"
+    return isAgencyHandoffOutputMetadata(metadata)
   })
+}
+
+function isAgencyHandoffOutputMetadata(metadata: Record<string, unknown> | undefined) {
+  return (
+    asString(metadata?.["type"]) === "handoff_output_item" ||
+    asString(metadata?.["item_type"]) === "handoff_output_item"
+  )
 }
 
 export function isAgencyHandoffToolName(value: string | undefined) {
