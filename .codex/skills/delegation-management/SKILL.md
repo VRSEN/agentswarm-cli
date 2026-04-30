@@ -13,14 +13,15 @@ Use this skill when delegation affects correctness, queue control, review qualit
 - Managers may inspect, review, run tests, integrate worker output, and perform mechanical git operations. For this repo, they must not author non-trivial code or test edits unless the user explicitly approves.
 - Worker output is evidence, not final truth. Verify it before relying on it or presenting it as final.
 - When reviewing delegated output, load and follow the same relevant skill or skills the worker was told to use, and verify whether the worker actually used them.
+- Treat subagents as focused independent contributors or counsel inside their mandate, not narrow command executors.
 
 ## Delegation Shape
 
 1. Delegate only when it protects the manager context window, shortens the critical path, improves plan quality, or enables parallel investigation.
-2. Start each task with the exact user ask, relevant artifacts, inspected evidence, unknowns to acquire, success condition, output format, and hard limits.
+2. Start each task with the exact user ask, repo, branch, relevant artifacts, source pointers, inspected evidence, unknowns to acquire, success condition, output format, and hard limits.
 3. If the prompt carries context from another conversation, name that source explicitly; write "the end user told the manager" or "the manager's previous response", not bare "the user" or "previous response" when the worker cannot see that speaker.
 4. For large work, use staged delegation when useful: analysis or discussion first, implementation second, review or polish third.
-5. Let workers ask questions, return blockers, and surface tradeoffs. Do not force immediate delivery when missing facts could change the result.
+5. Let workers ask questions, request scope extensions, return blockers, and surface tradeoffs. Do not force immediate delivery when missing facts could change the result.
 6. Keep local environment repair, credentials, and machine-specific setup on the manager thread unless the user delegates that work explicitly.
 7. Choose local review, delegated worker, and assistant model paths through `AGENTS.md` Tool And Model Policy before you delegate.
 8. Keep pull-request-specific work off the manager thread when possible. Prefer `.codex/skills/codex-cli-review` when a bounded local Codex pass cleanly covers the task; use one fitting worker otherwise, and surface a blocker only if neither path works.

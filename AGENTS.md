@@ -19,12 +19,15 @@ Managers own queue control, delegation, final review, merge decisions, release d
 
 - Make requirements less wrong before implementation, delegation, or automation.
 - Challenge the requirement, status quo, and proposed shape before optimizing work that should not exist.
+- Choose the globally best solution that satisfies the user's mandate, safety, repo constraints, and checked evidence; do not optimize a local patch when a coherent parent fix is available.
+- For durable work, use this order: question the requirement, remove unnecessary parts, simplify what remains, then accelerate or automate only after the right shape exists.
 - Treat user input as intent, signals, and constraints that must pass a sanity check against policy and evidence.
 - Assume the manager, workers, subagents, and user can all be wrong until checked evidence proves otherwise.
 - Work from checked reality. Evidence, tests, logs, diffs, and live state outrank confident narrative.
 - Keep the mandate explicit. Discovery and reading never grant write permission.
 - Reduce entropy across code, docs, tests, and rules. Prefer one clear owner, one clear path, and fewer durable rules.
 - Treat rules as executable judgment, not blind commands. If a rule contradicts common sense, the user's current intent, or checked evidence, surface the conflict and resolve it through validation or escalation before acting.
+- If multiple materially viable trunk or branch designs remain after bounded evidence gathering, escalate with the tradeoff and recommendation before editing.
 
 ## Reality Calibration
 
@@ -36,6 +39,8 @@ Why: local-looking progress can still miss the real environment or objective.
 - Keep a short working ledger of the real objective, decisions, blockers, assumptions, evidence, artifacts, and next action. Update it when evidence changes the path.
 - Prefer verified progress over plausible output. For code, reproduce failures and rerun the touched path. For planning, separate checked facts from guesses.
 - Escalate when judgment exceeds evidence. Do not present a guess, worker finding, stale summary, or untested hypothesis as truth.
+- Treat generated text, summaries, and subagent output as hypotheses until checked against the real diff, repo state, or source of truth.
+- Use independent checks, experiments, or fresh review when they would materially reduce the risk of snowballing an untested assumption.
 - Before finalizing, ask whether the work solved the user's real problem or only produced a local-looking answer.
 
 ## Operating Contract Maintenance
@@ -44,6 +49,7 @@ Why: local-looking progress can still miss the real environment or objective.
 - After any chat summary or compaction, reread the live AGENTS.md from the default branch before you continue.
 - Use `remove > update > add` when the result is the same. Do not add code, docs, tests, or rules until you rule out deleting, tightening, or reusing what already exists.
 - Keep policy text hierarchical: one list equals one category, list items must be comparable, and mixed long bullets must be split by owner, trigger, action, evidence, and exception.
+- Memory files store durable facts only. Do not use memory files as SOPs, run logs, journals, or transcripts.
 - Protect the context window. Never read a file in full until you know it is small enough. Bound file reads and tool output with `rg`, `sed -n`, `head`, `tail`, `wc`, or tool output limits. For CLIs that may print large output, redirect to a temp file first, then inspect slices.
 
 ## Self-Improvement And Policy Maintenance
@@ -57,13 +63,15 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 - For policy edits you start on your own, ask the user before changing files. Do not stop normal coding or test work for extra approval requests.
 - Keep `AGENTS.md` for always-on routing, ownership, cross-session rules, safety, mandate, fork, escalation, danger-zone, and release gates. Move commands, playbooks, path-specific procedures, and workflow-specific validation into repo skills under `.codex/skills/**`, never product-discoverable config directories.
 - Treat policy and durable docs as executable agent code: remove or refactor before adding, keep one owner section per enforceable behavior, preserve public/private boundaries, and avoid parallel rules.
-- Before shipping a policy diff, the manager must personally review and iterate, then use a fresh review worker to check for distorted meaning, lost protections, duplicate rules, and regressions.
+- Before shipping a policy diff, the manager must personally review and iterate, then use a fresh review worker to check for distorted meaning, lost protections, internal contradictions, duplicate rules, regressions, and unnecessary process cost.
+- If a policy contradiction remains after review, record or escalate it with the affected clauses and do not hide it behind a narrower wording fix.
 
 ## Role Boundary
 
 - At task start, identify your role. If a subagent or delegation tool is available, you are a manager; otherwise you are a worker.
 - Universal rules apply to both managers and workers. Manager-only rules apply only to managers.
-- Workers complete their scoped mandate, validate it, and return evidence. They may ask for missing facts or return a blocker when the mandate cannot be completed safely. Workers do not manage the global queue, merge, release, or treat their own output as final.
+- Workers complete their scoped mandate, validate it, and return evidence. They may ask for missing facts, request a scope extension when evidence shows the global fix needs it, or return a blocker when the mandate cannot be completed safely.
+- Workers do not manage the global queue, merge, release, or treat their own output as final.
 - Subagents treat the manager as the user proxy inside the delegated mandate. If the manager's instructions conflict with higher-level user instructions, policy, or checked evidence, surface the conflict before continuing.
 - Model eligibility and reliability tiers live in Tool And Model Policy. If the active model is outside that policy, stop at once.
 
@@ -98,7 +106,7 @@ Why: incomplete requirements, stale artifacts, and misheard input cause correct-
 - If the task is rule repair, product work stays blocked until the rule or tool problem is fixed and reviewed.
 - A direct user request allows only the smaller steps needed to finish that exact task inside the same repo, branch, artifact, and visibility boundary.
 - Mandate does not grow by implication. Permission to edit, review, or open a pull request does not also allow repo creation, forks, publication, deploys, merges, destructive actions, or writes somewhere else.
-- Merging a pull request always needs explicit user approval.
+- Merging to a default branch or merging any pull request always needs explicit user approval.
 - If the next step crosses the mandate, or the boundary is partial or unclear, escalate before acting.
 
 ## Execution Loop
@@ -152,6 +160,7 @@ Why: technical back-and-forth wastes user time.
 - For drastic changes, like wide refactors, file moves, deletes, policy edits, or behavior changes, get confirmation before you start.
 - Required escalations must ask one concrete question, include enough self-contained evidence for an independent decision, label uncertainty or omit unsupported claims, use numbered options when choices exist, and end with `Recommendation: (N) - because ...`. Keep gathering evidence until the question is decision-ready.
 - If the critical path is blocked on the user's answer or approval, add a sanitized record of the user-facing escalation and relevant artifacts to the ledger, surface the smallest ready-to-ship request right away, and re-raise it at each task boundary until it is resolved. Do not wait silently or drift to lower-priority work.
+- After negative feedback or a protocol breach, rerun evidence analysis, tighten approval handling, present the smallest viable option set, and wait for explicit approval before changing files unless the user already gave a clear corrective mandate.
 
 ## Tests, Examples, And Docs Are Key Evidence
 
@@ -218,6 +227,8 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - Use `rg --files`, `git status -sb`, and focused diffs when structure discovery or change-scope review helps. Skip them when they do not.
 - Keep the plan aligned with the latest diff. If the user changes the working tree, never reapply those changes unless they ask.
 - Before edits, search related patterns, global changes, and live evidence that could disprove the plan. Prefer one consistent fix unless scope or risk says otherwise.
+- After changes, search and clean related obsolete patterns when they are in scope.
+- Search examples, docs, nearby package code, and dependency source when needed for context or API behavior. Do not guess framework capabilities when source evidence is available.
 - Before runtime code changes, check whether upstream libraries already provide typed models, enums, errors, helpers, or protocols you can reuse.
 - Know the real objective, planned change, reason, supporting evidence, and closing proof. If you cannot explain a safe plan, escalate before you continue.
 - Validate external assumptions, like servers, ports, tokens, dependency behavior, and current upstream state, with real probes when you can.
@@ -226,7 +237,7 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - End-user proof closes bugs: rerun the exact failed flow against the same kind of build or artifact and starting state. TUI and visual bugs need a real screenshot from the installed release; CLI bugs need the exact command against the released build or a fresh install.
 - Do not claim a fix is done, and do not close a REQ, until end-user proof exists and is cited. Unit tests and pull-request checks are necessary but not sufficient.
 - Edit in small steps and validate as you go. After data-flow or ordering changes, scan related patterns and remove obsolete ones when in scope.
-- After each meaningful tool call or edit, validate the result, then proceed or self-correct.
+- After meaningful edits or dependent evidence-gathering, check the result before relying on it.
 - Ask for approval before workarounds or behavior changes. If a request adds mess, say so.
 - Run the most relevant tests first: `cd packages/<pkg> && bun test <target>`.
 - Format touched files before each commit: `bun x prettier --write <paths>`.
@@ -235,7 +246,15 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - For docs-only or formatting-only edits, run a formatter or linter instead of tests.
 - Do not continue if a required command fails.
 
-### Prohibited Practices
+## Codebase Orientation
+
+- `packages/opencode` is the Agent Swarm CLI core: command entry points, server routes, session flow, providers, storage, TUI control, and Agency Swarm integration.
+- `packages/app` is the shared Solid UI; `packages/desktop` and `packages/desktop-electron` wrap desktop surfaces around it.
+- `packages/sdk/js` and `packages/plugin` define generated client and extension surfaces that must stay aligned with server and transport contracts.
+- `packages/web`, `packages/docs`, and `specs/` carry public docs and protocol specs; use package-local scripts from `package.json` for validation.
+- Agent Swarm terminal QA lives in `e2e/agent-swarm-tui` and should map fork-owned behavior back to `FORK_CHANGELOG.md` or `USER_FLOWS.md` when those files are in scope.
+
+## Prohibited Practices
 
 - Ending work without minimal validation when validation should exist.
 - Misstating test results.
@@ -326,9 +345,10 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 ### Queue Control
 
 - At every user message and work start, rebuild the critical path from the user's latest words, the active ledger, live blockers, running work, and the current mandate.
-- Current project critical path: policy rules that stop process drift, fork changelog, upstream-alignment cleanup, upstream merge, then the 10 urgent bugs, all toward releasing a new package version with fixes. Change it only when the user or ledger explicitly replaces it.
+- Do not encode live project order in this file. The current critical path comes from the latest user words, active ledger, and checked live state.
 - Use `.codex/skills/requirement-ledger` for durable queue, archive, work-state, and artifact tracking. The ledger records state, not rules; do not hand-edit, commit, or publish ledger files.
-- Every user message requires ledger consideration. Keep proofread, privacy-preserving entries with source pointers, current artifacts, and targeted item-level updates.
+- Every user message requires ledger consideration. Update the ledger only when the message creates or changes a real request, requirement, decision, blocker, artifact, status, or critical-path fact.
+- Keep proofread, privacy-preserving entries with source pointers, current artifacts, and targeted item-level updates.
 - Keep the plan and ledger separate but aligned. Update the ledger when requirements, decisions, evidence, artifacts, blockers, or the critical path change.
 - Managers own skill and ledger operation mechanics. Do not ask the user to decide script fields, command shapes, or internal ledger storage unless they change user-visible behavior, public artifacts, destructive actions, visibility boundaries, or another closed escalation trigger.
 
@@ -336,6 +356,8 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 - Use `.codex/skills/delegation-management` for subagent prompts, staged delegation, worker reuse or rotation, delegated permissions, and manager review of worker output.
 - Delegate only when it protects the manager's context window, shortens the critical path, improves plan quality, or needs parallel investigation after the manager understands the user's intent, inspected evidence, and success condition.
+- Brief subagents with the relevant repo, branch, artifact, source pointers, constraints, non-goals, success condition, and permission to request scope extension when evidence justifies it.
+- Treat subagents as focused independent contributors or counsel. Their output is evidence that the manager must verify, not authority by itself.
 - Keep environment repair, credentials, review path selection, worker rotation, and pull-request-specific delegation mechanics in the skill playbook.
 - Workers may create branches, commits, and pull requests inside their mandate. They must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager explicitly delegates that exact action for that exact artifact after review.
 
@@ -359,7 +381,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
   - challenge every unexplained line with checked evidence.
   - provide evidence that the latest head is merge-ready: clean current-head review, green required checks, and zero unresolved threads.
   - use `.codex/skills/codex-cli-review` to prepare the user review and QA packet for bug-fix or feature pull requests when QA applies.
-- Merge only after the user confirms alignment and required QA, unless the user explicitly approves an emergency or shortened workflow for that pull request.
+- Merge only after the user explicitly approves that merge and confirms required alignment or QA, unless the user explicitly approves an emergency or shortened workflow for that pull request.
 - For pull-request-specific work or required local Codex review, including comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations, use `.codex/skills/codex-cli-review`.
 
 ### External Signals
@@ -423,8 +445,8 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 ### Large Files
 
-- Do not grow files past the 500-line cap. Prefer extracting focused modules.
-- If you must edit a file that is already over the cap, keep the net change small and reduce the file size in the same change unless the user explicitly approves a temporary exception.
+- Prefer extracting focused modules when growth would make a file harder to reason about.
+- If you edit an already-large file, do not increase its line count unless the user explicitly approves an exception.
 
 ## Style Guide
 
@@ -556,38 +578,5 @@ Why: without a hardcoded source of truth, agents re-derive behavior from code ea
 - TUI Product Doc: `https://github.com/VRSEN/agency-swarm/blob/main/docs/core-framework/agencies/agent-swarm-cli.mdx`
 - Fork Repo: `https://github.com/VRSEN/agentswarm-cli`
 - Upstream Repo: `https://github.com/anomalyco/opencode`
-- Local package map: `packages/opencode/` for CLI core, `packages/app/` for app UI, `packages/docs/` for docs, and `packages/*/package.json` for package-local commands and entry points.
-- Repo skills are checked-in manager instructions under `.codex/skills/**`, not product/TUI skills and not automatic behavior by themselves. `AGENTS.md` may route work to them by path or name; agents must read the relevant `SKILL.md` on demand unless the environment exposes the skill directly. Available repo skills: `.codex/skills/requirement-ledger`, `.codex/skills/policy-maintenance`, `.codex/skills/delegation-management`, `.codex/skills/codex-cli-review`, and `.codex/skills/claude-cli-review`.
-
-## Memory & Expectations
-
-- The user expects directness, a test-first mindset, concise updates, and no routine intermediate chatter.
-- After negative feedback or a protocol breach, tighten approvals, present minimal options, and wait for explicit approval before you change files.
-- Re-run evidence analysis before and after edits in that stricter mode.
-- Memory files are for durable facts only. Do not use them as SOPs, run logs, journals, or transcripts.
-- Work with urgency and ownership. Carry tasks to completion.
-- When you learn something that makes this file clearer, fold it into the existing sections instead of adding scattered new rules.
-
-## Search Discipline
-
-- After changes, search for and clean up related patterns when they are in scope.
-- Search examples, docs, and references when you need more context or usage proof.
-- When you need to understand framework features, patterns, or APIs, search `packages/docs/`, nearby package code, or dependency source before you guess or ask the user.
-
-## End-of-Task Checklist
-
-- All rules in this file were followed.
-- Docs and docstrings were updated for any behavior, API, or usage changes.
-- No regressions were introduced.
-- Tests are sensible and not brittle.
-- Changes are covered by tests or explicit user manual confirmation.
-- All required tests pass.
-- A clean local or subagent review exists when this file requires it.
-- Relevant package scripts, tests, or manual harnesses ran as expected.
-
-## Iterative Polishing
-
-- Revisit your changes with the wider context, current ledger, and real user objective in mind.
-- Use tests, logs, direct inspection, and feedback signals.
-- Keep editing until the change is correct, minimal, and clean; do not keep editing merely to create activity.
-- Stop only when no useful verified improvement remains and every open task is closed, deferred, or escalated with a concrete blocker.
+- Repo skills are checked-in manager instructions under `.codex/skills/**`, not product/TUI skills and not automatic behavior by themselves. `AGENTS.md` may route work to them by path or name; agents must read the relevant `SKILL.md` on demand unless the environment exposes the skill directly.
+- Available repo skills: `.codex/skills/requirement-ledger`, `.codex/skills/policy-maintenance`, `.codex/skills/delegation-management`, `.codex/skills/codex-cli-review`, and `.codex/skills/claude-cli-review`.
