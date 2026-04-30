@@ -489,6 +489,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Avoid slow or hanging tests. If you must skip one, leave a clear `FIXME`.
 - Follow existing package-local test structure and naming. Upstream tests still matter, but Agent Swarm-specific behavior needs named fork-owned coverage mapped to `FORK_CHANGELOG.md` or `USER_FLOWS.md`; keep that coverage separate from upstream tests when feasible so expected fork divergence or upstream test drift cannot mask fork regressions. Do not run tests from the repo root. Use package directories like `packages/opencode`.
 - Agent Swarm TUI fixes need real automated TUI evidence against a real Agency Swarm swarm when feasible; handoff fixes especially need proof that the handoff path works, or a recorded blocker explaining why that proof was not feasible.
+- Protocol, bridge, or history changes need tests for local UI or routing behavior and the exact outbound payload at the external transport boundary; filter fork-only internal markers before transport.
 - Avoid tests that give false confidence. Startup auth, CLI/app wiring, streaming, persistence, and workspace flow need integration or end-to-end coverage plus direct inspection of the user path when practical, not unit-only proof.
 - Retire unit tests that hide gaps in real behavior.
 - Remove dead code when it is in scope.
