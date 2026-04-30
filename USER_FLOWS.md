@@ -220,7 +220,7 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
 - Approved fork scope: `FORK_CHANGELOG.md`.
 - Release QA coverage notes: `e2e/agent-swarm-tui/QA_COVERAGE.md`.
 - Fork product naming, command, tips, and logo: `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/cli/logo.ts`, `packages/opencode/src/cli/cmd/tui/component/logo.tsx`.
-- Launcher wrappers and platform-package resolution: `packages/opencode/bin/agentswarm-npx`, `packages/opencode/bin/agentswarm`, `packages/opencode/package.json`, `packages/opencode/script/postinstall.mjs`.
+- Launcher wrappers and platform-package resolution: `packages/opencode/bin/agentswarm-npx`, `packages/opencode/bin/agentswarm`, `packages/opencode/package.json`, `packages/opencode/script/postinstall.mjs`, `packages/opencode/script/publish.ts`.
 - Launcher onboarding, project detection, starter creation, Python repair, and bridge startup: `packages/opencode/src/agency-swarm/npx.ts`.
 - Run-session recovery: `packages/opencode/src/agency-swarm/run-session.ts`.
 - Agency adapter, history, and run behavior: `packages/opencode/src/agency-swarm/adapter.ts`, `packages/opencode/src/agency-swarm/history.ts`, `packages/opencode/src/session/agency-swarm.ts`.
