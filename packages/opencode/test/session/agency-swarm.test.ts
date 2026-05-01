@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
+import { readFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
+import path from "node:path"
 import { Auth } from "../../src/auth"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
@@ -194,6 +196,250 @@ describe("session.agency-swarm", () => {
     expect(agency).toBe("builder")
     expect(called).toBeFalse()
   })
+
+  test("stream sends local source paths for dropped data URL images to loopback Agency servers", async () => {
+    mockHistory()
+    let captured: Record<string, string> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.fileURLs
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[Image 1] inspect this image",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "image/png",
+        filename: "red-dot.png",
+        url: "data:image/png;base64,AAA=",
+        source: {
+          type: "file",
+          path: "/tmp/red-dot.png",
+          text: {
+            value: "[Image 1]",
+            start: 0,
+            end: 9,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      "red-dot.png": "/tmp/red-dot.png",
+    })
+  })
+
+  const clipboardImageParts = (content: Buffer) =>
+    [
+      {
+        type: "text",
+        text: "[Image 1] inspect this image",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "image/png",
+        filename: "clipboard",
+        url: `data:image/png;base64,${content.toString("base64")}`,
+        source: {
+          type: "file",
+          path: "clipboard",
+          text: {
+            value: "[Image 1]",
+            start: 0,
+            end: 9,
+          },
+        },
+      },
+    ] as any
+
+  test("stream materializes clipboard data URL images for loopback Agency servers", async () => {
+    mockHistory()
+    const content = Buffer.from("clipboard image")
+    let captured: Record<string, string> | undefined
+    let observedContent: Buffer | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.fileURLs
+      const filepath = input.fileURLs?.["clipboard"]
+      if (filepath) observedContent = await readFile(filepath)
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = clipboardImageParts(content)
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    const filepath = captured?.["clipboard"]
+    expect(filepath).toBeDefined()
+    expect(path.isAbsolute(filepath!)).toBeTrue()
+    expect(path.basename(filepath!)).toBe("clipboard-image.png")
+    expect(observedContent).toEqual(content)
+    await expect(readFile(filepath!)).rejects.toThrow()
+  })
+
+  test("stream cleans up materialized clipboard images when Agency streaming fails", async () => {
+    mockHistory()
+    const content = Buffer.from("clipboard image")
+    let captured: Record<string, string> | undefined
+    let observedContent: Buffer | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.fileURLs
+      const filepath = input.fileURLs?.["clipboard"]
+      if (filepath) observedContent = await readFile(filepath)
+      throw new Error("backend failed")
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = clipboardImageParts(content)
+
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    const filepath = captured?.["clipboard"]
+    expect(filepath).toBeDefined()
+    expect(observedContent).toEqual(content)
+    expect(events.at(-1)?.type).toBe("error")
+    expect(events.at(-1)?.error.message).toBe("backend failed")
+    await expect(readFile(filepath!)).rejects.toThrow()
+  })
+
+  test("stream cleans up materialized clipboard images when the stream is closed", async () => {
+    mockHistory()
+    const content = Buffer.from("clipboard image")
+    let captured: Record<string, string> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.fileURLs
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.content_part.added",
+            item_id: "item_1",
+            content_index: 0,
+            part: {
+              type: "output_text",
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = clipboardImageParts(content)
+
+    const stream = await SessionAgencySwarm.stream(input)
+    expect((await stream.fullStream.next()).value.type).toBe("start")
+    expect((await stream.fullStream.next()).value.type).toBe("start-step")
+    expect((await stream.fullStream.next()).value.type).toBe("text-start")
+
+    const filepath = captured?.["clipboard"]
+    expect(filepath).toBeDefined()
+    await expect(readFile(filepath!)).resolves.toEqual(content)
+
+    await stream.fullStream.return(undefined)
+    await expect(readFile(filepath!)).rejects.toThrow()
+  })
+
+  test("stream rejects clipboard data URL images for remote Agency servers", async () => {
+    mockHistory()
+    let called = false
+    AgencySwarmAdapter.streamRun = async function* () {
+      called = true
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.baseURL = "https://agency.example.com"
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[Image 1] inspect this image",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "image/png",
+        filename: "clipboard",
+        url: "data:image/png;base64,AAA=",
+        source: {
+          type: "file",
+          path: "clipboard",
+          text: {
+            value: "[Image 1]",
+            start: 0,
+            end: 9,
+          },
+        },
+      },
+    ] as any
+
+    await expect(SessionAgencySwarm.stream(input)).rejects.toThrow("Agent Swarm Run mode cannot send inline image data")
+    expect(called).toBeFalse()
+  })
+
+  for (const baseURL of ["http://host.docker.internal:8000", "http://kubernetes.docker.internal:8000"]) {
+    test(`stream sends local source paths for dropped data URL images to ${new URL(baseURL).hostname} Agency servers`, async () => {
+      mockHistory()
+      let captured: Record<string, string> | undefined
+      AgencySwarmAdapter.streamRun = async function* (input) {
+        captured = input.fileURLs
+        yield { type: "end" }
+      } as typeof AgencySwarmAdapter.streamRun
+
+      const { input } = helper()
+      input.options.baseURL = baseURL
+      input.userMessage.parts = [
+        {
+          type: "text",
+          text: "[Image 1] inspect this image",
+          ignored: false,
+        },
+        {
+          type: "file",
+          mime: "image/png",
+          filename: "red-dot.png",
+          url: "data:image/png;base64,AAA=",
+          source: {
+            type: "file",
+            path: "/tmp/red-dot.png",
+            text: {
+              value: "[Image 1]",
+              start: 0,
+              end: 9,
+            },
+          },
+        },
+      ] as any
+
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _event of stream.fullStream) {
+        // consume
+      }
+
+      expect(captured).toEqual({
+        "red-dot.png": "/tmp/red-dot.png",
+      })
+    })
+  }
 
   test("optionsFromProvider maps supported FastAPI request options", () => {
     const options = SessionAgencySwarm.optionsFromProvider({
