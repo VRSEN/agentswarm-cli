@@ -259,6 +259,48 @@ describe("session.agency-swarm", () => {
     await expectStreamMaterializesDroppedImage()
   })
 
+  test("stream does not use Codex OAuth as the file upload client for launcher file drops", async () => {
+    mockHistory()
+    await Auth.set("openai", {
+      type: "oauth",
+      access: "oauth-access",
+      refresh: "oauth-refresh",
+      expires: Date.now() + 60_000,
+      accountId: "acct_123",
+    } as any)
+
+    const content = Buffer.from("red dot image")
+    let capturedFileURLs: Record<string, string> | undefined
+    let capturedClientConfig: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedFileURLs = input.fileURLs
+      capturedClientConfig = input.clientConfig
+      const filepath = input.fileURLs?.["red-dot.png"]
+      expect(filepath).toBeDefined()
+      await expect(readFile(filepath!)).resolves.toEqual(content)
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    try {
+      const { input } = helper()
+      input.options.materializeLocalFiles = true
+      input.userMessage.parts = droppedImageParts(content)
+
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _event of stream.fullStream) {
+        // consume
+      }
+
+      const filepath = capturedFileURLs?.["red-dot.png"]
+      expect(filepath).toBeDefined()
+      expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
+      expect(capturedClientConfig).toBeUndefined()
+      await expect(readFile(filepath!)).rejects.toThrow()
+    } finally {
+      await Auth.remove("openai")
+    }
+  })
+
   test("stream materializes file URL attachments for launcher Agency servers", async () => {
     mockHistory()
     const sourceDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-file-url-stream-"))
