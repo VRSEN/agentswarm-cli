@@ -386,7 +386,35 @@ describe("session.agency-swarm", () => {
       },
     ] as any
 
-  test("stream materializes clipboard data URL images for loopback Agency servers", async () => {
+  test("stream materializes clipboard data URL images for manual loopback Agency servers", async () => {
+    mockHistory()
+    const content = Buffer.from("clipboard image")
+    let captured: Record<string, string> | undefined
+    let observedContent: Buffer | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.fileURLs
+      const filepath = input.fileURLs?.["clipboard"]
+      if (filepath) observedContent = await readFile(filepath)
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = clipboardImageParts(content)
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    const filepath = captured?.["clipboard"]
+    expect(filepath).toBeDefined()
+    expect(path.isAbsolute(filepath!)).toBeTrue()
+    expect(path.basename(filepath!)).toBe("clipboard-image.png")
+    expect(observedContent).toEqual(content)
+    await expect(readFile(filepath!)).rejects.toThrow()
+  })
+
+  test("stream materializes clipboard data URL images for launcher-managed loopback Agency servers", async () => {
     mockHistory()
     const content = Buffer.from("clipboard image")
     let captured: Record<string, string> | undefined

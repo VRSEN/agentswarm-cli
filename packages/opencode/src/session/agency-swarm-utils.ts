@@ -244,7 +244,7 @@ function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptio
 
   if (part.url.startsWith("data:")) {
     if (isClipboardImage(part)) {
-      if (options.allowLocalFilePaths && options.materializeLocalFilePaths) {
+      if (options.allowLocalFilePaths) {
         const clipboardFile = materializeClipboardImage(part)
         if (clipboardFile) {
           options.materializedFilePaths?.push(clipboardFile)

@@ -242,7 +242,7 @@ describe("session.agency-swarm-utils", () => {
     })
   })
 
-  test("collectFileURLs preserves file URL attachments for local Agency servers without materialization", async () => {
+  test("collectFileURLs preserves file URL attachments for manually connected local Agency servers", async () => {
     const sourceDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-file-url-source-"))
     const sourcePath = path.join(sourceDir, "outside-project.txt")
     const content = Buffer.from("outside project")
@@ -357,8 +357,50 @@ describe("session.agency-swarm-utils", () => {
     ).toThrow("Agent Swarm Run mode cannot send local files to a remote Agency server")
   })
 
-  test("collectFileURLs materializes clipboard images for local Agency servers", async () => {
+  test("collectFileURLs materializes clipboard images for manually connected local Agency servers", async () => {
     const content = Buffer.from("clipboard image")
+    const materializedFilePaths: string[] = []
+    const result = collectFileURLs(
+      msg([
+        file("part-1", {
+          type: "file",
+          mime: "image/png",
+          url: `data:image/png;base64,${content.toString("base64")}`,
+          filename: "clipboard",
+          source: {
+            type: "file",
+            path: "clipboard",
+            text: {
+              value: "[Image 1]",
+              start: 0,
+              end: 9,
+            },
+          },
+        }),
+      ]),
+      {
+        allowLocalFilePaths: true,
+        materializedFilePaths,
+      },
+    )
+
+    const filepath = result?.["clipboard"]
+    expect(filepath).toBeDefined()
+    expect(path.isAbsolute(filepath!)).toBeTrue()
+    expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
+    expect(path.basename(filepath!)).toBe("clipboard-image.png")
+    expect(materializedFilePaths).toEqual([filepath!])
+
+    try {
+      await expect(readFile(filepath!)).resolves.toEqual(content)
+    } finally {
+      await rm(path.dirname(filepath!), { recursive: true, force: true })
+    }
+  })
+
+  test("collectFileURLs materializes clipboard images for launcher-managed local Agency servers", async () => {
+    const content = Buffer.from("clipboard image")
+    const materializedFilePaths: string[] = []
     const result = collectFileURLs(
       msg([
         file("part-1", {
@@ -380,6 +422,7 @@ describe("session.agency-swarm-utils", () => {
       {
         allowLocalFilePaths: true,
         materializeLocalFilePaths: true,
+        materializedFilePaths,
       },
     )
 
@@ -388,6 +431,7 @@ describe("session.agency-swarm-utils", () => {
     expect(path.isAbsolute(filepath!)).toBeTrue()
     expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
     expect(path.basename(filepath!)).toBe("clipboard-image.png")
+    expect(materializedFilePaths).toEqual([filepath!])
 
     try {
       await expect(readFile(filepath!)).resolves.toEqual(content)
