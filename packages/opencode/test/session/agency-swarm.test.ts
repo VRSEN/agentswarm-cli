@@ -12,6 +12,7 @@ import { Provider } from "../../src/provider/provider"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Session } from "../../src/session"
 import { SessionAgencySwarm } from "../../src/session/agency-swarm"
+import { localFileMaterializationRoot } from "../../src/session/agency-swarm-utils"
 import { MessageID, PartID } from "../../src/session/schema"
 import { tmpdir } from "../fixture/fixture"
 
@@ -197,16 +198,8 @@ describe("session.agency-swarm", () => {
     expect(called).toBeFalse()
   })
 
-  test("stream sends local source paths for dropped data URL images to loopback Agency servers", async () => {
-    mockHistory()
-    let captured: Record<string, string> | undefined
-    AgencySwarmAdapter.streamRun = async function* (input) {
-      captured = input.fileURLs
-      yield { type: "end" }
-    } as typeof AgencySwarmAdapter.streamRun
-
-    const { input } = helper()
-    input.userMessage.parts = [
+  const droppedImageParts = (content: Buffer) =>
+    [
       {
         type: "text",
         text: "[Image 1] inspect this image",
@@ -216,7 +209,7 @@ describe("session.agency-swarm", () => {
         type: "file",
         mime: "image/png",
         filename: "red-dot.png",
-        url: "data:image/png;base64,AAA=",
+        url: `data:image/png;base64,${content.toString("base64")}`,
         source: {
           type: "file",
           path: "/tmp/red-dot.png",
@@ -229,14 +222,38 @@ describe("session.agency-swarm", () => {
       },
     ] as any
 
+  async function expectStreamMaterializesDroppedImage(baseURL?: string) {
+    mockHistory()
+    const content = Buffer.from("red dot image")
+    let captured: Record<string, string> | undefined
+    let observedContent: Buffer | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.fileURLs
+      const filepath = input.fileURLs?.["red-dot.png"]
+      if (filepath) observedContent = await readFile(filepath)
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    if (baseURL) input.options.baseURL = baseURL
+    input.userMessage.parts = droppedImageParts(content)
+
     const stream = await SessionAgencySwarm.stream(input)
     for await (const _event of stream.fullStream) {
       // consume
     }
 
-    expect(captured).toEqual({
-      "red-dot.png": "/tmp/red-dot.png",
-    })
+    const filepath = captured?.["red-dot.png"]
+    expect(filepath).toBeDefined()
+    expect(path.isAbsolute(filepath!)).toBeTrue()
+    expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
+    expect(path.basename(filepath!)).toBe("red-dot.png")
+    expect(observedContent).toEqual(content)
+    await expect(readFile(filepath!)).rejects.toThrow()
+  }
+
+  test("stream materializes dropped data URL images for loopback Agency servers", async () => {
+    await expectStreamMaterializesDroppedImage()
   })
 
   const clipboardImageParts = (content: Buffer) =>
@@ -397,47 +414,8 @@ describe("session.agency-swarm", () => {
   })
 
   for (const baseURL of ["http://host.docker.internal:8000", "http://kubernetes.docker.internal:8000"]) {
-    test(`stream sends local source paths for dropped data URL images to ${new URL(baseURL).hostname} Agency servers`, async () => {
-      mockHistory()
-      let captured: Record<string, string> | undefined
-      AgencySwarmAdapter.streamRun = async function* (input) {
-        captured = input.fileURLs
-        yield { type: "end" }
-      } as typeof AgencySwarmAdapter.streamRun
-
-      const { input } = helper()
-      input.options.baseURL = baseURL
-      input.userMessage.parts = [
-        {
-          type: "text",
-          text: "[Image 1] inspect this image",
-          ignored: false,
-        },
-        {
-          type: "file",
-          mime: "image/png",
-          filename: "red-dot.png",
-          url: "data:image/png;base64,AAA=",
-          source: {
-            type: "file",
-            path: "/tmp/red-dot.png",
-            text: {
-              value: "[Image 1]",
-              start: 0,
-              end: 9,
-            },
-          },
-        },
-      ] as any
-
-      const stream = await SessionAgencySwarm.stream(input)
-      for await (const _event of stream.fullStream) {
-        // consume
-      }
-
-      expect(captured).toEqual({
-        "red-dot.png": "/tmp/red-dot.png",
-      })
+    test(`stream materializes dropped data URL images for ${new URL(baseURL).hostname} Agency servers`, async () => {
+      await expectStreamMaterializesDroppedImage(baseURL)
     })
   }
 
