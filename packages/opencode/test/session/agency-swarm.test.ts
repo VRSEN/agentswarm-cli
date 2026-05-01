@@ -259,7 +259,7 @@ describe("session.agency-swarm", () => {
     await expectStreamMaterializesDroppedImage()
   })
 
-  test("stream does not use Codex OAuth as the file upload client for launcher file drops", async () => {
+  test("stream blocks launcher file drops when only ChatGPT browser auth is available", async () => {
     mockHistory()
     await Auth.set("openai", {
       type: "oauth",
@@ -268,6 +268,53 @@ describe("session.agency-swarm", () => {
       expires: Date.now() + 60_000,
       accountId: "acct_123",
     } as any)
+
+    const content = Buffer.from("red dot image")
+    let called = false
+    AgencySwarmAdapter.streamRun = async function* () {
+      called = true
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    try {
+      const { input } = helper()
+      input.options.materializeLocalFiles = true
+      input.userMessage.parts = droppedImageParts(content)
+
+      await expect(async () => {
+        const stream = await SessionAgencySwarm.stream(input)
+        for await (const _event of stream.fullStream) {
+          // consume
+        }
+      }).toThrow("cannot send file attachments through ChatGPT browser auth")
+      expect(called).toBeFalse()
+    } finally {
+      await Auth.remove("openai")
+    }
+  })
+
+  test("stream uses an OpenAI API key for launcher file drops when browser auth is also stored", async () => {
+    mockHistory()
+    await Auth.set("openai", {
+      type: "oauth",
+      access: "oauth-access",
+      refresh: "oauth-refresh",
+      expires: Date.now() + 60_000,
+      accountId: "acct_123",
+    } as any)
+    spyOn(Env, "all").mockImplementation(() => ({
+      OPENAI_API_KEY: "sk-env-openai",
+    })) as typeof Env.all
+    spyOn(Provider, "list").mockImplementation(async () => ({
+      openai: {
+        id: "openai",
+        name: "OpenAI",
+        source: "api",
+        env: ["OPENAI_API_KEY"],
+        options: {},
+        models: {},
+      },
+    })) as typeof Provider.list
 
     const content = Buffer.from("red dot image")
     let capturedFileURLs: Record<string, string> | undefined
@@ -294,7 +341,9 @@ describe("session.agency-swarm", () => {
       const filepath = capturedFileURLs?.["red-dot.png"]
       expect(filepath).toBeDefined()
       expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
-      expect(capturedClientConfig).toBeUndefined()
+      expect(capturedClientConfig).toEqual({
+        api_key: "sk-env-openai",
+      })
       await expect(readFile(filepath!)).rejects.toThrow()
     } finally {
       await Auth.remove("openai")

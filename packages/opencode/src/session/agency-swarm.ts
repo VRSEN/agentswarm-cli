@@ -186,7 +186,7 @@ export namespace SessionAgencySwarm {
     const explicitUpstreamBaseURL = readConfiguredBaseURL(explicit)
     if (requiresFileUpload && explicitUpstreamBaseURL && isCodexAPIBaseURL(explicitUpstreamBaseURL)) {
       throw new Error(
-        "Agent Swarm Run mode cannot upload file attachments through ChatGPT/Codex OAuth. Configure an OpenAI API key or remove the Codex base_url from client_config for file attachments.",
+        "Agent Swarm Run mode cannot send file attachments through ChatGPT browser auth because the local Agency server uses client_config for both chat and file uploads. Configure an OpenAI API key for file attachments.",
       )
     }
     const explicitModel = explicit && asString(explicit["model"])
@@ -194,10 +194,14 @@ export namespace SessionAgencySwarm {
     const forwardGenerated =
       isLocalAgencyURL(baseURL) || Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS || forwardUpstreamCredentials === true
     const skipOpenAIApiKey = hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config)
+    const auths = await Auth.all()
+    const providers = await listProvidersForEnvCheck()
+    const env = await getEnvForClientConfig()
+    const hasStoredOpenAIOAuth = isStoredOpenAIOAuth(auths["openai"])
     const rawGenerated = forwardGenerated
-      ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), await getEnvForClientConfig(), {
+      ? await buildAuthClientConfig(auths, providers, env, {
           skipOpenAIApiKeyInjection: skipOpenAIApiKey,
-          skipOpenAIOAuthFromStored: hasExplicitOpenAIClientConfig(config),
+          skipOpenAIOAuthFromStored: hasExplicitOpenAIClientConfig(config) || requiresFileUpload === true,
           allowStoredOpenAIOAuth: !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
         })
       : undefined
@@ -223,20 +227,30 @@ export namespace SessionAgencySwarm {
           ? stripCodexOAuthForNonOpenAI(rawGenerated)
           : rawGenerated
         : rawGenerated
-    const uploadSafeGenerated = requiresFileUpload ? stripCodexOAuthForFileUploads(generated) : generated
-    if (!config) {
-      return finalizeClientConfig(uploadSafeGenerated, undefined, sessionLitellmModel)
+    if (
+      requiresFileUpload &&
+      hasStoredOpenAIOAuth &&
+      forwardGenerated &&
+      !hasSupportedFileUploadClientConfig(generated) &&
+      !hasSupportedFileUploadClientConfig(explicit)
+    ) {
+      throw new Error(
+        "Agent Swarm Run mode cannot send file attachments through ChatGPT browser auth because the local Agency server uses client_config for both chat and file uploads. Configure an OpenAI API key for file attachments.",
+      )
     }
-    if (!uploadSafeGenerated) {
+    if (!config) {
+      return finalizeClientConfig(generated, undefined, sessionLitellmModel)
+    }
+    if (!generated) {
       return finalizeClientConfig(explicit, explicit, sessionLitellmModel)
     }
 
     if (!explicit) {
-      return finalizeClientConfig(uploadSafeGenerated, undefined, sessionLitellmModel)
+      return finalizeClientConfig(generated, undefined, sessionLitellmModel)
     }
 
     const merged: Record<string, unknown> = {
-      ...uploadSafeGenerated,
+      ...generated,
       ...explicit,
     }
 
@@ -247,7 +261,7 @@ export namespace SessionAgencySwarm {
     delete merged["apiKey"]
 
     const explicitBaseURL = asString(explicit["base_url"]) ?? asString(explicit["baseURL"])
-    const generatedBaseURL = asString(uploadSafeGenerated["base_url"])
+    const generatedBaseURL = asString(generated["base_url"])
     if (explicitBaseURL) {
       merged["base_url"] = explicitBaseURL
     } else if (generatedBaseURL) {
@@ -255,7 +269,7 @@ export namespace SessionAgencySwarm {
     }
     delete merged["baseURL"]
 
-    const generatedLiteLLMKeys = asRecord(uploadSafeGenerated["litellm_keys"])
+    const generatedLiteLLMKeys = asRecord(generated["litellm_keys"])
     const explicitLiteLLMKeys = asRecord(explicit["litellm_keys"]) ?? asRecord(explicit["litellmKeys"])
     if (explicitLiteLLMKeys !== undefined) {
       merged["litellm_keys"] = explicitLiteLLMKeys
@@ -264,7 +278,7 @@ export namespace SessionAgencySwarm {
     }
     delete merged["litellmKeys"]
 
-    const generatedHeaders = readStringRecord(uploadSafeGenerated["default_headers"])
+    const generatedHeaders = readStringRecord(generated["default_headers"])
     const explicitHeaders =
       readStringRecord(explicit["default_headers"]) ?? readStringRecord(explicit["defaultHeaders"])
     if (generatedHeaders || explicitHeaders) {
@@ -479,12 +493,6 @@ export namespace SessionAgencySwarm {
     return stripGeneratedCodexOAuth(generated)
   }
 
-  function stripCodexOAuthForFileUploads(
-    generated: Record<string, unknown> | undefined,
-  ): Record<string, unknown> | undefined {
-    return stripGeneratedCodexOAuth(generated)
-  }
-
   function stripGeneratedCodexOAuth(
     generated: Record<string, unknown> | undefined,
   ): Record<string, unknown> | undefined {
@@ -501,6 +509,18 @@ export namespace SessionAgencySwarm {
       else delete out["default_headers"]
     }
     return Object.keys(out).length > 0 ? out : undefined
+  }
+
+  function isStoredOpenAIOAuth(auth: Auth.Info | undefined) {
+    return auth?.type === "oauth"
+  }
+
+  function hasSupportedFileUploadClientConfig(config: Record<string, unknown> | undefined) {
+    if (!config) return false
+    const baseURL = readConfiguredBaseURL(config)
+    if (baseURL && !isCodexAPIBaseURL(baseURL)) return true
+    if (asString(config["api_key"]) ?? asString(config["apiKey"])) return true
+    return !!readCredentialHeaders(config)
   }
 
   function hasEnvCredential(
