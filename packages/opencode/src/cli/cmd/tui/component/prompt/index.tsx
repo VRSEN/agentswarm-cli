@@ -1530,24 +1530,25 @@ export function Prompt(props: PromptProps) {
                 const isUrl = /^(https?):\/\//.test(filepath)
                 if (!isUrl) {
                   try {
-                    const mime = await Filesystem.mimeType(filepath)
-                    const filename = path.basename(filepath)
+                    const resolvedFilepath = path.resolve(filepath)
+                    const mime = await Filesystem.mimeType(resolvedFilepath)
+                    const filename = path.basename(resolvedFilepath)
                     // Handle SVG as raw text content, not as base64 image
                     if (mime === "image/svg+xml") {
-                      const content = await Filesystem.readText(filepath).catch(() => {})
+                      const content = await Filesystem.readText(resolvedFilepath).catch(() => {})
                       if (content) {
                         pasteText(content, `[SVG: ${filename ?? "image"}]`)
                         return
                       }
                     }
                     if (mime.startsWith("image/") || mime === "application/pdf") {
-                      const content = await Filesystem.readArrayBuffer(filepath)
+                      const content = await Filesystem.readArrayBuffer(resolvedFilepath)
                         .then((buffer) => Buffer.from(buffer).toString("base64"))
                         .catch(() => {})
                       if (content) {
                         await pasteAttachment({
                           filename,
-                          filepath,
+                          filepath: resolvedFilepath,
                           mime,
                           content,
                         })

@@ -538,6 +538,16 @@ export namespace SessionAgencySwarm {
     }
   }
 
+  function isLoopbackAgencyURL(baseURL: string) {
+    try {
+      const parsed = new URL(baseURL)
+      const h = parsed.hostname.toLowerCase()
+      return h === "127.0.0.1" || h === "0.0.0.0" || h === "localhost" || h === "::1" || h === "[::1]"
+    } catch {
+      return false
+    }
+  }
+
   export async function resolveAgency(options: RuntimeOptions): Promise<string> {
     if (options.agency) {
       return options.agency
@@ -591,7 +601,9 @@ export namespace SessionAgencySwarm {
     }
 
     const outgoingMessage = buildOutgoingMessage(input.userMessage)
-    const fileURLs = collectFileURLs(input.userMessage)
+    const fileURLs = collectFileURLs(input.userMessage, {
+      allowLocalFilePaths: isLoopbackAgencyURL(input.options.baseURL),
+    })
     const mentionedRecipient = findRecipientAgent(input.userMessage)
 
     const tools = new Map<string, Tool>()

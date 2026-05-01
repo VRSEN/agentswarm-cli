@@ -106,14 +106,17 @@ export function stringifyToolOutput(output: unknown): string {
   }
 }
 
-export function collectFileURLs(message: MessageV2.WithParts): Record<string, string> | undefined {
+export function collectFileURLs(
+  message: MessageV2.WithParts,
+  options: { allowLocalFilePaths?: boolean } = {},
+): Record<string, string> | undefined {
   const fileURLs: Record<string, string> = {}
   let index = 0
 
   for (const part of message.parts) {
     if (part.type !== "file") continue
 
-    const source = normalizeFileURL(part.url)
+    const source = normalizeFileURL(part, options)
     if (!source) continue
 
     const filename = part.filename || path.basename(source) || `file_${index++}`
@@ -170,21 +173,30 @@ export function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>
 }
 
-function normalizeFileURL(url: string): string | undefined {
-  if (url.startsWith("file://")) {
+function normalizeFileURL(part: MessageV2.FilePart, options: { allowLocalFilePaths?: boolean }): string | undefined {
+  if (part.url.startsWith("file://")) {
     try {
-      return fileURLToPath(url)
+      return fileURLToPath(part.url)
     } catch {
       return undefined
     }
   }
 
-  if (url.startsWith("http://") || url.startsWith("https://")) {
-    return url
+  if (part.url.startsWith("http://") || part.url.startsWith("https://")) {
+    return part.url
   }
 
-  if (url.startsWith("data:")) {
-    return url
+  if (part.url.startsWith("data:")) {
+    if (part.source?.type === "file" && part.source.path && path.isAbsolute(part.source.path)) {
+      if (options.allowLocalFilePaths) return part.source.path
+      throw new Error(
+        "Agent Swarm Run mode cannot send local image files to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
+      )
+    }
+
+    throw new Error(
+      "Agent Swarm Run mode cannot send inline image data. Save the image as a local file and attach that file.",
+    )
   }
 
   return undefined

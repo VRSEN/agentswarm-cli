@@ -137,14 +137,66 @@ describe("session.agency-swarm-utils", () => {
             mime: "image/png",
             url: "data:image/png;base64,AAA=",
             filename: "inline.png",
+            source: {
+              type: "file",
+              path: "/tmp/inline.png",
+              text: {
+                value: "[Image 1]",
+                start: 0,
+                end: 9,
+              },
+            },
           }),
         ]),
+        {
+          allowLocalFilePaths: true,
+        },
       ),
     ).toEqual({
       "spec.md": "/tmp/spec.md",
       "plan.pdf": "https://example.com/plan.pdf",
-      "inline.png": "data:image/png;base64,AAA=",
+      "inline.png": "/tmp/inline.png",
     })
+  })
+
+  test("collectFileURLs blocks data URL attachments without an allowed local file path", () => {
+    expect(() =>
+      collectFileURLs(
+        msg([
+          file("part-1", {
+            type: "file",
+            mime: "image/png",
+            url: "data:image/png;base64,AAA=",
+            filename: "inline.png",
+          }),
+        ]),
+      ),
+    ).toThrow("Agent Swarm Run mode cannot send inline image data")
+
+    expect(() =>
+      collectFileURLs(
+        msg([
+          file("part-1", {
+            type: "file",
+            mime: "image/png",
+            url: "data:image/png;base64,AAA=",
+            filename: "inline.png",
+            source: {
+              type: "file",
+              path: "/tmp/inline.png",
+              text: {
+                value: "[Image 1]",
+                start: 0,
+                end: 9,
+              },
+            },
+          }),
+        ]),
+        {
+          allowLocalFilePaths: false,
+        },
+      ),
+    ).toThrow("Agent Swarm Run mode cannot send local image files to a remote Agency server")
   })
 
   test("buildOutgoingMessage and findRecipientAgent use the final visible parts", () => {
