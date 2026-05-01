@@ -243,6 +243,12 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `ensureLatestAgencySwarm` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `a77de00c`
 
+- **Launcher-managed local projects allow safe local file drops**
+  - Intent: let Run mode send local file drops to a launcher-managed local Agency server without exposing arbitrary filesystem paths.
+  - Behavior: the launcher enables local file materialization, allowlists the project directory plus the local materialization root, and requires Agency Swarm FastAPI `allowed_local_file_dirs` support before starting the bridge.
+  - Implementation: `prepareProjectLaunch`, `startProjectServer`, and `buildAgencyConfig` in `packages/opencode/src/agency-swarm/npx.ts`, plus `buildServerLauncherScript` in `packages/opencode/src/agency-swarm/server-launcher.ts`.
+  - Added by: `2c88f1e1d`, `d08e55e2d`, PR #187.
+
 - **Run-mode session resumes recover the last local Agency project**
   - Intent: reopen a Run mode session in the right local Agency project without asking the user to pick it again.
   - Behavior: session resumes can recover the saved local Agency project before the TUI opens.
