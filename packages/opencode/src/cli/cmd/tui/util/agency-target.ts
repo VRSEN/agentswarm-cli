@@ -1,6 +1,10 @@
 import { displayAgentName } from "@/agent/display"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import { hasAgencyHandoffEvidence, isAgencyAgentUpdatedHandoffMetadata } from "@/session/agency-swarm-utils"
+import {
+  hasAgencyHandoffEvidence,
+  isAgencyAgentUpdatedHandoffMetadata,
+  isTopLevelAgencyHandoffMetadata,
+} from "@/session/agency-swarm-utils"
 import * as Locale from "@/util/locale"
 
 export type AgencyHandoffMessage = {
@@ -248,12 +252,22 @@ export function resolveAgencyHandoffRecipientFromMessages(input: {
 
 export function resolveAgencyHandoffRecipientFromParts(parts: AgencyHandoffPart[]) {
   for (const part of parts.toReversed()) {
-    const metadataAgent = readAgentUpdatedHandoffMetadataAgent(part.metadata)
+    const partMetadata = part.metadata
+    const stateMetadata = part.state?.metadata
+    const metadataAgent = isTopLevelAgencyHandoffMetadata(partMetadata)
+      ? readAgentUpdatedHandoffMetadataAgent(partMetadata)
+      : undefined
     if (metadataAgent) return metadataAgent
     if (part.type !== "tool") continue
-    const outputAgent = readHandoffOutputAgent(part.state?.output) ?? readHandoffMetadataAgent(part.state?.metadata)
+    const outputAgent =
+      isTopLevelAgencyHandoffMetadata(partMetadata) && isTopLevelAgencyHandoffMetadata(stateMetadata)
+        ? (readHandoffOutputAgent(part.state?.output) ?? readHandoffMetadataAgent(stateMetadata))
+        : undefined
     if (outputAgent) return outputAgent
-    const toolAgent = readTransferToolAgent(part.tool)
+    const toolAgent =
+      isTopLevelAgencyHandoffMetadata(partMetadata) && isTopLevelAgencyHandoffMetadata(stateMetadata)
+        ? readTransferToolAgent(part.tool)
+        : undefined
     if (toolAgent) return toolAgent
   }
   return undefined

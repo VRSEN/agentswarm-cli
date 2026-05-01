@@ -17,6 +17,10 @@ const tempDirs: string[] = []
 const tuiReadyTimeoutMs = process.env.CI ? 60_000 : 30_000
 const tuiInteractionTimeoutMs = process.env.CI ? 60_000 : 45_000
 
+async function waitForConfiguredDemoRecipient(tui: TuiProcess) {
+  await tui.waitForText("UserSupportAgent", tuiInteractionTimeoutMs)
+}
+
 afterEach(async () => {
   await currentTui?.close()
   currentTui = undefined
@@ -175,6 +179,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
 
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("delegate normal sendmessage\r")
     await currentTui.waitForText("Delegated to MathAgent with SendMessage.", tuiInteractionTimeoutMs)
     await currentTui.waitFor(() => currentServer!.requests.length === 1, "delegate request", tuiInteractionTimeoutMs)
@@ -200,6 +205,46 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(nextBody?.chat_history.some((item: any) => item?.type === "handoff_output_item")).toBeFalse()
   })
 
+  test("nested SendMessage handoff-like metadata does not switch control", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await waitForConfiguredDemoRecipient(currentTui)
+    currentTui.write("nested delegate with forwarded handoff metadata\r")
+    await currentTui.waitForText("Nested SendMessage delegation finished.", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "nested delegate request",
+      tuiInteractionTimeoutMs,
+    )
+
+    currentTui.write("plain followup after nested delegation\r")
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 2,
+      "post-nested-delegation request",
+      tuiInteractionTimeoutMs,
+    )
+
+    const delegateBody = currentServer.requests[0]?.body
+    expect(delegateBody?.message).toContain("nested delegate with forwarded handoff metadata")
+    expect(delegateBody).toMatchObject({
+      recipient_agent: "UserSupportAgent",
+    })
+    const nextBody = currentServer.requests[1]?.body
+    expect(nextBody?.message).toContain("plain followup after nested delegation")
+    expect(nextBody).toMatchObject({
+      recipient_agent: "UserSupportAgent",
+    })
+    expect(nextBody?.chat_history.some((item: any) => item?.type === "function_call_output")).toBeTrue()
+    expect(nextBody?.chat_history.some((item: any) => item?.type === "handoff_output_item")).toBeFalse()
+  })
+
   test("transfer_to handoff switches control to the target agent for the next turn", async () => {
     currentServer = await startTuiDemoAgencyServer()
     currentTui = await startTui({
@@ -210,6 +255,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
 
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("please handoff this calculation\r")
     await currentTui.waitForText("Math agent now has control.", tuiInteractionTimeoutMs)
     await currentTui.waitFor(() => currentServer!.requests.length === 1, "handoff request", tuiInteractionTimeoutMs)
@@ -239,6 +285,45 @@ describe("Agent Swarm terminal TUI e2e", () => {
     ).toBeFalse()
   })
 
+  test("top-level handoff wins over later nested handoff-like metadata", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await waitForConfiguredDemoRecipient(currentTui)
+    currentTui.write("mixed handoff with nested delegation\r")
+    await currentTui.waitForText("Math handoff finished after nested delegation.", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "mixed handoff request",
+      tuiInteractionTimeoutMs,
+    )
+
+    currentTui.write("continue after mixed handoff\r")
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 2,
+      "post-mixed-handoff request",
+      tuiInteractionTimeoutMs,
+    )
+
+    const handoffBody = currentServer.requests[0]?.body
+    expect(handoffBody?.message).toContain("mixed handoff with nested delegation")
+    expect(handoffBody).toMatchObject({
+      recipient_agent: "UserSupportAgent",
+    })
+    const nextBody = currentServer.requests[1]?.body
+    expect(nextBody?.message).toContain("continue after mixed handoff")
+    expect(nextBody).toMatchObject({
+      recipient_agent: "MathAgent",
+    })
+    expect(nextBody?.chat_history.some((item: any) => item?.type === "handoff_output_item")).toBeFalse()
+  })
+
   test("agent_updated_stream_event-only handoff switches control to the target agent", async () => {
     currentServer = await startTuiDemoAgencyServer()
     currentTui = await startTui({
@@ -249,6 +334,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
 
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("please live handoff this calculation\r")
     await currentTui.waitForText("Live agent update moved control to MathAgent.", tuiInteractionTimeoutMs)
     await currentTui.waitFor(

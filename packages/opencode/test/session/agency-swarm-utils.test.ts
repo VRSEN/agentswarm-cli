@@ -113,6 +113,19 @@ describe("session.agency-swarm-utils", () => {
       agent_run_id: "run-1",
       parent_run_id: "parent-1",
     })
+    expect(
+      extractEventMeta({
+        agent: "Reviewer",
+        caller_agent: "Planner",
+        agentRunID: "run-2",
+        parentRunID: "parent-2",
+      }),
+    ).toEqual({
+      agent: "Reviewer",
+      callerAgent: "Planner",
+      agentRunID: "run-2",
+      parentRunID: "parent-2",
+    })
   })
 
   test("collectFileURLs keeps valid file parts and normalizes file URLs", () => {
@@ -362,6 +375,43 @@ describe("session.agency-swarm-utils", () => {
           text: "assistant response",
           metadata: {
             item_type: "handoff_output_item",
+          },
+        },
+      ]),
+    ).toBeFalse()
+  })
+
+  test("hasAgencyHandoffEvidence rejects nested forwarded handoff metadata", () => {
+    expect(
+      hasAgencyHandoffEvidence([
+        {
+          type: "tool",
+          tool: "transfer_to_MathAgent",
+          metadata: {
+            callerAgent: "UserSupportAgent",
+            parent_run_id: "run_parent",
+          },
+        },
+        {
+          type: "tool",
+          tool: "SendMessage",
+          state: {
+            status: "completed",
+            metadata: {
+              item_type: "handoff_output_item",
+              assistant: "MathAgent",
+              callerAgent: "UserSupportAgent",
+              parentRunID: "run_parent",
+            },
+          },
+        },
+        {
+          type: "text",
+          text: "Nested agent update.",
+          metadata: {
+            agency_handoff_event: "agent_updated_stream_event",
+            assistant: "MathAgent",
+            callerAgent: "UserSupportAgent",
           },
         },
       ]),

@@ -12,7 +12,9 @@ Source of truth: `FORK_CHANGELOG.md` defines intentional fork behavior, and `USE
 - `FORK_CHANGELOG.md` Agency Swarm Integration: prompt submit reaches a local Agency Swarm protocol server with the configured agent.
 - `FORK_CHANGELOG.md` Agency Swarm Integration: bracketed-paste image paths reach the local Agency Swarm protocol server as file paths, not inline `data:` URLs.
 - `FORK_CHANGELOG.md` Agency Swarm Integration: ordinary `SendMessage` delegation with `recipient_agent` does not switch the user's active recipient.
+- `FORK_CHANGELOG.md` Agency Swarm Integration: nested `SendMessage` handoff-like metadata does not switch the user's active recipient.
 - `FORK_CHANGELOG.md` Agency Swarm Integration: `transfer_to_*` handoff events switch control to the target agent for the next turn.
+- `FORK_CHANGELOG.md` Agency Swarm Integration: later nested handoff-like metadata does not override an earlier top-level handoff recipient.
 - `FORK_CHANGELOG.md` Agency Swarm Integration: `agent_updated_stream_event` handoffs without separate transfer tool parts switch control to the target agent.
 - `USER_FLOWS.md` Auto-Start Detected Local Project: launcher mode shows the detected-project choice before `.venv` work begins.
 
