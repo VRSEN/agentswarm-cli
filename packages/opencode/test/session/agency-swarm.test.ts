@@ -1839,11 +1839,27 @@ describe("session.agency-swarm", () => {
       { type: "message", id: "m1" },
       { type: "function_call_output", call_id: "call_1", output: { value: 42 } },
       { type: "function_call_output", call_id: "call_2", output: "done" },
+      {
+        type: "handoff_output_item",
+        call_id: "call_3",
+        callerAgent: "SupportAgent",
+        parent_run_id: "run_parent",
+        output: { assistant: "MathAgent" },
+      },
     ])
 
     expect(outputs).toEqual([
-      { callID: "call_1", output: '{\n  "value": 42\n}' },
-      { callID: "call_2", output: "done" },
+      { callID: "call_1", output: '{\n  "value": 42\n}', metadata: {}, itemType: "function_call_output" },
+      { callID: "call_2", output: "done", metadata: {}, itemType: "function_call_output" },
+      {
+        callID: "call_3",
+        output: '{\n  "assistant": "MathAgent"\n}',
+        metadata: {
+          callerAgent: "SupportAgent",
+          parentRunID: "run_parent",
+        },
+        itemType: "handoff_output_item",
+      },
     ])
   })
 
@@ -3766,22 +3782,19 @@ describe("session.agency-swarm", () => {
               },
             }
             yield {
-              type: "data",
+              type: "messages",
               payload: {
-                type: "raw_response_event",
-                callerAgent: "support_agent",
-                parent_run_id: "run_parent",
-                data: {
-                  type: "response.output_item.done",
-                  output_index: 2,
-                  item: {
+                new_messages: [
+                  {
                     type: "handoff_output_item",
                     call_id: "call_nested_handoff",
+                    callerAgent: "support_agent",
+                    parent_run_id: "run_parent",
                     output: {
                       assistant: "MathAgent",
                     },
                   },
-                },
+                ],
               },
             }
             yield {

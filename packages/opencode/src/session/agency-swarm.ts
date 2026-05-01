@@ -580,7 +580,9 @@ export namespace SessionAgencySwarm {
     return normalizeCallerAgentValue(value)
   }
 
-  export function extractFunctionCallOutputs(newMessages: unknown[]): Array<{ callID: string; output: string }> {
+  export function extractFunctionCallOutputs(
+    newMessages: unknown[],
+  ): ReturnType<typeof extractFunctionCallOutputsFromMessages> {
     return extractFunctionCallOutputsFromMessages(newMessages)
   }
 
@@ -1210,7 +1212,7 @@ export namespace SessionAgencySwarm {
 
       for (const output of extractFunctionCallOutputsFromMessages(newMessages)) {
         const tool = ensureTool(output.callID, toolNameFor(output.callID))
-        yield* completeTool(output.callID, tool.tool, output.output, {})
+        yield* completeTool(output.callID, tool.tool, output.output, output.metadata, { item_type: output.itemType })
       }
 
       for (const raw of newMessages) {

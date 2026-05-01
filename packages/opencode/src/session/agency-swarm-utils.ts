@@ -32,17 +32,22 @@ export function compactMetadata(input: AgencySwarmEventMeta): Record<string, unk
   return payload
 }
 
-export function extractFunctionCallOutputs(newMessages: unknown[]): Array<{ callID: string; output: string }> {
-  const outputs: Array<{ callID: string; output: string }> = []
+export function extractFunctionCallOutputs(
+  newMessages: unknown[],
+): Array<{ callID: string; output: string; metadata: AgencySwarmEventMeta; itemType?: string }> {
+  const outputs: Array<{ callID: string; output: string; metadata: AgencySwarmEventMeta; itemType?: string }> = []
   for (const raw of newMessages) {
     const message = asRecord(raw)
     if (!message) continue
-    if (!isAgencyToolOutputType(asString(message["type"]))) continue
+    const itemType = asString(message["type"])
+    if (!isAgencyToolOutputType(itemType)) continue
     const callID = asString(message["call_id"])
     if (!callID) continue
     outputs.push({
       callID,
       output: stringifyToolOutput(message["output"]),
+      metadata: extractEventMeta(message),
+      itemType,
     })
   }
   return outputs

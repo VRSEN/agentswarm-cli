@@ -414,22 +414,19 @@ const tuiDemoAgencyFixture: AgencyFixture = {
           },
         ],
         [
-          "data",
+          "messages",
           {
-            type: "raw_response_event",
-            callerAgent: "MathAgent",
-            parent_run_id: `run_tui_demo_${requestCount}`,
-            data: {
-              type: "response.output_item.done",
-              output_index: "2",
-              item: {
+            new_messages: [
+              {
                 type: "handoff_output_item",
                 call_id: "call_nested_handoff_mixed",
+                callerAgent: "MathAgent",
+                parent_run_id: `run_tui_demo_${requestCount}`,
                 output: {
                   assistant: "UserSupportAgent",
                 },
               },
-            },
+            ],
           },
         ],
         [
