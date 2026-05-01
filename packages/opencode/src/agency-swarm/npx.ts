@@ -9,6 +9,7 @@ import { AgencySwarmRunSession } from "./run-session"
 import { buildServerLauncherScript } from "./server-launcher"
 import { Storage } from "@/storage/storage"
 import { Filesystem } from "@/util/filesystem"
+import { localFileMaterializationRoot } from "@/session/agency-swarm-utils"
 import type { Session } from "@/session"
 import { SessionID } from "@/session/schema"
 
@@ -723,8 +724,11 @@ async function ensureProjectPython(directory: string) {
       return
     }
     if (!createVenv) {
-      const check = await runCommand([...rebuildCmd, "-c", "import agency_swarm"])
-      if (check.code !== 0) {
+      const canary = await venvCanaryPasses(rebuildCmd, { includeStderr: true })
+      if (!canary.healthy) {
+        if (isLocalFileAllowlistCanaryFailure(canary.stderr)) {
+          throw new Error(await formatPostInstallCanaryFailure(directory, true, canary.stderr))
+        }
         throw new Error(
           "This project does not have a `.venv` yet, and the selected Python environment cannot import `agency_swarm`.",
         )
@@ -978,10 +982,12 @@ async function startProjectServer(directory: string, python: string[]) {
     }).catch(() => undefined)
 
   try {
+    const allowedLocalFileDirs = [path.resolve(directory), path.resolve(localFileMaterializationRoot())]
+    await mkdir(allowedLocalFileDirs[1]!, { recursive: true, mode: 0o700 })
     await Filesystem.write(
       scriptPath,
       buildServerLauncherScript({
-        allowedLocalFileDirs: [path.resolve(directory)],
+        allowedLocalFileDirs,
       }),
     )
   } catch (error) {

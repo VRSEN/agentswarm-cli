@@ -1,5 +1,5 @@
 import type { MessageV2 } from "@/session/message-v2"
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -247,7 +247,16 @@ function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptio
     }
 
     if (part.source?.type === "file" && part.source.path && path.isAbsolute(part.source.path)) {
-      if (options.allowLocalFilePaths) return part.source.path
+      if (options.allowLocalFilePaths) {
+        const materializedFile = materializeImagePart(
+          part,
+          path.parse(part.filename || part.source.path).name || "image",
+        )
+        if (materializedFile) {
+          options.materializedFilePaths?.push(materializedFile)
+          return materializedFile
+        }
+      }
       throw new Error(
         "Agent Swarm Run mode cannot send local image files to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
       )
@@ -270,22 +279,32 @@ export async function cleanupMaterializedFilePaths(filepaths: readonly string[])
   await Promise.all(Array.from(dirs, (dir) => rm(dir, { recursive: true, force: true })))
 }
 
+export function localFileMaterializationRoot() {
+  return path.join(tmpdir(), "agentswarm-local-files")
+}
+
 function isClipboardImage(part: MessageV2.FilePart) {
   return part.source?.type === "file" && part.source.path === "clipboard" && part.mime.startsWith("image/")
 }
 
 function materializedClipboardDir(filepath: string): string | undefined {
   const dir = path.resolve(path.dirname(filepath))
-  const prefix = `${path.resolve(tmpdir())}${path.sep}agentswarm-clipboard-`
-  return dir.startsWith(prefix) ? dir : undefined
+  const root = path.resolve(localFileMaterializationRoot())
+  return dir.startsWith(`${root}${path.sep}`) ? dir : undefined
 }
 
 function materializeClipboardImage(part: MessageV2.FilePart): string | undefined {
+  return materializeImagePart(part, "clipboard-image")
+}
+
+function materializeImagePart(part: MessageV2.FilePart, stem: string): string | undefined {
   const parsed = parseBase64DataURL(part.url)
   if (!parsed?.mime.startsWith("image/")) return undefined
 
-  const dir = mkdtempSync(path.join(tmpdir(), "agentswarm-clipboard-"))
-  const filepath = path.join(dir, `clipboard-image${extensionForMime(parsed.mime)}`)
+  const root = localFileMaterializationRoot()
+  mkdirSync(root, { recursive: true, mode: 0o700 })
+  const dir = mkdtempSync(path.join(root, "file-"))
+  const filepath = path.join(dir, `${stem}${extensionForMime(parsed.mime)}`)
   writeFileSync(filepath, Buffer.from(parsed.data, "base64"), { mode: 0o600 })
   return filepath
 }

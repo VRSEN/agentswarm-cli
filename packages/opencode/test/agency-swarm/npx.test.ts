@@ -19,6 +19,7 @@ import { buildServerLauncherScript } from "../../src/agency-swarm/server-launche
 import { AgencySwarmRunSession } from "../../src/agency-swarm/run-session"
 import { Instance } from "../../src/project/instance"
 import { Session } from "../../src/session"
+import { localFileMaterializationRoot } from "../../src/session/agency-swarm-utils"
 import { Storage } from "../../src/storage/storage"
 import { tmpdir } from "../fixture/fixture"
 
@@ -899,9 +900,11 @@ describe("agency-swarm npx onboarding", () => {
     expect(canaryScripts.every((script) => script.includes("inspect.signature(run_fastapi).parameters"))).toBe(true)
     expect(canaryScripts.every((script) => script.includes("allowed_local_file_dirs"))).toBe(true)
     if (!launcherScriptPath) throw new Error("Expected launcher script path")
-    await expect(Bun.file(launcherScriptPath).text()).resolves.toContain(
-      `allowed_local_file_dirs=["${dir.path.replaceAll("\\", "\\\\")}"]`,
-    )
+    const launcherScript = await Bun.file(launcherScriptPath).text()
+    const projectAllowlist = dir.path.replaceAll("\\", "\\\\")
+    const localFileAllowlist = path.resolve(localFileMaterializationRoot()).replaceAll("\\", "\\\\")
+    expect(launcherScript).toContain(`"${projectAllowlist}"`)
+    expect(launcherScript).toContain(`"${localFileAllowlist}"`)
 
     await launch?.cleanup?.()
   })
@@ -1220,6 +1223,45 @@ describe("agency-swarm npx onboarding", () => {
     ).rejects.toThrow(
       "Local file drops require an agency-swarm FastAPI version that supports allowed_local_file_dirs. Upgrade this project's agency-swarm[fastapi] dependency.",
     )
+  })
+
+  test("prepareProjectLaunch checks local file allowlist support when `.venv` creation is declined", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+
+    spyOn(prompts, "confirm").mockResolvedValue(false as never)
+    const commands: string[][] = []
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "/usr/bin/python3.12\n3.12.7\n",
+          stderr: "",
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: "RuntimeError: agency-swarm FastAPI run_fastapi does not support allowed_local_file_dirs\n",
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    await expect(
+      prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      }),
+    ).rejects.toThrow(
+      "Local file drops require an agency-swarm FastAPI version that supports allowed_local_file_dirs. Upgrade this project's agency-swarm[fastapi] dependency.",
+    )
+
+    expect(commands.some(isCanaryCommand)).toBe(true)
   })
 
   test("prepareProjectLaunch names detected shadowing files in the canary remediation", async () => {

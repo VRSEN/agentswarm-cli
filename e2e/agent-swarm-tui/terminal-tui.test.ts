@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { localFileMaterializationRoot } from "../../packages/opencode/src/session/agency-swarm-utils"
 import {
   startAgencyProtocolServer,
   startTui,
@@ -383,7 +384,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
   })
 
-  test("bracketed-paste image paths reach the agency protocol server as local file paths", async () => {
+  test("bracketed-paste image paths reach the agency protocol server as allowlisted local file paths", async () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({ baseURL: currentServer.baseURL })
     const imageDir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-image-drop-"))
@@ -410,9 +411,11 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     const body = currentServer.requests[0]?.body
     expect(body?.message).toContain("[Image 1] please inspect this image")
-    expect(body?.file_urls).toEqual({
-      "red-dot.png": imagePath,
-    })
+    const fileURLs = body?.file_urls as Record<string, string> | undefined
+    const materializedPath = fileURLs?.["red-dot.png"]
+    expect(materializedPath).toBeDefined()
+    expect(materializedPath).not.toBe(imagePath)
+    expect(materializedPath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBe(true)
   })
 
   test("Esc twice cancels queued Run-mode prompt before active stream drains", async () => {

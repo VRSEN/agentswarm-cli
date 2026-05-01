@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import { readFile, rm } from "node:fs/promises"
-import os from "node:os"
 import path from "node:path"
 import { MessageV2 } from "../../src/session/message-v2"
 import { ModelID, ProviderID } from "../../src/provider/schema"
@@ -9,6 +8,7 @@ import {
   asRawString,
   asString,
   buildOutgoingMessage,
+  localFileMaterializationRoot,
   collectFileURLs,
   compactMetadata,
   extractEventMeta,
@@ -128,51 +128,66 @@ describe("session.agency-swarm-utils", () => {
     })
   })
 
-  test("collectFileURLs keeps valid file parts and normalizes file URLs", () => {
-    expect(
-      collectFileURLs(
-        msg([
-          file("part-1", {
+  test("collectFileURLs keeps valid file parts and materializes local image data", async () => {
+    const content = Buffer.from("inline image")
+    const materializedFilePaths: string[] = []
+    const result = collectFileURLs(
+      msg([
+        file("part-1", {
+          type: "file",
+          mime: "text/plain",
+          url: "file:///tmp/spec.md",
+          filename: "spec.md",
+        }),
+        file("part-2", {
+          type: "file",
+          mime: "application/pdf",
+          url: "https://example.com/plan.pdf",
+        }),
+        file("part-3", {
+          type: "file",
+          mime: "text/plain",
+          url: "not-a-url",
+        }),
+        file("part-4", {
+          type: "file",
+          mime: "image/png",
+          url: `data:image/png;base64,${content.toString("base64")}`,
+          filename: "inline.png",
+          source: {
             type: "file",
-            mime: "text/plain",
-            url: "file:///tmp/spec.md",
-            filename: "spec.md",
-          }),
-          file("part-2", {
-            type: "file",
-            mime: "application/pdf",
-            url: "https://example.com/plan.pdf",
-          }),
-          file("part-3", {
-            type: "file",
-            mime: "text/plain",
-            url: "not-a-url",
-          }),
-          file("part-4", {
-            type: "file",
-            mime: "image/png",
-            url: "data:image/png;base64,AAA=",
-            filename: "inline.png",
-            source: {
-              type: "file",
-              path: "/tmp/inline.png",
-              text: {
-                value: "[Image 1]",
-                start: 0,
-                end: 9,
-              },
+            path: "/tmp/inline.png",
+            text: {
+              value: "[Image 1]",
+              start: 0,
+              end: 9,
             },
-          }),
-        ]),
-        {
-          allowLocalFilePaths: true,
-        },
-      ),
-    ).toEqual({
-      "spec.md": "/tmp/spec.md",
-      "plan.pdf": "https://example.com/plan.pdf",
-      "inline.png": "/tmp/inline.png",
-    })
+          },
+        }),
+      ]),
+      {
+        allowLocalFilePaths: true,
+        materializedFilePaths,
+      },
+    )
+
+    const inline = result?.["inline.png"]
+    expect(inline).toBeDefined()
+    const inlinePath = inline!
+    expect(inlinePath.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
+    expect(path.basename(inlinePath)).toBe("inline.png")
+    expect(materializedFilePaths).toEqual([inlinePath])
+
+    try {
+      expect(result).toEqual({
+        "spec.md": "/tmp/spec.md",
+        "plan.pdf": "https://example.com/plan.pdf",
+        "inline.png": inlinePath,
+      })
+      await expect(readFile(inlinePath)).resolves.toEqual(content)
+    } finally {
+      await rm(path.dirname(inlinePath), { recursive: true, force: true })
+    }
   })
 
   test("collectFileURLs blocks data URL attachments without an allowed local file path", () => {
@@ -243,7 +258,7 @@ describe("session.agency-swarm-utils", () => {
     const filepath = result?.["clipboard"]
     expect(filepath).toBeDefined()
     expect(path.isAbsolute(filepath!)).toBeTrue()
-    expect(filepath!.startsWith(path.join(os.tmpdir(), "agentswarm-clipboard-"))).toBeTrue()
+    expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
     expect(path.basename(filepath!)).toBe("clipboard-image.png")
 
     try {
