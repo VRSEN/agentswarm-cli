@@ -56,13 +56,19 @@ export function hasAgencyHandoffEvidence(parts: readonly unknown[] | undefined) 
   if (!parts) return false
   return parts.some((part) => {
     const record = asRecord(part)
-    if (!record || asString(record["type"]) !== "tool") return false
+    if (!record) return false
+    if (isAgencyAgentUpdatedHandoffMetadata(asRecord(record["metadata"]))) return true
+    if (asString(record["type"]) !== "tool") return false
     if (isAgencyHandoffToolName(asString(record["tool"]))) return true
 
     const state = asRecord(record["state"])
     const metadata = asRecord(record["metadata"]) ?? asRecord(state?.["metadata"])
     return isAgencyHandoffOutputMetadata(metadata)
   })
+}
+
+export function isAgencyAgentUpdatedHandoffMetadata(metadata: Record<string, unknown> | undefined) {
+  return asString(metadata?.["agency_handoff_event"]) === "agent_updated_stream_event"
 }
 
 function isAgencyHandoffOutputMetadata(metadata: Record<string, unknown> | undefined) {

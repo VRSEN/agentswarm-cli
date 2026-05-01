@@ -295,6 +295,100 @@ const tuiDemoAgencyFixture: AgencyFixture = {
   },
   stream(body, requestCount) {
     const message = typeof body.message === "string" ? body.message.toLowerCase() : ""
+    if (message.includes("delegate")) {
+      return sse([
+        ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+        [
+          "data",
+          {
+            type: "raw_response_event",
+            agent: "UserSupportAgent",
+            data: {
+              type: "response.output_item.added",
+              output_index: "1",
+              item: {
+                type: "function_call",
+                id: "fc_send_message",
+                call_id: "call_send_message",
+                name: "SendMessage",
+                arguments: JSON.stringify({
+                  recipient_agent: "MathAgent",
+                  message: "Please calculate this.",
+                }),
+              },
+            },
+          },
+        ],
+        [
+          "messages",
+          {
+            new_messages: [
+              {
+                id: `msg_delegate_${requestCount}`,
+                type: "message",
+                role: "assistant",
+                agent: "UserSupportAgent",
+                content: [{ type: "output_text", text: "Starting SendMessage delegation." }],
+              },
+            ],
+          },
+        ],
+        [
+          "messages",
+          {
+            new_messages: [
+              {
+                type: "function_call_output",
+                call_id: "call_send_message",
+                output: JSON.stringify({
+                  recipient_agent: "MathAgent",
+                  response: "Delegation completed without transfer.",
+                }),
+              },
+              {
+                id: `msg_delegate_${requestCount}`,
+                type: "message",
+                role: "assistant",
+                agent: "MathAgent",
+                content: [{ type: "output_text", text: "Delegated to MathAgent with SendMessage." }],
+              },
+            ],
+          },
+        ],
+        ["end", {}],
+      ])
+    }
+    if (message.includes("live handoff")) {
+      return sse([
+        ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+        [
+          "data",
+          {
+            type: "agent_updated_stream_event",
+            agent: "MathAgent",
+            new_agent: {
+              id: "MathAgent",
+              name: "MathAgent",
+            },
+          },
+        ],
+        [
+          "messages",
+          {
+            new_messages: [
+              {
+                id: `msg_live_handoff_${requestCount}`,
+                type: "message",
+                role: "assistant",
+                agent: "MathAgent",
+                content: [{ type: "output_text", text: "Live agent update moved control to MathAgent." }],
+              },
+            ],
+          },
+        ],
+        ["end", {}],
+      ])
+    }
     if (message.includes("handoff")) {
       return sse([
         ["meta", { run_id: `run_tui_demo_${requestCount}` }],

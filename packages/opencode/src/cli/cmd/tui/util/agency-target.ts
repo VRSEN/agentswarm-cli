@@ -1,6 +1,6 @@
 import { displayAgentName } from "@/agent/display"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import { hasAgencyHandoffEvidence } from "@/session/agency-swarm-utils"
+import { hasAgencyHandoffEvidence, isAgencyAgentUpdatedHandoffMetadata } from "@/session/agency-swarm-utils"
 import * as Locale from "@/util/locale"
 
 export type AgencyHandoffMessage = {
@@ -17,6 +17,7 @@ export type AgencyHandoffMessage = {
 export type AgencyHandoffPart = {
   type: string
   tool?: string
+  metadata?: Record<string, unknown>
   state?: {
     status?: string
     output?: string
@@ -247,6 +248,8 @@ export function resolveAgencyHandoffRecipientFromMessages(input: {
 
 export function resolveAgencyHandoffRecipientFromParts(parts: AgencyHandoffPart[]) {
   for (const part of parts.toReversed()) {
+    const metadataAgent = readAgentUpdatedHandoffMetadataAgent(part.metadata)
+    if (metadataAgent) return metadataAgent
     if (part.type !== "tool") continue
     const outputAgent = readHandoffOutputAgent(part.state?.output) ?? readHandoffMetadataAgent(part.state?.metadata)
     if (outputAgent) return outputAgent
@@ -282,6 +285,11 @@ function readHandoffMetadataAgent(metadata: Record<string, unknown> | undefined)
   return readString(
     metadata["assistant"] ?? metadata["agent"] ?? metadata["recipientAgent"] ?? metadata["recipient_agent"],
   )
+}
+
+function readAgentUpdatedHandoffMetadataAgent(metadata: Record<string, unknown> | undefined) {
+  if (!isAgencyAgentUpdatedHandoffMetadata(metadata)) return undefined
+  return readHandoffMetadataAgent(metadata)
 }
 
 export function displayRunOnlyAgentLabel(input: {
