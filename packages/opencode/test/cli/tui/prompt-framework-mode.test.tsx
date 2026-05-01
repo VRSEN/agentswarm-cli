@@ -56,6 +56,11 @@ describe("prompt framework-mode footer", () => {
               name: "Slides Agent",
               isEntryPoint: false,
             },
+            {
+              id: "support_agent",
+              name: "Support Agent",
+              isEntryPoint: false,
+            },
           ],
           metadata: {},
         },
@@ -379,12 +384,36 @@ describe("prompt framework-mode footer", () => {
     })
     await flushEffects()
 
-    promptRef!.set({ input: "after live handoff", parts: [] })
+    promptRef!.set({ input: "after label-only update", parts: [] })
     await promptRef!.submit()
     await flushEffects()
 
     expect(prompt).toHaveBeenCalledTimes(3)
-    expect(calls[2][0].$body_agencyRecipientAgent).toBe("support_agent")
+    expect(calls[2][0].$body_agencyRecipientAgent).toBe("slides_agent")
+
+    eventHandlers["message.part.updated"]?.({
+      properties: {
+        part: {
+          id: "part_live_update",
+          sessionID: "session_1",
+          messageID: "message_assistant_live_update",
+          type: "text",
+          text: "Live handoff complete.",
+          metadata: {
+            agency_handoff_event: "agent_updated_stream_event",
+            assistant: "support_agent",
+          },
+        },
+      },
+    })
+    await flushEffects()
+
+    promptRef!.set({ input: "after live handoff", parts: [] })
+    await promptRef!.submit()
+    await flushEffects()
+
+    expect(prompt).toHaveBeenCalledTimes(4)
+    expect(calls[3][0].$body_agencyRecipientAgent).toBe("support_agent")
   })
 
   test("sends agency handoff recipient through the generated sdk prompt body", async () => {

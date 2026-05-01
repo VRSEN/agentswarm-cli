@@ -14,8 +14,8 @@ import {
 let currentTui: TuiProcess | undefined
 let currentServer: AgencyProtocolServer | undefined
 const tempDirs: string[] = []
-const tuiReadyTimeoutMs = 30_000
-const tuiInteractionTimeoutMs = 45_000
+const tuiReadyTimeoutMs = process.env.CI ? 60_000 : 30_000
+const tuiInteractionTimeoutMs = process.env.CI ? 60_000 : 45_000
 
 afterEach(async () => {
   await currentTui?.close()
@@ -163,6 +163,41 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
   })
 
+  test("SendMessage delegation does not switch control to the delegated agent", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    currentTui.write("delegate normal sendmessage\r")
+    await currentTui.waitForText("Delegated to MathAgent with SendMessage.", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(() => currentServer!.requests.length === 1, "delegate request", tuiInteractionTimeoutMs)
+
+    currentTui.write("plain followup\r")
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 2,
+      "post-delegation request",
+      tuiInteractionTimeoutMs,
+    )
+
+    const delegateBody = currentServer.requests[0]?.body
+    expect(delegateBody?.message).toContain("delegate normal sendmessage")
+    expect(delegateBody).toMatchObject({
+      recipient_agent: "UserSupportAgent",
+    })
+    const nextBody = currentServer.requests[1]?.body
+    expect(nextBody?.message).toContain("plain followup")
+    expect(nextBody).toMatchObject({
+      recipient_agent: "UserSupportAgent",
+    })
+    expect(nextBody?.chat_history.some((item: any) => item?.type === "function_call_output")).toBeTrue()
+    expect(nextBody?.chat_history.some((item: any) => item?.type === "handoff_output_item")).toBeFalse()
+  })
+
   test("transfer_to handoff switches control to the target agent for the next turn", async () => {
     currentServer = await startTuiDemoAgencyServer()
     currentTui = await startTui({
@@ -200,6 +235,45 @@ describe("Agent Swarm terminal TUI e2e", () => {
         (item: any) => item?.type === "message" && item?.role === "assistant" && !item?.content,
       ),
     ).toBeFalse()
+  })
+
+  test("agent_updated_stream_event-only handoff switches control to the target agent", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    currentTui.write("please live handoff this calculation\r")
+    await currentTui.waitForText("Live agent update moved control to MathAgent.", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "live handoff request",
+      tuiInteractionTimeoutMs,
+    )
+
+    currentTui.write("continue after live handoff\r")
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 2,
+      "post-live-handoff request",
+      tuiInteractionTimeoutMs,
+    )
+
+    const handoffBody = currentServer.requests[0]?.body
+    expect(handoffBody?.message).toContain("please live handoff this calculation")
+    expect(handoffBody).toMatchObject({
+      recipient_agent: "UserSupportAgent",
+    })
+    const nextBody = currentServer.requests[1]?.body
+    expect(nextBody?.message).toContain("continue after live handoff")
+    expect(nextBody).toMatchObject({
+      recipient_agent: "MathAgent",
+    })
+    expect(nextBody?.chat_history.some((item: any) => item?.type === "function_call_output")).toBeFalse()
+    expect(nextBody?.chat_history.some((item: any) => item?.type === "handoff_output_item")).toBeFalse()
   })
 
   test("prompt submit reaches the agency protocol server with the configured agent", async () => {
