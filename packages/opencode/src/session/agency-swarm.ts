@@ -174,9 +174,7 @@ export namespace SessionAgencySwarm {
     const explicitModel = explicit && asString(explicit["model"])
     const requestedModel = explicitModel ? normalizeExplicitClientConfigModel(explicitModel) : sessionLitellmModel
     const forwardGenerated =
-      isLocalAgencyUpstreamURL(baseURL) ||
-      Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS ||
-      forwardUpstreamCredentials === true
+      isLocalAgencyURL(baseURL) || Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS || forwardUpstreamCredentials === true
     const skipOpenAIApiKey = hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config)
     const rawGenerated = forwardGenerated
       ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), await getEnvForClientConfig(), {
@@ -520,8 +518,8 @@ export namespace SessionAgencySwarm {
     }
   }
 
-  /** Loopback + common dev hostnames (Docker Desktop, etc.) where forwarding upstream API keys to a local bridge is expected. */
-  function isLocalAgencyUpstreamURL(baseURL: string) {
+  /** Loopback + common dev hostnames (Docker Desktop, etc.) treated as a local Agency for upstream credential and local-file forwarding. */
+  function isLocalAgencyURL(baseURL: string) {
     try {
       const parsed = new URL(baseURL)
       const h = parsed.hostname.toLowerCase()
@@ -534,16 +532,6 @@ export namespace SessionAgencySwarm {
         h === "host.docker.internal" ||
         h === "kubernetes.docker.internal"
       )
-    } catch {
-      return false
-    }
-  }
-
-  function isLoopbackAgencyURL(baseURL: string) {
-    try {
-      const parsed = new URL(baseURL)
-      const h = parsed.hostname.toLowerCase()
-      return h === "127.0.0.1" || h === "0.0.0.0" || h === "localhost" || h === "::1" || h === "[::1]"
     } catch {
       return false
     }
@@ -603,7 +591,7 @@ export namespace SessionAgencySwarm {
 
     const outgoingMessage = buildOutgoingMessage(input.userMessage)
     const fileURLs = collectFileURLs(input.userMessage, {
-      allowLocalFilePaths: isLoopbackAgencyURL(input.options.baseURL),
+      allowLocalFilePaths: isLocalAgencyURL(input.options.baseURL),
     })
     const mentionedRecipient = findRecipientAgent(input.userMessage)
 

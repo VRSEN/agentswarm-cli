@@ -237,6 +237,49 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream sends local source paths for dropped data URL images to Docker Desktop Agency servers", async () => {
+    mockHistory()
+    let captured: Record<string, string> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.fileURLs
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.baseURL = "http://host.docker.internal:8000"
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[Image 1] inspect this image",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "image/png",
+        filename: "red-dot.png",
+        url: "data:image/png;base64,AAA=",
+        source: {
+          type: "file",
+          path: "/tmp/red-dot.png",
+          text: {
+            value: "[Image 1]",
+            start: 0,
+            end: 9,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      "red-dot.png": "/tmp/red-dot.png",
+    })
+  })
+
   test("optionsFromProvider maps supported FastAPI request options", () => {
     const options = SessionAgencySwarm.optionsFromProvider({
       id: "agency-swarm" as any,
