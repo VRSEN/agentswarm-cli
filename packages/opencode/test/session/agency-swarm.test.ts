@@ -3219,7 +3219,7 @@ describe("session.agency-swarm", () => {
     expect(sentHistory).toEqual(storedHistory)
   })
 
-  test("stream removes stored Responses reasoning items before replaying bridge history", async () => {
+  test("stream removes stored Responses reasoning items without dropping rs-prefixed messages", async () => {
     const storedHistory = [
       {
         type: "message",
@@ -3228,9 +3228,19 @@ describe("session.agency-swarm", () => {
         content: [{ type: "output_text", text: "HANDOFF_AGENT_ACTIVE" }],
       },
       {
+        type: "message",
+        id: "rs_message_kept",
+        role: "assistant",
+        content: [{ type: "output_text", text: "normal message with backend rs id" }],
+      },
+      {
         type: "reasoning",
         id: "rs_stale",
         summary: [{ type: "summary_text", text: "private chain state" }],
+      },
+      {
+        id: "rs_ref_stale",
+        summary: [{ type: "summary_text", text: "private ref state" }],
       },
       {
         type: "handoff_output_item",
@@ -3269,6 +3279,12 @@ describe("session.agency-swarm", () => {
         id: "msg_kept",
         role: "assistant",
         content: [{ type: "output_text", text: "HANDOFF_AGENT_ACTIVE" }],
+      },
+      {
+        type: "message",
+        id: "rs_message_kept",
+        role: "assistant",
+        content: [{ type: "output_text", text: "normal message with backend rs id" }],
       },
     ])
   })
