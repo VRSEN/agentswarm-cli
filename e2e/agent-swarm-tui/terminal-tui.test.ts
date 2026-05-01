@@ -17,6 +17,10 @@ const tempDirs: string[] = []
 const tuiReadyTimeoutMs = process.env.CI ? 60_000 : 30_000
 const tuiInteractionTimeoutMs = process.env.CI ? 60_000 : 45_000
 
+async function waitForConfiguredDemoRecipient(tui: TuiProcess) {
+  await tui.waitForText("UserSupportAgent", tuiInteractionTimeoutMs)
+}
+
 afterEach(async () => {
   await currentTui?.close()
   currentTui = undefined
@@ -173,6 +177,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
 
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("delegate normal sendmessage\r")
     await currentTui.waitForText("Delegated to MathAgent with SendMessage.", tuiInteractionTimeoutMs)
     await currentTui.waitFor(() => currentServer!.requests.length === 1, "delegate request", tuiInteractionTimeoutMs)
@@ -208,6 +213,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
 
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("nested delegate with forwarded handoff metadata\r")
     await currentTui.waitForText("Nested SendMessage delegation finished.", tuiInteractionTimeoutMs)
     await currentTui.waitFor(
@@ -247,6 +253,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
 
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("please handoff this calculation\r")
     await currentTui.waitForText("Math agent now has control.", tuiInteractionTimeoutMs)
     await currentTui.waitFor(() => currentServer!.requests.length === 1, "handoff request", tuiInteractionTimeoutMs)
@@ -286,6 +293,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
 
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("mixed handoff with nested delegation\r")
     await currentTui.waitForText("Math handoff finished after nested delegation.", tuiInteractionTimeoutMs)
     await currentTui.waitFor(
@@ -324,6 +332,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
 
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("please live handoff this calculation\r")
     await currentTui.waitForText("Live agent update moved control to MathAgent.", tuiInteractionTimeoutMs)
     await currentTui.waitFor(
