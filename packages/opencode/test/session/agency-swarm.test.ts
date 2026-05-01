@@ -3524,6 +3524,20 @@ describe("session.agency-swarm", () => {
                 },
               },
             }
+            yield {
+              type: "messages",
+              payload: {
+                new_messages: [
+                  {
+                    id: "msg_slides_handoff",
+                    type: "message",
+                    role: "assistant",
+                    agent: "slides_agent",
+                    content: [{ type: "output_text", text: "Slides agent has control." }],
+                  },
+                ],
+              },
+            }
             yield { type: "end" }
             return
           }
@@ -3560,10 +3574,183 @@ describe("session.agency-swarm", () => {
         first.input.userMessage.info.id = user.id
 
         const firstStream = await SessionAgencySwarm.stream(first.input)
-        for await (const _ of firstStream.fullStream) {
+        const firstEvents: any[] = []
+        for await (const event of firstStream.fullStream) {
+          firstEvents.push(event)
         }
 
         expect(first.input.assistantMessage.agent).toBe("slides_agent")
+        expect(
+          firstEvents.some(
+            (event) =>
+              event.providerMetadata?.agency_handoff_event === "agent_updated_stream_event" &&
+              event.providerMetadata?.assistant === "slides_agent",
+          ),
+        ).toBeTrue()
+
+        const second = helper()
+        second.input.sessionID = session.id
+        second.input.assistantMessage.sessionID = session.id
+        second.input.assistantMessage.id = MessageID.ascending()
+        second.input.userMessage.info.id = MessageID.ascending()
+        second.input.userMessage.parts = [{ type: "text", text: "continue", ignored: false }] as any
+
+        const secondStream = await SessionAgencySwarm.stream(second.input)
+        for await (const _ of secondStream.fullStream) {
+        }
+
+        expect(sentRecipient).toBe("slides_agent")
+      },
+    })
+  })
+
+  test("stream keeps agent_updated handoff metadata when raw text is replayed by messages", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        enabled_providers: ["agency-swarm"],
+        provider: {
+          "agency-swarm": {},
+        },
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        mockHistory()
+        let sentRecipient: string | undefined
+        AgencySwarmAdapter.getMetadata = (async () => ({
+          metadata: {
+            agents: ["orchestrator", "slides_agent"],
+          },
+          nodes: [
+            {
+              id: "slides_agent",
+              type: "agent",
+              data: {
+                label: "Slides Agent",
+              },
+            },
+          ],
+        })) as typeof AgencySwarmAdapter.getMetadata
+        let turn = 0
+        AgencySwarmAdapter.streamRun = async function* (args) {
+          turn++
+          if (turn === 1) {
+            yield {
+              type: "data",
+              payload: {
+                type: "agent_updated_stream_event",
+                new_agent: {
+                  id: "slides_agent",
+                  label: "Slides Agent",
+                },
+              },
+            }
+            yield {
+              type: "data",
+              payload: {
+                type: "raw_response_event",
+                data: {
+                  type: "response.output_item.added",
+                  output_index: 0,
+                  item: {
+                    id: "msg_slides_handoff",
+                    type: "message",
+                  },
+                },
+              },
+            }
+            yield {
+              type: "data",
+              payload: {
+                type: "raw_response_event",
+                data: {
+                  type: "response.output_text.delta",
+                  item_id: "msg_slides_handoff",
+                  output_index: 0,
+                  content_index: 0,
+                  delta: "Slides agent has control.",
+                },
+              },
+            }
+            yield {
+              type: "data",
+              payload: {
+                type: "raw_response_event",
+                data: {
+                  type: "response.output_text.done",
+                  item_id: "msg_slides_handoff",
+                  output_index: 0,
+                  content_index: 0,
+                  text: "Slides agent has control.",
+                },
+              },
+            }
+            yield {
+              type: "messages",
+              payload: {
+                new_messages: [
+                  {
+                    id: "msg_slides_handoff",
+                    type: "message",
+                    role: "assistant",
+                    agent: "slides_agent",
+                    content: [{ type: "output_text", text: "Slides agent has control." }],
+                  },
+                ],
+              },
+            }
+            yield { type: "end" }
+            return
+          }
+          sentRecipient = args.recipientAgent ?? undefined
+          yield { type: "end" }
+        } as typeof AgencySwarmAdapter.streamRun
+
+        const session = await Session.create({ title: "handoff replay metadata" })
+        const user = await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "user",
+          sessionID: session.id,
+          agent: "build",
+          model: {
+            providerID: ProviderID.make("agency-swarm"),
+            modelID: ModelID.make("default"),
+          },
+          time: {
+            created: Date.now(),
+          },
+        })
+        await Session.updatePart({
+          id: PartID.ascending(),
+          messageID: user.id,
+          sessionID: session.id,
+          type: "text",
+          text: "make slides",
+        })
+        const first = helper()
+        first.input.sessionID = session.id
+        first.input.assistantMessage.sessionID = session.id
+        first.input.assistantMessage.parentID = user.id
+        first.input.assistantMessage.id = MessageID.ascending()
+        first.input.userMessage.info.id = user.id
+
+        const firstStream = await SessionAgencySwarm.stream(first.input)
+        const firstEvents: any[] = []
+        for await (const event of firstStream.fullStream) {
+          firstEvents.push(event)
+        }
+
+        expect(
+          firstEvents.some(
+            (event) =>
+              event.type === "text-end" &&
+              event.providerMetadata?.agency_handoff_event === "agent_updated_stream_event" &&
+              event.providerMetadata?.assistant === "slides_agent",
+          ),
+        ).toBeTrue()
 
         const second = helper()
         second.input.sessionID = session.id

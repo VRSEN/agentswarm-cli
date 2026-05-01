@@ -129,6 +129,14 @@ function fadeColor(color: RGBA, alpha: number) {
 
 let stashed: { prompt: PromptInfo; cursor: number } | undefined
 
+type AgencyAssistantMessageInfo = {
+  id: string
+  sessionID: string
+  role: string
+  providerID?: string
+  agent?: string
+}
+
 export function Prompt(props: PromptProps) {
   let input: TextareaRenderable
   let anchor: BoxRenderable
@@ -167,7 +175,7 @@ export function Prompt(props: PromptProps) {
       }
     | undefined
   >()
-  const observedAssistantAgentsByMessage = new Map<string, string>()
+  const assistantMessagesByID = new Map<string, AgencyAssistantMessageInfo>()
   const activeOrgName = createMemo(() => sync.data.console_state.activeOrgName)
   const canSwitchOrgs = createMemo(() => sync.data.console_state.switchableOrgCount > 1)
   const frameworkMode = createMemo(() =>
@@ -254,7 +262,7 @@ export function Prompt(props: PromptProps) {
       () => props.sessionID,
       () => {
         setHandoffRecipient(undefined)
-        observedAssistantAgentsByMessage.clear()
+        assistantMessagesByID.clear()
       },
     ),
   )
@@ -268,44 +276,58 @@ export function Prompt(props: PromptProps) {
     setHandoffRecipient(undefined)
   })
 
+  function partsWithUpdatedPart(updated: (typeof sync.data.part)[string][number]) {
+    const current = sync.data.part?.[updated.messageID] ?? []
+    const index = current.findIndex((part) => part.id === updated.id)
+    if (index === -1) return [...current, updated]
+    return current.map((part, currentIndex) => (currentIndex === index ? updated : part))
+  }
+
+  function adoptAgencyHandoffRecipient(info: AgencyAssistantMessageInfo, parts: (typeof sync.data.part)[string]) {
+    if (info.sessionID !== props.sessionID) return
+    if (info.role !== "assistant") return
+    if (info.providerID !== AgencySwarmAdapter.PROVIDER_ID) return
+
+    const options = agencyProviderOptions()
+    const handoffAgent = resolveAgencyHandoffRecipientFromParts(parts) ?? info.agent
+    if (!handoffAgent) return
+    if (
+      !shouldAdoptAgencyHandoffRecipient({
+        frameworkMode: frameworkMode(),
+        agency: options.agency,
+        currentRecipient: options.recipientAgent,
+        assistantAgent: handoffAgent,
+        handoffEvidence: hasAgencyHandoffEvidence(parts),
+      })
+    ) {
+      return
+    }
+
+    setHandoffRecipient({
+      sessionID: info.sessionID,
+      messageID: info.id,
+      agent: handoffAgent,
+      selectedAt: options.recipientAgentSelectedAt,
+    })
+  }
+
   onCleanup(
     event.on("message.updated", (evt) => {
       const info = evt.properties.info
-      if (info.sessionID !== props.sessionID) return
-      if (info.role !== "assistant") return
-      if (info.providerID !== AgencySwarmAdapter.PROVIDER_ID) return
-
-      const options = agencyProviderOptions()
+      assistantMessagesByID.set(info.id, info)
       const parts = sync.data.part?.[info.id] ?? []
-      const handoffAgent = resolveAgencyHandoffRecipientFromParts(parts) ?? info.agent
-      const explicitHandoffEvidence = hasAgencyHandoffEvidence(parts)
-      const previousAssistantAgent = observedAssistantAgentsByMessage.get(info.id)
-      const liveAgentUpdatedEvidence =
-        !explicitHandoffEvidence &&
-        status().type !== "idle" &&
-        !!previousAssistantAgent &&
-        previousAssistantAgent !== handoffAgent
-      if (handoffAgent) {
-        observedAssistantAgentsByMessage.set(info.id, handoffAgent)
-      }
-      if (
-        !shouldAdoptAgencyHandoffRecipient({
-          frameworkMode: frameworkMode(),
-          agency: options.agency,
-          currentRecipient: options.recipientAgent,
-          assistantAgent: handoffAgent,
-          handoffEvidence: explicitHandoffEvidence || liveAgentUpdatedEvidence,
-        })
-      ) {
-        return
-      }
-
-      setHandoffRecipient({
-        sessionID: info.sessionID,
-        messageID: info.id,
-        agent: handoffAgent,
-        selectedAt: options.recipientAgentSelectedAt,
-      })
+      adoptAgencyHandoffRecipient(info, parts)
+    }),
+  )
+  onCleanup(
+    event.on("message.part.updated", (evt) => {
+      const part = evt.properties.part
+      if (part.sessionID !== props.sessionID) return
+      const info =
+        assistantMessagesByID.get(part.messageID) ??
+        sync.data.message?.[part.sessionID]?.find((message) => message.id === part.messageID)
+      if (!info) return
+      adoptAgencyHandoffRecipient(info, partsWithUpdatedPart(part))
     }),
   )
   const editorPath = createMemo(() => editor.selection()?.filePath)

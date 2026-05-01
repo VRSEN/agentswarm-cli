@@ -254,6 +254,21 @@ describe("session.agency-swarm-utils", () => {
     ).toBeTrue()
   })
 
+  test("hasAgencyHandoffEvidence accepts agent_updated_stream_event metadata", () => {
+    expect(
+      hasAgencyHandoffEvidence([
+        {
+          type: "text",
+          text: "Math agent now has control.",
+          metadata: {
+            agency_handoff_event: "agent_updated_stream_event",
+            assistant: "MathAgent",
+          },
+        },
+      ]),
+    ).toBeTrue()
+  })
+
   test("hasAgencyHandoffEvidence rejects non-handoff metadata", () => {
     expect(
       hasAgencyHandoffEvidence([

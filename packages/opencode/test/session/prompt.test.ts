@@ -28,6 +28,7 @@ import { SessionSummary } from "../../src/session/summary"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
 import { SessionPrompt } from "../../src/session/prompt"
+import { removeMessageAllowingQueued } from "../../src/session/queued-message"
 import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
@@ -1590,6 +1591,42 @@ unix(
           const exit = yield* Fiber.await(loop)
           expect(Exit.isSuccess(exit)).toBe(true)
 
+          yield* Fiber.await(sh)
+        }),
+      { git: true, config: cfg },
+    ),
+  30_000,
+)
+
+unix(
+  "busy delete rejects loop queued behind shell",
+  () =>
+    provideTmpdirInstance(
+      (_dir) =>
+        Effect.gen(function* () {
+          const { prompt, chat } = yield* boot()
+          const sessions = yield* Session.Service
+
+          const sh = yield* prompt
+            .shell({ sessionID: chat.id, agent: "build", command: "sleep 30" })
+            .pipe(Effect.forkChild)
+          yield* Effect.sleep(50)
+
+          const loop = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+          yield* Effect.sleep(50)
+
+          const messages = yield* sessions.messages({ sessionID: chat.id })
+          const queued = messages.findLast((message) => message.info.role === "user")
+          expect(queued?.info.role).toBe("user")
+
+          const deleted = yield* removeMessageAllowingQueued({
+            sessionID: chat.id,
+            messageID: queued!.info.id,
+          }).pipe(Effect.exit)
+          expect(Exit.isFailure(deleted)).toBe(true)
+
+          yield* prompt.cancel(chat.id)
+          yield* Fiber.await(loop)
           yield* Fiber.await(sh)
         }),
       { git: true, config: cfg },

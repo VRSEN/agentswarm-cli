@@ -12,6 +12,7 @@ import { Session } from "@/session"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
+import { removeMessageAllowingQueued } from "@/session/queued-message"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
@@ -835,10 +836,7 @@ export const sessionHandlers = Layer.unwrap(
         Instance.restore(instance, () =>
           AppRuntime.runPromise(
             Effect.gen(function* () {
-              const state = yield* SessionRunState.Service
-              const session = yield* Session.Service
-              yield* state.assertNotBusy(ctx.params.sessionID)
-              yield* session.removeMessage(ctx.params)
+              yield* removeMessageAllowingQueued(ctx.params)
             }).pipe(Effect.provide(SessionRunState.defaultLayer), Effect.provide(Session.defaultLayer)),
           ),
         ),

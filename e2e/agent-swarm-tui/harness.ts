@@ -45,7 +45,7 @@ export async function startAgencyProtocolServer(
       if (url.pathname === `/${fixture.agencyID}/get_response_stream`) {
         const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
         requests.push({ path: url.pathname, body })
-        return new Response(fixture.stream(body, requests.length), {
+        return new Response(await fixture.stream(body, requests.length), {
           headers: {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
@@ -219,7 +219,7 @@ export async function writeAgencyProject(dir: string) {
 type AgencyFixture = {
   agencyID: string
   metadata: Record<string, unknown>
-  stream(body: Record<string, unknown>, requestCount: number): string
+  stream(body: Record<string, unknown>, requestCount: number): BodyInit | Promise<BodyInit>
 }
 
 const qaAgencyFixture: AgencyFixture = {
@@ -252,7 +252,31 @@ const qaAgencyFixture: AgencyFixture = {
       },
     ],
   },
-  stream(_body, requestCount) {
+  stream(body, requestCount) {
+    const message = typeof body.message === "string" ? body.message : ""
+    if (message.includes("issue 172 hold")) {
+      return delayedSse(
+        [
+          ["meta", { run_id: `run_e2e_${requestCount}` }],
+          [
+            "messages",
+            {
+              new_messages: [
+                {
+                  id: `msg_issue172_${requestCount}`,
+                  type: "message",
+                  role: "assistant",
+                  agent: "entry-agent",
+                  content: [{ type: "output_text", text: "completed first issue 172 prompt" }],
+                },
+              ],
+            },
+          ],
+          ["end", {}],
+        ],
+        8_000,
+      )
+    }
     return sse([
       ["meta", { run_id: `run_e2e_${requestCount}` }],
       ["end", {}],
@@ -295,6 +319,100 @@ const tuiDemoAgencyFixture: AgencyFixture = {
   },
   stream(body, requestCount) {
     const message = typeof body.message === "string" ? body.message.toLowerCase() : ""
+    if (message.includes("delegate")) {
+      return sse([
+        ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+        [
+          "data",
+          {
+            type: "raw_response_event",
+            agent: "UserSupportAgent",
+            data: {
+              type: "response.output_item.added",
+              output_index: "1",
+              item: {
+                type: "function_call",
+                id: "fc_send_message",
+                call_id: "call_send_message",
+                name: "SendMessage",
+                arguments: JSON.stringify({
+                  recipient_agent: "MathAgent",
+                  message: "Please calculate this.",
+                }),
+              },
+            },
+          },
+        ],
+        [
+          "messages",
+          {
+            new_messages: [
+              {
+                id: `msg_delegate_${requestCount}`,
+                type: "message",
+                role: "assistant",
+                agent: "UserSupportAgent",
+                content: [{ type: "output_text", text: "Starting SendMessage delegation." }],
+              },
+            ],
+          },
+        ],
+        [
+          "messages",
+          {
+            new_messages: [
+              {
+                type: "function_call_output",
+                call_id: "call_send_message",
+                output: JSON.stringify({
+                  recipient_agent: "MathAgent",
+                  response: "Delegation completed without transfer.",
+                }),
+              },
+              {
+                id: `msg_delegate_${requestCount}`,
+                type: "message",
+                role: "assistant",
+                agent: "MathAgent",
+                content: [{ type: "output_text", text: "Delegated to MathAgent with SendMessage." }],
+              },
+            ],
+          },
+        ],
+        ["end", {}],
+      ])
+    }
+    if (message.includes("live handoff")) {
+      return sse([
+        ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+        [
+          "data",
+          {
+            type: "agent_updated_stream_event",
+            agent: "MathAgent",
+            new_agent: {
+              id: "MathAgent",
+              name: "MathAgent",
+            },
+          },
+        ],
+        [
+          "messages",
+          {
+            new_messages: [
+              {
+                id: `msg_live_handoff_${requestCount}`,
+                type: "message",
+                role: "assistant",
+                agent: "MathAgent",
+                content: [{ type: "output_text", text: "Live agent update moved control to MathAgent." }],
+              },
+            ],
+          },
+        ],
+        ["end", {}],
+      ])
+    }
     if (message.includes("handoff")) {
       return sse([
         ["meta", { run_id: `run_tui_demo_${requestCount}` }],
@@ -380,6 +498,18 @@ const tuiDemoAgencyFixture: AgencyFixture = {
 
 function sse(events: Array<[event: string, data: Record<string, unknown>]>) {
   return events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("")
+}
+
+function delayedSse(events: Array<[event: string, data: Record<string, unknown>]>, delayMs: number) {
+  const encoder = new TextEncoder()
+  return new ReadableStream({
+    async start(controller) {
+      controller.enqueue(encoder.encode(sse(events.slice(0, 1))))
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+      controller.enqueue(encoder.encode(sse(events.slice(1))))
+      controller.close()
+    },
+  })
 }
 
 async function closeProcess(proc: Proc) {

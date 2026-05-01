@@ -34,6 +34,7 @@ import {
   extractFunctionCallOutputs as extractFunctionCallOutputsFromMessages,
   findRecipientAgent,
   hasAgencyHandoffEvidence,
+  isAgencyAgentUpdatedHandoffMetadata,
   isAgencyToolOutputType,
   normalizeCallerAgent as normalizeCallerAgentValue,
   parseToolInput,
@@ -627,6 +628,7 @@ export namespace SessionAgencySwarm {
     let cancelBeforeMetaTimer: ReturnType<typeof setTimeout> | undefined
     let streamAborted = false
     let hadDanglingTool = false
+    const agentUpdatedHandoffAgents = new Set<string>()
 
     const streamAbort = new AbortController()
     const streamSignal = AbortSignal.any([input.abort, streamAbort.signal])
@@ -648,6 +650,13 @@ export namespace SessionAgencySwarm {
       const key = textKey(itemID, index)
       const current = textBuffer.get(key) || ""
       return current === text && !textOpen.has(key)
+    }
+
+    const agentUpdatedHandoffMetadata = (agent: string | undefined) => {
+      const handoffAgent = agent ?? input.assistantMessage.agent
+      return handoffAgent && agentUpdatedHandoffAgents.has(handoffAgent)
+        ? { agency_handoff_event: "agent_updated_stream_event", assistant: handoffAgent }
+        : {}
     }
 
     const reasoningKey = (itemID: string, index: number) => `${itemID}:${index}`
@@ -1221,7 +1230,10 @@ export namespace SessionAgencySwarm {
         const text = extractMessageText(message)
         if (!text) continue
         if (shouldSkipDuplicateAssistantText(itemID, 0, text)) continue
-        yield* finishText(itemID, 0, text, messageMeta, { source: "messages" })
+        yield* finishText(itemID, 0, text, messageMeta, {
+          source: "messages",
+          ...agentUpdatedHandoffMetadata(messageMeta.agent),
+        })
       }
     }
 
@@ -1636,6 +1648,7 @@ export namespace SessionAgencySwarm {
               ? (asString(next["id"]) ?? asString(next["name"]) ?? asString(next["label"]))
               : undefined
             if (maybeName) {
+              agentUpdatedHandoffAgents.add(maybeName)
               input.assistantMessage.agent = maybeName
               input.assistantMessage.mode = maybeName
               await Session.updateMessage(input.assistantMessage)
@@ -1731,7 +1744,10 @@ export namespace SessionAgencySwarm {
                 contentIndex,
                 final,
                 eventMeta,
-                outputMeta(outputIndex, { content_index: contentIndex }),
+                outputMeta(outputIndex, {
+                  content_index: contentIndex,
+                  ...agentUpdatedHandoffMetadata(eventMeta.agent),
+                }),
               )
               continue
             }
@@ -2075,6 +2091,10 @@ export namespace SessionAgencySwarm {
 
   function resolveHandoffRecipientFromParts(parts: MessageV2.Part[]) {
     for (const part of parts.toReversed()) {
+      const metadataAgent = readAgentUpdatedHandoffMetadataAgent(
+        asRecord("metadata" in part ? part.metadata : undefined),
+      )
+      if (metadataAgent) return metadataAgent
       if (part.type !== "tool") continue
       const outputAgent =
         readHandoffOutputAgent(part.state.status === "completed" ? part.state.output : undefined) ??
@@ -2117,6 +2137,11 @@ export namespace SessionAgencySwarm {
     return asString(
       metadata["assistant"] ?? metadata["agent"] ?? metadata["recipientAgent"] ?? metadata["recipient_agent"],
     )
+  }
+
+  function readAgentUpdatedHandoffMetadataAgent(metadata: Record<string, unknown> | undefined) {
+    if (!isAgencyAgentUpdatedHandoffMetadata(metadata)) return undefined
+    return readHandoffMetadataAgent(metadata)
   }
 
   function resolveHandoffRecipientFromHistory(history: Array<Record<string, unknown>>) {

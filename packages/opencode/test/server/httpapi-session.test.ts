@@ -10,6 +10,7 @@ import { SessionPaths } from "../../src/server/routes/instance/httpapi/session"
 import { Session } from "../../src/session"
 import { MessageID, PartID, type SessionID } from "../../src/session/schema"
 import { MessageV2 } from "../../src/session/message-v2"
+import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { Log } from "../../src/util"
 import { resetDatabase } from "../fixture/db"
 import { tmpdir } from "../fixture/fixture"
@@ -68,8 +69,31 @@ async function createTextMessage(directory: string, sessionID: SessionID, text: 
 }
 
 async function json<T>(response: Response) {
-  if (response.status !== 200) throw new Error(await response.text())
+  if (response.status !== 200) throw new Error(`${response.status}: ${await response.text()}`)
   return (await response.json()) as T
+}
+
+function defer<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+async function waitForUserMessageCount(directory: string, sessionID: SessionID, count: number) {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const messages = await Instance.provide({
+      directory,
+      fn: async () =>
+        runSession(Session.Service.use((svc) => svc.messages({ sessionID }))).then((items) =>
+          items.filter((item) => item.info.role === "user"),
+        ),
+    })
+    if (messages.length === count) return messages
+    await Bun.sleep(10)
+  }
+  throw new Error(`Timed out waiting for ${count} user messages`)
 }
 
 afterEach(async () => {
@@ -235,6 +259,96 @@ describe("session HttpApi", () => {
         }),
       ),
     ).toBe(true)
+  })
+
+  test("deletes queued Run-mode message while active turn is busy", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        formatter: false,
+        lsp: false,
+        model: "agency-swarm/default",
+        provider: {
+          "agency-swarm": {
+            options: {
+              baseURL: "http://127.0.0.1:8000",
+              agency: "local-agency",
+            },
+          },
+        },
+      },
+    })
+    const originalMetadata = AgencySwarmAdapter.getMetadata
+    const originalStream = AgencySwarmAdapter.streamRun
+    const firstStarted = defer<void>()
+    const finishFirst = defer<void>()
+    const prompts: string[] = []
+
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      metadata: { agents: ["entry-agent"] },
+    })) as typeof AgencySwarmAdapter.getMetadata
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      prompts.push(args.message)
+      if (prompts.length === 1) {
+        firstStarted.resolve()
+        await finishFirst.promise
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    try {
+      const headers = { "x-opencode-directory": tmp.path, "content-type": "application/json" }
+      const session = await createSession(tmp.path, {
+        title: "queued delete",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      const model = { providerID: "agency-swarm", modelID: "default" }
+      const promptBody = (text: string, messageID?: MessageID) =>
+        JSON.stringify({
+          ...(messageID ? { messageID } : {}),
+          agent: "build",
+          model,
+          parts: [{ id: PartID.ascending(), type: "text", text }],
+        })
+
+      const first = app().request(pathFor(SessionPaths.prompt, { sessionID: session.id }), {
+        method: "POST",
+        headers,
+        body: promptBody("first issue 172 prompt"),
+      })
+      await firstStarted.promise
+
+      const secondMessageID = MessageID.ascending("msg_00000000000000000000000000")
+      const second = app().request(pathFor(SessionPaths.prompt, { sessionID: session.id }), {
+        method: "POST",
+        headers,
+        body: promptBody("second issue 172 prompt SHOULD_NOT_SEND", secondMessageID),
+      })
+      const users = await waitForUserMessageCount(tmp.path, session.id, 2)
+      const queued = users.find((item) => item.info.id === secondMessageID)
+      expect(queued).toBeTruthy()
+
+      expect(
+        await json<boolean>(
+          await app().request(
+            pathFor(SessionPaths.deleteMessage, {
+              sessionID: session.id,
+              messageID: queued!.info.id,
+            }),
+            { method: "DELETE", headers },
+          ),
+        ),
+      ).toBe(true)
+
+      finishFirst.resolve()
+      expect((await first).status).toBe(200)
+      expect((await second).status).toBe(200)
+      expect(prompts).toEqual(["first issue 172 prompt"])
+    } finally {
+      finishFirst.resolve()
+      AgencySwarmAdapter.getMetadata = originalMetadata
+      AgencySwarmAdapter.streamRun = originalStream
+    }
   })
 
   test("serves remaining non-LLM session mutation routes through Hono bridge", async () => {
