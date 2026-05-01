@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir as osTmpdir } from "node:os"
@@ -315,6 +315,49 @@ describe("session.agency-swarm", () => {
     }
   })
 
+  test("stream preserves launcher-managed project directory attachments", async () => {
+    mockHistory()
+    const projectDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-project-stream-"))
+    const sourcePath = path.join(projectDir, "docs")
+    await mkdir(sourcePath)
+
+    let captured: Record<string, string> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.fileURLs
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    try {
+      const { input } = helper()
+      input.options.materializeLocalFiles = true
+      input.options.localFilePathAllowlist = [projectDir]
+      input.userMessage.parts = [
+        {
+          type: "text",
+          text: "inspect this directory",
+          ignored: false,
+        },
+        {
+          type: "file",
+          mime: "application/x-directory",
+          filename: "docs",
+          url: pathToFileURL(sourcePath).href,
+        },
+      ] as any
+
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _event of stream.fullStream) {
+        // consume
+      }
+
+      expect(captured).toEqual({
+        docs: sourcePath,
+      })
+    } finally {
+      await rm(projectDir, { recursive: true, force: true })
+    }
+  })
+
   test("stream preserves file URL attachments for manual loopback Agency servers", async () => {
     mockHistory()
     const sourceDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-file-url-stream-"))
@@ -574,6 +617,7 @@ describe("session.agency-swarm", () => {
         fileIDs: ["file_1", "file_2"],
         generateChatName: true,
         materializeLocalFiles: true,
+        localFilePathAllowlist: ["/tmp/project"],
         clientConfig: {
           base_url: "https://proxy.example.com/v1",
         },
@@ -589,6 +633,7 @@ describe("session.agency-swarm", () => {
     expect(options.fileIDs).toEqual(["file_1", "file_2"])
     expect(options.generateChatName).toBeTrue()
     expect(options.materializeLocalFiles).toBeTrue()
+    expect(options.localFilePathAllowlist).toEqual(["/tmp/project"])
     expect(options.clientConfig).toEqual({ base_url: "https://proxy.example.com/v1" })
     expect(options.discoveryTimeoutMs).toBe(12000)
   })

@@ -1,5 +1,5 @@
 import type { MessageV2 } from "@/session/message-v2"
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -15,6 +15,7 @@ export type AgencySwarmEventMeta = {
 type CollectFileURLOptions = {
   allowLocalFilePaths?: boolean
   materializeLocalFilePaths?: boolean
+  localFilePathAllowlist?: string[]
   materializedFilePaths?: string[]
 }
 
@@ -233,6 +234,8 @@ function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptio
       )
     }
     if (!options.materializeLocalFilePaths) return filepath
+    const directoryPath = preserveMaterializedDirectoryPath(filepath, options)
+    if (directoryPath) return directoryPath
     const materializedFile = materializeLocalFilePath(filepath, path.basename(part.filename || filepath) || "file")
     options.materializedFilePaths?.push(materializedFile)
     return materializedFile
@@ -303,6 +306,39 @@ function materializedClipboardDir(filepath: string): string | undefined {
   const dir = path.resolve(path.dirname(filepath))
   const root = path.resolve(localFileMaterializationRoot())
   return dir.startsWith(`${root}${path.sep}`) ? dir : undefined
+}
+
+function preserveMaterializedDirectoryPath(filepath: string, options: CollectFileURLOptions): string | undefined {
+  let stats
+  try {
+    stats = statSync(filepath)
+  } catch {
+    return undefined
+  }
+  if (!stats.isDirectory()) return undefined
+  if (isLocalFilePathAllowed(filepath, options.localFilePathAllowlist)) return filepath
+  throw new Error(
+    "Agent Swarm Run mode cannot send directory attachments outside the local file allowlist. Attach a project-local directory or a regular file.",
+  )
+}
+
+function isLocalFilePathAllowed(filepath: string, allowlist: readonly string[] | undefined) {
+  if (!allowlist || allowlist.length === 0) return false
+  const candidate = realLocalPath(filepath)
+  return allowlist.some((root) => isSamePathOrChild(candidate, realLocalPath(root)))
+}
+
+function realLocalPath(filepath: string) {
+  try {
+    return realpathSync(filepath)
+  } catch {
+    return path.resolve(filepath)
+  }
+}
+
+function isSamePathOrChild(filepath: string, root: string) {
+  const relative = path.relative(root, filepath)
+  return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
 function materializeClipboardImage(part: MessageV2.FilePart): string | undefined {

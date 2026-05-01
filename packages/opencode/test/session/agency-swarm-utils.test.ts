@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir as osTmpdir } from "node:os"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
@@ -313,6 +313,69 @@ describe("session.agency-swarm-utils", () => {
         filepath && filepath !== sourcePath
           ? rm(path.dirname(filepath), { recursive: true, force: true })
           : Promise.resolve(),
+      ])
+    }
+  })
+
+  test("collectFileURLs preserves launcher-managed project directory attachments", async () => {
+    const projectDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-project-"))
+    const sourcePath = path.join(projectDir, "docs")
+    await mkdir(sourcePath)
+
+    const materializedFilePaths: string[] = []
+    try {
+      const result = collectFileURLs(
+        msg([
+          file("part-1", {
+            type: "file",
+            mime: "application/x-directory",
+            url: pathToFileURL(sourcePath).href,
+            filename: "docs",
+          }),
+        ]),
+        {
+          allowLocalFilePaths: true,
+          materializeLocalFilePaths: true,
+          localFilePathAllowlist: [projectDir],
+          materializedFilePaths,
+        },
+      )
+
+      expect(result).toEqual({
+        docs: sourcePath,
+      })
+      expect(materializedFilePaths).toEqual([])
+    } finally {
+      await rm(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  test("collectFileURLs rejects launcher-managed directory attachments outside the allowlist", async () => {
+    const projectDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-project-"))
+    const sourcePath = await mkdtemp(path.join(osTmpdir(), "agentswarm-outside-dir-"))
+
+    try {
+      expect(() =>
+        collectFileURLs(
+          msg([
+            file("part-1", {
+              type: "file",
+              mime: "application/x-directory",
+              url: pathToFileURL(sourcePath).href,
+              filename: "outside",
+            }),
+          ]),
+          {
+            allowLocalFilePaths: true,
+            materializeLocalFilePaths: true,
+            localFilePathAllowlist: [projectDir],
+          },
+        ),
+      ).toThrow("Agent Swarm Run mode cannot send directory attachments outside the local file allowlist")
+    } finally {
+      await Promise.all([
+        rm(projectDir, { recursive: true, force: true }),
+        rm(sourcePath, { recursive: true, force: true }),
       ])
     }
   })

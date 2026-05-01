@@ -323,6 +323,7 @@ export function buildAgencyConfig(input: {
   agency: string
   token?: string
   materializeLocalFiles?: boolean
+  localFilePathAllowlist?: string[]
 }) {
   return JSON.stringify({
     $schema: "https://opencode.ai/config.json",
@@ -335,6 +336,7 @@ export function buildAgencyConfig(input: {
           agency: input.agency,
           discoveryTimeoutMs: 2000,
           ...(input.materializeLocalFiles ? { materializeLocalFiles: true } : {}),
+          ...(input.localFilePathAllowlist?.length ? { localFilePathAllowlist: input.localFilePathAllowlist } : {}),
           ...(input.token ? { token: input.token } : {}),
         },
       },
@@ -645,6 +647,7 @@ export async function prepareProjectLaunch(project: AgencyProject): Promise<Prep
       baseURL: server.baseURL,
       agency: LOCAL_AGENCY_ID,
       materializeLocalFiles: true,
+      localFilePathAllowlist: [path.resolve(project.directory), path.resolve(localFileMaterializationRoot())],
     }),
     cleanup: server.cleanup,
   }
