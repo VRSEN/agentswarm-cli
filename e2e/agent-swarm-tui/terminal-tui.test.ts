@@ -276,6 +276,44 @@ describe("Agent Swarm terminal TUI e2e", () => {
     ).toBeFalse()
   })
 
+  test("top-level handoff wins over later nested handoff-like metadata", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    currentTui.write("mixed handoff with nested delegation\r")
+    await currentTui.waitForText("Math handoff finished after nested delegation.", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "mixed handoff request",
+      tuiInteractionTimeoutMs,
+    )
+
+    currentTui.write("continue after mixed handoff\r")
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 2,
+      "post-mixed-handoff request",
+      tuiInteractionTimeoutMs,
+    )
+
+    const handoffBody = currentServer.requests[0]?.body
+    expect(handoffBody?.message).toContain("mixed handoff with nested delegation")
+    expect(handoffBody).toMatchObject({
+      recipient_agent: "UserSupportAgent",
+    })
+    const nextBody = currentServer.requests[1]?.body
+    expect(nextBody?.message).toContain("continue after mixed handoff")
+    expect(nextBody).toMatchObject({
+      recipient_agent: "MathAgent",
+    })
+    expect(nextBody?.chat_history.some((item: any) => item?.type === "handoff_output_item")).toBeFalse()
+  })
+
   test("agent_updated_stream_event-only handoff switches control to the target agent", async () => {
     currentServer = await startTuiDemoAgencyServer()
     currentTui = await startTui({

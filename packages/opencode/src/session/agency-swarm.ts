@@ -2084,16 +2084,24 @@ export namespace SessionAgencySwarm {
 
   function resolveHandoffRecipientFromParts(parts: MessageV2.Part[]) {
     for (const part of parts.toReversed()) {
-      const metadataAgent = readAgentUpdatedHandoffMetadataAgent(
-        asRecord("metadata" in part ? part.metadata : undefined),
-      )
+      const partMetadata = asRecord("metadata" in part ? part.metadata : undefined)
+      const metadataAgent = isTopLevelAgencyHandoffMetadata(partMetadata)
+        ? readAgentUpdatedHandoffMetadataAgent(partMetadata)
+        : undefined
       if (metadataAgent) return metadataAgent
       if (part.type !== "tool") continue
+      const stateMetadata = asRecord("metadata" in part.state ? part.state.metadata : undefined)
       const outputAgent =
-        readHandoffOutputAgent(part.state.status === "completed" ? part.state.output : undefined) ??
-        readHandoffMetadataAgent("metadata" in part.state ? part.state.metadata : undefined)
+        isTopLevelAgencyHandoffMetadata(partMetadata) &&
+        isTopLevelAgencyHandoffMetadata(stateMetadata) &&
+        part.state.status === "completed"
+          ? (readHandoffOutputAgent(part.state.output) ?? readHandoffMetadataAgent(stateMetadata))
+          : undefined
       if (outputAgent) return outputAgent
-      const toolAgent = readTransferToolAgent(part.tool)
+      const toolAgent =
+        isTopLevelAgencyHandoffMetadata(partMetadata) && isTopLevelAgencyHandoffMetadata(stateMetadata)
+          ? readTransferToolAgent(part.tool)
+          : undefined
       if (toolAgent) return toolAgent
     }
     return undefined
@@ -2142,6 +2150,8 @@ export namespace SessionAgencySwarm {
       const item = history[index]
       const type = asString(item["type"])
       if (type === "handoff_output_item") {
+        const metadata = asRecord(item["metadata"])
+        if (!isTopLevelAgencyHandoffMetadata(item) || !isTopLevelAgencyHandoffMetadata(metadata)) continue
         const outputAgent = readHandoffOutputAgent(item["output"])
         if (outputAgent) return outputAgent
 

@@ -3687,6 +3687,174 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream restores top-level handoff over later nested forwarded metadata", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        enabled_providers: ["agency-swarm"],
+        provider: {
+          "agency-swarm": {},
+        },
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        mockHistory()
+        const sentRecipients: Array<string | undefined> = []
+        AgencySwarmAdapter.getMetadata = (async () => ({
+          metadata: {
+            agents: ["UserSupportAgent", "support_agent", "MathAgent"],
+          },
+          nodes: [
+            {
+              id: "UserSupportAgent",
+              type: "agent",
+              data: {
+                label: "User Support Agent",
+              },
+            },
+            {
+              id: "support_agent",
+              type: "agent",
+              data: {
+                label: "Support Agent",
+              },
+            },
+            {
+              id: "MathAgent",
+              type: "agent",
+              data: {
+                label: "Math Agent",
+              },
+            },
+          ],
+        })) as typeof AgencySwarmAdapter.getMetadata
+        let turn = 0
+        AgencySwarmAdapter.streamRun = async function* (args) {
+          turn++
+          sentRecipients.push(args.recipientAgent ?? undefined)
+          if (turn === 1) {
+            yield {
+              type: "data",
+              payload: {
+                type: "raw_response_event",
+                data: {
+                  type: "response.output_item.added",
+                  output_index: 1,
+                  item: {
+                    type: "function_call",
+                    id: "fc_handoff",
+                    call_id: "call_handoff",
+                    name: "transfer_to_support_agent",
+                    arguments: "{}",
+                  },
+                },
+              },
+            }
+            yield {
+              type: "messages",
+              payload: {
+                new_messages: [
+                  {
+                    type: "handoff_output_item",
+                    call_id: "call_handoff",
+                    output: '{"assistant":"support_agent"}',
+                  },
+                ],
+              },
+            }
+            yield {
+              type: "data",
+              payload: {
+                type: "raw_response_event",
+                callerAgent: "support_agent",
+                parent_run_id: "run_parent",
+                data: {
+                  type: "response.output_item.done",
+                  output_index: 2,
+                  item: {
+                    type: "handoff_output_item",
+                    call_id: "call_nested_handoff",
+                    output: {
+                      assistant: "MathAgent",
+                    },
+                  },
+                },
+              },
+            }
+            yield {
+              type: "messages",
+              payload: {
+                new_messages: [
+                  {
+                    id: "msg_mixed_nested_delegate",
+                    type: "message",
+                    role: "assistant",
+                    agent: "MathAgent",
+                    content: [{ type: "output_text", text: "Nested delegation replied after handoff." }],
+                  },
+                ],
+              },
+            }
+          }
+          yield { type: "end" }
+        } as typeof AgencySwarmAdapter.streamRun
+
+        const session = await Session.create({ title: "mixed handoff nested delegate" })
+        const user = await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "user",
+          sessionID: session.id,
+          agent: "build",
+          model: {
+            providerID: ProviderID.make("agency-swarm"),
+            modelID: ModelID.make("default"),
+          },
+          time: {
+            created: Date.now(),
+          },
+        })
+        await Session.updatePart({
+          id: PartID.ascending(),
+          messageID: user.id,
+          sessionID: session.id,
+          type: "text",
+          text: "handoff then delegate",
+        })
+
+        const first = helper()
+        first.input.sessionID = session.id
+        first.input.assistantMessage.sessionID = session.id
+        first.input.assistantMessage.id = MessageID.ascending()
+        first.input.assistantMessage.parentID = user.id
+        first.input.userMessage.info.id = user.id
+        first.input.options.recipientAgent = "UserSupportAgent"
+        ;(first.input.options as any).recipientAgentSelectedAt = 1
+
+        const firstStream = await SessionAgencySwarm.stream(first.input)
+        for await (const _ of firstStream.fullStream) {
+        }
+
+        const second = helper()
+        second.input.sessionID = session.id
+        second.input.assistantMessage.sessionID = session.id
+        second.input.assistantMessage.id = MessageID.ascending()
+        second.input.userMessage.info.id = MessageID.ascending()
+        second.input.userMessage.parts = [{ type: "text", text: "follow up", ignored: false }] as any
+        second.input.options.recipientAgent = "UserSupportAgent"
+        ;(second.input.options as any).recipientAgentSelectedAt = 1
+
+        const secondStream = await SessionAgencySwarm.stream(second.input)
+        for await (const _ of secondStream.fullStream) {
+        }
+
+        expect(sentRecipients).toEqual(["UserSupportAgent", "support_agent"])
+      },
+    })
+  })
+
   test("stream keeps agent_updated handoff metadata when raw text is replayed by messages", async () => {
     await using tmp = await tmpdir({
       git: true,

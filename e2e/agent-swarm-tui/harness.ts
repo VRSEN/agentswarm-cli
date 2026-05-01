@@ -380,6 +380,87 @@ const tuiDemoAgencyFixture: AgencyFixture = {
         ["end", {}],
       ])
     }
+    if (message.includes("mixed handoff")) {
+      return sse([
+        ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+        [
+          "data",
+          {
+            type: "raw_response_event",
+            agent: "UserSupportAgent",
+            data: {
+              type: "response.output_item.added",
+              output_index: "1",
+              item: {
+                type: "function_call",
+                id: "fc_transfer_math_mixed",
+                call_id: "call_transfer_math_mixed",
+                name: "transfer_to_math_agent",
+                arguments: "{}",
+              },
+            },
+          },
+        ],
+        [
+          "messages",
+          {
+            new_messages: [
+              {
+                type: "handoff_output_item",
+                call_id: "call_transfer_math_mixed",
+                output: '{"assistant":"MathAgent"}',
+              },
+            ],
+          },
+        ],
+        [
+          "data",
+          {
+            type: "raw_response_event",
+            callerAgent: "MathAgent",
+            parent_run_id: `run_tui_demo_${requestCount}`,
+            data: {
+              type: "response.output_item.done",
+              output_index: "2",
+              item: {
+                type: "handoff_output_item",
+                call_id: "call_nested_handoff_mixed",
+                output: {
+                  assistant: "UserSupportAgent",
+                },
+              },
+            },
+          },
+        ],
+        [
+          "data",
+          {
+            type: "agent_updated_stream_event",
+            callerAgent: "MathAgent",
+            parent_run_id: `run_tui_demo_${requestCount}`,
+            new_agent: {
+              id: "UserSupportAgent",
+              name: "UserSupportAgent",
+            },
+          },
+        ],
+        [
+          "messages",
+          {
+            new_messages: [
+              {
+                id: `msg_mixed_handoff_${requestCount}`,
+                type: "message",
+                role: "assistant",
+                agent: "UserSupportAgent",
+                content: [{ type: "output_text", text: "Math handoff finished after nested delegation." }],
+              },
+            ],
+          },
+        ],
+        ["end", {}],
+      ])
+    }
     if (message.includes("delegate")) {
       return sse([
         ["meta", { run_id: `run_tui_demo_${requestCount}` }],
