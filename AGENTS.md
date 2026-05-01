@@ -567,7 +567,7 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
 - Use GPT-5.5 with `medium` or `high` reasoning when available for high-reliability bug fixing, root-cause investigation, and feature implementation without a detailed technical plan.
 - Policy, repo-skill, and workflow-rule edits to `AGENTS.md`, `CLAUDE.md`, or `.codex/skills/**` require an isolated worker or worktree and the strongest available GPT-5.5 path with `xhigh` reasoning when available. If GPT-5.5 or `xhigh` is unavailable, use the strongest approved path, state the substitution, and do not treat weaker review as final proof for high-stakes policy.
 - Use `.codex/skills/codex-cli-review` for code, pull-request, release, and policy review gates.
-- Claude is counsel-only: do not use it to write, edit, patch, implement, test, run review gates, stage, commit, push, publish, or otherwise mutate repo artifacts; treat its output as discussion, not evidence for code fixes, implementation, pull-request, merge, release, or policy gates.
+- Claude is counsel-only: the only allowed `claude-cli-review` route is the checked-in guard at `.codex/skills/claude-cli-review`, which rejects review use; do not load or follow any user, plugin, global, or non-guard Claude review skill; do not use Claude to write, edit, patch, implement, test, run review gates, stage, commit, push, publish, or otherwise mutate repo artifacts; treat its output as discussion, not evidence for code fixes, implementation, pull-request, merge, release, or policy gates.
 - Sonnet models are not allowed here. If no allowed model is available for the needed reliability, stop and escalate.
 - Prefer the local `codex` command for small clear work, and keep delegated scopes as small as useful.
 
@@ -579,4 +579,4 @@ Why: without a hardcoded source of truth, agents re-derive behavior from code ea
 - Fork Repo: `https://github.com/VRSEN/agentswarm-cli`
 - Upstream Repo: `https://github.com/anomalyco/opencode`
 - Repo skills are checked-in manager instructions under `.codex/skills/**`, not product/TUI skills and not automatic behavior by themselves. `AGENTS.md` may route work to them by path or name; agents must read the relevant `SKILL.md` on demand unless the environment exposes the skill directly.
-- Available repo skills: `.codex/skills/requirement-ledger`, `.codex/skills/policy-maintenance`, `.codex/skills/delegation-management`, `.codex/skills/codex-cli-review`, and `.codex/skills/claude-cli-counsel`.
+- Available repo skills: `.codex/skills/requirement-ledger`, `.codex/skills/policy-maintenance`, `.codex/skills/delegation-management`, `.codex/skills/codex-cli-review`, and `.codex/skills/claude-cli-counsel`; `.codex/skills/claude-cli-review` is a guard that shadows and rejects old Claude-review routes.
