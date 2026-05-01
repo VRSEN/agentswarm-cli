@@ -896,6 +896,8 @@ describe("agency-swarm npx onboarding", () => {
     expect(
       canaryScripts.every((script) => script.includes("from agency_swarm.integrations.fastapi import run_fastapi")),
     ).toBe(true)
+    expect(canaryScripts.every((script) => script.includes("inspect.signature(run_fastapi).parameters"))).toBe(true)
+    expect(canaryScripts.every((script) => script.includes("allowed_local_file_dirs"))).toBe(true)
     if (!launcherScriptPath) throw new Error("Expected launcher script path")
     await expect(Bun.file(launcherScriptPath).text()).resolves.toContain(
       `allowed_local_file_dirs=["${dir.path.replaceAll("\\", "\\\\")}"]`,
@@ -1189,6 +1191,34 @@ describe("agency-swarm npx onboarding", () => {
       }),
     ).rejects.toThrow(
       "Canary import failed on fallback install. Inspect the stderr below and check for project-local fastapi.py/agency_swarm.py that may shadow installed packages.",
+    )
+  })
+
+  test("prepareProjectLaunch explains unsupported FastAPI local file allowlists", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await Bun.write(path.join(dir.path, "requirements.txt"), "agency-swarm==1.9.0\n")
+
+    spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+
+    const canaryStderr = [
+      "Traceback (most recent call last):",
+      "RuntimeError: agency-swarm FastAPI run_fastapi does not support allowed_local_file_dirs",
+    ].join("\n")
+
+    mockPrepareProjectLaunchCanaryFailure(canaryStderr)
+
+    await expect(
+      prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      }),
+    ).rejects.toThrow(
+      "Local file drops require an agency-swarm FastAPI version that supports allowed_local_file_dirs. Upgrade this project's agency-swarm[fastapi] dependency.",
     )
   })
 

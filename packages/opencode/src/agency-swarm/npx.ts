@@ -63,9 +63,13 @@ interface RunCommandOptions {
   timeoutMs?: number
 }
 
-const VENV_CANARY_SCRIPT = ["import agency_swarm", "from agency_swarm.integrations.fastapi import run_fastapi"].join(
-  "\n",
-)
+const LOCAL_FILE_ALLOWLIST_CANARY_ERROR = "agency-swarm FastAPI run_fastapi does not support allowed_local_file_dirs"
+const VENV_CANARY_SCRIPT = [
+  "import agency_swarm",
+  "import inspect",
+  "from agency_swarm.integrations.fastapi import run_fastapi",
+  `if "allowed_local_file_dirs" not in inspect.signature(run_fastapi).parameters: raise RuntimeError("${LOCAL_FILE_ALLOWLIST_CANARY_ERROR}")`,
+].join("\n")
 const REBUILD_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 const PROCESS_KILL_GRACE_MS = 5000
 
@@ -813,6 +817,11 @@ async function installProjectDependencies(
 async function formatPostInstallCanaryFailure(directory: string, hadManifests: boolean, stderr: string) {
   const summary = summarizeBridgeStderr(stderr)
   const shadowingHint = await formatShadowingHint(directory)
+  if (isLocalFileAllowlistCanaryFailure(stderr)) {
+    return summary
+      ? `Local file drops require an agency-swarm FastAPI version that supports allowed_local_file_dirs. Upgrade this project's agency-swarm[fastapi] dependency.${shadowingHint} Canary stderr: ${summary}`
+      : `Local file drops require an agency-swarm FastAPI version that supports allowed_local_file_dirs. Upgrade this project's agency-swarm[fastapi] dependency.${shadowingHint}`
+  }
   if (isImportLikeCanaryFailure(stderr)) {
     if (hadManifests) {
       return summary
@@ -830,6 +839,10 @@ async function formatPostInstallCanaryFailure(directory: string, hadManifests: b
 
 function isImportLikeCanaryFailure(stderr: string) {
   return /\b(?:ImportError|ModuleNotFoundError)\b/.test(stderr)
+}
+
+function isLocalFileAllowlistCanaryFailure(stderr: string) {
+  return stderr.includes(LOCAL_FILE_ALLOWLIST_CANARY_ERROR)
 }
 
 async function formatShadowingHint(directory: string) {
