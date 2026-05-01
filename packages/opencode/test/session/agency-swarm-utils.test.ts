@@ -317,6 +317,85 @@ describe("session.agency-swarm-utils", () => {
     }
   })
 
+  test("collectFileURLs preserves launcher-managed project file attachments", async () => {
+    const projectDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-project-"))
+    const sourcePath = path.join(projectDir, "project.txt")
+    const content = Buffer.from("project file")
+    await Bun.write(sourcePath, content)
+
+    const materializedFilePaths: string[] = []
+    try {
+      const result = collectFileURLs(
+        msg([
+          file("part-1", {
+            type: "file",
+            mime: "text/plain",
+            url: pathToFileURL(sourcePath).href,
+            filename: "project.txt",
+          }),
+        ]),
+        {
+          allowLocalFilePaths: true,
+          materializeLocalFilePaths: true,
+          localFilePathAllowlist: [projectDir],
+          materializedFilePaths,
+        },
+      )
+
+      expect(result).toEqual({
+        "project.txt": sourcePath,
+      })
+      expect(materializedFilePaths).toEqual([])
+      await expect(readFile(sourcePath)).resolves.toEqual(content)
+    } finally {
+      await rm(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  test("collectFileURLs preserves launcher-managed project data URL source paths", async () => {
+    const projectDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-project-"))
+    const sourcePath = path.join(projectDir, "report.pdf")
+    const content = Buffer.from("%PDF-1.4\n")
+    await Bun.write(sourcePath, content)
+
+    const materializedFilePaths: string[] = []
+    try {
+      const result = collectFileURLs(
+        msg([
+          file("part-1", {
+            type: "file",
+            mime: "application/pdf",
+            url: `data:application/pdf;base64,${content.toString("base64")}`,
+            filename: "report.pdf",
+            source: {
+              type: "file",
+              path: sourcePath,
+              text: {
+                value: "[PDF 1]",
+                start: 0,
+                end: 7,
+              },
+            },
+          }),
+        ]),
+        {
+          allowLocalFilePaths: true,
+          materializeLocalFilePaths: true,
+          localFilePathAllowlist: [projectDir],
+          materializedFilePaths,
+        },
+      )
+
+      expect(result).toEqual({
+        "report.pdf": sourcePath,
+      })
+      expect(materializedFilePaths).toEqual([])
+      await expect(readFile(sourcePath)).resolves.toEqual(content)
+    } finally {
+      await rm(projectDir, { recursive: true, force: true })
+    }
+  })
+
   test("collectFileURLs preserves launcher-managed project directory attachments", async () => {
     const projectDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-project-"))
     const sourcePath = path.join(projectDir, "docs")

@@ -234,8 +234,9 @@ function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptio
       )
     }
     if (!options.materializeLocalFilePaths) return filepath
-    const directoryPath = preserveMaterializedDirectoryPath(filepath, options)
-    if (directoryPath) return directoryPath
+    const allowlistedPath = preserveAllowlistedLocalPath(filepath, options)
+    if (allowlistedPath) return allowlistedPath
+    rejectMaterializedDirectoryPath(filepath)
     const materializedFile = materializeLocalFilePath(filepath, path.basename(part.filename || filepath) || "file")
     options.materializedFilePaths?.push(materializedFile)
     return materializedFile
@@ -263,6 +264,8 @@ function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptio
     if (part.source?.type === "file" && part.source.path && path.isAbsolute(part.source.path)) {
       if (options.allowLocalFilePaths && !options.materializeLocalFilePaths) return part.source.path
       if (options.allowLocalFilePaths && options.materializeLocalFilePaths) {
+        const allowlistedPath = preserveAllowlistedLocalPath(part.source.path, options)
+        if (allowlistedPath) return allowlistedPath
         const materializedFile = materializeDataFilePart(
           part,
           path.parse(part.filename || part.source.path).name || "file",
@@ -308,15 +311,18 @@ function materializedClipboardDir(filepath: string): string | undefined {
   return dir.startsWith(`${root}${path.sep}`) ? dir : undefined
 }
 
-function preserveMaterializedDirectoryPath(filepath: string, options: CollectFileURLOptions): string | undefined {
+function preserveAllowlistedLocalPath(filepath: string, options: CollectFileURLOptions): string | undefined {
+  return isLocalFilePathAllowed(filepath, options.localFilePathAllowlist) ? filepath : undefined
+}
+
+function rejectMaterializedDirectoryPath(filepath: string) {
   let stats
   try {
     stats = statSync(filepath)
   } catch {
-    return undefined
+    return
   }
-  if (!stats.isDirectory()) return undefined
-  if (isLocalFilePathAllowed(filepath, options.localFilePathAllowlist)) return filepath
+  if (!stats.isDirectory()) return
   throw new Error(
     "Agent Swarm Run mode cannot send directory attachments outside the local file allowlist. Attach a project-local directory or a regular file.",
   )
