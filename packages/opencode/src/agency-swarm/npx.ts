@@ -49,6 +49,7 @@ interface PythonInfo {
 interface VenvCanaryResult {
   healthy: boolean
   stderr: string
+  timedOut: boolean
 }
 
 interface DependencyInstallResult extends CommandResult {
@@ -66,6 +67,7 @@ interface RunCommandOptions {
 const VENV_CANARY_SCRIPT = ["import agency_swarm", "from agency_swarm.integrations.fastapi import run_fastapi"].join(
   "\n",
 )
+const VENV_CANARY_TIMEOUT_MS = 60 * 1000
 const REBUILD_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 const PROCESS_KILL_GRACE_MS = 5000
 
@@ -673,15 +675,18 @@ async function ensureProjectPython(directory: string) {
       }
       if (!corruptedVenv) {
         prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
-        let healthy = false
+        let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
         try {
-          healthy = await venvCanaryPasses([venvPython])
+          canary = await venvCanaryPasses([venvPython], { includeStderr: true })
         } catch {
-          healthy = false
+          canary = { healthy: false, stderr: "", timedOut: false }
         }
-        if (healthy) {
+        if (canary.healthy) {
           prompts.log.success("Python environment ready")
           return [venvPython]
+        }
+        if (canary.timedOut) {
+          throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
         }
         corruptedVenv = true
       }
@@ -762,6 +767,9 @@ async function ensureProjectPython(directory: string) {
   }
   prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
   const canary = await venvCanaryPasses([venvPython], { cwd: directory, includeStderr: true })
+  if (canary.timedOut) {
+    throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
+  }
   if (!canary.healthy) {
     throw new Error(await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr))
   }
@@ -828,6 +836,14 @@ async function formatPostInstallCanaryFailure(directory: string, hadManifests: b
     : `Project \`.venv\` rebuilt successfully, but the Agency Swarm import canary still failed.${shadowingHint}`
 }
 
+async function formatCanaryTimeoutFailure(directory: string, stderr: string) {
+  const summary = summarizeBridgeStderr(stderr)
+  const shadowingHint = await formatShadowingHint(directory)
+  return summary
+    ? `Agency Swarm import canary timed out after ${formatInstallDuration(VENV_CANARY_TIMEOUT_MS)}. Startup stopped instead of waiting indefinitely.${shadowingHint} Canary stderr: ${summary}`
+    : `Agency Swarm import canary timed out after ${formatInstallDuration(VENV_CANARY_TIMEOUT_MS)}. Startup stopped instead of waiting indefinitely.${shadowingHint}`
+}
+
 function isImportLikeCanaryFailure(stderr: string) {
   return /\b(?:ImportError|ModuleNotFoundError)\b/.test(stderr)
 }
@@ -857,17 +873,18 @@ async function venvCanaryPasses(python: string[], options?: { cwd?: string; incl
   // sitting next to `agency.py`) that shadow installed packages and falsely flag a healthy
   // .venv as broken. Callers that need the server-launch cwd (post-install verification)
   // pass it explicitly.
-  const result = await runCommand(
-    [...python, "-c", VENV_CANARY_SCRIPT],
-    options?.cwd ? { cwd: options.cwd } : undefined,
-  )
+  const result = await runCommand([...python, "-c", VENV_CANARY_SCRIPT], {
+    cwd: options?.cwd,
+    timeoutMs: VENV_CANARY_TIMEOUT_MS,
+  })
   if (options?.includeStderr) {
     return {
-      healthy: result.code === 0,
+      healthy: result.code === 0 && !result.timedOut,
       stderr: result.stderr,
+      timedOut: result.timedOut === true,
     }
   }
-  return result.code === 0
+  return result.code === 0 && !result.timedOut
 }
 
 async function ensureLatestAgencySwarm(
