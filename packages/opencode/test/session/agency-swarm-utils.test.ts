@@ -128,8 +128,9 @@ describe("session.agency-swarm-utils", () => {
     })
   })
 
-  test("collectFileURLs keeps valid file parts and materializes local image data", async () => {
-    const content = Buffer.from("inline image")
+  test("collectFileURLs keeps valid file parts and materializes local data URL files", async () => {
+    const imageContent = Buffer.from("inline image")
+    const pdfContent = Buffer.from("%PDF-1.4\n")
     const materializedFilePaths: string[] = []
     const result = collectFileURLs(
       msg([
@@ -152,7 +153,7 @@ describe("session.agency-swarm-utils", () => {
         file("part-4", {
           type: "file",
           mime: "image/png",
-          url: `data:image/png;base64,${content.toString("base64")}`,
+          url: `data:image/png;base64,${imageContent.toString("base64")}`,
           filename: "inline.png",
           source: {
             type: "file",
@@ -164,6 +165,21 @@ describe("session.agency-swarm-utils", () => {
             },
           },
         }),
+        file("part-5", {
+          type: "file",
+          mime: "application/pdf",
+          url: `data:application/pdf;base64,${pdfContent.toString("base64")}`,
+          filename: "report.pdf",
+          source: {
+            type: "file",
+            path: "/tmp/report.pdf",
+            text: {
+              value: "[PDF 1]",
+              start: 10,
+              end: 17,
+            },
+          },
+        }),
       ]),
       {
         allowLocalFilePaths: true,
@@ -172,21 +188,31 @@ describe("session.agency-swarm-utils", () => {
     )
 
     const inline = result?.["inline.png"]
+    const pdf = result?.["report.pdf"]
     expect(inline).toBeDefined()
+    expect(pdf).toBeDefined()
     const inlinePath = inline!
+    const pdfPath = pdf!
     expect(inlinePath.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
+    expect(pdfPath.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
     expect(path.basename(inlinePath)).toBe("inline.png")
-    expect(materializedFilePaths).toEqual([inlinePath])
+    expect(path.basename(pdfPath)).toBe("report.pdf")
+    expect(materializedFilePaths).toEqual([inlinePath, pdfPath])
 
     try {
       expect(result).toEqual({
         "spec.md": "/tmp/spec.md",
         "plan.pdf": "https://example.com/plan.pdf",
         "inline.png": inlinePath,
+        "report.pdf": pdfPath,
       })
-      await expect(readFile(inlinePath)).resolves.toEqual(content)
+      await expect(readFile(inlinePath)).resolves.toEqual(imageContent)
+      await expect(readFile(pdfPath)).resolves.toEqual(pdfContent)
     } finally {
-      await rm(path.dirname(inlinePath), { recursive: true, force: true })
+      await Promise.all([
+        rm(path.dirname(inlinePath), { recursive: true, force: true }),
+        rm(path.dirname(pdfPath), { recursive: true, force: true }),
+      ])
     }
   })
 
@@ -227,7 +253,7 @@ describe("session.agency-swarm-utils", () => {
           allowLocalFilePaths: false,
         },
       ),
-    ).toThrow("Agent Swarm Run mode cannot send local image files to a remote Agency server")
+    ).toThrow("Agent Swarm Run mode cannot send local files to a remote Agency server")
   })
 
   test("collectFileURLs materializes clipboard images for local Agency servers", async () => {

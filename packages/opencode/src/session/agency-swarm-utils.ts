@@ -248,9 +248,9 @@ function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptio
 
     if (part.source?.type === "file" && part.source.path && path.isAbsolute(part.source.path)) {
       if (options.allowLocalFilePaths) {
-        const materializedFile = materializeImagePart(
+        const materializedFile = materializeDataFilePart(
           part,
-          path.parse(part.filename || part.source.path).name || "image",
+          path.parse(part.filename || part.source.path).name || "file",
         )
         if (materializedFile) {
           options.materializedFilePaths?.push(materializedFile)
@@ -258,7 +258,7 @@ function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptio
         }
       }
       throw new Error(
-        "Agent Swarm Run mode cannot send local image files to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
+        "Agent Swarm Run mode cannot send local files to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
       )
     }
 
@@ -294,17 +294,17 @@ function materializedClipboardDir(filepath: string): string | undefined {
 }
 
 function materializeClipboardImage(part: MessageV2.FilePart): string | undefined {
-  return materializeImagePart(part, "clipboard-image")
+  return materializeDataFilePart(part, "clipboard-image")
 }
 
-function materializeImagePart(part: MessageV2.FilePart, stem: string): string | undefined {
+function materializeDataFilePart(part: MessageV2.FilePart, stem: string): string | undefined {
   const parsed = parseBase64DataURL(part.url)
-  if (!parsed?.mime.startsWith("image/")) return undefined
+  if (!parsed) return undefined
 
   const root = localFileMaterializationRoot()
   mkdirSync(root, { recursive: true, mode: 0o700 })
   const dir = mkdtempSync(path.join(root, "file-"))
-  const filepath = path.join(dir, `${stem}${extensionForMime(parsed.mime)}`)
+  const filepath = path.join(dir, `${stem}${extensionForMime(parsed.mime, part.filename)}`)
   writeFileSync(filepath, Buffer.from(parsed.data, "base64"), { mode: 0o600 })
   return filepath
 }
@@ -320,8 +320,14 @@ function parseBase64DataURL(value: string): { mime: string; data: string } | und
   }
 }
 
-function extensionForMime(mime: string): string {
+function extensionForMime(mime: string, filename?: string): string {
+  const ext = filename ? path.extname(filename) : ""
+  if (ext) return ext
   switch (mime) {
+    case "application/pdf":
+      return ".pdf"
+    case "text/plain":
+      return ".txt"
     case "image/jpeg":
       return ".jpg"
     case "image/png":
