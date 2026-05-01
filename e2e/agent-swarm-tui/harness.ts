@@ -182,7 +182,14 @@ export async function startTui(input: {
     },
     async waitForText(text, timeoutMs = 10_000) {
       await waitFor(
-        () => this.screen().includes(text) || this.history().includes(text),
+        () => {
+          if (exitCode !== undefined) {
+            throw new Error(
+              `TUI exited with code ${exitCode} while waiting for ${JSON.stringify(text)}.\n\n${tail(this.history())}`,
+            )
+          }
+          return this.screen().includes(text) || this.history().includes(text)
+        },
         () =>
           `Timed out waiting for ${JSON.stringify(text)}.\n\nScreen:\n${this.screen()}\n\nHistory tail:\n${tail(this.history())}`,
         timeoutMs,

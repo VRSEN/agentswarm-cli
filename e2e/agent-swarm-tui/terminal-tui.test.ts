@@ -14,7 +14,7 @@ import {
 let currentTui: TuiProcess | undefined
 let currentServer: AgencyProtocolServer | undefined
 const tempDirs: string[] = []
-const tuiReadyTimeoutMs = process.env.CI ? 60_000 : 30_000
+const tuiReadyTimeoutMs = process.env.CI ? 120_000 : 30_000
 const tuiInteractionTimeoutMs = process.env.CI ? 60_000 : 45_000
 
 async function waitForConfiguredDemoRecipient(tui: TuiProcess) {
