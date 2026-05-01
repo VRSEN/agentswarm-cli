@@ -36,6 +36,7 @@ import {
   hasAgencyHandoffEvidence,
   isAgencyAgentUpdatedHandoffMetadata,
   isAgencyToolOutputType,
+  isTopLevelAgencyHandoffMetadata,
   normalizeCallerAgent as normalizeCallerAgentValue,
   parseToolInput,
   stringifyToolOutput,
@@ -645,6 +646,10 @@ export namespace SessionAgencySwarm {
       return handoffAgent && agentUpdatedHandoffAgents.has(handoffAgent)
         ? { agency_handoff_event: "agent_updated_stream_event", assistant: handoffAgent }
         : {}
+    }
+
+    const isTopLevelHandoffEvent = (meta: AgencySwarmEventMeta) => {
+      return isTopLevelAgencyHandoffMetadata(compactMetadata(meta))
     }
 
     const reasoningKey = (itemID: string, index: number) => `${itemID}:${index}`
@@ -1635,7 +1640,7 @@ export namespace SessionAgencySwarm {
             const maybeName = next
               ? (asString(next["id"]) ?? asString(next["name"]) ?? asString(next["label"]))
               : undefined
-            if (maybeName) {
+            if (maybeName && isTopLevelHandoffEvent(eventMeta)) {
               agentUpdatedHandoffAgents.add(maybeName)
               input.assistantMessage.agent = maybeName
               input.assistantMessage.mode = maybeName

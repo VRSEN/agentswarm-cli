@@ -140,6 +140,55 @@ describe("agency target options", () => {
     })
   })
 
+  test("does not restore nested forwarded handoff metadata", () => {
+    expect(
+      resolveAgencyHandoffRecipientFromMessages({
+        frameworkMode: true,
+        agency: "my-agency",
+        currentRecipient: "UserSupportAgent",
+        currentRecipientSelectedAt: 1,
+        sessionID: "session_1",
+        messages: [
+          {
+            id: "message_1",
+            role: "assistant",
+            providerID: "agency-swarm",
+            agent: "MathAgent",
+            time: {
+              completed: 2,
+            },
+          },
+        ],
+        partsByMessage: {
+          message_1: [
+            {
+              type: "text",
+              metadata: {
+                agency_handoff_event: "agent_updated_stream_event",
+                assistant: "MathAgent",
+                callerAgent: "UserSupportAgent",
+                parent_run_id: "run_parent",
+              },
+            },
+            {
+              type: "tool",
+              tool: "SendMessage",
+              state: {
+                status: "completed",
+                metadata: {
+                  item_type: "handoff_output_item",
+                  assistant: "MathAgent",
+                  callerAgent: "UserSupportAgent",
+                  parentRunID: "run_parent",
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ).toBeUndefined()
+  })
+
   test("restores handed off recipient from synced session messages", () => {
     expect(
       resolveAgencyHandoffRecipientFromMessages({

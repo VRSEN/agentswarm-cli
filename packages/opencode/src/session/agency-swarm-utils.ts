@@ -57,12 +57,21 @@ export function hasAgencyHandoffEvidence(parts: readonly unknown[] | undefined) 
   return parts.some((part) => {
     const record = asRecord(part)
     if (!record) return false
-    if (isAgencyAgentUpdatedHandoffMetadata(asRecord(record["metadata"]))) return true
-    if (asString(record["type"]) !== "tool") return false
-    if (isAgencyHandoffToolName(asString(record["tool"]))) return true
-
     const state = asRecord(record["state"])
-    const metadata = asRecord(record["metadata"]) ?? asRecord(state?.["metadata"])
+    const partMetadata = asRecord(record["metadata"])
+    const stateMetadata = asRecord(state?.["metadata"])
+    if (isAgencyAgentUpdatedHandoffMetadata(partMetadata) && isTopLevelAgencyHandoffMetadata(partMetadata)) return true
+    if (asString(record["type"]) !== "tool") return false
+    if (
+      isAgencyHandoffToolName(asString(record["tool"])) &&
+      isTopLevelAgencyHandoffMetadata(partMetadata) &&
+      isTopLevelAgencyHandoffMetadata(stateMetadata)
+    ) {
+      return true
+    }
+
+    const metadata = partMetadata ?? stateMetadata
+    if (!isTopLevelAgencyHandoffMetadata(metadata)) return false
     return isAgencyHandoffOutputMetadata(metadata)
   })
 }
@@ -71,11 +80,25 @@ export function isAgencyAgentUpdatedHandoffMetadata(metadata: Record<string, unk
   return asString(metadata?.["agency_handoff_event"]) === "agent_updated_stream_event"
 }
 
+export function isTopLevelAgencyHandoffMetadata(metadata: Record<string, unknown> | undefined) {
+  if (!metadata) return true
+  if (asString(metadata["parent_run_id"]) || asString(metadata["parentRunID"]) || asString(metadata["parentRunId"])) {
+    return false
+  }
+  return !hasCallerAgentMarker(metadata["callerAgent"] ?? metadata["caller_agent"] ?? metadata["caller"])
+}
+
 function isAgencyHandoffOutputMetadata(metadata: Record<string, unknown> | undefined) {
   return (
     asString(metadata?.["type"]) === "handoff_output_item" ||
     asString(metadata?.["item_type"]) === "handoff_output_item"
   )
+}
+
+function hasCallerAgentMarker(value: unknown) {
+  if (value === undefined || value === null) return false
+  const caller = normalizeCallerAgent(asString(value))
+  return caller !== undefined && caller !== null
 }
 
 export function isAgencyHandoffToolName(value: string | undefined) {

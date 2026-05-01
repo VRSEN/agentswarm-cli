@@ -198,6 +198,45 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(nextBody?.chat_history.some((item: any) => item?.type === "handoff_output_item")).toBeFalse()
   })
 
+  test("nested SendMessage handoff-like metadata does not switch control", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    currentTui.write("nested delegate with forwarded handoff metadata\r")
+    await currentTui.waitForText("Nested SendMessage delegation finished.", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "nested delegate request",
+      tuiInteractionTimeoutMs,
+    )
+
+    currentTui.write("plain followup after nested delegation\r")
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 2,
+      "post-nested-delegation request",
+      tuiInteractionTimeoutMs,
+    )
+
+    const delegateBody = currentServer.requests[0]?.body
+    expect(delegateBody?.message).toContain("nested delegate with forwarded handoff metadata")
+    expect(delegateBody).toMatchObject({
+      recipient_agent: "UserSupportAgent",
+    })
+    const nextBody = currentServer.requests[1]?.body
+    expect(nextBody?.message).toContain("plain followup after nested delegation")
+    expect(nextBody).toMatchObject({
+      recipient_agent: "UserSupportAgent",
+    })
+    expect(nextBody?.chat_history.some((item: any) => item?.type === "function_call_output")).toBeTrue()
+    expect(nextBody?.chat_history.some((item: any) => item?.type === "handoff_output_item")).toBeFalse()
+  })
+
   test("transfer_to handoff switches control to the target agent for the next turn", async () => {
     currentServer = await startTuiDemoAgencyServer()
     currentTui = await startTui({

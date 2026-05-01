@@ -3562,6 +3562,131 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream does not restore recipient from nested forwarded agent_updated_stream_event", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      config: {
+        enabled_providers: ["agency-swarm"],
+        provider: {
+          "agency-swarm": {},
+        },
+      },
+    })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        mockHistory()
+        const sentRecipients: Array<string | undefined> = []
+        AgencySwarmAdapter.getMetadata = (async () => ({
+          metadata: {
+            agents: ["UserSupportAgent", "MathAgent"],
+          },
+          nodes: [
+            {
+              id: "UserSupportAgent",
+              type: "agent",
+              data: {
+                label: "User Support Agent",
+              },
+            },
+            {
+              id: "MathAgent",
+              type: "agent",
+              data: {
+                label: "Math Agent",
+              },
+            },
+          ],
+        })) as typeof AgencySwarmAdapter.getMetadata
+        let turn = 0
+        AgencySwarmAdapter.streamRun = async function* (args) {
+          turn++
+          sentRecipients.push(args.recipientAgent ?? undefined)
+          if (turn === 1) {
+            yield {
+              type: "data",
+              payload: {
+                type: "agent_updated_stream_event",
+                callerAgent: "UserSupportAgent",
+                parent_run_id: "run_parent",
+                new_agent: {
+                  id: "MathAgent",
+                  label: "Math Agent",
+                },
+              },
+            }
+            yield {
+              type: "messages",
+              payload: {
+                new_messages: [
+                  {
+                    id: "msg_nested_delegate",
+                    type: "message",
+                    role: "assistant",
+                    agent: "MathAgent",
+                    content: [{ type: "output_text", text: "Nested delegation replied." }],
+                  },
+                ],
+              },
+            }
+          }
+          yield { type: "end" }
+        } as typeof AgencySwarmAdapter.streamRun
+
+        const session = await Session.create({ title: "nested delegated handoff event" })
+        const user = await Session.updateMessage({
+          id: MessageID.ascending(),
+          role: "user",
+          sessionID: session.id,
+          agent: "build",
+          model: {
+            providerID: ProviderID.make("agency-swarm"),
+            modelID: ModelID.make("default"),
+          },
+          time: {
+            created: Date.now(),
+          },
+        })
+        await Session.updatePart({
+          id: PartID.ascending(),
+          messageID: user.id,
+          sessionID: session.id,
+          type: "text",
+          text: "delegate with nested metadata",
+        })
+
+        const first = helper()
+        first.input.sessionID = session.id
+        first.input.assistantMessage.sessionID = session.id
+        first.input.assistantMessage.id = MessageID.ascending()
+        first.input.assistantMessage.parentID = user.id
+        first.input.userMessage.info.id = user.id
+        first.input.options.recipientAgent = "UserSupportAgent"
+        ;(first.input.options as any).recipientAgentSelectedAt = 1
+
+        const firstStream = await SessionAgencySwarm.stream(first.input)
+        for await (const _ of firstStream.fullStream) {
+        }
+
+        const second = helper()
+        second.input.sessionID = session.id
+        second.input.assistantMessage.sessionID = session.id
+        second.input.assistantMessage.id = MessageID.ascending()
+        second.input.userMessage.info.id = MessageID.ascending()
+        second.input.userMessage.parts = [{ type: "text", text: "follow up", ignored: false }] as any
+        second.input.options.recipientAgent = "UserSupportAgent"
+        ;(second.input.options as any).recipientAgentSelectedAt = 1
+
+        const secondStream = await SessionAgencySwarm.stream(second.input)
+        for await (const _ of secondStream.fullStream) {
+        }
+
+        expect(sentRecipients).toEqual(["UserSupportAgent", "UserSupportAgent"])
+      },
+    })
+  })
+
   test("stream keeps agent_updated handoff metadata when raw text is replayed by messages", async () => {
     await using tmp = await tmpdir({
       git: true,

@@ -319,6 +319,67 @@ const tuiDemoAgencyFixture: AgencyFixture = {
   },
   stream(body, requestCount) {
     const message = typeof body.message === "string" ? body.message.toLowerCase() : ""
+    if (message.includes("nested delegate")) {
+      return sse([
+        ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+        [
+          "data",
+          {
+            type: "raw_response_event",
+            agent: "UserSupportAgent",
+            data: {
+              type: "response.output_item.added",
+              output_index: "1",
+              item: {
+                type: "function_call",
+                id: "fc_send_message_nested",
+                call_id: "call_send_message_nested",
+                name: "SendMessage",
+                arguments: JSON.stringify({
+                  recipient_agent: "MathAgent",
+                  message: "Please calculate this.",
+                }),
+              },
+            },
+          },
+        ],
+        [
+          "data",
+          {
+            type: "agent_updated_stream_event",
+            callerAgent: "UserSupportAgent",
+            parent_run_id: `run_tui_demo_${requestCount}`,
+            new_agent: {
+              id: "MathAgent",
+              name: "MathAgent",
+            },
+          },
+        ],
+        [
+          "messages",
+          {
+            new_messages: [
+              {
+                type: "function_call_output",
+                call_id: "call_send_message_nested",
+                output: JSON.stringify({
+                  recipient_agent: "MathAgent",
+                  response: "Nested delegation completed without transfer.",
+                }),
+              },
+              {
+                id: `msg_nested_delegate_${requestCount}`,
+                type: "message",
+                role: "assistant",
+                agent: "MathAgent",
+                content: [{ type: "output_text", text: "Nested SendMessage delegation finished." }],
+              },
+            ],
+          },
+        ],
+        ["end", {}],
+      ])
+    }
     if (message.includes("delegate")) {
       return sse([
         ["meta", { run_id: `run_tui_demo_${requestCount}` }],
