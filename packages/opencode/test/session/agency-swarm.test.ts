@@ -1842,8 +1842,10 @@ describe("session.agency-swarm", () => {
       {
         type: "handoff_output_item",
         call_id: "call_3",
-        caller_agent: "SupportAgent",
-        parentRunID: "run_parent",
+        metadata: {
+          caller_agent: "SupportAgent",
+          parentRunID: "run_parent",
+        },
         output: { assistant: "MathAgent" },
       },
     ])
@@ -3788,8 +3790,10 @@ describe("session.agency-swarm", () => {
                   {
                     type: "handoff_output_item",
                     call_id: "call_nested_handoff",
-                    callerAgent: "support_agent",
-                    parent_run_id: "run_parent",
+                    metadata: {
+                      caller_agent: "support_agent",
+                      parentRunID: "run_parent",
+                    },
                     output: {
                       assistant: "MathAgent",
                     },

@@ -45,10 +45,11 @@ export function extractFunctionCallOutputs(
     if (!isAgencyToolOutputType(itemType)) continue
     const callID = asString(message["call_id"])
     if (!callID) continue
+    const messageMetadata = asRecord(message["metadata"])
     outputs.push({
       callID,
       output: stringifyToolOutput(message["output"]),
-      metadata: extractEventMeta(message),
+      metadata: extractEventMeta(messageMetadata ? { ...messageMetadata, ...message } : message),
       itemType,
     })
   }
