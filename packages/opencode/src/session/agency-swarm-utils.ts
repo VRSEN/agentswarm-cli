@@ -1,12 +1,20 @@
 import type { MessageV2 } from "@/session/message-v2"
-import path from "path"
-import { fileURLToPath } from "url"
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 
 export type AgencySwarmEventMeta = {
   agent?: string
   callerAgent?: string | null
   agentRunID?: string
   parentRunID?: string
+}
+
+type CollectFileURLOptions = {
+  allowLocalFilePaths?: boolean
+  materializedFilePaths?: string[]
 }
 
 export function normalizeCallerAgent(value: string | undefined): string | null | undefined {
@@ -143,14 +151,17 @@ export function stringifyToolOutput(output: unknown): string {
   }
 }
 
-export function collectFileURLs(message: MessageV2.WithParts): Record<string, string> | undefined {
+export function collectFileURLs(
+  message: MessageV2.WithParts,
+  options: CollectFileURLOptions = {},
+): Record<string, string> | undefined {
   const fileURLs: Record<string, string> = {}
   let index = 0
 
   for (const part of message.parts) {
     if (part.type !== "file") continue
 
-    const source = normalizeFileURL(part.url)
+    const source = normalizeFileURL(part, options)
     if (!source) continue
 
     const filename = part.filename || path.basename(source) || `file_${index++}`
@@ -207,22 +218,100 @@ export function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>
 }
 
-function normalizeFileURL(url: string): string | undefined {
-  if (url.startsWith("file://")) {
+function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptions): string | undefined {
+  if (part.url.startsWith("file://")) {
     try {
-      return fileURLToPath(url)
+      return fileURLToPath(part.url)
     } catch {
       return undefined
     }
   }
 
-  if (url.startsWith("http://") || url.startsWith("https://")) {
-    return url
+  if (part.url.startsWith("http://") || part.url.startsWith("https://")) {
+    return part.url
   }
 
-  if (url.startsWith("data:")) {
-    return url
+  if (part.url.startsWith("data:")) {
+    if (isClipboardImage(part)) {
+      if (options.allowLocalFilePaths) {
+        const clipboardFile = materializeClipboardImage(part)
+        if (clipboardFile) {
+          options.materializedFilePaths?.push(clipboardFile)
+          return clipboardFile
+        }
+      }
+
+      throw new Error(
+        "Agent Swarm Run mode cannot send inline image data. Save the image as a local file and attach that file.",
+      )
+    }
+
+    if (part.source?.type === "file" && part.source.path && path.isAbsolute(part.source.path)) {
+      if (options.allowLocalFilePaths) return part.source.path
+      throw new Error(
+        "Agent Swarm Run mode cannot send local image files to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
+      )
+    }
+
+    throw new Error(
+      "Agent Swarm Run mode cannot send inline image data. Save the image as a local file and attach that file.",
+    )
   }
 
   return undefined
+}
+
+export async function cleanupMaterializedFilePaths(filepaths: readonly string[]) {
+  const dirs = new Set<string>()
+  for (const filepath of filepaths) {
+    const dir = materializedClipboardDir(filepath)
+    if (dir) dirs.add(dir)
+  }
+  await Promise.all(Array.from(dirs, (dir) => rm(dir, { recursive: true, force: true })))
+}
+
+function isClipboardImage(part: MessageV2.FilePart) {
+  return part.source?.type === "file" && part.source.path === "clipboard" && part.mime.startsWith("image/")
+}
+
+function materializedClipboardDir(filepath: string): string | undefined {
+  const dir = path.resolve(path.dirname(filepath))
+  const prefix = `${path.resolve(tmpdir())}${path.sep}agentswarm-clipboard-`
+  return dir.startsWith(prefix) ? dir : undefined
+}
+
+function materializeClipboardImage(part: MessageV2.FilePart): string | undefined {
+  const parsed = parseBase64DataURL(part.url)
+  if (!parsed?.mime.startsWith("image/")) return undefined
+
+  const dir = mkdtempSync(path.join(tmpdir(), "agentswarm-clipboard-"))
+  const filepath = path.join(dir, `clipboard-image${extensionForMime(parsed.mime)}`)
+  writeFileSync(filepath, Buffer.from(parsed.data, "base64"), { mode: 0o600 })
+  return filepath
+}
+
+function parseBase64DataURL(value: string): { mime: string; data: string } | undefined {
+  const match = /^data:([^;,]+);base64,(.*)$/s.exec(value)
+  if (!match) return undefined
+  const [, mime, data] = match
+  if (!mime || data === undefined) return undefined
+  return {
+    mime,
+    data,
+  }
+}
+
+function extensionForMime(mime: string): string {
+  switch (mime) {
+    case "image/jpeg":
+      return ".jpg"
+    case "image/png":
+      return ".png"
+    case "image/webp":
+      return ".webp"
+    case "image/gif":
+      return ".gif"
+    default:
+      return ".img"
+  }
 }

@@ -28,6 +28,7 @@ import {
   asRawString,
   asString,
   buildOutgoingMessage,
+  cleanupMaterializedFilePaths,
   compactMetadata,
   collectFileURLs,
   extractEventMeta,
@@ -175,9 +176,7 @@ export namespace SessionAgencySwarm {
     const explicitModel = explicit && asString(explicit["model"])
     const requestedModel = explicitModel ? normalizeExplicitClientConfigModel(explicitModel) : sessionLitellmModel
     const forwardGenerated =
-      isLocalAgencyUpstreamURL(baseURL) ||
-      Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS ||
-      forwardUpstreamCredentials === true
+      isLocalAgencyURL(baseURL) || Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS || forwardUpstreamCredentials === true
     const skipOpenAIApiKey = hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config)
     const rawGenerated = forwardGenerated
       ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), await getEnvForClientConfig(), {
@@ -521,8 +520,8 @@ export namespace SessionAgencySwarm {
     }
   }
 
-  /** Loopback + common dev hostnames (Docker Desktop, etc.) where forwarding upstream API keys to a local bridge is expected. */
-  function isLocalAgencyUpstreamURL(baseURL: string) {
+  /** Loopback + common dev hostnames (Docker Desktop, etc.) where local-only forwarding is expected. */
+  function isLocalAgencyURL(baseURL: string) {
     try {
       const parsed = new URL(baseURL)
       const h = parsed.hostname.toLowerCase()
@@ -595,7 +594,26 @@ export namespace SessionAgencySwarm {
     }
 
     const outgoingMessage = buildOutgoingMessage(input.userMessage)
-    const fileURLs = collectFileURLs(input.userMessage)
+    const materializedFilePaths: string[] = []
+    const cleanupMaterializedFiles = async () => {
+      try {
+        await cleanupMaterializedFilePaths(materializedFilePaths)
+      } catch (error) {
+        log.warn("failed to clean up materialized clipboard image files", {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    let fileURLs: Record<string, string> | undefined
+    try {
+      fileURLs = collectFileURLs(input.userMessage, {
+        allowLocalFilePaths: isLocalAgencyURL(input.options.baseURL),
+        materializedFilePaths,
+      })
+    } catch (error) {
+      await cleanupMaterializedFiles()
+      throw error
+    }
     const mentionedRecipient = findRecipientAgent(input.userMessage)
 
     const tools = new Map<string, Tool>()
@@ -1520,7 +1538,7 @@ export namespace SessionAgencySwarm {
       input.abort.addEventListener("abort", onAbort, { once: true })
     }
 
-    const fullStream = (async function* () {
+    const stream = (async function* () {
       yield { type: "start" }
       yield { type: "start-step" }
       let streamError: Error | undefined
@@ -1939,6 +1957,14 @@ export namespace SessionAgencySwarm {
 
       yield {
         type: "finish",
+      }
+    })()
+
+    const fullStream = (async function* () {
+      try {
+        yield* stream
+      } finally {
+        await cleanupMaterializedFiles()
       }
     })()
 

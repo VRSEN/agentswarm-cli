@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import {
@@ -30,13 +30,15 @@ afterEach(async () => {
 })
 
 describe("Agent Swarm terminal TUI e2e", () => {
+  const packageRoot = path.join(import.meta.dir, "..", "..", "packages", "opencode")
+
   test("launcher shows the detected-project choice before any venv work", async () => {
     const project = await mkdtemp(path.join(os.tmpdir(), "agentswarm-detected-project-"))
     tempDirs.push(project)
     await writeAgencyProject(project)
 
     currentTui = await startTui({
-      cwd: path.join(import.meta.dir, "..", "..", "packages", "opencode"),
+      cwd: packageRoot,
       env: {
         AGENTSWARM_LAUNCHER: "1",
         OPENCODE_CONFIG_CONTENT: undefined,
@@ -378,6 +380,38 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(body?.message).toContain("hello from terminal e2e")
     expect(body).toMatchObject({
       recipient_agent: "entry-agent",
+    })
+  })
+
+  test("bracketed-paste image paths reach the agency protocol server as local file paths", async () => {
+    currentServer = await startAgencyProtocolServer()
+    currentTui = await startTui({ baseURL: currentServer.baseURL })
+    const imageDir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-image-drop-"))
+    tempDirs.push(imageDir)
+    const imagePath = path.join(imageDir, "red-dot.png")
+    await writeFile(
+      imagePath,
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    )
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    const pastedPath = path.relative(packageRoot, imagePath)
+    currentTui.write(`\x1b[200~${pastedPath}\x1b[201~`)
+    await currentTui.waitForText("[Image 1]", tuiInteractionTimeoutMs)
+    currentTui.write("please inspect this image\r")
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "image attachment request",
+      tuiInteractionTimeoutMs,
+    )
+
+    const body = currentServer.requests[0]?.body
+    expect(body?.message).toContain("[Image 1] please inspect this image")
+    expect(body?.file_urls).toEqual({
+      "red-dot.png": imagePath,
     })
   })
 

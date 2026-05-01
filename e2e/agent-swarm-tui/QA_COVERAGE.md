@@ -10,6 +10,7 @@ Source of truth: `FORK_CHANGELOG.md` defines intentional fork behavior, and `USE
 - `FORK_CHANGELOG.md` CLI/TUI UX: selecting a swarm row clears stale explicit agent routing before the next prompt.
 - `FORK_CHANGELOG.md` CLI/TUI UX: selecting a specific agent routes the next prompt to that agent.
 - `FORK_CHANGELOG.md` Agency Swarm Integration: prompt submit reaches a local Agency Swarm protocol server with the configured agent.
+- `FORK_CHANGELOG.md` Agency Swarm Integration: bracketed-paste image paths reach the local Agency Swarm protocol server as file paths, not inline `data:` URLs.
 - `FORK_CHANGELOG.md` Agency Swarm Integration: ordinary `SendMessage` delegation with `recipient_agent` does not switch the user's active recipient.
 - `FORK_CHANGELOG.md` Agency Swarm Integration: nested `SendMessage` handoff-like metadata does not switch the user's active recipient.
 - `FORK_CHANGELOG.md` Agency Swarm Integration: `transfer_to_*` handoff events switch control to the target agent for the next turn.
