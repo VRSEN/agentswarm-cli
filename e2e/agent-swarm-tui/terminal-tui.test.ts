@@ -221,6 +221,29 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
   })
 
+  test("Esc twice cancels queued Run-mode prompt before active stream drains", async () => {
+    currentServer = await startAgencyProtocolServer()
+    currentTui = await startTui({ baseURL: currentServer.baseURL })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    currentTui.write("first issue 172 hold\r")
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "first issue 172 agency request",
+      tuiInteractionTimeoutMs,
+    )
+
+    currentTui.write("second issue 172 prompt SHOULD_NOT_SEND\r")
+    await currentTui.waitForText("QUEUED", tuiInteractionTimeoutMs)
+    currentTui.write("\x1b")
+    await Bun.sleep(100)
+    currentTui.write("\x1b")
+    await currentTui.waitForText("Cancelled 1 queued message", tuiInteractionTimeoutMs)
+    await Bun.sleep(8_500)
+
+    expect(currentServer.requests.map((request) => request.body.message)).toEqual(["first issue 172 hold"])
+  })
+
   test("harness does not leak parent provider credentials to the agency protocol server", async () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({
