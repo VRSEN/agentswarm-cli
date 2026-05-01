@@ -252,7 +252,7 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - `packages/app` is the shared Solid UI; `packages/desktop` and `packages/desktop-electron` wrap desktop surfaces around it.
 - `packages/sdk/js` and `packages/plugin` define generated client and extension surfaces that must stay aligned with server and transport contracts.
 - `packages/web`, `packages/docs`, and `specs/` carry public docs and protocol specs; use package-local scripts from `package.json` for validation.
-- Agent Swarm terminal QA lives in `e2e/agent-swarm-tui` and should map fork-owned behavior back to `FORK_CHANGELOG.md` or `USER_FLOWS.md` when those files are in scope.
+- Agent Swarm terminal QA lives in `e2e/agent-swarm-tui`; use `.codex/skills/agent-swarm-e2e-testing` for fork TUI proof.
 
 ## Prohibited Practices
 
@@ -488,11 +488,11 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 - Follow the canonical test guidelines above. The rules here focus on layout and hygiene.
 - Aim for test functions under 100 lines.
-- Use the standard test tools and patterns already used here.
+- Use the standard test tools, package-local structure, and naming patterns already used here.
 - Use isolated file systems and temp directories.
 - Avoid slow or hanging tests. If you must skip one, leave a clear `FIXME`.
-- Follow existing package-local test structure and naming. Upstream tests still matter, but Agent Swarm-specific behavior needs named fork-owned coverage mapped to `FORK_CHANGELOG.md` or `USER_FLOWS.md`; keep that coverage separate from upstream tests when feasible so expected fork divergence or upstream test drift cannot mask fork regressions. Do not run tests from the repo root. Use package directories like `packages/opencode`.
-- Agent Swarm TUI fixes need real automated TUI evidence against a real Agency Swarm swarm when feasible; handoff fixes especially need proof that the handoff path works, or a recorded blocker explaining why that proof was not feasible.
+- Agent Swarm fork behavior is not fixed or release-ready until automated E2E or manager-driven manual automation drives the real terminal UI; unit tests and protocol-only fixtures are supporting evidence, not proof.
+- Agent Swarm E2E procedure lives in `.codex/skills/agent-swarm-e2e-testing`: use a copied real starter-template or real `agency.py` project with the exact TUI project path, keep coverage separate from upstream tests, prove `transfer_to_*` handoff persistence apart from `SendMessage` delegation, and escalate user manual QA only when automation cannot reach 100% confidence.
 - When persisted state, queued work, history, fork-only metadata, SDK payloads, UI state, or similar internal state crosses a process, API, or transport boundary, validation must prove both local behavior and the exact serialized outbound payload or boundary contract.
 - Avoid tests that give false confidence. Startup auth, CLI/app wiring, streaming, persistence, and workspace flow need integration or end-to-end coverage plus direct inspection of the user path when practical, not unit-only proof.
 - Retire unit tests that hide gaps in real behavior.
@@ -579,4 +579,4 @@ Why: without a hardcoded source of truth, agents re-derive behavior from code ea
 - Fork Repo: `https://github.com/VRSEN/agentswarm-cli`
 - Upstream Repo: `https://github.com/anomalyco/opencode`
 - Repo skills are checked-in manager instructions under `.codex/skills/**`, not product/TUI skills and not automatic behavior by themselves. `AGENTS.md` may route work to them by path or name; agents must read the relevant `SKILL.md` on demand unless the environment exposes the skill directly.
-- Available repo skills: `.codex/skills/requirement-ledger`, `.codex/skills/policy-maintenance`, `.codex/skills/delegation-management`, `.codex/skills/codex-cli-review`, and `.codex/skills/claude-cli-counsel`; `.codex/skills/claude-cli-review` is a guard that shadows and rejects old Claude-review routes.
+- Available repo skills: `.codex/skills/requirement-ledger`, `.codex/skills/policy-maintenance`, `.codex/skills/delegation-management`, `.codex/skills/agent-swarm-e2e-testing`, `.codex/skills/codex-cli-review`, and `.codex/skills/claude-cli-counsel`; `.codex/skills/claude-cli-review` is a guard that shadows and rejects old Claude-review routes.
