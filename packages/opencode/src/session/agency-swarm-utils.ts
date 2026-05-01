@@ -1,5 +1,6 @@
 import type { MessageV2 } from "@/session/message-v2"
 import { mkdtempSync, writeFileSync } from "node:fs"
+import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -9,6 +10,11 @@ export type AgencySwarmEventMeta = {
   callerAgent?: string | null
   agentRunID?: string
   parentRunID?: string
+}
+
+type CollectFileURLOptions = {
+  allowLocalFilePaths?: boolean
+  materializedFilePaths?: string[]
 }
 
 export function normalizeCallerAgent(value: string | undefined): string | null | undefined {
@@ -116,7 +122,7 @@ export function stringifyToolOutput(output: unknown): string {
 
 export function collectFileURLs(
   message: MessageV2.WithParts,
-  options: { allowLocalFilePaths?: boolean } = {},
+  options: CollectFileURLOptions = {},
 ): Record<string, string> | undefined {
   const fileURLs: Record<string, string> = {}
   let index = 0
@@ -181,7 +187,7 @@ export function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>
 }
 
-function normalizeFileURL(part: MessageV2.FilePart, options: { allowLocalFilePaths?: boolean }): string | undefined {
+function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptions): string | undefined {
   if (part.url.startsWith("file://")) {
     try {
       return fileURLToPath(part.url)
@@ -198,7 +204,10 @@ function normalizeFileURL(part: MessageV2.FilePart, options: { allowLocalFilePat
     if (isClipboardImage(part)) {
       if (options.allowLocalFilePaths) {
         const clipboardFile = materializeClipboardImage(part)
-        if (clipboardFile) return clipboardFile
+        if (clipboardFile) {
+          options.materializedFilePaths?.push(clipboardFile)
+          return clipboardFile
+        }
       }
 
       throw new Error(
@@ -221,8 +230,23 @@ function normalizeFileURL(part: MessageV2.FilePart, options: { allowLocalFilePat
   return undefined
 }
 
+export async function cleanupMaterializedFilePaths(filepaths: readonly string[]) {
+  const dirs = new Set<string>()
+  for (const filepath of filepaths) {
+    const dir = materializedClipboardDir(filepath)
+    if (dir) dirs.add(dir)
+  }
+  await Promise.all(Array.from(dirs, (dir) => rm(dir, { recursive: true, force: true })))
+}
+
 function isClipboardImage(part: MessageV2.FilePart) {
   return part.source?.type === "file" && part.source.path === "clipboard" && part.mime.startsWith("image/")
+}
+
+function materializedClipboardDir(filepath: string): string | undefined {
+  const dir = path.resolve(path.dirname(filepath))
+  const prefix = `${path.resolve(tmpdir())}${path.sep}agentswarm-clipboard-`
+  return dir.startsWith(prefix) ? dir : undefined
 }
 
 function materializeClipboardImage(part: MessageV2.FilePart): string | undefined {

@@ -28,6 +28,7 @@ import {
   asRawString,
   asString,
   buildOutgoingMessage,
+  cleanupMaterializedFilePaths,
   compactMetadata,
   collectFileURLs,
   extractEventMeta,
@@ -590,9 +591,26 @@ export namespace SessionAgencySwarm {
     }
 
     const outgoingMessage = buildOutgoingMessage(input.userMessage)
-    const fileURLs = collectFileURLs(input.userMessage, {
-      allowLocalFilePaths: isLocalAgencyURL(input.options.baseURL),
-    })
+    const materializedFilePaths: string[] = []
+    const cleanupMaterializedFiles = async () => {
+      try {
+        await cleanupMaterializedFilePaths(materializedFilePaths)
+      } catch (error) {
+        log.warn("failed to clean up materialized clipboard image files", {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    let fileURLs: Record<string, string> | undefined
+    try {
+      fileURLs = collectFileURLs(input.userMessage, {
+        allowLocalFilePaths: isLocalAgencyURL(input.options.baseURL),
+        materializedFilePaths,
+      })
+    } catch (error) {
+      await cleanupMaterializedFiles()
+      throw error
+    }
     const mentionedRecipient = findRecipientAgent(input.userMessage)
 
     const tools = new Map<string, Tool>()
@@ -1513,7 +1531,7 @@ export namespace SessionAgencySwarm {
       input.abort.addEventListener("abort", onAbort, { once: true })
     }
 
-    const fullStream = (async function* () {
+    const stream = (async function* () {
       yield { type: "start" }
       yield { type: "start-step" }
       let streamError: Error | undefined
@@ -1932,6 +1950,14 @@ export namespace SessionAgencySwarm {
 
       yield {
         type: "finish",
+      }
+    })()
+
+    const fullStream = (async function* () {
+      try {
+        yield* stream
+      } finally {
+        await cleanupMaterializedFiles()
       }
     })()
 
