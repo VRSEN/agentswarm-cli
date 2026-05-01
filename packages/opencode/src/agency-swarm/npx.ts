@@ -64,10 +64,16 @@ interface RunCommandOptions {
   timeoutMs?: number
 }
 
+interface ServerStderrCollector {
+  read(timeoutMs: number): Promise<string>
+  stop(): void
+}
+
 const VENV_CANARY_SCRIPT = ["import agency_swarm", "from agency_swarm.integrations.fastapi import run_fastapi"].join(
   "\n",
 )
 const VENV_CANARY_TIMEOUT_MS = 60 * 1000
+const SERVER_STDERR_COLLECT_TIMEOUT_MS = 1000
 const REBUILD_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 const PROCESS_KILL_GRACE_MS = 5000
 
@@ -1001,10 +1007,11 @@ async function startProjectServer(directory: string, python: string[]) {
     await remove()
     throw error
   }
-  const stderrPromise = child.stderr ? new Response(child.stderr).text().catch(() => "") : Promise.resolve("")
+  const stderr = createServerStderrCollector(child.stderr)
 
   const cleanup = async () => {
     child.kill()
+    stderr.stop()
     await Promise.race([child.exited, sleep(5000)])
     await remove()
   }
@@ -1013,7 +1020,7 @@ async function startProjectServer(directory: string, python: string[]) {
     await waitForServer({
       baseURL: `http://127.0.0.1:${port}`,
       child,
-      stderrPromise,
+      stderr,
     })
   } catch (error) {
     await cleanup()
@@ -1029,14 +1036,14 @@ async function startProjectServer(directory: string, python: string[]) {
 async function waitForServer(input: {
   baseURL: string
   child: ReturnType<typeof Bun.spawn>
-  stderrPromise: Promise<string>
+  stderr: ServerStderrCollector
 }) {
   const deadline = Date.now() + 30000
   const metadataURL = `${input.baseURL}/${LOCAL_AGENCY_ID}/get_metadata`
   while (Date.now() < deadline) {
     const exited = await Promise.race([input.child.exited.then((code: number) => code), sleep(200).then(() => null)])
     if (typeof exited === "number") {
-      const stderr = await input.stderrPromise
+      const stderr = await input.stderr.read(SERVER_STDERR_COLLECT_TIMEOUT_MS)
       const summary = summarizeBridgeStderr(stderr)
       throw new Error(
         summary
@@ -1054,13 +1061,63 @@ async function waitForServer(input: {
   }
 
   input.child.kill()
-  const stderr = await input.stderrPromise
+  const stderr = await input.stderr.read(SERVER_STDERR_COLLECT_TIMEOUT_MS)
   const summary = summarizeBridgeStderr(stderr)
   throw new Error(
     summary
       ? `Timed out waiting for the Agency Swarm server to start. Last bridge output: ${summary}`
       : "Timed out waiting for the Agency Swarm server to start",
   )
+}
+
+function createServerStderrCollector(
+  output: string | ReadableStream<Uint8Array> | null | undefined,
+): ServerStderrCollector {
+  if (typeof output === "string") {
+    return {
+      read: async () => output,
+      stop() {},
+    }
+  }
+  if (!output) {
+    return {
+      read: async () => "",
+      stop() {},
+    }
+  }
+
+  const reader = output.getReader()
+  const decoder = new TextDecoder()
+  let text = ""
+  let settled = false
+  const done = (async () => {
+    try {
+      while (true) {
+        const chunk = await reader.read()
+        if (chunk.done) break
+        if (!chunk.value || chunk.value.length === 0) continue
+        text += decoder.decode(chunk.value, { stream: true })
+      }
+      text += decoder.decode()
+    } catch {
+      text += decoder.decode()
+    } finally {
+      settled = true
+    }
+  })()
+
+  return {
+    async read(timeoutMs: number) {
+      if (!settled) {
+        await Promise.race([done, sleep(timeoutMs)])
+      }
+      return text
+    },
+    stop() {
+      if (settled) return
+      void reader.cancel().catch(() => undefined)
+    },
+  }
 }
 
 export function summarizeBridgeStderr(stderr: string): string {
