@@ -45,7 +45,7 @@ export async function startAgencyProtocolServer(
       if (url.pathname === `/${fixture.agencyID}/get_response_stream`) {
         const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
         requests.push({ path: url.pathname, body })
-        return new Response(fixture.stream(body, requests.length), {
+        return new Response(await fixture.stream(body, requests.length), {
           headers: {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
@@ -219,7 +219,7 @@ export async function writeAgencyProject(dir: string) {
 type AgencyFixture = {
   agencyID: string
   metadata: Record<string, unknown>
-  stream(body: Record<string, unknown>, requestCount: number): string
+  stream(body: Record<string, unknown>, requestCount: number): BodyInit | Promise<BodyInit>
 }
 
 const qaAgencyFixture: AgencyFixture = {
@@ -252,7 +252,31 @@ const qaAgencyFixture: AgencyFixture = {
       },
     ],
   },
-  stream(_body, requestCount) {
+  stream(body, requestCount) {
+    const message = typeof body.message === "string" ? body.message : ""
+    if (message.includes("issue 172 hold")) {
+      return delayedSse(
+        [
+          ["meta", { run_id: `run_e2e_${requestCount}` }],
+          [
+            "messages",
+            {
+              new_messages: [
+                {
+                  id: `msg_issue172_${requestCount}`,
+                  type: "message",
+                  role: "assistant",
+                  agent: "entry-agent",
+                  content: [{ type: "output_text", text: "completed first issue 172 prompt" }],
+                },
+              ],
+            },
+          ],
+          ["end", {}],
+        ],
+        8_000,
+      )
+    }
     return sse([
       ["meta", { run_id: `run_e2e_${requestCount}` }],
       ["end", {}],
@@ -380,6 +404,18 @@ const tuiDemoAgencyFixture: AgencyFixture = {
 
 function sse(events: Array<[event: string, data: Record<string, unknown>]>) {
   return events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("")
+}
+
+function delayedSse(events: Array<[event: string, data: Record<string, unknown>]>, delayMs: number) {
+  const encoder = new TextEncoder()
+  return new ReadableStream({
+    async start(controller) {
+      controller.enqueue(encoder.encode(sse(events.slice(0, 1))))
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+      controller.enqueue(encoder.encode(sse(events.slice(1))))
+      controller.close()
+    },
+  })
 }
 
 async function closeProcess(proc: Proc) {

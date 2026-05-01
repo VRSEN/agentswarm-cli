@@ -8,6 +8,7 @@ import { SessionStatus } from "./status"
 
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void>
+  readonly isBusy: (sessionID: SessionID) => Effect.Effect<boolean>
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
   readonly ensureRunning: (
     sessionID: SessionID,
@@ -73,6 +74,11 @@ export const layer = Layer.effect(
       if (existing?.busy) throw new Session.BusyError(sessionID)
     })
 
+    const isBusy = Effect.fn("SessionRunState.isBusy")(function* (sessionID: SessionID) {
+      const data = yield* InstanceState.get(state)
+      return data.runners.get(sessionID)?.busy === true
+    })
+
     const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
@@ -99,7 +105,7 @@ export const layer = Layer.effect(
       return yield* (yield* runner(sessionID, onInterrupt)).startShell(work)
     })
 
-    return Service.of({ assertNotBusy, cancel, ensureRunning, startShell })
+    return Service.of({ assertNotBusy, isBusy, cancel, ensureRunning, startShell })
   }),
 )
 
