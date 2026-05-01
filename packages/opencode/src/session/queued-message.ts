@@ -8,14 +8,13 @@ export function isQueuedAfterActiveAssistant(input: {
   messages: readonly MessageV2.WithParts[]
   messageID: MessageID
 }) {
-  const activeAssistant = input.messages.findLast(
+  const activeAssistantIndex = input.messages.findLastIndex(
     (message) => message.info.role === "assistant" && !message.info.time.completed,
   )
-  if (!activeAssistant) return false
-  return input.messages.some(
-    (message) =>
-      message.info.role === "user" && message.info.id === input.messageID && message.info.id > activeAssistant.info.id,
-  )
+  if (activeAssistantIndex === -1) return false
+  const messageIndex = input.messages.findIndex((message) => message.info.id === input.messageID)
+  if (messageIndex === -1) return false
+  return input.messages[messageIndex]?.info.role === "user" && messageIndex > activeAssistantIndex
 }
 
 export const removeMessageAllowingQueued = Effect.fn("SessionQueuedMessage.removeMessageAllowingQueued")(

@@ -303,8 +303,9 @@ describe("session HttpApi", () => {
         permission: [{ permission: "*", pattern: "*", action: "allow" }],
       })
       const model = { providerID: "agency-swarm", modelID: "default" }
-      const promptBody = (text: string) =>
+      const promptBody = (text: string, messageID?: MessageID) =>
         JSON.stringify({
+          ...(messageID ? { messageID } : {}),
           agent: "build",
           model,
           parts: [{ id: PartID.ascending(), type: "text", text }],
@@ -317,15 +318,14 @@ describe("session HttpApi", () => {
       })
       await firstStarted.promise
 
+      const secondMessageID = MessageID.ascending("msg_00000000000000000000000000")
       const second = app().request(pathFor(SessionPaths.prompt, { sessionID: session.id }), {
         method: "POST",
         headers,
-        body: promptBody("second issue 172 prompt SHOULD_NOT_SEND"),
+        body: promptBody("second issue 172 prompt SHOULD_NOT_SEND", secondMessageID),
       })
       const users = await waitForUserMessageCount(tmp.path, session.id, 2)
-      const queued = users.find((item) =>
-        item.parts.some((part) => part.type === "text" && part.text.includes("SHOULD_NOT_SEND")),
-      )
+      const queued = users.find((item) => item.info.id === secondMessageID)
       expect(queued).toBeTruthy()
 
       expect(
