@@ -14,13 +14,14 @@ Source of truth: `FORK_CHANGELOG.md` defines intentional fork behavior, and `USE
 - `FORK_CHANGELOG.md` Agency Swarm Integration: ordinary `SendMessage` delegation with `recipient_agent` does not switch the user's active recipient.
 - `FORK_CHANGELOG.md` Agency Swarm Integration: nested `SendMessage` handoff-like metadata does not switch the user's active recipient.
 - `FORK_CHANGELOG.md` Agency Swarm Integration: `transfer_to_*` handoff events switch control to the target agent for the next turn.
+- `FORK_CHANGELOG.md` Agency Swarm Integration: a copied real `agency.py` project launches as the TUI project path while deterministic bridge events prove `SendMessage` delegation does not persist control and `Handoff` does.
 - `FORK_CHANGELOG.md` Agency Swarm Integration: later nested handoff-like metadata does not override an earlier top-level handoff recipient.
 - `FORK_CHANGELOG.md` Agency Swarm Integration: `agent_updated_stream_event` handoffs without separate transfer tool parts switch control to the target agent.
 - `USER_FLOWS.md` Auto-Start Detected Local Project: launcher mode shows the detected-project choice before `.venv` work begins.
 
 ## Manual Gap
 
-Full cold-start `.venv` creation and repair intentionally stays manual because the deterministic CI path cannot depend on Python 3.12 availability, network package install, or the live `agency-swarm[fastapi,litellm]` package.
+Full cold-start `.venv` creation, Python bridge execution, and live LLM decisions intentionally stay manual because the deterministic CI path cannot depend on Python 3.12 availability, network package install, live credentials, or the live `agency-swarm[fastapi,litellm]` package. The real-project automated handoff test copies a real `agency.py` project and launches the TUI with that exact project path, then uses a local protocol server at the FastAPI bridge boundary so handoff semantics are tested without live model calls.
 
 Manual QA command from a clean detected Agency project with no `.venv`:
 

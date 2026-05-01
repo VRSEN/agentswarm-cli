@@ -1,0 +1,6 @@
+[project]
+name = "real-handoff-agency"
+description = "Agent Swarm TUI E2E fixture for SendMessage and Handoff routing"
+version = "0.0.1"
+license = { text = "MIT" }
+dependencies = ["agency-swarm[fastapi,litellm]>=1.9.4"]
