@@ -1,6 +1,8 @@
 import type { MessageV2 } from "@/session/message-v2"
-import path from "path"
-import { fileURLToPath } from "url"
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 
 export type AgencySwarmEventMeta = {
   agent?: string
@@ -193,6 +195,17 @@ function normalizeFileURL(part: MessageV2.FilePart, options: { allowLocalFilePat
   }
 
   if (part.url.startsWith("data:")) {
+    if (isClipboardImage(part)) {
+      if (options.allowLocalFilePaths) {
+        const clipboardFile = materializeClipboardImage(part)
+        if (clipboardFile) return clipboardFile
+      }
+
+      throw new Error(
+        "Agent Swarm Run mode cannot send inline image data. Save the image as a local file and attach that file.",
+      )
+    }
+
     if (part.source?.type === "file" && part.source.path && path.isAbsolute(part.source.path)) {
       if (options.allowLocalFilePaths) return part.source.path
       throw new Error(
@@ -206,4 +219,44 @@ function normalizeFileURL(part: MessageV2.FilePart, options: { allowLocalFilePat
   }
 
   return undefined
+}
+
+function isClipboardImage(part: MessageV2.FilePart) {
+  return part.source?.type === "file" && part.source.path === "clipboard" && part.mime.startsWith("image/")
+}
+
+function materializeClipboardImage(part: MessageV2.FilePart): string | undefined {
+  const parsed = parseBase64DataURL(part.url)
+  if (!parsed?.mime.startsWith("image/")) return undefined
+
+  const dir = mkdtempSync(path.join(tmpdir(), "agentswarm-clipboard-"))
+  const filepath = path.join(dir, `clipboard-image${extensionForMime(parsed.mime)}`)
+  writeFileSync(filepath, Buffer.from(parsed.data, "base64"), { mode: 0o600 })
+  return filepath
+}
+
+function parseBase64DataURL(value: string): { mime: string; data: string } | undefined {
+  const match = /^data:([^;,]+);base64,(.*)$/s.exec(value)
+  if (!match) return undefined
+  const [, mime, data] = match
+  if (!mime || data === undefined) return undefined
+  return {
+    mime,
+    data,
+  }
+}
+
+function extensionForMime(mime: string): string {
+  switch (mime) {
+    case "image/jpeg":
+      return ".jpg"
+    case "image/png":
+      return ".png"
+    case "image/webp":
+      return ".webp"
+    case "image/gif":
+      return ".gif"
+    default:
+      return ".img"
+  }
 }

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
+import { readFile, rm } from "node:fs/promises"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
+import path from "node:path"
 import { Auth } from "../../src/auth"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
@@ -235,6 +237,92 @@ describe("session.agency-swarm", () => {
     expect(captured).toEqual({
       "red-dot.png": "/tmp/red-dot.png",
     })
+  })
+
+  test("stream materializes clipboard data URL images for loopback Agency servers", async () => {
+    mockHistory()
+    const content = Buffer.from("clipboard image")
+    let captured: Record<string, string> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.fileURLs
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[Image 1] inspect this image",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "image/png",
+        filename: "clipboard",
+        url: `data:image/png;base64,${content.toString("base64")}`,
+        source: {
+          type: "file",
+          path: "clipboard",
+          text: {
+            value: "[Image 1]",
+            start: 0,
+            end: 9,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    const filepath = captured?.["clipboard"]
+    expect(filepath).toBeDefined()
+    expect(path.isAbsolute(filepath!)).toBeTrue()
+    expect(path.basename(filepath!)).toBe("clipboard-image.png")
+    try {
+      await expect(readFile(filepath!)).resolves.toEqual(content)
+    } finally {
+      await rm(path.dirname(filepath!), { recursive: true, force: true })
+    }
+  })
+
+  test("stream rejects clipboard data URL images for remote Agency servers", async () => {
+    mockHistory()
+    let called = false
+    AgencySwarmAdapter.streamRun = async function* () {
+      called = true
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.baseURL = "https://agency.example.com"
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[Image 1] inspect this image",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "image/png",
+        filename: "clipboard",
+        url: "data:image/png;base64,AAA=",
+        source: {
+          type: "file",
+          path: "clipboard",
+          text: {
+            value: "[Image 1]",
+            start: 0,
+            end: 9,
+          },
+        },
+      },
+    ] as any
+
+    await expect(SessionAgencySwarm.stream(input)).rejects.toThrow("Agent Swarm Run mode cannot send inline image data")
+    expect(called).toBeFalse()
   })
 
   for (const baseURL of ["http://host.docker.internal:8000", "http://kubernetes.docker.internal:8000"]) {

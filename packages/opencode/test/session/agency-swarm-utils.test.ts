@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { readFile, rm } from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
 import { MessageV2 } from "../../src/session/message-v2"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
@@ -197,6 +200,71 @@ describe("session.agency-swarm-utils", () => {
         },
       ),
     ).toThrow("Agent Swarm Run mode cannot send local image files to a remote Agency server")
+  })
+
+  test("collectFileURLs materializes clipboard images for local Agency servers", async () => {
+    const content = Buffer.from("clipboard image")
+    const result = collectFileURLs(
+      msg([
+        file("part-1", {
+          type: "file",
+          mime: "image/png",
+          url: `data:image/png;base64,${content.toString("base64")}`,
+          filename: "clipboard",
+          source: {
+            type: "file",
+            path: "clipboard",
+            text: {
+              value: "[Image 1]",
+              start: 0,
+              end: 9,
+            },
+          },
+        }),
+      ]),
+      {
+        allowLocalFilePaths: true,
+      },
+    )
+
+    const filepath = result?.["clipboard"]
+    expect(filepath).toBeDefined()
+    expect(path.isAbsolute(filepath!)).toBeTrue()
+    expect(filepath!.startsWith(path.join(os.tmpdir(), "agentswarm-clipboard-"))).toBeTrue()
+    expect(path.basename(filepath!)).toBe("clipboard-image.png")
+
+    try {
+      await expect(readFile(filepath!)).resolves.toEqual(content)
+    } finally {
+      await rm(path.dirname(filepath!), { recursive: true, force: true })
+    }
+  })
+
+  test("collectFileURLs blocks clipboard images for remote Agency servers", () => {
+    expect(() =>
+      collectFileURLs(
+        msg([
+          file("part-1", {
+            type: "file",
+            mime: "image/png",
+            url: "data:image/png;base64,AAA=",
+            filename: "clipboard",
+            source: {
+              type: "file",
+              path: "clipboard",
+              text: {
+                value: "[Image 1]",
+                start: 0,
+                end: 9,
+              },
+            },
+          }),
+        ]),
+        {
+          allowLocalFilePaths: false,
+        },
+      ),
+    ).toThrow("Agent Swarm Run mode cannot send inline image data")
   })
 
   test("buildOutgoingMessage and findRecipientAgent use the final visible parts", () => {
