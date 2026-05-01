@@ -18,7 +18,7 @@ afterEach(async () => {
 })
 
 describe("Agent Swarm real project TUI handoff e2e", () => {
-  test("copied real agency.py project keeps SendMessage delegation separate from Handoff control", async () => {
+  test("direct TUI launch with copied agency.py project keeps SendMessage separate from Handoff", async () => {
     const project = await copyRealAgencyProject()
     currentServer = await startRealProjectAgencyServer()
     currentTui = await startTui({
