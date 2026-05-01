@@ -236,7 +236,7 @@ function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptio
     if (!options.materializeLocalFilePaths) return filepath
     const allowlistedPath = preserveAllowlistedLocalPath(filepath, options)
     if (allowlistedPath) return allowlistedPath
-    rejectMaterializedDirectoryPath(filepath)
+    rejectNonRegularMaterializedFilePath(filepath)
     const materializedFile = materializeLocalFilePath(filepath, path.basename(part.filename || filepath) || "file")
     options.materializedFilePaths?.push(materializedFile)
     return materializedFile
@@ -315,16 +315,21 @@ function preserveAllowlistedLocalPath(filepath: string, options: CollectFileURLO
   return isLocalFilePathAllowed(filepath, options.localFilePathAllowlist) ? filepath : undefined
 }
 
-function rejectMaterializedDirectoryPath(filepath: string) {
+function rejectNonRegularMaterializedFilePath(filepath: string) {
   let stats
   try {
     stats = statSync(filepath)
   } catch {
     return
   }
-  if (!stats.isDirectory()) return
+  if (stats.isFile()) return
+  if (stats.isDirectory()) {
+    throw new Error(
+      "Agent Swarm Run mode cannot send directory attachments outside the local file allowlist. Attach a project-local directory or a regular file.",
+    )
+  }
   throw new Error(
-    "Agent Swarm Run mode cannot send directory attachments outside the local file allowlist. Attach a project-local directory or a regular file.",
+    "Agent Swarm Run mode cannot send non-regular file attachments outside the local file allowlist. Attach a regular file.",
   )
 }
 

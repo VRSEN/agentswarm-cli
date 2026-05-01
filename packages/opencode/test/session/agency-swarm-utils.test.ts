@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises"
 import { tmpdir as osTmpdir } from "node:os"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
@@ -456,6 +456,39 @@ describe("session.agency-swarm-utils", () => {
         rm(projectDir, { recursive: true, force: true }),
         rm(sourcePath, { recursive: true, force: true }),
       ])
+    }
+  })
+
+  test("collectFileURLs rejects non-regular file URL attachments outside the allowlist", async () => {
+    if (process.platform === "win32") return
+    const sourcePath = "/dev/null"
+    const sourceStats = await stat(sourcePath)
+    expect(sourceStats.isFile()).toBeFalse()
+
+    const projectDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-project-"))
+    const materializedFilePaths: string[] = []
+    try {
+      expect(() =>
+        collectFileURLs(
+          msg([
+            file("part-1", {
+              type: "file",
+              mime: "application/octet-stream",
+              url: pathToFileURL(sourcePath).href,
+              filename: "null",
+            }),
+          ]),
+          {
+            allowLocalFilePaths: true,
+            materializeLocalFilePaths: true,
+            localFilePathAllowlist: [projectDir],
+            materializedFilePaths,
+          },
+        ),
+      ).toThrow("Agent Swarm Run mode cannot send non-regular file attachments outside the local file allowlist")
+      expect(materializedFilePaths).toEqual([])
+    } finally {
+      await rm(projectDir, { recursive: true, force: true })
     }
   })
 
