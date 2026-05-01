@@ -63,7 +63,7 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 - For policy edits you start on your own, ask the user before changing files. Do not stop normal coding or test work for extra approval requests.
 - Keep `AGENTS.md` for always-on routing, ownership, cross-session rules, safety, mandate, fork, escalation, danger-zone, and release gates. Move commands, playbooks, path-specific procedures, and workflow-specific validation into repo skills under `.codex/skills/**`, never product-discoverable config directories.
 - Treat policy and durable docs as executable agent code: remove or refactor before adding, keep one owner section per enforceable behavior, preserve public/private boundaries, and avoid parallel rules.
-- Before shipping a policy diff, the manager must personally review and iterate, then use a fresh review worker to check for distorted meaning, lost protections, internal contradictions, duplicate rules, regressions, and unnecessary process cost.
+- Before shipping a policy diff, the manager must personally review and iterate, then use a fresh Codex review worker to check for distorted meaning, lost protections, internal contradictions, duplicate rules, regressions, and unnecessary process cost.
 - If a policy contradiction remains after review, record or escalate it with the affected clauses and do not hide it behind a narrower wording fix.
 
 ## Role Boundary
@@ -566,8 +566,8 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
 - Model and tool availability varies by machine. Use the strongest available path that fits the task risk; when you substitute for a named model or tool, state the substitute and confidence before relying on it.
 - Use GPT-5.5 with `medium` or `high` reasoning when available for high-reliability bug fixing, root-cause investigation, and feature implementation without a detailed technical plan.
 - Policy, repo-skill, and workflow-rule edits to `AGENTS.md`, `CLAUDE.md`, or `.codex/skills/**` require an isolated worker or worktree and the strongest available GPT-5.5 path with `xhigh` reasoning when available. If GPT-5.5 or `xhigh` is unavailable, use the strongest approved path, state the substitution, and do not treat weaker review as final proof for high-stakes policy.
-- Use `.codex/skills/codex-cli-review` for Codex review artifacts and `.codex/skills/claude-cli-review` for Claude CLI review artifacts.
-- Treat Claude output and duplicate weaker runs as supporting evidence, not final proof for high-reliability decisions.
+- Use `.codex/skills/codex-cli-review` for code, pull-request, release, and policy review gates.
+- Claude is counsel-only: do not use it to write, edit, patch, implement, test, run review gates, stage, commit, push, publish, or otherwise mutate repo artifacts; treat its output as discussion, not evidence for code fixes, implementation, pull-request, merge, release, or policy gates.
 - Sonnet models are not allowed here. If no allowed model is available for the needed reliability, stop and escalate.
 - Prefer the local `codex` command for small clear work, and keep delegated scopes as small as useful.
 
@@ -579,4 +579,4 @@ Why: without a hardcoded source of truth, agents re-derive behavior from code ea
 - Fork Repo: `https://github.com/VRSEN/agentswarm-cli`
 - Upstream Repo: `https://github.com/anomalyco/opencode`
 - Repo skills are checked-in manager instructions under `.codex/skills/**`, not product/TUI skills and not automatic behavior by themselves. `AGENTS.md` may route work to them by path or name; agents must read the relevant `SKILL.md` on demand unless the environment exposes the skill directly.
-- Available repo skills: `.codex/skills/requirement-ledger`, `.codex/skills/policy-maintenance`, `.codex/skills/delegation-management`, `.codex/skills/codex-cli-review`, and `.codex/skills/claude-cli-review`.
+- Available repo skills: `.codex/skills/requirement-ledger`, `.codex/skills/policy-maintenance`, `.codex/skills/delegation-management`, `.codex/skills/codex-cli-review`, and `.codex/skills/claude-cli-counsel`.

@@ -26,7 +26,7 @@ Use this skill for policy, workflow-rule, and repo-skill changes. Repo skills ar
 15. A manager must personally review the final policy diff, challenge every unexplained line, and iterate until the structure is coherent.
 16. Check the whole affected rules tree for internal contradictions, duplicate rules, lost protections, public/private leakage, trigger overreach, and unnecessary process cost.
 17. Record or escalate any remaining contradiction with the affected clauses; do not ship a narrower wording fix that hides it.
-18. Run a fresh review worker after implementation to check for distorted meaning, lost protections, duplicate rules, contradictions, and regressions.
+18. Run a fresh Codex review worker after implementation to check for distorted meaning, lost protections, duplicate rules, contradictions, and regressions.
 
 ## Policy Branch Rules
 

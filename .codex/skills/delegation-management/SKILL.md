@@ -38,4 +38,5 @@ Use this skill when delegation affects correctness, queue control, review qualit
 - Subagents treat the manager as the user proxy inside the delegated mandate.
 - Workers may create branches, commits, and pull requests only inside their mandate.
 - Workers must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager delegates that exact action for that exact artifact after review.
+- Claude delegation is counsel-only. Do not delegate implementation, code-review gates, patch generation, staging, committing, pushing, merge, release, or repo mutation to Claude.
 - Managers own shells, tmux sessions, Codex resume sessions, and polling loops spawned by them or delegated workers; reclaim or close them at task boundaries.
