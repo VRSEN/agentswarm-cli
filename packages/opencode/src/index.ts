@@ -37,7 +37,7 @@ import { Database } from "./storage"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { Heap } from "./cli/heap"
-import { AgenciiCommand } from "./cli/cmd/agencii"
+import { AgencyCommand } from "./cli/cmd/agency"
 import { AgencyProduct } from "./agency-swarm/product"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import { ensureProcessMetadata } from "@opencode-ai/core/util/opencode-process"
@@ -178,7 +178,7 @@ const cli = yargs(args)
   .command(GithubCommand)
   .command(PrCommand)
   .command(SessionCommand)
-  .command(AgenciiCommand)
+  .command(AgencyCommand)
   .command(PluginCommand)
   .command(DbCommand)
   .fail((msg, err) => {

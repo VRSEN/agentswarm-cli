@@ -8,20 +8,20 @@ import { Auth } from "@/auth"
 import * as Config from "@/config/config"
 import path from "path"
 
-export const AgenciiCommand = cmd({
-  command: ["agency", "agencii"],
+export const AgencyCommand = cmd({
+  command: "agency",
   describe: "Agency Swarm backend management: connect, discover agencies, set default agency, Agent Builder helpers",
   builder: (yargs: Argv) =>
     yargs
-      .command(AgenciiConnectCommand)
-      .command(AgenciiAgenciesCommand)
-      .command(AgenciiUseCommand)
-      .command(AgenciiAgentCommand)
+      .command(AgencyConnectCommand)
+      .command(AgencyAgenciesCommand)
+      .command(AgencyUseCommand)
+      .command(AgencyAgentCommand)
       .demandCommand(),
   async handler() {},
 })
 
-const AgenciiConnectCommand = cmd({
+const AgencyConnectCommand = cmd({
   command: "connect",
   describe: "set Agency Swarm backend URL in global config",
   builder: (yargs: Argv) =>
@@ -64,7 +64,7 @@ const AgenciiConnectCommand = cmd({
   },
 })
 
-const AgenciiAgenciesCommand = cmd({
+const AgencyAgenciesCommand = cmd({
   command: "agencies",
   describe: "discover agencies from the configured Agency Swarm backend",
   builder: (yargs: Argv) =>
@@ -92,7 +92,7 @@ const AgenciiAgenciesCommand = cmd({
       })
 
       if (discovered.agencies.length === 0) {
-        UI.println(`No agencies discovered. Try \`${AgencyProduct.cmd} agencii use <agency-id> --url ...\`.`)
+        UI.println(`No agencies discovered. Try \`${AgencyProduct.cmd} agency use <agency-id> --url ...\`.`)
         return
       }
 
@@ -105,7 +105,7 @@ const AgenciiAgenciesCommand = cmd({
   },
 })
 
-const AgenciiUseCommand = cmd({
+const AgencyUseCommand = cmd({
   command: "use <agency>",
   describe: "set default Agency Swarm agency in global config",
   builder: (yargs: Argv) =>
@@ -167,14 +167,14 @@ const AgenciiUseCommand = cmd({
   },
 })
 
-const AgenciiAgentCommand = cmd({
+const AgencyAgentCommand = cmd({
   command: "agent",
   describe: "Agency Swarm Agent Builder helpers",
-  builder: (yargs: Argv) => yargs.command(AgenciiAgentNewCommand).demandCommand(),
+  builder: (yargs: Argv) => yargs.command(AgencyAgentNewCommand).demandCommand(),
   async handler() {},
 })
 
-const AgenciiAgentNewCommand = cmd({
+const AgencyAgentNewCommand = cmd({
   command: "new <name>",
   describe: "create a new Agency Swarm agent scaffold via `agency-swarm create-agent-template`",
   builder: (yargs: Argv) =>
@@ -291,8 +291,7 @@ export function runtimeOptions(
   const fromConfigBaseURL =
     readString(options?.["baseURL"]) ?? readString(options?.["base_url"]) ?? AgencySwarmAdapter.DEFAULT_BASE_URL
   const fromConfigToken = readString(options?.["token"])
-  const fromAuthToken =
-    auth?.type === "api" ? auth.key : auth?.type === "wellknown" ? auth.token : undefined
+  const fromAuthToken = auth?.type === "api" ? auth.key : auth?.type === "wellknown" ? auth.token : undefined
   const fromConfigTimeout =
     readPositiveNumber(options?.["discoveryTimeoutMs"]) ??
     readPositiveNumber(options?.["discovery_timeout_ms"]) ??
@@ -301,9 +300,12 @@ export function runtimeOptions(
   const baseURL = AgencySwarmAdapter.normalizeBaseURL(
     typeof args.url === "string" && args.url.trim() ? args.url.trim() : fromConfigBaseURL,
   )
-  const token = typeof args.token === "string" && args.token.trim() ? args.token.trim() : fromAuthToken ?? fromConfigToken
+  const token =
+    typeof args.token === "string" && args.token.trim() ? args.token.trim() : (fromAuthToken ?? fromConfigToken)
   const timeout =
-    typeof args.timeout === "number" && Number.isFinite(args.timeout) && args.timeout > 0 ? args.timeout : fromConfigTimeout
+    typeof args.timeout === "number" && Number.isFinite(args.timeout) && args.timeout > 0
+      ? args.timeout
+      : fromConfigTimeout
 
   return {
     baseURL,

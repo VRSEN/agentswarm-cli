@@ -10,7 +10,7 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
 - Local Agency Swarm project detection, Python environment repair, bridge startup, starter creation, and external server connection.
 - Run mode, including Agency backend discovery, agent targeting, auth, reconnect, and hidden upstream-native commands.
 - Fork branding, tips, theme, config precedence, upgrade channel limits, and session sharing carry-forward.
-- Developer/debug backend management commands exposed as `agentswarm agency` and `agentswarm agencii`.
+- Developer/debug backend management commands exposed as `agentswarm agency`.
 
 ## Entry Points
 
@@ -21,7 +21,7 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
 - Resume and continue: reuse saved local Agency project context before the TUI opens when the session was an Agency run session.
 - TUI Run mode: connects to Agency Swarm, hides or limits upstream-native surfaces, and routes auth or connection failures to the fork dialogs.
 - `agentswarm pr <number>`: preserves fork branding and imports approved `https://opncd.ai/s/<id>` share links before reopening `agentswarm`.
-- `agentswarm agency ...` and `agentswarm agencii ...`: developer/debug commands for backend configuration and inspection.
+- `agentswarm agency ...`: developer/debug commands for backend configuration and inspection.
 
 ## Decision Tree
 
@@ -194,7 +194,7 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
 
 ### Backend Management
 
-- Trigger: run `agentswarm agency ...` or the legacy alias `agentswarm agencii ...`.
+- Trigger: run `agentswarm agency ...`.
 - Expected path:
   - Treat this group as developer/debug surface, not the primary end-user onboarding path.
   - `connect` stores normalized backend config and optional bearer token.
@@ -229,7 +229,7 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
 - Config precedence: `packages/opencode/src/config/paths.ts`, `packages/opencode/src/config/config.ts`, `packages/opencode/src/cli/cmd/tui/config/tui.ts`.
 - Upgrade channel limits: `packages/opencode/src/installation/index.ts`, `packages/opencode/src/cli/cmd/upgrade.ts`.
 - Share carry-forward and PR reopen: `packages/opencode/src/share/share-next.ts`, `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`, `packages/opencode/src/cli/cmd/pr.ts`, `README.md`.
-- Backend management commands: `packages/opencode/src/cli/cmd/agencii.ts`.
+- Backend management commands: `packages/opencode/src/cli/cmd/agency.ts`.
 
 ## Tracked Gaps
 
