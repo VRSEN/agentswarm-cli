@@ -6,7 +6,7 @@ import { createWriteStream, existsSync, statSync } from "node:fs"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { AgencySwarmRunSession } from "./run-session"
-import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
+import { buildServerLauncherScript } from "./server-launcher"
 import { Storage } from "@/storage/storage"
 import { Filesystem } from "@/util/filesystem"
 import type { Session } from "@/session"
@@ -965,7 +965,12 @@ async function startProjectServer(directory: string, python: string[]) {
     }).catch(() => undefined)
 
   try {
-    await Filesystem.write(scriptPath, SERVER_LAUNCHER_SCRIPT)
+    await Filesystem.write(
+      scriptPath,
+      buildServerLauncherScript({
+        allowedLocalFileDirs: [path.resolve(directory)],
+      }),
+    )
   } catch (error) {
     await remove()
     throw error

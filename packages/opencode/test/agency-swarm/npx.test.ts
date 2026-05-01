@@ -15,6 +15,7 @@ import {
   summarizeBridgeStderr,
   validateStarterName,
 } from "../../src/agency-swarm/npx"
+import { buildServerLauncherScript } from "../../src/agency-swarm/server-launcher"
 import { AgencySwarmRunSession } from "../../src/agency-swarm/run-session"
 import { Instance } from "../../src/project/instance"
 import { Session } from "../../src/session"
@@ -140,6 +141,14 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(env.PYTHONPATH).toBe(`/tmp/project${path.delimiter}/existing/path`)
+  })
+
+  test("buildServerLauncherScript passes local file allowlist to Agency Swarm FastAPI", () => {
+    const script = buildServerLauncherScript({
+      allowedLocalFileDirs: ['/tmp/project "quoted"', "/tmp/project's files"],
+    })
+
+    expect(script).toContain('allowed_local_file_dirs=["/tmp/project \\"quoted\\"","/tmp/project\'s files"]')
   })
 
   test("prepareProjectLaunch installs LiteLLM extras when no dependency manifest exists", async () => {
@@ -838,6 +847,7 @@ describe("agency-swarm npx onboarding", () => {
     )
 
     const commands: string[][] = []
+    let launcherScriptPath: string | undefined
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
@@ -860,6 +870,7 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (cmd[1]?.endsWith("launch_agency.py")) {
+        launcherScriptPath = cmd[1]
         let resolveExit!: (code: number) => void
         const exited = new Promise<number>((resolve) => {
           resolveExit = resolve
@@ -885,6 +896,10 @@ describe("agency-swarm npx onboarding", () => {
     expect(
       canaryScripts.every((script) => script.includes("from agency_swarm.integrations.fastapi import run_fastapi")),
     ).toBe(true)
+    if (!launcherScriptPath) throw new Error("Expected launcher script path")
+    await expect(Bun.file(launcherScriptPath).text()).resolves.toContain(
+      `allowed_local_file_dirs=["${dir.path.replaceAll("\\", "\\\\")}"]`,
+    )
 
     await launch?.cleanup?.()
   })
