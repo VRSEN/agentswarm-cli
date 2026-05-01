@@ -1,23 +1,18 @@
 # Agent Swarm Terminal TUI E2E Coverage
 
-Source of truth: `FORK_CHANGELOG.md` defines intentional fork behavior, and `USER_FLOWS.md` defines release QA flows. This harness covers only Agent Swarm fork behavior and stays outside upstream app Playwright tests.
+`USER_FLOWS.md` is the release QA source of truth. `FORK_CHANGELOG.md` defines approved fork deltas. This file only records which terminal E2E checks currently automate parts of those flows and which launcher work remains manual.
 
 ## Automated
 
-- `FORK_CHANGELOG.md` CLI/TUI UX: `/auth` and `/connect` stay separate in the real terminal UI.
-- `FORK_CHANGELOG.md` CLI/TUI UX: Run mode hides native `/editor`, `/variants`, `/init`, and `/review` slash commands.
-- `FORK_CHANGELOG.md` CLI/TUI UX: `/agents` uses Swarm and agent wording against an Agency Swarm TUI-demo-shaped swarm.
-- `FORK_CHANGELOG.md` CLI/TUI UX: selecting a swarm row clears stale explicit agent routing before the next prompt.
-- `FORK_CHANGELOG.md` CLI/TUI UX: selecting a specific agent routes the next prompt to that agent.
-- `FORK_CHANGELOG.md` Agency Swarm Integration: prompt submit reaches a local Agency Swarm protocol server with the configured agent.
-- `FORK_CHANGELOG.md` Agency Swarm Integration: bracketed-paste image paths reach the local Agency Swarm protocol server as file paths, not inline `data:` URLs.
-- `FORK_CHANGELOG.md` Agency Swarm Integration: ordinary `SendMessage` delegation with `recipient_agent` does not switch the user's active recipient.
-- `FORK_CHANGELOG.md` Agency Swarm Integration: nested `SendMessage` handoff-like metadata does not switch the user's active recipient.
-- `FORK_CHANGELOG.md` Agency Swarm Integration: `transfer_to_*` handoff events switch control to the target agent for the next turn.
-- `FORK_CHANGELOG.md` Agency Swarm Integration: a direct TUI launch with a copied real `agency.py` project path and deterministic protocol server proves `SendMessage` delegation does not persist control and `Handoff` does.
-- `FORK_CHANGELOG.md` Agency Swarm Integration: later nested handoff-like metadata does not override an earlier top-level handoff recipient.
-- `FORK_CHANGELOG.md` Agency Swarm Integration: `agent_updated_stream_event` handoffs without separate transfer tool parts switch control to the target agent.
-- `USER_FLOWS.md` Auto-Start Detected Local Project: launcher mode shows the detected-project choice before `.venv` work begins.
+- `USER_FLOWS.md` Detected Local Project: launcher mode shows the detected-project choice before `.venv` work begins.
+- `USER_FLOWS.md` Startup `/auth` and In-TUI `/connect`: `/auth` and `/connect` stay separate in the real terminal UI.
+- `USER_FLOWS.md` Run Mode: native `/editor`, `/variants`, `/init`, and `/review` slash commands stay hidden.
+- `USER_FLOWS.md` Run Mode: `/agents` uses Swarm and agent wording, live agency labels, swarm-row routing, and specific-agent routing against an Agency Swarm TUI-demo-shaped swarm.
+- `USER_FLOWS.md` Run Mode: prompt submit reaches a local Agency Swarm protocol server with the configured agent.
+- `USER_FLOWS.md` Run Mode: bracketed-paste image paths reach the local Agency Swarm protocol server as file paths, not inline `data:` URLs.
+- `USER_FLOWS.md` Run Mode: ordinary and nested `SendMessage` delegation does not switch the user's active recipient.
+- `USER_FLOWS.md` Run Mode: `transfer_to_*`, top-level handoff, and `agent_updated_stream_event` handoffs switch control to the target agent for the next turn.
+- Harness setup: a copied real `agency.py` project path plus deterministic protocol server proves the same Run Mode delegation and handoff semantics without claiming launcher or Python bridge startup coverage.
 
 ## Manual Gap
 
