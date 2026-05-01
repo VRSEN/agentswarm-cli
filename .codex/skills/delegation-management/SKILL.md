@@ -37,5 +37,5 @@ Use this skill when delegation affects correctness, queue control, review qualit
 
 - Subagents treat the manager as the user proxy inside the delegated mandate.
 - Workers may create branches, commits, and pull requests only inside their mandate.
-- Workers must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager delegates that exact action for that exact artifact after review.
+- Workers must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager delegates that exact action for that exact artifact after review and any required approval from the user or their named human delegate.
 - Managers own shells, tmux sessions, Codex resume sessions, and polling loops spawned by them or delegated workers; reclaim or close them at task boundaries.

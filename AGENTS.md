@@ -106,7 +106,7 @@ Why: incomplete requirements, stale artifacts, and misheard input cause correct-
 - If the task is rule repair, product work stays blocked until the rule or tool problem is fixed and reviewed.
 - A direct user request allows only the smaller steps needed to finish that exact task inside the same repo, branch, artifact, and visibility boundary.
 - Mandate does not grow by implication. Permission to edit, review, or open a pull request does not also allow repo creation, forks, publication, deploys, merges, destructive actions, or writes somewhere else.
-- Merging to a default branch or merging any pull request always needs explicit user approval.
+- Merging to a default branch, merging any pull request, or making a release always needs explicit approval from the user, or from a human delegate the user named for that exact action. QA, local testing, alignment, or implementation approval does not authorize it.
 - If the next step crosses the mandate, or the boundary is partial or unclear, escalate before acting.
 
 ## Execution Loop
@@ -359,7 +359,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Brief subagents with the relevant repo, branch, artifact, source pointers, constraints, non-goals, success condition, and permission to request scope extension when evidence justifies it.
 - Treat subagents as focused independent contributors or counsel. Their output is evidence that the manager must verify, not authority by itself.
 - Keep environment repair, credentials, review path selection, worker rotation, and pull-request-specific delegation mechanics in the skill playbook.
-- Workers may create branches, commits, and pull requests inside their mandate. They must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager explicitly delegates that exact action for that exact artifact after review.
+- Workers may create branches, commits, and pull requests inside their mandate. They must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager explicitly delegates that exact action for that exact artifact after review and any required approval from the user or their named human delegate.
 
 ### Artifacts
 
@@ -375,10 +375,10 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - If the remote is unavailable, you may continue, but say that you are assuming the branch is already synced.
 - If the task spans more than one repo or worktree, run `git fetch origin`, `git status -sb`, and `git rev-parse --short HEAD`, or the repo-tooling equivalent, in each one and confirm the active branch before you edit.
 - Before opening, updating, merging, or releasing, follow `.codex/skills/codex-cli-review` governance: live standards, current PR state, existing PR reuse, compliance, required checks, source/base/head SHA, live diff, title, issue link or exception, type, verification, checklist, and unrelated-change checks.
-- Every pull-request merge has explicit user approval and a human alignment gate. Pull requests with user-testable behavior also have a human QA gate. Worker review can inform these gates but cannot replace them.
+- Every pull-request merge has explicit user approval and an intent-alignment gate. Pull requests with user-testable behavior also have a human QA gate. Worker review can inform these gates but cannot replace them.
 - Before requesting merge approval, the manager must:
   - verify the final diff, source/base/head SHAs, required checks, unresolved threads, and official review findings.
-  - challenge every unexplained line with checked evidence.
+  - ask whether the final diff fully aligns with the user's explicit intent, checking related chat transcripts when they are source-of-truth evidence; the gate is satisfied only when every change is clearly derivable from user messages and no ambiguity, unexplained change, or possible unintended change remains. Otherwise escalate before technical readiness.
   - provide evidence that the latest head is merge-ready: clean current-head review, green required checks, and zero unresolved threads.
   - use `.codex/skills/codex-cli-review` to prepare the user alignment request for every pull request, with a QA packet only when changed behavior is user-testable.
 - Merge only after the user explicitly approves that merge, confirms required alignment, and completes the user QA gate for pull requests with user-testable behavior, unless the user explicitly approves a merge-gate exception for that pull request.
@@ -392,8 +392,8 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 ## Danger Zone: Public And Irreversible Operations
 
-- Pull-request merges, release notes, tags, GitHub Releases, PyPI or npm publishing, yanks, unpublishes, and any public package or release change are danger-zone operations.
-- Workers do not own danger-zone operations. They may prepare evidence and draft artifacts, but the manager must run the final live review and either perform the operation or explicitly delegate that exact operation.
+- Pull-request merges, release notes, tags, GitHub Releases, PyPI or npm publishing, yanks, unpublishes, and any public package or release change are danger-zone operations that need explicit approval from the user, or from a human delegate the user named for the exact operation.
+- Workers do not own danger-zone operations. They may prepare evidence and draft artifacts, but the manager must run the final live review and either perform the operation or explicitly delegate that exact operation after required approval from the user or their named human delegate.
 - In the danger zone, never trust memory, cached notes, worker summaries, stale screenshots, or an old audit.
 - Right before each public step, recheck the live repo state, exact commit, version files, release and tag state, package-index state, and release-notes compare range.
 - In the danger zone, uncertainty is a blocker. If live public state, the real source of truth, or the next mutation is not fully checked, stop and escalate.
@@ -406,10 +406,10 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - For any npm-published package in this repo, follow this four-step release flow and never skip step 3:
   1. Build the fresh local change.
   2. Install that local build globally so the user's normal command points to it.
-  3. The user tests that local build by hand and gives explicit approval.
-  4. Only then tag the release, create the GitHub Release, and publish to npm.
+  3. The user tests that local build by hand and gives explicit QA approval.
+  4. After separate explicit release approval from the user or their named human delegate, tag the release, create the GitHub Release, and publish to npm.
 - Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts changed.
-- Before release approval, prove the exact release commit satisfies the live repo gates or their local equivalents: `bun typecheck`, `bun turbo test:ci`, app e2e, Agent Swarm e2e when relevant, auth smoke when configured, and the repo-specific release or publish workflow requirements.
+- Before release approval, prove the exact release commit satisfies the live repo gates or their local equivalents: `bun typecheck`, `bun turbo test:ci`, app e2e, Agent Swarm e2e when relevant, auth smoke when configured, and the repo-specific release or publish workflow requirements. Human QA is an added gate, not a substitute for agent validation.
 - Before any release or safety claim, build and reinstall the CLI from the fresh local build, launch it against the maintainer's canonical local test agency, send a real first message through the connected conversation, and verify that a non-empty streaming assistant response renders.
 - Auth-smoke CI alone never passes this gate. Any launch failure, including environment, credential, dependency, or TUI transition issues, blocks the release until you reproduce it and find the root cause.
 - Why: release claims were repeated while the installed binary still failed before a usable conversation.

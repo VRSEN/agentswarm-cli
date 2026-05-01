@@ -19,7 +19,7 @@ Use this skill for local Codex review artifacts and pull-request review loops.
 
 - Prepare this packet before a manager requests merge approval.
 - Group the changes for quick GitHub review and explain why each group exists.
-- Ask the user to leave comments or questions on GitHub and request one alignment confirmation.
+- Ask the user to leave comments or questions on GitHub and request one alignment confirmation against the user's explicit intent.
 - For bug-fix, feature, and any other pull request with user-testable behavior, provide one concrete QA target, for example a locally installed build, exact testable artifact, preview environment; name the changed user flow it exercises.
 - For non-runtime pull requests, such as docs-only and policy-only changes, state that product QA is not applicable because no user-testable behavior changed; still request alignment confirmation.
 - For user-testable behavior, provide clear QA steps that exercise the changed behavior and name any remaining blocker or gap.
