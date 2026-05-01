@@ -71,6 +71,10 @@ const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested struc
 const log = Log.create({ service: "session.prompt" })
 const elog = EffectLogger.create({ service: "session.prompt" })
 
+type RunLoopInput = LoopInput & {
+  readonly promptMessageID?: MessageID
+}
+
 export function shouldUseAgencySwarmBridge(input: {
   resolvedProviderID: string
   agentProviderID?: string
@@ -1271,7 +1275,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         }
 
         if (input.noReply === true) return message
-        return yield* loop({ sessionID: input.sessionID, agencyRecipientAgent: input.agencyRecipientAgent })
+        return yield* loop({
+          sessionID: input.sessionID,
+          agencyRecipientAgent: input.agencyRecipientAgent,
+          promptMessageID: message.info.id,
+        })
       },
     )
 
@@ -1283,9 +1291,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       throw new Error("Impossible")
     })
 
-    const runLoop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.run")(function* (
-      input: LoopInput,
-    ) {
+    const runLoop = Effect.fn("SessionPrompt.run")(function* (input: RunLoopInput) {
       const sessionID = input.sessionID
       const ctx = yield* InstanceState.context
       const slog = elog.with({ sessionID })
@@ -1451,7 +1457,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                     providerID: lastUser.model.providerID,
                     modelID: lastUser.model.modelID,
                   },
-                  recipientAgent: lastUser.agencyRecipientAgent ?? input.agencyRecipientAgent,
+                  recipientAgent:
+                    lastUser.agencyRecipientAgent ??
+                    (lastUser.id === input.promptMessageID ? input.agencyRecipientAgent : undefined),
                 }),
             })
             if (result === "stop") return "break" as const
@@ -1570,9 +1578,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       return yield* lastAssistant(sessionID)
     })
 
-    const loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
-      input: LoopInput,
-    ) {
+    const loop = Effect.fn("SessionPrompt.loop")(function* (input: RunLoopInput) {
       return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input))
     })
 
