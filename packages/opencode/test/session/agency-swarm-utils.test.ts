@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { readFile, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { tmpdir as osTmpdir } from "node:os"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { MessageV2 } from "../../src/session/message-v2"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
@@ -136,21 +138,15 @@ describe("session.agency-swarm-utils", () => {
       msg([
         file("part-1", {
           type: "file",
-          mime: "text/plain",
-          url: "file:///tmp/spec.md",
-          filename: "spec.md",
-        }),
-        file("part-2", {
-          type: "file",
           mime: "application/pdf",
           url: "https://example.com/plan.pdf",
         }),
-        file("part-3", {
+        file("part-2", {
           type: "file",
           mime: "text/plain",
           url: "not-a-url",
         }),
-        file("part-4", {
+        file("part-3", {
           type: "file",
           mime: "image/png",
           url: `data:image/png;base64,${imageContent.toString("base64")}`,
@@ -165,7 +161,7 @@ describe("session.agency-swarm-utils", () => {
             },
           },
         }),
-        file("part-5", {
+        file("part-4", {
           type: "file",
           mime: "application/pdf",
           url: `data:application/pdf;base64,${pdfContent.toString("base64")}`,
@@ -201,7 +197,6 @@ describe("session.agency-swarm-utils", () => {
 
     try {
       expect(result).toEqual({
-        "spec.md": "/tmp/spec.md",
         "plan.pdf": "https://example.com/plan.pdf",
         "inline.png": inlinePath,
         "report.pdf": pdfPath,
@@ -212,6 +207,47 @@ describe("session.agency-swarm-utils", () => {
       await Promise.all([
         rm(path.dirname(inlinePath), { recursive: true, force: true }),
         rm(path.dirname(pdfPath), { recursive: true, force: true }),
+      ])
+    }
+  })
+
+  test("collectFileURLs materializes file URL attachments for local Agency servers", async () => {
+    const sourceDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-file-url-source-"))
+    const sourcePath = path.join(sourceDir, "outside-project.txt")
+    const content = Buffer.from("outside project")
+    await Bun.write(sourcePath, content)
+
+    const materializedFilePaths: string[] = []
+    let filepath: string | undefined
+    try {
+      const result = collectFileURLs(
+        msg([
+          file("part-1", {
+            type: "file",
+            mime: "text/plain",
+            url: pathToFileURL(sourcePath).href,
+            filename: "outside-project.txt",
+          }),
+        ]),
+        {
+          allowLocalFilePaths: true,
+          materializedFilePaths,
+        },
+      )
+
+      filepath = result?.["outside-project.txt"]
+      expect(filepath).toBeDefined()
+      expect(filepath).not.toBe(sourcePath)
+      expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
+      expect(path.basename(filepath!)).toBe("outside-project.txt")
+      expect(materializedFilePaths).toEqual([filepath!])
+      await expect(readFile(filepath!)).resolves.toEqual(content)
+    } finally {
+      await Promise.all([
+        rm(sourceDir, { recursive: true, force: true }),
+        filepath && filepath !== sourcePath
+          ? rm(path.dirname(filepath), { recursive: true, force: true })
+          : Promise.resolve(),
       ])
     }
   })

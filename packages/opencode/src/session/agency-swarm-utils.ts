@@ -1,5 +1,5 @@
 import type { MessageV2 } from "@/session/message-v2"
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -220,11 +220,20 @@ export function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptions): string | undefined {
   if (part.url.startsWith("file://")) {
+    let filepath: string
     try {
-      return fileURLToPath(part.url)
+      filepath = fileURLToPath(part.url)
     } catch {
       return undefined
     }
+    if (!options.allowLocalFilePaths) {
+      throw new Error(
+        "Agent Swarm Run mode cannot send local files to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
+      )
+    }
+    const materializedFile = materializeLocalFilePath(filepath, path.basename(part.filename || filepath) || "file")
+    options.materializedFilePaths?.push(materializedFile)
+    return materializedFile
   }
 
   if (part.url.startsWith("http://") || part.url.startsWith("https://")) {
@@ -295,6 +304,20 @@ function materializedClipboardDir(filepath: string): string | undefined {
 
 function materializeClipboardImage(part: MessageV2.FilePart): string | undefined {
   return materializeDataFilePart(part, "clipboard-image")
+}
+
+function materializeLocalFilePath(sourcePath: string, filename: string): string {
+  const root = localFileMaterializationRoot()
+  mkdirSync(root, { recursive: true, mode: 0o700 })
+  const dir = mkdtempSync(path.join(root, "file-"))
+  const filepath = path.join(dir, filename)
+  try {
+    copyFileSync(sourcePath, filepath)
+    return filepath
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true })
+    throw error
+  }
 }
 
 function materializeDataFilePart(part: MessageV2.FilePart, stem: string): string | undefined {

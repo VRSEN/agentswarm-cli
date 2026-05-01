@@ -1264,6 +1264,76 @@ describe("agency-swarm npx onboarding", () => {
     expect(commands.some(isCanaryCommand)).toBe(true)
   })
 
+  test("prepareProjectLaunch reports unsupported FastAPI in an existing `.venv` without rebuilding it", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    const venvPython = path.join(
+      dir.path,
+      ".venv",
+      process.platform === "win32" ? "Scripts" : "bin",
+      process.platform === "win32" ? "python.exe" : "python",
+    )
+    await mkdir(path.dirname(venvPython), { recursive: true })
+    await Bun.write(venvPython, "")
+
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+
+    const commands: string[][] = []
+    const canaryStderr = "RuntimeError: agency-swarm FastAPI run_fastapi does not support allowed_local_file_dirs\n"
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        if (target === venvPython || cmd[0] === "python3.12") {
+          return {
+            exited: Promise.resolve(0),
+            stdout: `${target}\n3.12.7\n`,
+            stderr: "",
+          } as never
+        }
+      }
+      if (isPipInstallCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: canaryStderr,
+        } as never
+      }
+      if (cmd.includes("venv")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    await expect(
+      prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      }),
+    ).rejects.toThrow(
+      "Local file drops require an agency-swarm FastAPI version that supports allowed_local_file_dirs. Upgrade this project's agency-swarm[fastapi] dependency.",
+    )
+
+    expect(commands.some((cmd) => cmd.includes("venv"))).toBe(false)
+    expect(commands.filter(isCanaryCommand)).toHaveLength(1)
+  })
+
   test("prepareProjectLaunch names detected shadowing files in the canary remediation", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)

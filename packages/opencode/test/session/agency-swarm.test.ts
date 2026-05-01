@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { readFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
+import { tmpdir as osTmpdir } from "node:os"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { Auth } from "../../src/auth"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
@@ -254,6 +256,61 @@ describe("session.agency-swarm", () => {
 
   test("stream materializes dropped data URL images for loopback Agency servers", async () => {
     await expectStreamMaterializesDroppedImage()
+  })
+
+  test("stream materializes file URL attachments for loopback Agency servers", async () => {
+    mockHistory()
+    const sourceDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-file-url-stream-"))
+    const sourcePath = path.join(sourceDir, "outside-project.txt")
+    const content = Buffer.from("outside project")
+    await Bun.write(sourcePath, content)
+
+    let captured: Record<string, string> | undefined
+    let observedContent: Buffer | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.fileURLs
+      const filepath = input.fileURLs?.["outside-project.txt"]
+      if (filepath) observedContent = await readFile(filepath)
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    let filepath: string | undefined
+    try {
+      const { input } = helper()
+      input.userMessage.parts = [
+        {
+          type: "text",
+          text: "inspect this file",
+          ignored: false,
+        },
+        {
+          type: "file",
+          mime: "text/plain",
+          filename: "outside-project.txt",
+          url: pathToFileURL(sourcePath).href,
+        },
+      ] as any
+
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _event of stream.fullStream) {
+        // consume
+      }
+
+      filepath = captured?.["outside-project.txt"]
+      expect(filepath).toBeDefined()
+      expect(filepath).not.toBe(sourcePath)
+      expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
+      expect(path.basename(filepath!)).toBe("outside-project.txt")
+      expect(observedContent).toEqual(content)
+      await expect(readFile(filepath!)).rejects.toThrow()
+    } finally {
+      await Promise.all([
+        rm(sourceDir, { recursive: true, force: true }),
+        filepath && filepath !== sourcePath
+          ? rm(path.dirname(filepath), { recursive: true, force: true })
+          : Promise.resolve(),
+      ])
+    }
   })
 
   const clipboardImageParts = (content: Buffer) =>

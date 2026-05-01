@@ -678,15 +678,13 @@ async function ensureProjectPython(directory: string) {
       }
       if (!corruptedVenv) {
         prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
-        let healthy = false
-        try {
-          healthy = await venvCanaryPasses([venvPython])
-        } catch {
-          healthy = false
-        }
-        if (healthy) {
+        const canary = await venvCanaryPasses([venvPython], { includeStderr: true })
+        if (canary.healthy) {
           prompts.log.success("Python environment ready")
           return [venvPython]
+        }
+        if (isLocalFileAllowlistCanaryFailure(canary.stderr)) {
+          throw new Error(await formatPostInstallCanaryFailure(directory, true, canary.stderr))
         }
         corruptedVenv = true
       }
