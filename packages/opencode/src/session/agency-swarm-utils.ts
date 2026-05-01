@@ -17,9 +17,11 @@ export function normalizeCallerAgent(value: string | undefined): string | null |
 export function extractEventMeta(event: Record<string, unknown>): AgencySwarmEventMeta {
   return {
     agent: asString(event["agent"]),
-    callerAgent: normalizeCallerAgent(asString(event["callerAgent"])),
-    agentRunID: asString(event["agent_run_id"]),
-    parentRunID: asString(event["parent_run_id"]),
+    callerAgent: normalizeCallerAgent(
+      asString(event["callerAgent"]) ?? asString(event["caller_agent"]) ?? asString(event["caller"]),
+    ),
+    agentRunID: asString(event["agent_run_id"]) ?? asString(event["agentRunID"]) ?? asString(event["agentRunId"]),
+    parentRunID: asString(event["parent_run_id"]) ?? asString(event["parentRunID"]) ?? asString(event["parentRunId"]),
   }
 }
 

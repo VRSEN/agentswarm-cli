@@ -110,6 +110,19 @@ describe("session.agency-swarm-utils", () => {
       agent_run_id: "run-1",
       parent_run_id: "parent-1",
     })
+    expect(
+      extractEventMeta({
+        agent: "Reviewer",
+        caller_agent: "Planner",
+        agentRunID: "run-2",
+        parentRunID: "parent-2",
+      }),
+    ).toEqual({
+      agent: "Reviewer",
+      callerAgent: "Planner",
+      agentRunID: "run-2",
+      parentRunID: "parent-2",
+    })
   })
 
   test("collectFileURLs keeps valid file parts and normalizes file URLs", () => {

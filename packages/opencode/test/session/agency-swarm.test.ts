@@ -1842,8 +1842,8 @@ describe("session.agency-swarm", () => {
       {
         type: "handoff_output_item",
         call_id: "call_3",
-        callerAgent: "SupportAgent",
-        parent_run_id: "run_parent",
+        caller_agent: "SupportAgent",
+        parentRunID: "run_parent",
         output: { assistant: "MathAgent" },
       },
     ])
@@ -3624,8 +3624,8 @@ describe("session.agency-swarm", () => {
               type: "data",
               payload: {
                 type: "agent_updated_stream_event",
-                callerAgent: "UserSupportAgent",
-                parent_run_id: "run_parent",
+                caller_agent: "UserSupportAgent",
+                parentRunID: "run_parent",
                 new_agent: {
                   id: "MathAgent",
                   label: "Math Agent",
