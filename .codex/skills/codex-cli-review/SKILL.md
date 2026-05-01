@@ -33,14 +33,14 @@ Use this skill for local Codex review artifacts and pull-request review loops.
 ## Canonical Review
 
 ```bash
-codex review --base <base> -m gpt-5.5 -c model_reasoning_effort="medium" > /tmp/codex_review_$(git rev-parse --short HEAD).txt 2>&1
+codex exec review --base <base> -m gpt-5.5 -c model_reasoning_effort="medium" -o /tmp/codex_review_$(git rev-parse --short HEAD).txt > /tmp/codex_review_$(git rev-parse --short HEAD).log 2>&1
 ```
 
-If GPT-5.5 is unavailable, use the strongest available GPT-5.x review path, record the exact model, and do not rely on unknown defaults.
+This command waits for final review output. Do not background it and poll the artifact. If GPT-5.5 is unavailable, use the strongest available GPT-5.x review path, record the exact model, and do not rely on unknown defaults.
 
 ## Fallback
 
-If `codex review` is unavailable or stuck, use a narrow `codex exec` review prompt and save output to `/tmp/codex_review_<short_sha>.txt`.
+If `codex exec review` is unavailable or stuck, use a narrow `codex exec` review prompt with `-o /tmp/codex_review_<short_sha>.txt` so Codex writes the final response when the command exits.
 
 Prompt shape:
 
@@ -62,9 +62,10 @@ Review the current diff against <base> for real correctness, regression, securit
 4. Keep pull-request-specific work on the local critical path when a bounded Codex pass covers it; use a subagent only when broader orchestration is needed.
 5. Trigger `@codex review` only when local Codex review and suitable subagents are unavailable, when the user asked for it, or when merge-gate proof needs pull-request-bound Codex.
 6. If the current input already came from pull-request comments that asked for `@codex review`, skip nested review loops and resolve the scoped comments directly.
-7. Poll hosted checks or pull-request Codex at least once a minute while they are pending.
-8. If local Codex or pull-request Codex stays non-terminal for 15 minutes, inspect state and retrigger once if it looks stuck. If required GitHub checks stay non-terminal for 30 minutes, inspect logs and continue or escalate with proof of a real service blocker.
-9. Do not hand off build-impact pull-request work until the latest head has zero unresolved threads, a clean local Codex review artifact, and green required checks. Stale, interrupted, wrong-base, wrong-head, or pre-final review artifacts do not satisfy this gate; any later commit or merge invalidates it. Then use the human review gate in `AGENTS.md`.
+7. Prefer completion waits over manual polling: use `gh pr checks <pr> --watch --fail-fast --interval 30` for pull-request checks, or `gh run watch <run-id> --exit-status --compact --interval 30` when the run ID is known.
+8. If a watch, subscription, or final-output wait is unavailable, estimate the wait from prior run durations or workflow metadata, then wait once for that window plus a small buffer before checking. Use repeated short polling only for short terminal probes, suspected stalls, or cases where one longer wait would hide an actionable failure.
+9. If local Codex or pull-request Codex stays non-terminal beyond its expected duration or 15 minutes, inspect state and retrigger once if it looks stuck. If required GitHub checks stay non-terminal beyond their prior successful duration plus buffer or 30 minutes, inspect logs and continue or escalate with proof of a real service blocker.
+10. Do not hand off build-impact pull-request work until the latest head has zero unresolved threads, a clean local Codex review artifact, and green required checks. Stale, interrupted, wrong-base, wrong-head, or pre-final review artifacts do not satisfy this gate; any later commit or merge invalidates it. Then use the human review gate in `AGENTS.md`.
 
 ## Output
 

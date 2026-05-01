@@ -25,7 +25,7 @@ Use this skill when delegation affects correctness, queue control, review qualit
 6. Keep local environment repair, credentials, and machine-specific setup on the manager thread unless the user delegates that work explicitly.
 7. Choose local review, delegated worker, and assistant model paths through `AGENTS.md` Tool And Model Policy before you delegate.
 8. Keep pull-request-specific work off the manager thread when possible. Prefer `.codex/skills/codex-cli-review` when a bounded local Codex pass cleanly covers the task; use one fitting worker otherwise, and surface a blocker only if neither path works.
-9. After delegation starts, do not interrupt, rush, or repeatedly ping workers unless the user changes scope or you have clear proof of failure.
+9. After delegation starts, do not interrupt, rush, or repeatedly ping workers unless the user changes scope or you have clear proof of failure. Use final-response or completion waits when available; otherwise estimate from scope or prior runs and check once after that window.
 
 ## Planning Worker Tradeoff
 
@@ -38,4 +38,4 @@ Use this skill when delegation affects correctness, queue control, review qualit
 - Subagents treat the manager as the user proxy inside the delegated mandate.
 - Workers may create branches, commits, and pull requests only inside their mandate.
 - Workers must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager delegates that exact action for that exact artifact after review.
-- Managers own shells, tmux sessions, Codex resume sessions, and polling loops spawned by them or delegated workers; reclaim or close them at task boundaries.
+- Managers own shells, tmux sessions, Codex resume sessions, and wait loops spawned by them or delegated workers; reclaim or close them at task boundaries.

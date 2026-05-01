@@ -125,7 +125,7 @@ Why: incomplete requirements, stale artifacts, and misheard input cause correct-
 - Act with maximum urgency toward the critical path. Pick the next proving, fixing, approval, or shipping step and move it immediately.
 - Push scoped work or the active manager queue as far as you safely can before you reply. Split out small approved wins instead of hiding them behind larger unfinished work.
 - Before you reply or decide you are done, review the plan, the active ledger, and the inspected evidence. If a critical next step is still possible, keep working; if the remaining work is only speculative polish, stop and report the verified result.
-- Stop only when the scoped mandate or active manager queue is complete, clearly deferred, archived as fulfilled, removed by the user, or blocked by an explicit escalation trigger. A wait, poll, cleanup, or verification you can still run is still unfinished work.
+- Stop only when the scoped mandate or active manager queue is complete, clearly deferred, archived as fulfilled, removed by the user, or blocked by an explicit escalation trigger. A wait, completion check, cleanup, or verification you can still run is still unfinished work.
 - Once work is verified and approval to ship is clear, commit and push it promptly. If it is wrong, remove it promptly.
 - Do not keep verified changes local or unpushed once approval to ship is clear, except while preparing the exact approved ship step.
 
@@ -153,7 +153,7 @@ Why: technical back-and-forth wastes user time.
 - Before any destructive command, like checkout, stash, reset, rebase, force operations, file deletion, or mass edits, verify that the mandate clearly allows it. If not, explain the impact and get explicit approval.
 - Before you merge any pull request, verify that the live GitHub diff still matches the intended change. If the diff is empty or wrong, stop and escalate.
 - A dirty tree alone is not a reason to ask the user. Keep going unless it creates real ambiguity or risk.
-- Pending checks or pending Codex review are not user blockers when you can still poll, retrigger, inspect, or fix them.
+- Pending checks or pending Codex review are not user blockers when you can still wait for completion, retrigger, inspect, or fix them.
 - When the user directly asks for a fix, use expert judgment and do not ask for clarification unless a real contradiction remains after research.
 - Do not ask about mechanical steps you can safely do yourself.
 - If ambiguity changes user-visible behavior, scope, architecture, repo or branch, or release outcome, ask before acting. If only mechanics are unclear and the safe path is clear, proceed.
@@ -238,6 +238,7 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - Do not claim a fix is done, and do not close a REQ, until end-user proof exists and is cited. Unit tests and pull-request checks are necessary but not sufficient.
 - Edit in small steps and validate as you go. After data-flow or ordering changes, scan related patterns and remove obsolete ones when in scope.
 - After meaningful edits or dependent evidence-gathering, check the result before relying on it.
+- When waiting on commands, hosted checks, workers, or background jobs, prefer native completion signals, watch modes, final-output files, or one duration-based wait from prior run or workflow metadata over repeated short polling. Keep required validation and inspect suspected stalls.
 - Ask for approval before workarounds or behavior changes. If a request adds mess, say so.
 - Run the most relevant tests first: `cd packages/<pkg> && bun test <target>`.
 - Format touched files before each commit: `bun x prettier --write <paths>`.
@@ -388,7 +389,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 - Pending GitHub checks, hosted reviews, unresolved pull-request comments, unresolved official review findings, and other agent-visible workflows are open work. Build-impact PRs are not merge-ready until the latest head has zero unresolved threads, a clean local Codex review artifact, and green required checks.
 - Every official review finding stays open until the manager fixes it or explicitly downgrades or overrules it with checked evidence. A stale, interrupted, wrong-base, wrong-head, or pre-final review artifact is not a green gate; any later commit or merge invalidates a review gate for merge or release.
-- Use `.codex/skills/codex-cli-review` for outside-signal polling and stall handling.
+- Use `.codex/skills/codex-cli-review` for outside-signal waiting and stall handling.
 
 ## Danger Zone: Public And Irreversible Operations
 
