@@ -160,7 +160,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 - **Agency backend management commands are debugging and development tools**
   - Intent: keep backend lifecycle commands available for debugging and development without treating them as the main end-user path.
   - Behavior: the fork exposes backend install and maintenance commands, but they are debugging and development tools rather than core product surface.
-  - Implementation: `AgenciiCommand` in `packages/opencode/src/cli/cmd/agencii.ts`.
+  - Implementation: `AgencyCommand` in `packages/opencode/src/cli/cmd/agency.ts`.
   - Added by: `14abd070`
 
 - **Agent Builder instructions are retuned for Agency Swarm repos**

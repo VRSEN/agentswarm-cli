@@ -164,7 +164,6 @@ const LAUNCHER_SUBCOMMANDS = new Set([
   "pr",
   "session",
   "agency",
-  "agencii",
   "plugin",
   "db",
 ])
