@@ -318,7 +318,12 @@ function isLoopbackBaseURL(baseURL: string) {
   }
 }
 
-export function buildAgencyConfig(input: { baseURL: string; agency: string; token?: string }) {
+export function buildAgencyConfig(input: {
+  baseURL: string
+  agency: string
+  token?: string
+  materializeLocalFiles?: boolean
+}) {
   return JSON.stringify({
     $schema: "https://opencode.ai/config.json",
     model: `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
@@ -329,6 +334,7 @@ export function buildAgencyConfig(input: { baseURL: string; agency: string; toke
           baseURL: input.baseURL,
           agency: input.agency,
           discoveryTimeoutMs: 2000,
+          ...(input.materializeLocalFiles ? { materializeLocalFiles: true } : {}),
           ...(input.token ? { token: input.token } : {}),
         },
       },
@@ -638,6 +644,7 @@ export async function prepareProjectLaunch(project: AgencyProject): Promise<Prep
     configContent: buildAgencyConfig({
       baseURL: server.baseURL,
       agency: LOCAL_AGENCY_ID,
+      materializeLocalFiles: true,
     }),
     cleanup: server.cleanup,
   }

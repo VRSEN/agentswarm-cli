@@ -238,6 +238,7 @@ describe("session.agency-swarm", () => {
 
     const { input } = helper()
     if (baseURL) input.options.baseURL = baseURL
+    input.options.materializeLocalFiles = true
     input.userMessage.parts = droppedImageParts(content)
 
     const stream = await SessionAgencySwarm.stream(input)
@@ -254,11 +255,11 @@ describe("session.agency-swarm", () => {
     await expect(readFile(filepath!)).rejects.toThrow()
   }
 
-  test("stream materializes dropped data URL images for loopback Agency servers", async () => {
+  test("stream materializes dropped data URL images for launcher Agency servers", async () => {
     await expectStreamMaterializesDroppedImage()
   })
 
-  test("stream materializes file URL attachments for loopback Agency servers", async () => {
+  test("stream materializes file URL attachments for launcher Agency servers", async () => {
     mockHistory()
     const sourceDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-file-url-stream-"))
     const sourcePath = path.join(sourceDir, "outside-project.txt")
@@ -277,6 +278,7 @@ describe("session.agency-swarm", () => {
     let filepath: string | undefined
     try {
       const { input } = helper()
+      input.options.materializeLocalFiles = true
       input.userMessage.parts = [
         {
           type: "text",
@@ -310,6 +312,53 @@ describe("session.agency-swarm", () => {
           ? rm(path.dirname(filepath), { recursive: true, force: true })
           : Promise.resolve(),
       ])
+    }
+  })
+
+  test("stream preserves file URL attachments for manual loopback Agency servers", async () => {
+    mockHistory()
+    const sourceDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-file-url-stream-"))
+    const sourcePath = path.join(sourceDir, "outside-project.txt")
+    const content = Buffer.from("outside project")
+    await Bun.write(sourcePath, content)
+
+    let captured: Record<string, string> | undefined
+    let observedContent: Buffer | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.fileURLs
+      const filepath = input.fileURLs?.["outside-project.txt"]
+      if (filepath) observedContent = await readFile(filepath)
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    try {
+      const { input } = helper()
+      input.userMessage.parts = [
+        {
+          type: "text",
+          text: "inspect this file",
+          ignored: false,
+        },
+        {
+          type: "file",
+          mime: "text/plain",
+          filename: "outside-project.txt",
+          url: pathToFileURL(sourcePath).href,
+        },
+      ] as any
+
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _event of stream.fullStream) {
+        // consume
+      }
+
+      expect(captured).toEqual({
+        "outside-project.txt": sourcePath,
+      })
+      expect(observedContent).toEqual(content)
+      await expect(readFile(sourcePath)).resolves.toEqual(content)
+    } finally {
+      await rm(sourceDir, { recursive: true, force: true })
     }
   })
 
@@ -350,6 +399,7 @@ describe("session.agency-swarm", () => {
     } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
+    input.options.materializeLocalFiles = true
     input.userMessage.parts = clipboardImageParts(content)
 
     const stream = await SessionAgencySwarm.stream(input)
@@ -378,6 +428,7 @@ describe("session.agency-swarm", () => {
     } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
+    input.options.materializeLocalFiles = true
     input.userMessage.parts = clipboardImageParts(content)
 
     const stream = await SessionAgencySwarm.stream(input)
@@ -418,6 +469,7 @@ describe("session.agency-swarm", () => {
     } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
+    input.options.materializeLocalFiles = true
     input.userMessage.parts = clipboardImageParts(content)
 
     const stream = await SessionAgencySwarm.stream(input)
@@ -493,6 +545,7 @@ describe("session.agency-swarm", () => {
         },
         fileIDs: ["file_1", "file_2"],
         generateChatName: true,
+        materializeLocalFiles: true,
         clientConfig: {
           base_url: "https://proxy.example.com/v1",
         },
@@ -507,6 +560,7 @@ describe("session.agency-swarm", () => {
     expect(options.userContext).toEqual({ tenant: "acme" })
     expect(options.fileIDs).toEqual(["file_1", "file_2"])
     expect(options.generateChatName).toBeTrue()
+    expect(options.materializeLocalFiles).toBeTrue()
     expect(options.clientConfig).toEqual({ base_url: "https://proxy.example.com/v1" })
     expect(options.discoveryTimeoutMs).toBe(12000)
   })

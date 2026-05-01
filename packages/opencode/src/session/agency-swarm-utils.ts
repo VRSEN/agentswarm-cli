@@ -14,6 +14,7 @@ export type AgencySwarmEventMeta = {
 
 type CollectFileURLOptions = {
   allowLocalFilePaths?: boolean
+  materializeLocalFilePaths?: boolean
   materializedFilePaths?: string[]
 }
 
@@ -231,6 +232,7 @@ function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptio
         "Agent Swarm Run mode cannot send local files to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
       )
     }
+    if (!options.materializeLocalFilePaths) return filepath
     const materializedFile = materializeLocalFilePath(filepath, path.basename(part.filename || filepath) || "file")
     options.materializedFilePaths?.push(materializedFile)
     return materializedFile
@@ -242,7 +244,7 @@ function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptio
 
   if (part.url.startsWith("data:")) {
     if (isClipboardImage(part)) {
-      if (options.allowLocalFilePaths) {
+      if (options.allowLocalFilePaths && options.materializeLocalFilePaths) {
         const clipboardFile = materializeClipboardImage(part)
         if (clipboardFile) {
           options.materializedFilePaths?.push(clipboardFile)
@@ -256,7 +258,8 @@ function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptio
     }
 
     if (part.source?.type === "file" && part.source.path && path.isAbsolute(part.source.path)) {
-      if (options.allowLocalFilePaths) {
+      if (options.allowLocalFilePaths && !options.materializeLocalFilePaths) return part.source.path
+      if (options.allowLocalFilePaths && options.materializeLocalFilePaths) {
         const materializedFile = materializeDataFilePart(
           part,
           path.parse(part.filename || part.source.path).name || "file",

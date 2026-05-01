@@ -60,6 +60,7 @@ export namespace SessionAgencySwarm {
     fileIDs?: string[]
     generateChatName?: boolean
     clientConfig?: Record<string, unknown>
+    materializeLocalFiles?: boolean
     /** When true, merge stored/env credentials into client_config for non-local base URLs (see also AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS). */
     forwardUpstreamCredentials?: boolean
     token?: string
@@ -113,6 +114,9 @@ export namespace SessionAgencySwarm {
       asBoolean(provider?.options?.["generateChatName"]) ?? asBoolean(provider?.options?.["generate_chat_name"])
     const rawClientConfig =
       asRecord(provider?.options?.["clientConfig"]) ?? asRecord(provider?.options?.["client_config"])
+    const rawMaterializeLocalFiles =
+      asBoolean(provider?.options?.["materializeLocalFiles"]) ??
+      asBoolean(provider?.options?.["materialize_local_files"])
     const opts = provider?.options
     const rawForwardUpstream =
       opts?.["forwardUpstreamCredentials"] === true || opts?.["forward_upstream_credentials"] === true
@@ -129,6 +133,7 @@ export namespace SessionAgencySwarm {
       fileIDs: rawFileIDs.length > 0 ? rawFileIDs : undefined,
       generateChatName: rawGenerateChatName,
       clientConfig: rawClientConfig,
+      materializeLocalFiles: rawMaterializeLocalFiles === true ? true : undefined,
       forwardUpstreamCredentials: rawForwardUpstream === true ? true : undefined,
       token: rawToken || undefined,
       discoveryTimeoutMs:
@@ -608,6 +613,7 @@ export namespace SessionAgencySwarm {
     try {
       fileURLs = collectFileURLs(input.userMessage, {
         allowLocalFilePaths: isLocalAgencyURL(input.options.baseURL),
+        materializeLocalFilePaths: input.options.materializeLocalFiles === true,
         materializedFilePaths,
       })
     } catch (error) {

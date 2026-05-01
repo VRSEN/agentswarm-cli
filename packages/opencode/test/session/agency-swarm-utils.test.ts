@@ -179,6 +179,7 @@ describe("session.agency-swarm-utils", () => {
       ]),
       {
         allowLocalFilePaths: true,
+        materializeLocalFilePaths: true,
         materializedFilePaths,
       },
     )
@@ -211,7 +212,70 @@ describe("session.agency-swarm-utils", () => {
     }
   })
 
-  test("collectFileURLs materializes file URL attachments for local Agency servers", async () => {
+  test("collectFileURLs preserves local data URL source paths without materialization", () => {
+    const sourcePath = "/tmp/report.pdf"
+    const result = collectFileURLs(
+      msg([
+        file("part-1", {
+          type: "file",
+          mime: "application/pdf",
+          url: `data:application/pdf;base64,${Buffer.from("%PDF-1.4\n").toString("base64")}`,
+          filename: "report.pdf",
+          source: {
+            type: "file",
+            path: sourcePath,
+            text: {
+              value: "[PDF 1]",
+              start: 0,
+              end: 7,
+            },
+          },
+        }),
+      ]),
+      {
+        allowLocalFilePaths: true,
+      },
+    )
+
+    expect(result).toEqual({
+      "report.pdf": sourcePath,
+    })
+  })
+
+  test("collectFileURLs preserves file URL attachments for local Agency servers without materialization", async () => {
+    const sourceDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-file-url-source-"))
+    const sourcePath = path.join(sourceDir, "outside-project.txt")
+    const content = Buffer.from("outside project")
+    await Bun.write(sourcePath, content)
+
+    const materializedFilePaths: string[] = []
+    try {
+      const result = collectFileURLs(
+        msg([
+          file("part-1", {
+            type: "file",
+            mime: "text/plain",
+            url: pathToFileURL(sourcePath).href,
+            filename: "outside-project.txt",
+          }),
+        ]),
+        {
+          allowLocalFilePaths: true,
+          materializedFilePaths,
+        },
+      )
+
+      expect(result).toEqual({
+        "outside-project.txt": sourcePath,
+      })
+      expect(materializedFilePaths).toEqual([])
+      await expect(readFile(sourcePath)).resolves.toEqual(content)
+    } finally {
+      await rm(sourceDir, { recursive: true, force: true })
+    }
+  })
+
+  test("collectFileURLs materializes file URL attachments for launcher Agency servers", async () => {
     const sourceDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-file-url-source-"))
     const sourcePath = path.join(sourceDir, "outside-project.txt")
     const content = Buffer.from("outside project")
@@ -231,6 +295,7 @@ describe("session.agency-swarm-utils", () => {
         ]),
         {
           allowLocalFilePaths: true,
+          materializeLocalFilePaths: true,
           materializedFilePaths,
         },
       )
@@ -314,6 +379,7 @@ describe("session.agency-swarm-utils", () => {
       ]),
       {
         allowLocalFilePaths: true,
+        materializeLocalFilePaths: true,
       },
     )
 

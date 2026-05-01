@@ -136,6 +136,18 @@ describe("agency-swarm npx onboarding", () => {
     })
   })
 
+  test("buildAgencyConfig can mark launcher-managed local file materialization", () => {
+    const config = JSON.parse(
+      buildAgencyConfig({
+        baseURL: "http://127.0.0.1:8123",
+        agency: "local-agency",
+        materializeLocalFiles: true,
+      }),
+    )
+
+    expect(config.provider["agency-swarm"].options.materializeLocalFiles).toBe(true)
+  })
+
   test("buildPythonEnv prepends the project directory for launcher imports", () => {
     const env = buildPythonEnv("/tmp/project", {
       PYTHONPATH: "/existing/path",
@@ -892,6 +904,8 @@ describe("agency-swarm npx onboarding", () => {
       agencyFile: path.join(dir.path, "agency.py"),
     })
 
+    const config = JSON.parse(launch?.configContent ?? "{}")
+    expect(config.provider["agency-swarm"].options.materializeLocalFiles).toBe(true)
     const canaryScripts = commands.filter(isCanaryCommand).map((cmd) => cmd.at(-1) ?? "")
     expect(canaryScripts.length).toBeGreaterThan(0)
     expect(
