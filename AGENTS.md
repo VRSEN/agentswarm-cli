@@ -387,6 +387,8 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 ### External Signals
 
 - Pending GitHub checks, hosted reviews, unresolved pull-request comments, unresolved official review findings, and other agent-visible workflows are open work. Build-impact PRs are not merge-ready until the latest head has zero unresolved threads, a clean local Codex review artifact, and green required checks.
+- For merge, release, or public-ship gates, inspect relevant GitHub workflows for the exact commit and ref: PR workflows before merge, and default-branch or release-blocking workflows after merge. Relevant means the workflow can run for that repo, event, branch, and changed paths, or is documented as release-blocking.
+- A failing or non-terminal required or release-blocking workflow blocks merge, release, and public ship until it is rerun green, fixed, or classified as non-blocking with checked evidence. If this happens after a default-branch merge, stop further release work and record the classification, rerun, or fix in the ledger.
 - Every official review finding stays open until the manager fixes it or explicitly downgrades or overrules it with checked evidence. A stale, interrupted, wrong-base, wrong-head, or pre-final review artifact is not a green gate; any later commit or merge invalidates a review gate for merge or release.
 - Use `.codex/skills/codex-cli-review` for outside-signal polling and stall handling.
 
@@ -395,7 +397,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Pull-request merges, release notes, tags, GitHub Releases, PyPI or npm publishing, yanks, unpublishes, and any public package or release change are danger-zone operations.
 - Workers do not own danger-zone operations. They may prepare evidence and draft artifacts, but the manager must run the final live review and either perform the operation or explicitly delegate that exact operation.
 - In the danger zone, never trust memory, cached notes, worker summaries, stale screenshots, or an old audit.
-- Right before each public step, recheck the live repo state, exact commit, version files, release and tag state, package-index state, and release-notes compare range.
+- Right before each public step, recheck the live repo state, exact commit, relevant workflow status, version files, release and tag state, package-index state, and release-notes compare range.
 - In the danger zone, uncertainty is a blocker. If live public state, the real source of truth, or the next mutation is not fully checked, stop and escalate.
 - For release notes, recheck the compare range and shipped pull-request set right before you draft or edit. If tags, versions, or the compare base changed, throw the old draft away and rebuild it from fresh proof.
 - If GitHub releases or tags, package-index state, and repo version files disagree, treat that as recovery work. First prove what is really shipped. Then get approval for the exact repair.
@@ -409,10 +411,8 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
   3. The user tests that local build by hand and gives explicit approval.
   4. Only then tag the release, create the GitHub Release, and publish to npm.
 - Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts changed.
-- Before release approval, prove the exact release commit satisfies the live repo gates or their local equivalents: `bun typecheck`, `bun turbo test:ci`, app e2e, Agent Swarm e2e when relevant, auth smoke when configured, and the repo-specific release or publish workflow requirements.
-- Before any release or safety claim, build and reinstall the CLI from the fresh local build, launch it against the maintainer's canonical local test agency, send a real first message through the connected conversation, and verify that a non-empty streaming assistant response renders.
-- Auth-smoke CI alone never passes this gate. Any launch failure, including environment, credential, dependency, or TUI transition issues, blocks the release until you reproduce it and find the root cause.
-- Why: release claims were repeated while the installed binary still failed before a usable conversation.
+- Before release approval, prove the exact release commit satisfies the live repo gates and relevant workflow runs for its ref, or their local equivalents when GitHub cannot run them: `bun typecheck`, `bun turbo test:ci`, app e2e, Agent Swarm e2e when relevant, auth smoke when configured, and the repo-specific release or publish workflow requirements.
+- Before any release or safety claim, build and reinstall the CLI from the fresh local build, launch it against the maintainer's canonical local test agency, send a real first message through the connected conversation, and verify that a non-empty streaming assistant response renders; auth-smoke CI alone never passes this gate, and any launch failure blocks the release until you reproduce the root cause.
 - No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit. Use `.codex/skills/codex-cli-review` with base `vrsen/dev`; if any review finding remains, stop and surface it to the user.
 
 ## Documentation Rules
