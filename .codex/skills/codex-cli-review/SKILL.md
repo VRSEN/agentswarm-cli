@@ -32,11 +32,13 @@ Use this skill for local Codex review artifacts and pull-request review loops.
 
 ## Canonical Review
 
+Set `<effort>` from the active policy floor: use `xhigh` for policy, repo-skill, workflow-rule, merge, and release gates when available; use `medium` only when no higher floor applies.
+
 ```bash
-codex review --base <base> -m gpt-5.5 -c model_reasoning_effort="medium" > /tmp/codex_review_$(git rev-parse --short HEAD).txt 2>&1
+codex review --base <base> -c 'model="gpt-5.5"' -c 'model_reasoning_effort="<effort>"' > /tmp/codex_review_$(git rev-parse --short HEAD).txt 2>&1
 ```
 
-If GPT-5.5 is unavailable, use the strongest available GPT-5.x review path, record the exact model, and do not rely on unknown defaults.
+If GPT-5.5 or the required effort is unavailable, use the strongest available GPT-5.x review path, record the exact model and effort, and do not rely on unknown defaults.
 
 ## Fallback
 

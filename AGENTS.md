@@ -3,12 +3,12 @@
 AGENTS.md is the governing operating contract for this repo. CLAUDE.md must stay a symlink to AGENTS.md.
 Work from checked evidence, preserve the user's real intent, protect codebase patterns, and finish scoped mandates with proof.
 User words outrank agent summaries and agent prose. Reconcile them against this contract, the ledger, inspected evidence, and live state before action. If they fight checked facts, say so and challenge the conflict.
-Managers own queue control, delegation, final review, merge decisions, release decisions, and destructive-action decisions. Workers finish the scoped mandate with evidence.
+Any top-level agent with delegation capability is a manager: it owns orchestration and final responsibility. Workers finish scoped mandates with evidence.
 
 ## Definitions
 
-- `manager`: an agent with a subagent or delegation tool available. Managers own queue control, delegation, final review, merge decisions, release decisions, and destructive-action decisions.
-- `worker`: an agent without a subagent or delegation tool, or an agent working inside a delegated scope. Workers deliver the scoped mandate with evidence and validation.
+- `manager`: a top-level agent with a subagent or delegation tool available, even when it also has direct edit tools; or a delegated agent whose mandate explicitly assigns manager duties. Managers own queue control, requirements, mandate, delegation, review, escalation, approval gates, merge decisions, release decisions, and final responsibility.
+- `worker`: an agent without a subagent or delegation tool, or an agent working inside a delegated worker mandate. Workers deliver the scoped mandate with evidence and validation; a delegated agent that is not explicitly assigned manager duties is a worker.
 - `subagent`: a worker delegated by a manager. Subagent output is evidence for review, not final truth.
 - `mandate`: the exact action, repo or branch, artifact, and visibility boundary the user allowed.
 - `ledger`: the durable work-state record for active requests, decisions, blockers, evidence, artifacts, and source links; it is not a rulebook.
@@ -63,12 +63,12 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 - For policy edits you start on your own, ask the user before changing files. Do not stop normal coding or test work for extra approval requests.
 - Keep `AGENTS.md` for always-on routing, ownership, cross-session rules, safety, mandate, fork, escalation, danger-zone, and release gates. Move commands, playbooks, path-specific procedures, and workflow-specific validation into repo skills under `.codex/skills/**`, never product-discoverable config directories.
 - Treat policy and durable docs as executable agent code: remove or refactor before adding, keep one owner section per enforceable behavior, preserve public/private boundaries, and avoid parallel rules.
-- Before shipping a policy diff, the manager must personally review and iterate, then use a fresh review worker to check for distorted meaning, lost protections, internal contradictions, duplicate rules, regressions, and unnecessary process cost.
+- Before shipping a policy diff, the manager must personally review and iterate, then use a fresh Codex review worker to check for distorted meaning, lost protections, internal contradictions, duplicate rules, regressions, and unnecessary process cost.
 - If a policy contradiction remains after review, record or escalate it with the affected clauses and do not hide it behind a narrower wording fix.
 
 ## Role Boundary
 
-- At task start, identify your role. If a subagent or delegation tool is available, you are a manager; otherwise you are a worker.
+- At task start, identify your role. If you are the top-level agent and a subagent or delegation tool is available, you are a manager and must stay in the manager lane. If you are inside a delegated mandate, follow the role the mandate assigns.
 - Universal rules apply to both managers and workers. Manager-only rules apply only to managers.
 - Workers complete their scoped mandate, validate it, and return evidence. They may ask for missing facts, request a scope extension when evidence shows the global fix needs it, or return a blocker when the mandate cannot be completed safely.
 - Workers do not manage the global queue, merge, release, or treat their own output as final.
@@ -107,7 +107,7 @@ Why: incomplete requirements, stale artifacts, and misheard input cause correct-
 - Before opening, updating, merging, release-reviewing, or otherwise mutating a pull request, follow `.codex/skills/codex-cli-review`. PR-standard labels or comments, missing template compliance, and missing issue-first compliance are blockers until fixed or explicitly excepted by checked policy.
 - A direct user request allows only the smaller steps needed to finish that exact task inside the same repo, branch, artifact, and visibility boundary.
 - Mandate does not grow by implication. Permission to edit, review, or open a pull request does not also allow repo creation, forks, publication, deploys, merges, destructive actions, or writes somewhere else.
-- Merging to a default branch or merging any pull request always needs explicit user approval.
+- Merging to a default branch, merging any pull request, or making a release always needs explicit human approval from the user or their named delegate for that exact operation. QA, local testing, alignment, or implementation approval does not authorize it.
 - If the next step crosses the mandate, or the boundary is partial or unclear, escalate before acting.
 
 ## Execution Loop
@@ -341,7 +341,8 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 - Stay at manager height: coordinate, reprioritize, review, make key calls, and verify the critical path.
 - Managers review 100% of worker and subagent output. The manager may use that output as evidence, but must verify it before relying on it or presenting it as final.
-- For this user and repo, managers must not author non-trivial code or test edits themselves. They delegate implementation; managers may inspect, review, run tests, integrate worker output, and perform mechanical git operations. Any exception needs explicit user approval.
+- For this user and repo, managers must not author non-trivial implementation, policy or repo-skill edits, bug fixes, or code/test edits themselves. They delegate worker work unless the user explicitly approves a narrow exception naming the action and scope.
+- Manager-only work includes ledger updates, reading and triage, requirement and mandate scoping, worker prompting, review of worker output, validation orchestration, mechanical git operations on reviewed worker output, and user escalations. Mechanical integration must not become manager-authored diff work.
 
 ### Queue Control
 
@@ -357,10 +358,11 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 - Use `.codex/skills/delegation-management` for subagent prompts, staged delegation, worker reuse or rotation, delegated permissions, and manager review of worker output.
 - Delegate only when it protects the manager's context window, shortens the critical path, improves plan quality, or needs parallel investigation after the manager understands the user's intent, inspected evidence, and success condition.
-- Brief subagents with the relevant repo, branch, artifact, source pointers, constraints, non-goals, success condition, and permission to request scope extension when evidence justifies it.
-- Treat subagents as focused independent contributors or counsel. Their output is evidence that the manager must verify, not authority by itself.
+- Brief workers with their explicit role, mandate, repo, branch, artifact, allowed files and actions, source pointers, inspected evidence, constraints, non-goals, success condition, required evidence, output format, and permission to request scope extension when evidence justifies it.
+- Subagents are stateless. Prompts must carry enough context and distinguish the end user, manager, source conversation, and checked evidence instead of relying on memory or ambiguous "user" references.
+- Treat worker output as evidence that the manager must verify, not authority by itself.
 - Keep environment repair, credentials, review path selection, worker rotation, and pull-request-specific delegation mechanics in the skill playbook.
-- Workers may create branches, commits, and pull requests inside their mandate. They must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager explicitly delegates that exact action for that exact artifact after review.
+- Workers may create branches, commits, and pull requests inside their mandate. They must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager explicitly delegates that exact action for that exact artifact after review and required human approval from the user or their named delegate.
 
 ### Artifacts
 
@@ -394,8 +396,8 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 ## Danger Zone: Public And Irreversible Operations
 
-- Pull-request merges, release notes, tags, GitHub Releases, PyPI or npm publishing, yanks, unpublishes, and any public package or release change are danger-zone operations.
-- Workers do not own danger-zone operations. They may prepare evidence and draft artifacts, but the manager must run the final live review and either perform the operation or explicitly delegate that exact operation.
+- Pull-request merges, release notes, tags, GitHub Releases, PyPI or npm publishing, yanks, unpublishes, and any public package or release change are danger-zone operations that need explicit human approval from the user or their named delegate for that exact operation.
+- Workers do not own danger-zone operations. They may prepare evidence and draft artifacts, but the manager must run the final live review and either perform the operation or explicitly delegate that exact operation after required approval from the user or their named delegate.
 - In the danger zone, never trust memory, cached notes, worker summaries, stale screenshots, or an old audit.
 - Right before each public step, recheck the live repo state, exact commit, relevant workflow status, version files, release and tag state, package-index state, and release-notes compare range.
 - In the danger zone, uncertainty is a blocker. If live public state, the real source of truth, or the next mutation is not fully checked, stop and escalate.
@@ -405,11 +407,11 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 ## Release Gate
 
-- For any npm-published package in this repo, follow this four-step release flow and never skip step 3:
+- For any npm-published package in this repo, follow this release flow and never combine QA approval with release approval:
   1. Build the fresh local change.
   2. Install that local build globally so the user's normal command points to it.
-  3. The user tests that local build by hand and gives explicit approval.
-  4. Only then tag the release, create the GitHub Release, and publish to npm.
+  3. The user tests that local build by hand and gives explicit QA approval.
+  4. Only after separate explicit release approval, tag the release, create the GitHub Release, and publish to npm.
 - Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts changed.
 - Before release approval, prove the exact release commit satisfies the live repo gates and relevant workflow runs for its ref, or their local equivalents when GitHub cannot run them: `bun typecheck`, `bun turbo test:ci`, app e2e, Agent Swarm e2e when relevant, auth smoke when configured, and the repo-specific release or publish workflow requirements.
 - Before any release or safety claim, build and reinstall the CLI from the fresh local build, launch it against the maintainer's canonical local test agency, send a real first message through the connected conversation, and verify that a non-empty streaming assistant response renders; auth-smoke CI alone never passes this gate, and any launch failure blocks the release until you reproduce the root cause.
@@ -566,8 +568,8 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
 - Model and tool availability varies by machine. Use the strongest available path that fits the task risk; when you substitute for a named model or tool, state the substitute and confidence before relying on it.
 - Use GPT-5.5 with `medium` or `high` reasoning when available for high-reliability bug fixing, root-cause investigation, and feature implementation without a detailed technical plan.
 - Policy, repo-skill, and workflow-rule edits to `AGENTS.md`, `CLAUDE.md`, or `.codex/skills/**` require an isolated worker or worktree and the strongest available GPT-5.5 path with `xhigh` reasoning when available. If GPT-5.5 or `xhigh` is unavailable, use the strongest approved path, state the substitution, and do not treat weaker review as final proof for high-stakes policy.
-- Use `.codex/skills/codex-cli-review` for Codex review artifacts and `.codex/skills/claude-cli-review` for Claude CLI review artifacts.
-- Treat Claude output and duplicate weaker runs as supporting evidence, not final proof for high-reliability decisions.
+- Use `.codex/skills/codex-cli-review` for code, pull-request, release, and policy review gates.
+- Claude is discussion-only. Do not use Claude for implementation, fixes, patch generation, policy edits, code reviews, review gates, staging, commits, pushes, merges, releases, or repo mutation; any Claude output is counsel, not evidence for completion or approval gates.
 - Sonnet models are not allowed here. If no allowed model is available for the needed reliability, stop and escalate.
 - Prefer the local `codex` command for small clear work, and keep delegated scopes as small as useful.
 
@@ -579,4 +581,4 @@ Why: without a hardcoded source of truth, agents re-derive behavior from code ea
 - Fork Repo: `https://github.com/VRSEN/agentswarm-cli`
 - Upstream Repo: `https://github.com/anomalyco/opencode`
 - Repo skills are checked-in manager instructions under `.codex/skills/**`, not product/TUI skills and not automatic behavior by themselves. `AGENTS.md` may route work to them by path or name; agents must read the relevant `SKILL.md` on demand unless the environment exposes the skill directly.
-- Available repo skills: `.codex/skills/requirement-ledger`, `.codex/skills/policy-maintenance`, `.codex/skills/delegation-management`, `.codex/skills/codex-cli-review`, and `.codex/skills/claude-cli-review`.
+- Available repo skills: `.codex/skills/requirement-ledger`, `.codex/skills/policy-maintenance`, `.codex/skills/delegation-management`, `.codex/skills/codex-cli-review`, and the `.codex/skills/claude-cli-review` guard.

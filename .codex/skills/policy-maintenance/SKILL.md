@@ -15,7 +15,7 @@ Use this skill for policy, workflow-rule, and repo-skill changes. Repo skills ar
 4. For delegated-output checks, also follow `.codex/skills/delegation-management`.
 5. When the edit responds to a material process mistake or repeated failure class, fix the largest durable rule or process gap in the right owner section or skill, not just the literal symptom. Use the ledger only for state tracking: active requests, decisions, blockers, evidence, artifacts, and source links.
 6. Preserve the active policy branch or artifact when one exists. Create a new branch or artifact only when the mandate needs one; create a pull request only when the user asks.
-7. Follow the policy, repo-skill, and workflow-rule model floor in Tool And Model Policy: isolated worker or worktree, strongest available GPT-5.5 with `xhigh` reasoning when available, with any substitution stated before relying on it.
+7. Follow the policy, repo-skill, and workflow-rule model floor in Tool And Model Policy: isolated worker or worktree, strongest available GPT-5.5 with `xhigh` reasoning when available, with any substitution stated before relying on it. Top-level managers do not author policy or skill diffs directly unless the user explicitly approves a narrow exception.
 8. If the policy edit is self-initiated, ask the user before changing files.
 9. Stay tightly scoped: use `AGENTS.md`, the current diff, and directly authorized policy inputs. Avoid unrelated repo exploration unless the mandate requires it.
 10. Classify each rule before editing: universal policy, manager-only policy, repo-specific invariant, or skill procedure.
@@ -26,7 +26,7 @@ Use this skill for policy, workflow-rule, and repo-skill changes. Repo skills ar
 15. A manager must personally review the final policy diff, challenge every unexplained line, and iterate until the structure is coherent.
 16. Check the whole affected rules tree for internal contradictions, duplicate rules, lost protections, public/private leakage, trigger overreach, and unnecessary process cost.
 17. Record or escalate any remaining contradiction with the affected clauses; do not ship a narrower wording fix that hides it.
-18. Run a fresh review worker after implementation to check for distorted meaning, lost protections, duplicate rules, contradictions, and regressions.
+18. Run a fresh Codex review worker after implementation to check for distorted meaning, lost protections, duplicate rules, contradictions, and regressions.
 
 ## Policy Branch Rules
 
