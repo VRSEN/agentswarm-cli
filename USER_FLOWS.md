@@ -153,9 +153,11 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
 - Expected path:
   - Route prompts through the Agency Swarm adapter.
   - Discover swarms and agents from the backend.
+  - Selecting a swarm routes through the default agency path without a stale explicit recipient; selecting an agent routes the next prompt to that agent.
+  - Send pasted local image paths to Agency runs as file paths, not inline data URLs.
   - Pass compatible configured provider credentials into Agency runs through the credential bridge.
   - Cancel in-flight Agency runs through the Agency Swarm bridge.
-  - Preserve handoff-selected recipient agents across turns.
+  - Preserve handoff-selected recipient agents across turns while keeping ordinary `SendMessage` delegation from changing user control.
   - Preserve caller agent identity during history compaction.
   - Recover loopback history across local Agency server URL or port changes.
   - Surface bridge error frames as session errors.
@@ -218,7 +220,7 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
 ## Source Of Truth Map
 
 - Approved fork scope: `FORK_CHANGELOG.md`.
-- Release QA coverage notes: `e2e/agent-swarm-tui/QA_COVERAGE.md`.
+- Terminal E2E coverage notes: `e2e/agent-swarm-tui/QA_COVERAGE.md`.
 - Fork product naming, command, tips, and logo: `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/cli/logo.ts`, `packages/opencode/src/cli/cmd/tui/component/logo.tsx`.
 - Launcher wrappers and platform-package resolution: `packages/opencode/bin/agentswarm-npx`, `packages/opencode/bin/agentswarm`, `packages/opencode/package.json`, `packages/opencode/script/postinstall.mjs`, `packages/opencode/script/publish.ts`.
 - Launcher onboarding, project detection, starter creation, Python repair, and bridge startup: `packages/opencode/src/agency-swarm/npx.ts`.
