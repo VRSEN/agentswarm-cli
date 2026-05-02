@@ -2269,7 +2269,6 @@ export namespace SessionAgencySwarm {
     return history.filter((item) => {
       const type = asString(item["type"])
       if (type === "handoff_output_item") return false
-      if (type === "reasoning" || (type !== "message" && asString(item["id"])?.startsWith("rs_"))) return false
       if (type !== "message") return true
       if (asString(item["role"]) !== "assistant") return true
       const content = item["content"]
