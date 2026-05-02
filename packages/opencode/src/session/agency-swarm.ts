@@ -2266,16 +2266,31 @@ export namespace SessionAgencySwarm {
   }
 
   function sanitizeAgencyHistoryForTransport(history: Array<Record<string, unknown>>) {
-    return history.filter((item) => {
+    return history.flatMap((item) => {
       const type = asString(item["type"])
-      if (type === "handoff_output_item") return false
-      if (type !== "message") return true
-      if (asString(item["role"]) !== "assistant") return true
-      const content = item["content"]
-      if (Array.isArray(content)) return content.length > 0
-      if (typeof content === "string") return content.length > 0
-      return content !== undefined && content !== null
+      if (type === "handoff_output_item" || type === "item_reference") return []
+      if (
+        type === "message" &&
+        asString(item["role"]) === "assistant" &&
+        !hasReplayableMessageContent(item["content"])
+      ) {
+        return []
+      }
+      return [stripOpenAIResponseItemID(item)]
     })
+  }
+
+  function stripOpenAIResponseItemID(item: Record<string, unknown>) {
+    if (!Object.prototype.hasOwnProperty.call(item, "id")) return item
+    const result = { ...item }
+    delete result["id"]
+    return result
+  }
+
+  function hasReplayableMessageContent(content: unknown) {
+    if (Array.isArray(content)) return content.length > 0
+    if (typeof content === "string") return content.length > 0
+    return content !== undefined && content !== null
   }
 
   function extractCallerAgent(msg: MessageV2.WithParts): string | null {

@@ -3219,7 +3219,7 @@ describe("session.agency-swarm", () => {
     expect(sentHistory).toEqual(storedHistory)
   })
 
-  test("stream keeps stored Responses reasoning while pruning handoff-only transport items", async () => {
+  test("stream strips stored Responses item ids while pruning handoff-only transport items", async () => {
     const storedHistory = [
       {
         type: "message",
@@ -3241,6 +3241,10 @@ describe("session.agency-swarm", () => {
       {
         id: "rs_ref_stale",
         summary: [{ type: "summary_text", text: "private ref state" }],
+      },
+      {
+        type: "item_reference",
+        id: "rs_ref_rejected",
       },
       {
         type: "handoff_output_item",
@@ -3276,29 +3280,25 @@ describe("session.agency-swarm", () => {
     expect(sentHistory).toEqual([
       {
         type: "message",
-        id: "msg_kept",
         role: "assistant",
         content: [{ type: "output_text", text: "HANDOFF_AGENT_ACTIVE" }],
       },
       {
         type: "message",
-        id: "rs_message_kept",
         role: "assistant",
         content: [{ type: "output_text", text: "normal message with backend rs id" }],
       },
       {
         type: "reasoning",
-        id: "rs_stale",
         summary: [{ type: "summary_text", text: "private chain state" }],
       },
       {
-        id: "rs_ref_stale",
         summary: [{ type: "summary_text", text: "private ref state" }],
       },
     ])
   })
 
-  test("stream keeps Responses reasoning and stored output items after handoff", async () => {
+  test("stream strips stored Responses item ids after handoff", async () => {
     const storedHistory = [
       {
         type: "message",
@@ -3370,37 +3370,31 @@ describe("session.agency-swarm", () => {
     expect(sentHistory).toEqual([
       {
         type: "message",
-        id: "msg_before_handoff",
         role: "assistant",
         content: [{ type: "output_text", text: "Preparing transfer." }],
       },
       {
         type: "reasoning",
-        id: "rs_required",
         summary: [{ type: "summary_text", text: "choose handoff target" }],
       },
       {
         type: "function_call",
-        id: "fc_handoff",
         call_id: "call_handoff",
         name: "transfer_to_math_agent",
         arguments: "{}",
       },
       {
         type: "reasoning",
-        id: "rs_required_message",
         summary: [{ type: "summary_text", text: "start handoff response" }],
       },
       {
         type: "message",
-        id: "msg_after_handoff",
         role: "assistant",
         agent: "MathAgent",
         content: [{ type: "output_text", text: "Math agent now has control." }],
       },
       {
         type: "reasoning",
-        id: "rs_orphan",
         summary: [{ type: "summary_text", text: "stale private state" }],
       },
     ])
