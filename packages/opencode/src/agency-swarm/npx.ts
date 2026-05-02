@@ -1148,7 +1148,11 @@ function summarizePythonTraceback(output: string) {
     .map((line) => line.trim())
     .filter(Boolean)
   if (!lines.some((line) => line === "Traceback (most recent call last):")) return ""
-  return lines.findLast((line) => /^[A-Za-z_][\w.]*Error:/.test(line)) ?? ""
+  return lines.findLast(isPythonTracebackFinalExceptionLine) ?? ""
+}
+
+function isPythonTracebackFinalExceptionLine(line: string) {
+  return /^[A-Za-z_][\w.]*(?::(?:\s|$)|$)/.test(line)
 }
 
 async function hasGitHubTemplateFlow() {
@@ -1406,7 +1410,7 @@ function createUserStderrWriter(streamToStderr: boolean, suppressPythonTraceback
       return
     }
     if (suppressingTraceback) {
-      if (/^[A-Za-z_][\w.]*Error:/.test(trimmed)) suppressingTraceback = false
+      if (isPythonTracebackFinalExceptionLine(trimmed)) suppressingTraceback = false
       return
     }
     if (!streamToStderr) return

@@ -742,7 +742,7 @@ describe("agency-swarm npx onboarding", () => {
     await launch?.cleanup?.()
   })
 
-  test("prepareProjectLaunch keeps broken pip refresh tracebacks in the log instead of mirroring them", async () => {
+  test("prepareProjectLaunch resumes stderr after a non-Error pip refresh traceback", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
     await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
@@ -764,7 +764,8 @@ describe("agency-swarm npx onboarding", () => {
       '  File "<frozen runpy>", line 88, in _run_code',
       `  File "${path.join(dir.path, ".venv", "lib", "python3.13", "site-packages", "pip", "__main__.py")}", line 22, in <module>`,
       "    from pip._internal.cli.main import main as _main",
-      "ModuleNotFoundError: No module named 'pip._internal.cli.main'",
+      "Exception: pip bootstrap failed",
+      "later stderr after traceback",
     ].join("\n")
 
     const warn = spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
@@ -819,11 +820,12 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     const mirroredOutput = stderrWrite.mock.calls.map((call) => call[0]).join("")
+    expect(mirroredOutput).toContain("later stderr after traceback")
     expect(mirroredOutput).not.toContain("Traceback (most recent call last):")
     expect(mirroredOutput).not.toContain("pip._internal.cli.main")
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining("ModuleNotFoundError: No module named 'pip._internal.cli.main'"),
-    )
+    expect(mirroredOutput).not.toContain("Exception: pip bootstrap failed")
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Exception: pip bootstrap failed"))
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("Traceback (most recent call last):"))
 
     const refreshLogs = Array.fromAsync(new Bun.Glob("*-launcher-refresh.log").scan(launcherLogDirectory(dir.path)))
     const logFiles = await refreshLogs
@@ -831,6 +833,8 @@ describe("agency-swarm npx onboarding", () => {
     const logContent = await Bun.file(path.join(launcherLogDirectory(dir.path), logFiles[0]!)).text()
     expect(logContent).toContain("Traceback (most recent call last):")
     expect(logContent).toContain("pip._internal.cli.main")
+    expect(logContent).toContain("Exception: pip bootstrap failed")
+    expect(logContent).toContain("later stderr after traceback")
 
     await launch?.cleanup?.()
   })
