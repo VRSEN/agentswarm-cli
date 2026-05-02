@@ -49,6 +49,7 @@ interface PythonInfo {
 interface VenvCanaryResult {
   healthy: boolean
   stderr: string
+  timedOut: boolean
 }
 
 interface DependencyInstallResult extends CommandResult {
@@ -63,9 +64,16 @@ interface RunCommandOptions {
   timeoutMs?: number
 }
 
+interface ServerStderrCollector {
+  read(timeoutMs: number): Promise<string>
+  stop(): void
+}
+
 const VENV_CANARY_SCRIPT = ["import agency_swarm", "from agency_swarm.integrations.fastapi import run_fastapi"].join(
   "\n",
 )
+const VENV_CANARY_TIMEOUT_MS = 60 * 1000
+const SERVER_STDERR_COLLECT_TIMEOUT_MS = 1000
 const REBUILD_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 const PROCESS_KILL_GRACE_MS = 5000
 
@@ -673,15 +681,18 @@ async function ensureProjectPython(directory: string) {
       }
       if (!corruptedVenv) {
         prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
-        let healthy = false
+        let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
         try {
-          healthy = await venvCanaryPasses([venvPython])
+          canary = await venvCanaryPasses([venvPython], { includeStderr: true })
         } catch {
-          healthy = false
+          canary = { healthy: false, stderr: "", timedOut: false }
         }
-        if (healthy) {
+        if (canary.healthy) {
           prompts.log.success("Python environment ready")
           return [venvPython]
+        }
+        if (canary.timedOut) {
+          throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
         }
         corruptedVenv = true
       }
@@ -762,6 +773,9 @@ async function ensureProjectPython(directory: string) {
   }
   prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
   const canary = await venvCanaryPasses([venvPython], { cwd: directory, includeStderr: true })
+  if (canary.timedOut) {
+    throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
+  }
   if (!canary.healthy) {
     throw new Error(await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr))
   }
@@ -828,6 +842,14 @@ async function formatPostInstallCanaryFailure(directory: string, hadManifests: b
     : `Project \`.venv\` rebuilt successfully, but the Agency Swarm import canary still failed.${shadowingHint}`
 }
 
+async function formatCanaryTimeoutFailure(directory: string, stderr: string) {
+  const summary = summarizeBridgeStderr(stderr)
+  const shadowingHint = await formatShadowingHint(directory)
+  return summary
+    ? `Agency Swarm import canary timed out after ${formatInstallDuration(VENV_CANARY_TIMEOUT_MS)}. Startup stopped instead of waiting indefinitely.${shadowingHint} Canary stderr: ${summary}`
+    : `Agency Swarm import canary timed out after ${formatInstallDuration(VENV_CANARY_TIMEOUT_MS)}. Startup stopped instead of waiting indefinitely.${shadowingHint}`
+}
+
 function isImportLikeCanaryFailure(stderr: string) {
   return /\b(?:ImportError|ModuleNotFoundError)\b/.test(stderr)
 }
@@ -857,17 +879,18 @@ async function venvCanaryPasses(python: string[], options?: { cwd?: string; incl
   // sitting next to `agency.py`) that shadow installed packages and falsely flag a healthy
   // .venv as broken. Callers that need the server-launch cwd (post-install verification)
   // pass it explicitly.
-  const result = await runCommand(
-    [...python, "-c", VENV_CANARY_SCRIPT],
-    options?.cwd ? { cwd: options.cwd } : undefined,
-  )
+  const result = await runCommand([...python, "-c", VENV_CANARY_SCRIPT], {
+    cwd: options?.cwd,
+    timeoutMs: VENV_CANARY_TIMEOUT_MS,
+  })
   if (options?.includeStderr) {
     return {
-      healthy: result.code === 0,
+      healthy: result.code === 0 && !result.timedOut,
       stderr: result.stderr,
+      timedOut: result.timedOut === true,
     }
   }
-  return result.code === 0
+  return result.code === 0 && !result.timedOut
 }
 
 async function ensureLatestAgencySwarm(
@@ -984,10 +1007,11 @@ async function startProjectServer(directory: string, python: string[]) {
     await remove()
     throw error
   }
-  const stderrPromise = child.stderr ? new Response(child.stderr).text().catch(() => "") : Promise.resolve("")
+  const stderr = createServerStderrCollector(child.stderr)
 
   const cleanup = async () => {
     child.kill()
+    stderr.stop()
     await Promise.race([child.exited, sleep(5000)])
     await remove()
   }
@@ -996,7 +1020,7 @@ async function startProjectServer(directory: string, python: string[]) {
     await waitForServer({
       baseURL: `http://127.0.0.1:${port}`,
       child,
-      stderrPromise,
+      stderr,
     })
   } catch (error) {
     await cleanup()
@@ -1012,14 +1036,14 @@ async function startProjectServer(directory: string, python: string[]) {
 async function waitForServer(input: {
   baseURL: string
   child: ReturnType<typeof Bun.spawn>
-  stderrPromise: Promise<string>
+  stderr: ServerStderrCollector
 }) {
   const deadline = Date.now() + 30000
   const metadataURL = `${input.baseURL}/${LOCAL_AGENCY_ID}/get_metadata`
   while (Date.now() < deadline) {
     const exited = await Promise.race([input.child.exited.then((code: number) => code), sleep(200).then(() => null)])
     if (typeof exited === "number") {
-      const stderr = await input.stderrPromise
+      const stderr = await input.stderr.read(SERVER_STDERR_COLLECT_TIMEOUT_MS)
       const summary = summarizeBridgeStderr(stderr)
       throw new Error(
         summary
@@ -1037,13 +1061,63 @@ async function waitForServer(input: {
   }
 
   input.child.kill()
-  const stderr = await input.stderrPromise
+  const stderr = await input.stderr.read(SERVER_STDERR_COLLECT_TIMEOUT_MS)
   const summary = summarizeBridgeStderr(stderr)
   throw new Error(
     summary
       ? `Timed out waiting for the Agency Swarm server to start. Last bridge output: ${summary}`
       : "Timed out waiting for the Agency Swarm server to start",
   )
+}
+
+function createServerStderrCollector(
+  output: string | ReadableStream<Uint8Array> | null | undefined,
+): ServerStderrCollector {
+  if (typeof output === "string") {
+    return {
+      read: async () => output,
+      stop() {},
+    }
+  }
+  if (!output) {
+    return {
+      read: async () => "",
+      stop() {},
+    }
+  }
+
+  const reader = output.getReader()
+  const decoder = new TextDecoder()
+  let text = ""
+  let settled = false
+  const done = (async () => {
+    try {
+      while (true) {
+        const chunk = await reader.read()
+        if (chunk.done) break
+        if (!chunk.value || chunk.value.length === 0) continue
+        text += decoder.decode(chunk.value, { stream: true })
+      }
+      text += decoder.decode()
+    } catch {
+      text += decoder.decode()
+    } finally {
+      settled = true
+    }
+  })()
+
+  return {
+    async read(timeoutMs: number) {
+      if (!settled) {
+        await Promise.race([done, sleep(timeoutMs)])
+      }
+      return text
+    },
+    stop() {
+      if (settled) return
+      void reader.cancel().catch(() => undefined)
+    },
+  }
 }
 
 export function summarizeBridgeStderr(stderr: string): string {

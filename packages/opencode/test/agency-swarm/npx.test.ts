@@ -889,6 +889,202 @@ describe("agency-swarm npx onboarding", () => {
     await launch?.cleanup?.()
   })
 
+  test("prepareProjectLaunch times out when the import canary hangs", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
+      recursive: true,
+    })
+    await Bun.write(
+      path.join(
+        dir.path,
+        ".venv",
+        process.platform === "win32" ? "Scripts" : "bin",
+        process.platform === "win32" ? "python.exe" : "python",
+      ),
+      "",
+    )
+
+    const realSetTimeout = globalThis.setTimeout
+    const realClearTimeout = globalThis.clearTimeout
+    const killSignals: Array<string | undefined> = []
+    const canaryStderr = createTextOutputStream("importing openai types...\n")
+    let resolveCanary!: (code: number) => void
+    let canaryStarted = false
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(globalThis, "setTimeout").mockImplementation(((fn: TimerHandler) => {
+      if (canaryStarted && typeof fn === "function") {
+        fn()
+        return 1 as never
+      }
+      return realSetTimeout(fn, 0) as never
+    }) as unknown as typeof setTimeout)
+    spyOn(globalThis, "clearTimeout").mockImplementation(((timer?: Parameters<typeof clearTimeout>[0]) => {
+      realClearTimeout(timer)
+    }) as typeof clearTimeout)
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        if (target.endsWith(process.platform === "win32" ? "\\python.exe" : "/python")) {
+          return {
+            exited: Promise.resolve(0),
+            stdout: `${target}\n3.12.7\n`,
+            stderr: "",
+          } as never
+        }
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        canaryStarted = true
+        return {
+          exited: new Promise<number>((resolve) => {
+            resolveCanary = resolve
+          }),
+          stdout: "",
+          stderr: canaryStderr.stream,
+          kill(signal?: string) {
+            killSignals.push(signal)
+            if (signal === "SIGKILL") {
+              canaryStderr.close()
+              resolveCanary(1)
+            }
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    })
+    const pending = Symbol("pending")
+    const outcome = await Promise.race([
+      launch.then(
+        () => "resolved",
+        (error) => error,
+      ),
+      new Promise((resolve) => realSetTimeout(() => resolve(pending), 20)),
+    ])
+
+    if (outcome === pending) {
+      canaryStderr.close()
+      resolveCanary(1)
+      await launch.catch(() => undefined)
+    }
+
+    expect(outcome).not.toBe(pending)
+    expect(outcome).toBeInstanceOf(Error)
+    if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
+    expect(killSignals).toEqual([undefined, "SIGKILL"])
+    expect(outcome.message).toContain("Agency Swarm import canary timed out after 1 minute")
+  })
+
+  test("prepareProjectLaunch returns when server readiness timeout stderr does not close", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
+      recursive: true,
+    })
+    await Bun.write(
+      path.join(
+        dir.path,
+        ".venv",
+        process.platform === "win32" ? "Scripts" : "bin",
+        process.platform === "win32" ? "python.exe" : "python",
+      ),
+      "",
+    )
+
+    const realSetTimeout = globalThis.setTimeout
+    const serverStderr = createTextOutputStream("bridge still starting\n")
+    const killSignals: Array<string | undefined> = []
+    let resolveServerExit!: (code: number) => void
+    let now = 0
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(Date, "now").mockImplementation(() => {
+      const value = now
+      now = 30001
+      return value
+    })
+    spyOn(globalThis, "fetch").mockRejectedValue(new Error("not ready") as never)
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        return {
+          exited: Promise.resolve(0),
+          stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        return {
+          exited: new Promise<number>((resolve) => {
+            resolveServerExit = resolve
+          }),
+          stderr: serverStderr.stream,
+          kill(signal?: string) {
+            killSignals.push(signal)
+            if (killSignals.length > 1) resolveServerExit(1)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    })
+    const pending = Symbol("pending")
+    const outcome = await Promise.race([
+      launch.then(
+        () => "resolved",
+        (error) => error,
+      ),
+      new Promise((resolve) => realSetTimeout(() => resolve(pending), 1500)),
+    ])
+
+    if (outcome === pending) {
+      serverStderr.close()
+      await launch.catch(() => undefined)
+    }
+
+    expect(outcome).not.toBe(pending)
+    expect(outcome).toBeInstanceOf(Error)
+    if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
+    expect(killSignals).toEqual([undefined, undefined])
+    expect(outcome.message).toContain(
+      "Timed out waiting for the Agency Swarm server to start. Last bridge output: bridge still starting",
+    )
+  })
+
   test("prepareProjectLaunch does not fail healthy `.venv` launches when refresh logging cannot be created", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
