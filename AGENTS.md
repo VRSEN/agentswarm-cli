@@ -104,6 +104,7 @@ Why: incomplete requirements, stale artifacts, and misheard input cause correct-
 - Work only inside the active mandate.
 - The mandate must cover the action, the target repo or branch, the target artifact, and who can see the result.
 - If the task is rule repair, product work stays blocked until the rule or tool problem is fixed and reviewed.
+- Before opening, updating, merging, release-reviewing, or otherwise mutating a pull request, follow `.codex/skills/codex-cli-review`. PR-standard labels or comments, missing template compliance, and missing issue-first compliance are blockers until fixed or explicitly excepted by checked policy.
 - A direct user request allows only the smaller steps needed to finish that exact task inside the same repo, branch, artifact, and visibility boundary.
 - Mandate does not grow by implication. Permission to edit, review, or open a pull request does not also allow repo creation, forks, publication, deploys, merges, destructive actions, or writes somewhere else.
 - Merging to a default branch or merging any pull request always needs explicit user approval.
@@ -374,7 +375,6 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - For public release work, verify that the exact release commit is already reachable from `vrsen/dev` and that the target version is already present in the release input files.
 - If the remote is unavailable, you may continue, but say that you are assuming the branch is already synced.
 - If the task spans more than one repo or worktree, run `git fetch origin`, `git status -sb`, and `git rev-parse --short HEAD`, or the repo-tooling equivalent, in each one and confirm the active branch before you edit.
-- Before opening, updating, merging, or releasing, follow `.codex/skills/codex-cli-review` governance: live standards, current PR state, existing PR reuse, compliance, required checks, source/base/head SHA, live diff, title, issue link or exception, type, verification, checklist, and unrelated-change checks.
 - Every pull-request merge has explicit user approval and a human alignment gate. Pull requests with user-testable behavior also have a human QA gate. Worker review can inform these gates but cannot replace them.
 - Before requesting merge approval, the manager must:
   - verify the final diff, source/base/head SHAs, required checks, unresolved threads, and official review findings.
