@@ -13,12 +13,13 @@ export function collectQueuedRunModeMessages(input: {
   messages: readonly Message[]
   parts: Record<string, Part[] | undefined>
 }): QueuedRunModeMessage[] {
-  const activeAssistantIndex = input.messages.findLastIndex(
+  const messages = input.messages.toSorted(compareMessageOrder)
+  const activeAssistantIndex = messages.findLastIndex(
     (message): message is AssistantMessage => message.role === "assistant" && !message.time.completed,
   )
   if (activeAssistantIndex === -1) return []
 
-  return input.messages
+  return messages
     .slice(activeAssistantIndex + 1)
     .filter((message): message is UserMessage => message.role === "user")
     .map((message) => ({
@@ -57,4 +58,10 @@ function promptFromMessageParts(parts: readonly Part[]): PromptInfo {
     },
     { input: "", parts: [] } as PromptInfo,
   )
+}
+
+function compareMessageOrder(a: Message, b: Message) {
+  const time = a.time.created - b.time.created
+  if (time !== 0) return time
+  return a.id.localeCompare(b.id)
 }

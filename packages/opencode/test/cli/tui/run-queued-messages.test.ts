@@ -57,9 +57,17 @@ describe("run-mode queued messages", () => {
     expect(queued.map((item) => item.prompt.input)).toEqual(["second", "third"])
   })
 
-  test("uses message order instead of lexicographic ids", () => {
+  test("uses chronological order when the sync store is sorted by id", () => {
     const queued = collectQueuedRunModeMessages({
       messages: [
+        {
+          id: "msg_a",
+          role: "user",
+          sessionID: "ses_1",
+          time: { created: 2 },
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+        },
         {
           id: "msg_z",
           role: "assistant",
@@ -73,14 +81,6 @@ describe("run-mode queued messages", () => {
           tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
           providerID: "agency-swarm",
           modelID: "default",
-        },
-        {
-          id: "msg_a",
-          role: "user",
-          sessionID: "ses_1",
-          time: { created: 2 },
-          agent: "build",
-          model: { providerID: "agency-swarm", modelID: "default" },
         },
       ],
       parts: {
