@@ -57,6 +57,40 @@ describe("run-mode queued messages", () => {
     expect(queued.map((item) => item.prompt.input)).toEqual(["second", "third"])
   })
 
+  test("uses message order instead of lexicographic ids", () => {
+    const queued = collectQueuedRunModeMessages({
+      messages: [
+        {
+          id: "msg_z",
+          role: "assistant",
+          sessionID: "ses_1",
+          parentID: "msg_parent",
+          time: { created: 1 },
+          agent: "build",
+          mode: "build",
+          path: { cwd: "/tmp", root: "/tmp" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          providerID: "agency-swarm",
+          modelID: "default",
+        },
+        {
+          id: "msg_a",
+          role: "user",
+          sessionID: "ses_1",
+          time: { created: 2 },
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+        },
+      ],
+      parts: {
+        msg_a: [{ id: "part_1", sessionID: "ses_1", messageID: "msg_a", type: "text", text: "queued" }],
+      },
+    })
+
+    expect(queued.map((item) => item.message.id)).toEqual(["msg_a"])
+  })
+
   test("queued cancel removes queued Run-mode user messages without aborting the active turn", async () => {
     const calls: string[] = []
 
