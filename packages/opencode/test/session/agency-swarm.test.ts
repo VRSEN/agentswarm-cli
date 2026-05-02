@@ -3239,10 +3239,6 @@ describe("session.agency-swarm", () => {
         summary: [{ type: "summary_text", text: "private chain state" }],
       },
       {
-        id: "rs_ref_stale",
-        summary: [{ type: "summary_text", text: "private ref state" }],
-      },
-      {
         type: "item_reference",
         id: "rs_ref_rejected",
       },
@@ -3291,9 +3287,6 @@ describe("session.agency-swarm", () => {
       {
         type: "reasoning",
         summary: [{ type: "summary_text", text: "private chain state" }],
-      },
-      {
-        summary: [{ type: "summary_text", text: "private ref state" }],
       },
     ])
   })
