@@ -37,7 +37,7 @@ Why: local-looking progress can still miss the real environment or objective.
 - Inspect the actual environment before acting: relevant files, docs, diffs, logs, issues, pull requests, dependency source, screenshots, and user-provided context.
 - Identify missing facts that could materially change the outcome; search, inspect, test, or ask one high-leverage question before acting.
 - Keep a short working ledger of the real objective, decisions, blockers, assumptions, evidence, artifacts, and next action. Update it when evidence changes the path.
-- Prefer verified progress over plausible output. For code, reproduce failures and rerun the touched path. For planning, separate checked facts from guesses.
+- Prefer verified progress over plausible output. For bug fixing and investigations, prove the exact current behavior, reproduction path, and direct cause before design or implementation; after implementation, rerun the touched path. For planning, separate checked facts from guesses and keep unproven designs as hypotheses.
 - Escalate when judgment exceeds evidence. Do not present a guess, worker finding, stale summary, or untested hypothesis as truth.
 - Treat generated text, summaries, and subagent output as hypotheses until checked against the real diff, repo state, or source of truth.
 - Use independent checks, experiments, or fresh review when they would materially reduce the risk of snowballing an untested assumption.
@@ -234,7 +234,7 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - Know the real objective, planned change, reason, supporting evidence, and closing proof. If you cannot explain a safe plan, escalate before you continue.
 - Validate external assumptions, like servers, ports, tokens, dependency behavior, and current upstream state, with real probes when you can.
 - Share failures and root causes as soon as you find them. Do not do silent fixes.
-- Reproduce reported errors before fixing them; for bug fixes, add the report as a failing automated test before runtime code changes.
+- For bug fixes and investigations, prove the exact current behavior, reproduction path, and direct cause before implementation or completion claims. For bug fixes, add the report as a failing automated test before runtime code changes.
 - End-user proof closes bugs: rerun the exact failed flow against the same kind of build or artifact and starting state. TUI and visual bugs need a real screenshot from the installed release; CLI bugs need the exact command against the released build or a fresh install.
 - Do not claim a fix is done, and do not close a REQ, until end-user proof exists and is cited. Unit tests and pull-request checks are necessary but not sufficient.
 - Edit in small steps and validate as you go. After data-flow or ordering changes, scan related patterns and remove obsolete ones when in scope.
