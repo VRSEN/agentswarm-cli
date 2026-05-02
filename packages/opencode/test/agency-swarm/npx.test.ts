@@ -742,6 +742,99 @@ describe("agency-swarm npx onboarding", () => {
     await launch?.cleanup?.()
   })
 
+  test("prepareProjectLaunch keeps broken pip refresh tracebacks in the log instead of mirroring them", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
+      recursive: true,
+    })
+    await Bun.write(
+      path.join(
+        dir.path,
+        ".venv",
+        process.platform === "win32" ? "Scripts" : "bin",
+        process.platform === "win32" ? "python.exe" : "python",
+      ),
+      "",
+    )
+
+    const pipTraceback = [
+      "Traceback (most recent call last):",
+      '  File "<frozen runpy>", line 198, in _run_module_as_main',
+      '  File "<frozen runpy>", line 88, in _run_code',
+      `  File "${path.join(dir.path, ".venv", "lib", "python3.13", "site-packages", "pip", "__main__.py")}", line 22, in <module>`,
+      "    from pip._internal.cli.main import main as _main",
+      "ModuleNotFoundError: No module named 'pip._internal.cli.main'",
+    ].join("\n")
+
+    const warn = spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    const stderrWrite = spyOn(process.stderr, "write").mockImplementation(() => true as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        return {
+          exited: Promise.resolve(0),
+          stdout: `${target}\n3.13.3\n`,
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd)) {
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: `${pipTraceback}\n`,
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    })
+
+    const mirroredOutput = stderrWrite.mock.calls.map((call) => call[0]).join("")
+    expect(mirroredOutput).not.toContain("Traceback (most recent call last):")
+    expect(mirroredOutput).not.toContain("pip._internal.cli.main")
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("ModuleNotFoundError: No module named 'pip._internal.cli.main'"),
+    )
+
+    const refreshLogs = Array.fromAsync(new Bun.Glob("*-launcher-refresh.log").scan(launcherLogDirectory(dir.path)))
+    const logFiles = await refreshLogs
+    expect(logFiles).toHaveLength(1)
+    const logContent = await Bun.file(path.join(launcherLogDirectory(dir.path), logFiles[0]!)).text()
+    expect(logContent).toContain("Traceback (most recent call last):")
+    expect(logContent).toContain("pip._internal.cli.main")
+
+    await launch?.cleanup?.()
+  })
+
   test("prepareProjectLaunch survives refresh log stream failures", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)

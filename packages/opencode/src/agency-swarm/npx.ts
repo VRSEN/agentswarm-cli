@@ -61,7 +61,13 @@ interface RunCommandOptions {
   env?: NodeJS.ProcessEnv
   logFile?: string
   streamOutputToStderr?: boolean
+  suppressPythonTracebackStderr?: boolean
   timeoutMs?: number
+}
+
+interface OutputWriter {
+  write: (chunk: string) => void
+  close?: () => void
 }
 
 interface ServerStderrCollector {
@@ -906,6 +912,7 @@ async function ensureLatestAgencySwarm(
       cwd: directory,
       logFile: options?.logFile,
       streamOutputToStderr: true,
+      suppressPythonTracebackStderr: true,
       timeoutMs: options?.timeoutMs,
     })
     if (result.timedOut) {
@@ -951,7 +958,7 @@ async function tryCreateProjectCommandLogFile(directory: string, stem: string, l
 }
 
 function summarizeCommandOutput(result: Pick<CommandResult, "stdout" | "stderr">) {
-  return summarizeBridgeStderr(result.stderr) || summarizeBridgeStderr(result.stdout)
+  return summarizeInstallerOutput(result.stderr) || summarizeInstallerOutput(result.stdout)
 }
 
 function formatCommandFailure(result: CommandResult, fallback: string) {
@@ -1128,6 +1135,22 @@ export function summarizeBridgeStderr(stderr: string): string {
   return tail.length > 500 ? `${tail.slice(0, 500)}...` : tail
 }
 
+function summarizeInstallerOutput(output: string) {
+  const tracebackSummary = summarizePythonTraceback(output)
+  if (tracebackSummary) return tracebackSummary
+  return summarizeBridgeStderr(output)
+}
+
+function summarizePythonTraceback(output: string) {
+  const lines = output
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  if (!lines.some((line) => line === "Traceback (most recent call last):")) return ""
+  return lines.findLast((line) => /^[A-Za-z_][\w.]*Error:/.test(line)) ?? ""
+}
+
 async function hasGitHubTemplateFlow() {
   const gh = await runCommand(["gh", "--version"])
   if (gh.code !== 0) return false
@@ -1235,14 +1258,19 @@ async function getFreePort() {
 
 async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<CommandResult> {
   const commandLog = openCommandLog(options?.logFile)
-  const writeChunk = (chunk: string) => {
-    if (options?.streamOutputToStderr) {
+  const writeChunk = (chunk: string, streamToStderr: boolean) => {
+    if (streamToStderr) {
       try {
         process.stderr.write(chunk)
       } catch {}
     }
     commandLog.write(chunk)
   }
+  const stderrWriter = createStderrCommandWriter({
+    commandLog,
+    streamToStderr: options?.streamOutputToStderr === true,
+    suppressPythonTracebacks: options?.suppressPythonTracebackStderr === true,
+  })
   try {
     const proc = Bun.spawn({
       cmd,
@@ -1280,8 +1308,12 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
           })
     const [result, stdout, stderr] = await Promise.all([
       timeoutResult ? Promise.race([exitResult, timeoutResult]) : exitResult,
-      readCommandOutput(proc.stdout, writeChunk, outputAbort.signal),
-      readCommandOutput(proc.stderr, writeChunk, outputAbort.signal),
+      readCommandOutput(
+        proc.stdout,
+        (chunk) => writeChunk(chunk, options?.streamOutputToStderr === true),
+        outputAbort.signal,
+      ),
+      readCommandOutput(proc.stderr, stderrWriter, outputAbort.signal),
     ])
     const logFile = await closeCommandLog(commandLog)
     return { code: result.code, stdout, stderr, timedOut: result.timedOut, logFile }
@@ -1346,18 +1378,83 @@ function openCommandLog(logFile?: string) {
   }
 }
 
+function createStderrCommandWriter(input: {
+  commandLog: ReturnType<typeof openCommandLog>
+  streamToStderr: boolean
+  suppressPythonTracebacks: boolean
+}): OutputWriter {
+  const userWriter = createUserStderrWriter(input.streamToStderr, input.suppressPythonTracebacks)
+  return {
+    write(chunk) {
+      input.commandLog.write(chunk)
+      userWriter.write(chunk)
+    },
+    close() {
+      userWriter.close?.()
+    },
+  }
+}
+
+function createUserStderrWriter(streamToStderr: boolean, suppressPythonTracebacks: boolean): OutputWriter {
+  let pending = ""
+  let suppressingTraceback = false
+
+  const writeLine = (line: string) => {
+    const trimmed = line.trim()
+    if (suppressPythonTracebacks && !suppressingTraceback && trimmed === "Traceback (most recent call last):") {
+      suppressingTraceback = true
+      return
+    }
+    if (suppressingTraceback) {
+      if (/^[A-Za-z_][\w.]*Error:/.test(trimmed)) suppressingTraceback = false
+      return
+    }
+    if (!streamToStderr) return
+    try {
+      process.stderr.write(line)
+    } catch {}
+  }
+
+  return {
+    write(chunk) {
+      const text = pending + chunk
+      const lines = text.split(/(?<=\n)/)
+      pending = lines.at(-1)?.endsWith("\n") ? "" : (lines.pop() ?? "")
+      for (const line of lines) {
+        writeLine(line)
+      }
+    },
+    close() {
+      if (!pending) return
+      writeLine(pending)
+      pending = ""
+    },
+  }
+}
+
 async function closeCommandLog(log: ReturnType<typeof openCommandLog>) {
   await log.close()
   return log.getLogFile()
 }
 
+function writeOutput(writer: ((chunk: string) => void) | OutputWriter, chunk: string) {
+  if (typeof writer === "function") writer(chunk)
+  else writer.write(chunk)
+}
+
+function closeOutputWriter(writer: ((chunk: string) => void) | OutputWriter | undefined) {
+  if (typeof writer === "function") return
+  writer?.close?.()
+}
+
 async function readCommandOutput(
   output: string | ReadableStream<Uint8Array> | null | undefined,
-  writer?: (chunk: string) => void,
+  writer?: ((chunk: string) => void) | OutputWriter,
   signal?: AbortSignal,
 ) {
   if (typeof output === "string") {
-    if (output && writer) writer(output)
+    if (output && writer) writeOutput(writer, output)
+    closeOutputWriter(writer)
     return output
   }
   if (!output) return ""
@@ -1376,12 +1473,12 @@ async function readCommandOutput(
       if (done || signal?.aborted) break
       if (!value || value.length === 0) continue
       const chunk = decoder.decode(value, { stream: true })
-      if (writer) writer(chunk)
+      if (writer) writeOutput(writer, chunk)
       text += chunk
     }
     const tail = decoder.decode()
     if (tail) {
-      if (writer) writer(tail)
+      if (writer) writeOutput(writer, tail)
       text += tail
     }
     return text
@@ -1389,6 +1486,7 @@ async function readCommandOutput(
     if (signal?.aborted) return text
     throw error
   } finally {
+    closeOutputWriter(writer)
     signal?.removeEventListener("abort", abortRead)
   }
 }
