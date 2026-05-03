@@ -630,6 +630,10 @@ on:
       echo "value=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
     fi
 
+- uses: oven-sh/setup-bun@v2
+  with:
+    bun-version-file: package.json
+
 - name: Build binary
   env:
     OPENSWARM_VERSION: ${{ steps.version.outputs.value }}
