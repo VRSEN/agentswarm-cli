@@ -265,7 +265,7 @@ type AgencyFixture = {
 const qaAgencyFixture: AgencyFixture = {
   agencyID: "local-agency",
   metadata: {
-    agency_swarm_version: "1.9.5",
+    agency_swarm_version: "1.9.6",
     metadata: {
       agencyName: "Live QA Agency",
       agents: ["entry-agent", "review-agent"],
@@ -330,7 +330,7 @@ const qaAgencyFixture: AgencyFixture = {
 const tuiDemoAgencyFixture: AgencyFixture = {
   agencyID: "tui-demo-agency",
   metadata: {
-    agency_swarm_version: "1.9.5",
+    agency_swarm_version: "1.9.6",
     metadata: {
       agencyName: "TuiDemoAgency",
       agents: ["UserSupportAgent", "MathAgent"],

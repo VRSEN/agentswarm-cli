@@ -162,7 +162,7 @@ async function startRealProjectAgencyServer(): Promise<AgencyProtocolServer> {
 }
 
 const realProjectMetadata = {
-  agency_swarm_version: "1.9.5",
+  agency_swarm_version: "1.9.6",
   metadata: {
     agencyName: "RealHandoffAgency",
     agents: ["UserSupportAgent", "ResearchAgent", "MathAgent"],

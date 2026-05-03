@@ -233,7 +233,7 @@ describe("session.agency-swarm", () => {
 
   test("stream forwards dropped data URL images as structured message content", async () => {
     mockHistory()
-    mockAgencyVersion("1.9.5")
+    mockAgencyVersion("1.9.6")
     const content = Buffer.from("red dot image")
     let captured: unknown
     AgencySwarmAdapter.streamRun = async function* (input) {
@@ -363,7 +363,7 @@ describe("session.agency-swarm", () => {
   test("stream skips directory file data on structured transport and sends expanded text", async () => {
     await using tmp = await tmpdir()
     mockHistory()
-    mockAgencyVersion("1.9.5")
+    mockAgencyVersion("1.9.6")
     let capturedMessage: unknown
     let capturedFileURLs: Record<string, string> | undefined
     AgencySwarmAdapter.streamRun = async function* (input) {
@@ -417,7 +417,7 @@ describe("session.agency-swarm", () => {
 
   test("stream keeps browser auth client_config while forwarding attachments inline", async () => {
     mockHistory()
-    mockAgencyVersion("1.9.5")
+    mockAgencyVersion("1.9.6")
     await Auth.set("openai", {
       type: "oauth",
       access: "oauth-access",
@@ -455,7 +455,7 @@ describe("session.agency-swarm", () => {
   })
 
   test("stream replays stored attachment content into follow-up requests without duplicating history", async () => {
-    mockAgencyVersion("1.9.5")
+    mockAgencyVersion("1.9.6")
     const filePart = {
       type: "input_file",
       file_data: `data:application/pdf;base64,${Buffer.from("Attachment proof phrase one: cobalt lantern.").toString("base64")}`,
@@ -547,7 +547,7 @@ describe("session.agency-swarm", () => {
   })
 
   test("stream replays stored attachment content when the follow-up has a new attachment", async () => {
-    mockAgencyVersion("1.9.5")
+    mockAgencyVersion("1.9.6")
     const priorFilePart = {
       type: "input_file",
       file_data: `data:application/pdf;base64,${Buffer.from("Prior attachment phrase: cobalt lantern.").toString("base64")}`,
@@ -663,7 +663,7 @@ describe("session.agency-swarm", () => {
 
   test("stream replays compacted-session attachment content into follow-up requests", async () => {
     mockHistory()
-    mockAgencyVersion("1.9.5")
+    mockAgencyVersion("1.9.6")
     const fileData = `data:application/pdf;base64,${Buffer.from("Compacted proof phrase: amber beacon.").toString("base64")}`
     const currentID = MessageID.ascending()
     const compactedMessages = [
@@ -841,7 +841,7 @@ describe("session.agency-swarm", () => {
 
   test("stream forwards clipboard data URL images as structured message content", async () => {
     mockHistory()
-    mockAgencyVersion("1.9.5")
+    mockAgencyVersion("1.9.6")
     const content = Buffer.from("clipboard image")
     let captured: unknown
     AgencySwarmAdapter.streamRun = async function* (input) {
@@ -3835,7 +3835,7 @@ describe("session.agency-swarm", () => {
         return filepath
       },
     })
-    mockAgencyVersion("1.9.5")
+    mockAgencyVersion("1.9.6")
     const fileData = `data:text/plain;base64,${Buffer.from("forked proof").toString("base64")}`
     const clonedAgencyMessages = [
       {

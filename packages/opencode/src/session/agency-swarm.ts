@@ -51,7 +51,7 @@ export namespace SessionAgencySwarm {
   export const PROVIDER_ID = AgencySwarmAdapter.PROVIDER_ID
 
   const CANCEL_BEFORE_META_ABORT_MS = 3000
-  const STRUCTURED_ATTACHMENT_MESSAGE_MIN_VERSION = "1.9.5"
+  const STRUCTURED_ATTACHMENT_MESSAGE_MIN_VERSION = "1.9.6"
 
   export type RuntimeOptions = {
     baseURL: string
