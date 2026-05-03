@@ -761,6 +761,7 @@ describe("agency-swarm npx onboarding", () => {
     const pipTraceback = [
       "Traceback (most recent call last):",
       '  File "<frozen runpy>", line 198, in _run_module_as_main',
+      "    config: dict = {'pip': 'broken'}",
       '  File "<frozen runpy>", line 88, in _run_code',
       `  File "${path.join(dir.path, ".venv", "lib", "python3.13", "site-packages", "pip", "__main__.py")}", line 22, in <module>`,
       "    from pip._internal.cli.main import main as _main",
@@ -822,6 +823,7 @@ describe("agency-swarm npx onboarding", () => {
     const mirroredOutput = stderrWrite.mock.calls.map((call) => call[0]).join("")
     expect(mirroredOutput).not.toContain("Traceback (most recent call last):")
     expect(mirroredOutput).not.toContain("<frozen runpy>")
+    expect(mirroredOutput).not.toContain("config: dict")
     expect(mirroredOutput).not.toContain("foo")
     expect(mirroredOutput).not.toContain("pip._internal.cli.main")
     expect(warn).toHaveBeenCalledWith(

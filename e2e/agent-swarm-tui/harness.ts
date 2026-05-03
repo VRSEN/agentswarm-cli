@@ -7,11 +7,17 @@ const repoRoot = path.resolve(import.meta.dir, "../..")
 const packageRoot = path.join(repoRoot, "packages", "opencode")
 const modelsFixture = path.join(packageRoot, "test", "tool", "fixtures", "models-api.json")
 const discoveryTimeoutMs = process.env.CI ? 5_000 : 500
+const initialOutputAttemptCount = process.env.CI ? 3 : 2
 const initialOutputTimeoutMs = process.env.CI ? 15_000 : 5_000
 
 export type AgencyProtocolServer = {
   baseURL: string
-  requests: Array<{ path: string; body: Record<string, unknown> }>
+  requests: Array<{
+    path: string
+    body: Record<string, unknown>
+    releaseStream?: () => void
+    streamClosed?: Promise<void>
+  }>
   stop(): void
 }
 
@@ -46,8 +52,24 @@ export async function startAgencyProtocolServer(
 
       if (url.pathname === `/${fixture.agencyID}/get_response_stream`) {
         const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
-        requests.push({ path: url.pathname, body })
-        return new Response(await fixture.stream(body, requests.length), {
+        let releaseStream!: () => void
+        const streamReleased = new Promise<void>((resolve) => {
+          releaseStream = resolve
+        })
+        let closed = false
+        let resolveStreamClosed!: () => void
+        const streamClosed = new Promise<void>((resolve) => {
+          resolveStreamClosed = resolve
+        })
+        const closeStream = () => {
+          if (closed) return
+          closed = true
+          resolveStreamClosed()
+        }
+        requests.push({ path: url.pathname, body, releaseStream, streamClosed })
+        const responseBody = await fixture.stream(body, requests.length, streamReleased, closeStream)
+        if (!(responseBody instanceof ReadableStream)) closeStream()
+        return new Response(responseBody, {
           headers: {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
@@ -179,9 +201,11 @@ export async function startTui(input: {
       hasOutput: () => dataReceived,
       getExitCode: () => exitCode,
       history: () => stripAnsi(raw),
+      attemptCount: initialOutputAttemptCount,
       timeoutMs: initialOutputTimeoutMs,
       onRetry: async () => {
         await closeProcess(proc)
+        await Bun.sleep(250)
         proc = spawnTuiProcess({ args, cwd: input.cwd, env })
         dataReceived = false
         exitCode = undefined
@@ -252,7 +276,12 @@ export async function writeAgencyProject(dir: string) {
 type AgencyFixture = {
   agencyID: string
   metadata: Record<string, unknown>
-  stream(body: Record<string, unknown>, requestCount: number): BodyInit | Promise<BodyInit>
+  stream(
+    body: Record<string, unknown>,
+    requestCount: number,
+    streamReleased: Promise<void>,
+    closeStream: () => void,
+  ): BodyInit | Promise<BodyInit>
 }
 
 const qaAgencyFixture: AgencyFixture = {
@@ -285,10 +314,10 @@ const qaAgencyFixture: AgencyFixture = {
       },
     ],
   },
-  stream(body, requestCount) {
+  stream(body, requestCount, streamReleased, closeStream) {
     const message = typeof body.message === "string" ? body.message : ""
     if (message.includes("issue 172 hold")) {
-      return delayedSse(
+      return controlledSse(
         [
           ["meta", { run_id: `run_e2e_${requestCount}` }],
           [
@@ -307,7 +336,8 @@ const qaAgencyFixture: AgencyFixture = {
           ],
           ["end", {}],
         ],
-        8_000,
+        streamReleased,
+        closeStream,
       )
     }
     return sse([
@@ -672,14 +702,22 @@ function sse(events: Array<[event: string, data: Record<string, unknown>]>) {
   return events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("")
 }
 
-function delayedSse(events: Array<[event: string, data: Record<string, unknown>]>, delayMs: number) {
+function controlledSse(
+  events: Array<[event: string, data: Record<string, unknown>]>,
+  streamReleased: Promise<void>,
+  closeStream: () => void,
+) {
   const encoder = new TextEncoder()
   return new ReadableStream({
     async start(controller) {
       controller.enqueue(encoder.encode(sse(events.slice(0, 1))))
-      await new Promise((resolve) => setTimeout(resolve, delayMs))
+      await streamReleased
       controller.enqueue(encoder.encode(sse(events.slice(1))))
       controller.close()
+      closeStream()
+    },
+    cancel() {
+      closeStream()
     },
   })
 }
@@ -737,16 +775,21 @@ async function waitForInitialOutput(input: {
   hasOutput: () => boolean
   getExitCode: () => number | undefined
   history: () => string
+  attemptCount: number
   timeoutMs: number
   onRetry: () => Promise<void>
 }) {
-  try {
-    await waitForInitialOutputOnce(input, "initial TUI output")
-  } catch {
-    const exitCode = input.getExitCode()
-    if (exitCode !== undefined) throw initialOutputExitError(exitCode, "initial TUI output", input.history())
-    await input.onRetry()
-    await waitForInitialOutputOnce(input, "initial TUI output after retry")
+  for (let attempt = 1; attempt <= input.attemptCount; attempt++) {
+    const message = attempt === 1 ? "initial TUI output" : `initial TUI output after retry ${attempt - 1}`
+    try {
+      await waitForInitialOutputOnce(input, message)
+      return
+    } catch {
+      const exitCode = input.getExitCode()
+      if (exitCode !== undefined) throw initialOutputExitError(exitCode, message, input.history())
+      if (attempt === input.attemptCount) throw initialOutputTimeoutError(message, input.history())
+      await input.onRetry()
+    }
   }
 }
 
@@ -768,13 +811,17 @@ async function waitForInitialOutputOnce(
       }
       return false
     },
-    () => `Timed out waiting for ${message}`,
+    () => initialOutputTimeoutError(message, input.history()).message,
     input.timeoutMs,
   )
 }
 
 function initialOutputExitError(exitCode: number, message: string, history: string) {
   return new Error(`TUI exited with code ${exitCode} before ${message}.\n\nHistory tail:\n${tail(history)}`)
+}
+
+function initialOutputTimeoutError(message: string, history: string) {
+  return new Error(`Timed out waiting for ${message}.\n\nHistory tail:\n${tail(history)}`)
 }
 
 function cleanEnv(env: Record<string, string | undefined>) {
