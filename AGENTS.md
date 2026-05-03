@@ -46,7 +46,7 @@ Why: local-looking progress can still miss the real environment or objective.
 ## Operating Contract Maintenance
 
 - Treat AGENTS.md as the top operating contract. Keep only rules that matter in every session. Move path-specific or step-by-step playbooks into skills, scoped rules, or linked docs.
-- After any chat summary or compaction, recover the live ledger, live AGENTS.md from the default branch, relevant transcript or session context, branches, pull requests, issues, and worker state before acting when they affect the current work.
+- After any chat summary or compaction, reload live AGENTS.md and every repo skill relevant to the active work before continuing. Recover the live ledger, relevant transcript or session context, branches, pull requests, issues, and worker state when they affect the current work.
 - Use `remove > update > add` when the result is the same. Do not add code, docs, tests, or rules until you rule out deleting, tightening, or reusing what already exists.
 - Keep policy text hierarchical: one list equals one category, list items must be comparable, and mixed long bullets must be split by owner, trigger, action, evidence, and exception.
 - Memory files store durable facts only. Do not use memory files as SOPs, run logs, journals, or transcripts.
@@ -348,7 +348,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 ### Queue Control
 
-- At every user message and work start, rebuild the critical path from the user's latest words, the active ledger, live blockers, running work, and the current mandate.
+- At every user message, work start, and context restoration, review the active ledger and rebuild the critical path from the user's latest words, live blockers, running work, and the current mandate.
 - Do not encode live project order in this file. The current critical path comes from the latest user words, active ledger, and checked live state.
 - Use `.codex/skills/requirement-ledger` for durable queue, archive, work-state, and artifact tracking. The ledger records state, not rules; do not hand-edit, commit, or publish ledger files.
 - Every user message requires ledger consideration. Update the ledger only when the message creates or changes a real request, requirement, decision, blocker, artifact, status, or critical-path fact.
@@ -356,7 +356,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Keep the smallest active queue that preserves all real obligations.
 - Always know the next critical-path action, or recover the missing context before answering or delegating.
 - If context is missing after compaction or handoff, unpack the ledger, contract, transcript, branch, pull-request, issue, and worker state until you can act or surface a concrete blocker.
-- Keep the plan and ledger separate but aligned. Update the ledger when requirements, decisions, evidence, artifacts, blockers, or the critical path change.
+- Keep the plan and ledger separate but aligned. Review the ledger at task switches, meaningful artifact state changes, before substantive replies or stops, and before pull-request, merge, or release actions. Update it only when requirements, decisions, evidence, artifacts, blockers, status, or the critical path change.
 - Managers own skill and ledger operation mechanics. Do not ask the user to decide script fields, command shapes, or internal ledger storage unless they change user-visible behavior, public artifacts, destructive actions, visibility boundaries, or another closed escalation trigger.
 
 ### Delegation
@@ -424,7 +424,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 ## Documentation Rules
 
-- Keep private process out of public repo artifacts. Public pull-request descriptions, comments, issues, and docs must state final intent, technical facts, and reviewer-relevant context only. Do not mention private chats, ledgers, internal drafts, personal ownership cues, or wording that makes the work look externally misaligned.
+- Keep private process out of user-facing product copy and public repo artifacts. Public docs, pull-request descriptions, comments, issues, releases, and product text must state product facts and reviewer-relevant context; include actionable recovery steps and diagnostics only when useful. Do not mention private chats, ledgers, worker prompts, internal drafts, private implementation intent, personal ownership cues, task-management language, or wording that makes the work look externally misaligned.
 - Do not publish work-in-progress decision artifacts. Intermediate classification files, audit reports, keep/drop decision sheets, and other internal review artifacts stay internal. Keep them under `.codex/internal/` (gitignored) or `/tmp/`. Exception: if the user explicitly asks for a public review artifact.
 - Why: public process exposure creates noise for reviewers, leaks internal unclassified problems, and muddles what the repo actually ships.
 - Do not mention upstream fork origins in user-facing docs unless the user asked for that comparison.

@@ -22,7 +22,7 @@ Use this skill for policy, workflow-rule, and repo-skill changes. Repo skills ar
 11. Keep `AGENTS.md` for rules that apply most of the time. Move step-by-step playbooks, commands, and path-specific procedures into repo skills under `.codex/skills/**`, not product-discoverable config directories such as `.agentswarm/skills` or `.opencode/skills`.
 12. Treat "add this rule" or feedback as "ensure policy enforces this"; use the shortest coherent path regardless of input length: remove, merge, strengthen, move to a skill, or add text only when needed.
 13. Do not combine unrelated obligations in one long bullet. Split policy by owner, trigger, action, evidence, and exception so each list contains comparable items.
-14. Preserve public/private boundaries. Do not publish private chats, ledgers, internal drafts, or work-in-progress review artifacts unless the user asks.
+14. Preserve public/private boundaries. Public docs, pull-request text, issues, releases, and product copy must not expose private chats, ledgers, worker prompts, internal drafts, private implementation intent, task-management wording, or work-in-progress review artifacts unless the user asks.
 15. A manager must personally review the final policy diff, challenge every unexplained line, and iterate until the structure is coherent.
 16. Check the whole affected rules tree for internal contradictions, duplicate rules, lost protections, public/private leakage, trigger overreach, and unnecessary process cost.
 17. Record or escalate any remaining contradiction with the affected clauses; do not ship a narrower wording fix that hides it.

@@ -12,13 +12,13 @@ Use this skill when task state must survive beyond the current chat or when a re
 1. Record only real user requests, explicit requirements, blockers, or decisions that change the work.
 2. Store a proofread, privacy-preserving requirement restatement in `original`; do not copy exact private wording, profanity, speech errors, or raw transcript phrasing. Preserve meaning, source pointers, context, and auditability.
 3. Add a source pointer for each item, such as `chat:2026-04-15 user#2`, `PR#123 comment 456`, or `docs/foo.md:42`.
-4. Plan the strategy for tackling the active queue before editing it, then reread the full active ledger and reprioritize deliberately at each task boundary.
+4. Plan the strategy for tackling the active queue before editing it, then reread the full active ledger and reprioritize deliberately at context restoration, task switches, meaningful artifact state changes, before substantive replies or stops, and before pull-request, merge, or release actions.
 5. Keep active unfulfilled work in strategic chronological order; do not randomize, convenience-sort, or group items away from their original sequence.
 6. Before presenting a revised ledger, list every active unfulfilled requirement with sanitized `original` and source pointers.
 7. When an item is done, run `complete` so it moves out of the active queue and into the archive.
 8. If a ledger revision is rejected, run `reject`; failed revision output is not source of truth and must be rebuilt from original sources.
 9. Consider the ledger on every user message; update it only when the message creates or changes a real request, requirement, decision, blocker, artifact, status, or critical-path fact.
-10. Update the ledger at task switches, meaningful progress points, artifact state changes, before commits, before pull-request or release actions, and before a substantive reply or stop when one of those events changes real ledger state.
+10. Update the ledger only when a review point changes real state: a requirement, decision, blocker, evidence, artifact, status, next action, or critical-path fact.
 11. Register every active artifact you touch as a ledger-linked item or note: repos, worktrees, branches, PRs, conflicted states, temp artifacts, and generated review artifacts that still matter.
 12. Treat every unshipped or undiscarded artifact as a blocker; do not let it fall out of the active queue until it is shipped, explicitly discarded, or archived with resolution.
 13. Before opening a new PR for ongoing work, record the existing related PR and why it cannot be reused; if that reason is missing, reuse the existing PR instead.
@@ -119,4 +119,5 @@ python .codex/skills/requirement-ledger/scripts/requirement_ledger.py list --arc
 - Keep artifact state current at task boundaries so the ledger always reflects the real critical path, not a stale memory of it.
 - Clean up stale owned branches and worktrees only after ownership and merge state are clear.
 - Do not use the ledger as policy storage. If work exposes a durable process gap, update `AGENTS.md` or the relevant repo skill; use the ledger only for state tracking: active requests, decisions, blockers, evidence, artifacts, and source links.
+- If ledger tooling gets in the way, record the tooling improvement as scoped work or point to the need in the active item; do not turn this skill into a CLI implementation plan during unrelated policy work.
 - Own ledger mechanics inside the agent workflow. Do not ask the user to decide script fields, command shapes, or internal storage unless they change user-visible behavior, public artifacts, destructive actions, visibility boundaries, or another `AGENTS.md` escalation trigger.
