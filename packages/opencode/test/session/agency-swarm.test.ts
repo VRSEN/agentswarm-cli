@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
+import { rm } from "node:fs/promises"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import path from "node:path"
@@ -1025,6 +1026,37 @@ describe("session.agency-swarm", () => {
       // consume
     }
 
+    expect(captured).toEqual({
+      base_url: "https://proxy.example.com/v1",
+    })
+  })
+
+  test("stream skips local auth loading for remote agency-swarm servers without credential forwarding", async () => {
+    mockHistory()
+    const authSpy = spyOn(Auth, "all").mockImplementation(async () => {
+      throw new Error("auth store should not be loaded")
+    }) as typeof Auth.all
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.baseURL = "https://agency.example.com"
+    input.options.clientConfig = {
+      base_url: "https://proxy.example.com/v1",
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: unknown[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    expect(authSpy).not.toHaveBeenCalled()
+    expect(events.some((event) => (event as any).type === "error")).toBeFalse()
     expect(captured).toEqual({
       base_url: "https://proxy.example.com/v1",
     })
@@ -3241,6 +3273,129 @@ describe("session.agency-swarm", () => {
     ])
   })
 
+  test("compactHistory preserves historical local file read text when the source file is gone", async () => {
+    await using tmp = await tmpdir()
+    const filepath = path.join(tmp.path, "proof.txt")
+    await Bun.write(filepath, "current bytes")
+    await rm(filepath)
+
+    const msgs = [
+      {
+        info: {
+          id: "compact_user",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "compaction", auto: true, overflow: true }],
+      },
+      {
+        info: {
+          id: "summary",
+          role: "assistant",
+          parentID: "compact_user",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Planner",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          summary: true,
+          finish: "end_turn",
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "summary body" }],
+      },
+      {
+        info: {
+          id: "user_after_compaction",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [
+          { type: "text", text: "[File 1]\noriginal bytes", ignored: false, synthetic: true },
+          {
+            type: "file",
+            mime: "text/plain",
+            filename: "proof.txt",
+            url: pathToFileURL(filepath).href,
+          },
+        ],
+      },
+      {
+        info: {
+          id: "assistant_after_compaction",
+          role: "assistant",
+          parentID: "user_after_compaction",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Reviewer",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 4 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "original bytes" }],
+      },
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 5 },
+        },
+        parts: [{ type: "text", text: "repeat the file", ignored: false }],
+      },
+    ] as any
+
+    expect(SessionAgencySwarm.compactHistory({ msgs, currentID: "current", structuredAttachments: true })).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "summary body" }],
+        agent: "Planner",
+        callerAgent: null,
+        timestamp: 2,
+      },
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "[File 1]\noriginal bytes" }],
+        agent: "build",
+        callerAgent: null,
+        timestamp: 3,
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "original bytes" }],
+        agent: "Reviewer",
+        callerAgent: null,
+        timestamp: 4,
+      },
+    ])
+  })
+
   test("compactHistory falls back when no compaction summary exists", () => {
     const msgs = [
       {
@@ -3428,6 +3583,85 @@ describe("session.agency-swarm", () => {
         type: "message",
         role: "assistant",
         content: [{ type: "output_text", text: "first answer" }],
+        agent: "Reviewer",
+        callerAgent: null,
+        timestamp: 2,
+      },
+    ])
+  })
+
+  test("buildAgencyHistoryFromMessages preserves historical local file read text after the file changes", async () => {
+    await using tmp = await tmpdir()
+    const filepath = path.join(tmp.path, "proof.txt")
+    await Bun.write(filepath, "new bytes")
+
+    const msgs = [
+      {
+        info: {
+          id: "user_1",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [
+          { type: "text", text: "[File 1]\nold bytes", ignored: false, synthetic: true },
+          {
+            type: "file",
+            mime: "text/plain",
+            filename: "proof.txt",
+            url: pathToFileURL(filepath).href,
+          },
+        ],
+      },
+      {
+        info: {
+          id: "assistant_1",
+          role: "assistant",
+          parentID: "user_1",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Reviewer",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: { total: 0, input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "old bytes" }],
+      },
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [{ type: "text", text: "follow up", ignored: false }],
+      },
+    ] as any
+
+    expect(
+      SessionAgencySwarm.buildAgencyHistoryFromMessages({
+        msgs,
+        currentID: "current",
+        structuredAttachments: true,
+      }),
+    ).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "[File 1]\nold bytes" }],
+        agent: "build",
+        callerAgent: null,
+        timestamp: 1,
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "old bytes" }],
         agent: "Reviewer",
         callerAgent: null,
         timestamp: 2,

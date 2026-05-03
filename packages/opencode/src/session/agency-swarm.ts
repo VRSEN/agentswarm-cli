@@ -181,11 +181,8 @@ export namespace SessionAgencySwarm {
     const forwardGenerated =
       isLocalAgencyURL(baseURL) || Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS || forwardUpstreamCredentials === true
     const skipOpenAIApiKey = hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config)
-    const auths = await Auth.all()
-    const providers = await listProvidersForEnvCheck()
-    const env = await getEnvForClientConfig()
     const rawGenerated = forwardGenerated
-      ? await buildAuthClientConfig(auths, providers, env, {
+      ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), await getEnvForClientConfig(), {
           skipOpenAIApiKeyInjection: skipOpenAIApiKey,
           skipOpenAIOAuthFromStored: hasExplicitOpenAIClientConfig(config),
           allowStoredOpenAIOAuth: !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
@@ -2413,7 +2410,9 @@ export namespace SessionAgencySwarm {
     msg: MessageV2.WithParts,
     structuredAttachments: boolean,
   ): Array<Record<string, unknown>> {
-    if (structuredAttachments) {
+    const text = buildOutgoingMessage(msg)
+
+    if (structuredAttachments && !(text && hasLocalFileParts(msg) && hasSyntheticTextParts(msg))) {
       const structured = buildStructuredOutgoingMessage(msg)
       if (Array.isArray(structured)) {
         const user = structured.find((item) => asString(item["role"]) === "user")
@@ -2429,8 +2428,15 @@ export namespace SessionAgencySwarm {
       }
     }
 
-    const text = buildOutgoingMessage(msg)
     return text ? [{ type: "input_text", text }] : []
+  }
+
+  function hasLocalFileParts(msg: MessageV2.WithParts) {
+    return msg.parts.some((part) => part.type === "file" && part.url.startsWith("file://"))
+  }
+
+  function hasSyntheticTextParts(msg: MessageV2.WithParts) {
+    return msg.parts.some((part) => part.type === "text" && part.synthetic)
   }
 
   function hasFileParts(msg: MessageV2.WithParts) {
