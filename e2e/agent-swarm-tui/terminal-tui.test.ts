@@ -426,6 +426,9 @@ describe("Agent Swarm terminal TUI e2e", () => {
       "first issue 172 agency request",
       tuiInteractionTimeoutMs,
     )
+    const activeRequest = currentServer.requests[0]
+    expect(activeRequest?.releaseStream).toBeDefined()
+    expect(activeRequest?.streamClosed).toBeDefined()
 
     currentTui.write("second issue 172 prompt SHOULD_NOT_SEND\r")
     await currentTui.waitForText("QUEUED", tuiInteractionTimeoutMs)
@@ -433,7 +436,14 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await Bun.sleep(100)
     currentTui.write("\x1b")
     await currentTui.waitForText("Cancelled 1 queued message", tuiInteractionTimeoutMs)
-    await Bun.sleep(8_500)
+    activeRequest!.releaseStream!()
+    await activeRequest!.streamClosed
+    await currentTui.waitForText("completed first issue 172 prompt", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => !currentTui!.screen().includes("interrupt"),
+      "TUI idle after active issue 172 stream",
+      tuiInteractionTimeoutMs,
+    )
 
     expect(currentServer.requests.map((request) => request.body.message)).toEqual(["first issue 172 hold"])
   })
