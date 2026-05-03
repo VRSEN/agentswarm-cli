@@ -9,7 +9,7 @@ Use this skill for policy, workflow-rule, and repo-skill changes. Repo skills ar
 
 ## Workflow
 
-1. Read the live `AGENTS.md`, the current diff, and any directly related policy branch or skill.
+1. Read the live `AGENTS.md`, the current diff, any directly related policy branch or skill, and the current-session requirements that the policy repair must preserve.
 2. Policy workers must load and follow every repo skill that owns the policy area being changed.
 3. Policy manager reviewers must load and follow those same relevant skills before accepting worker output.
 4. For delegated-output checks, also follow `.codex/skills/delegation-management`.
