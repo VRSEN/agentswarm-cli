@@ -174,19 +174,24 @@ export async function startTui(input: {
   }
   attachProcess(proc)
 
-  await waitForInitialOutput({
-    hasOutput: () => dataReceived,
-    getExitCode: () => exitCode,
-    history: () => stripAnsi(raw),
-    timeoutMs: initialOutputTimeoutMs,
-    onRetry: async () => {
-      await closeProcess(proc)
-      proc = spawnTuiProcess({ args, cwd: input.cwd, env })
-      dataReceived = false
-      exitCode = undefined
-      attachProcess(proc)
-    },
-  })
+  try {
+    await waitForInitialOutput({
+      hasOutput: () => dataReceived,
+      getExitCode: () => exitCode,
+      history: () => stripAnsi(raw),
+      timeoutMs: initialOutputTimeoutMs,
+      onRetry: async () => {
+        await closeProcess(proc)
+        proc = spawnTuiProcess({ args, cwd: input.cwd, env })
+        dataReceived = false
+        exitCode = undefined
+        attachProcess(proc)
+      },
+    })
+  } catch (error) {
+    await cleanupTuiProcess(proc, root, exitCode === undefined)
+    throw error
+  }
 
   return {
     root,
@@ -222,8 +227,7 @@ export async function startTui(input: {
       )
     },
     async close() {
-      await closeProcess(proc)
-      await rm(root, { recursive: true, force: true })
+      await cleanupTuiProcess(proc, root, exitCode === undefined)
     },
   }
 }
@@ -703,6 +707,14 @@ async function closeProcess(proc: Proc) {
   if (!exited) proc.kill("SIGKILL")
   await wait(1000)
   dispose?.()
+}
+
+async function cleanupTuiProcess(proc: Proc, root: string, closeActiveProcess: boolean) {
+  try {
+    if (closeActiveProcess) await closeProcess(proc)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 }
 
 async function waitFor(predicate: () => boolean, failure: () => string, timeoutMs: number) {
