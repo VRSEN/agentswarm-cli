@@ -1152,7 +1152,7 @@ function summarizePythonTraceback(output: string) {
 }
 
 function isPythonTracebackFinalExceptionLine(line: string) {
-  return /^[A-Za-z_][\w.]*(?::(?:\s|$)|$)/.test(line)
+  return /^[A-Za-z_][\w.]*:(?:\s|$)/.test(line)
 }
 
 async function hasGitHubTemplateFlow() {

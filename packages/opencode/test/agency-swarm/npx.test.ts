@@ -764,6 +764,7 @@ describe("agency-swarm npx onboarding", () => {
       '  File "<frozen runpy>", line 88, in _run_code',
       `  File "${path.join(dir.path, ".venv", "lib", "python3.13", "site-packages", "pip", "__main__.py")}", line 22, in <module>`,
       "    from pip._internal.cli.main import main as _main",
+      "    foo",
       "ModuleNotFoundError: No module named 'pip._internal.cli.main'",
     ].join("\n")
 
@@ -821,6 +822,7 @@ describe("agency-swarm npx onboarding", () => {
     const mirroredOutput = stderrWrite.mock.calls.map((call) => call[0]).join("")
     expect(mirroredOutput).not.toContain("Traceback (most recent call last):")
     expect(mirroredOutput).not.toContain("<frozen runpy>")
+    expect(mirroredOutput).not.toContain("foo")
     expect(mirroredOutput).not.toContain("pip._internal.cli.main")
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("ModuleNotFoundError: No module named 'pip._internal.cli.main'"),
@@ -833,6 +835,7 @@ describe("agency-swarm npx onboarding", () => {
     const logContent = await Bun.file(path.join(launcherLogDirectory(dir.path), logFiles[0]!)).text()
     expect(logContent).toContain("Traceback (most recent call last):")
     expect(logContent).toContain("<frozen runpy>")
+    expect(logContent).toContain("foo")
     expect(logContent).toContain("pip._internal.cli.main")
     expect(logContent).toContain("ModuleNotFoundError: No module named 'pip._internal.cli.main'")
 
