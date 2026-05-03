@@ -3219,7 +3219,7 @@ describe("session.agency-swarm", () => {
     expect(sentHistory).toEqual(storedHistory)
   })
 
-  test("stream removes stored Responses reasoning items without dropping rs-prefixed messages", async () => {
+  test("stream strips stored Responses item ids while pruning handoff-only transport items", async () => {
     const storedHistory = [
       {
         type: "message",
@@ -3239,8 +3239,8 @@ describe("session.agency-swarm", () => {
         summary: [{ type: "summary_text", text: "private chain state" }],
       },
       {
-        id: "rs_ref_stale",
-        summary: [{ type: "summary_text", text: "private ref state" }],
+        type: "item_reference",
+        id: "rs_ref_rejected",
       },
       {
         type: "handoff_output_item",
@@ -3276,15 +3276,119 @@ describe("session.agency-swarm", () => {
     expect(sentHistory).toEqual([
       {
         type: "message",
-        id: "msg_kept",
         role: "assistant",
         content: [{ type: "output_text", text: "HANDOFF_AGENT_ACTIVE" }],
       },
       {
         type: "message",
-        id: "rs_message_kept",
         role: "assistant",
         content: [{ type: "output_text", text: "normal message with backend rs id" }],
+      },
+      {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "private chain state" }],
+      },
+    ])
+  })
+
+  test("stream strips stored Responses item ids after handoff", async () => {
+    const storedHistory = [
+      {
+        type: "message",
+        id: "msg_before_handoff",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Preparing transfer." }],
+      },
+      {
+        type: "reasoning",
+        id: "rs_required",
+        summary: [{ type: "summary_text", text: "choose handoff target" }],
+      },
+      {
+        type: "function_call",
+        id: "fc_handoff",
+        call_id: "call_handoff",
+        name: "transfer_to_math_agent",
+        arguments: "{}",
+      },
+      {
+        type: "handoff_output_item",
+        call_id: "call_handoff",
+        output: { assistant: "MathAgent" },
+      },
+      {
+        type: "reasoning",
+        id: "rs_required_message",
+        summary: [{ type: "summary_text", text: "start handoff response" }],
+      },
+      {
+        type: "message",
+        id: "msg_after_handoff",
+        role: "assistant",
+        agent: "MathAgent",
+        content: [{ type: "output_text", text: "Math agent now has control." }],
+      },
+      {
+        type: "reasoning",
+        id: "rs_orphan",
+        summary: [{ type: "summary_text", text: "stale private state" }],
+      },
+    ]
+    let sentHistory: unknown
+    AgencySwarmHistory.load = (async () => ({
+      scope: "http://127.0.0.1:8000|builder|session_1",
+      chat_history: storedHistory as any,
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.load
+    AgencySwarmHistory.appendMessages = (async () => ({
+      scope: "scope",
+      chat_history: [],
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.appendMessages
+    AgencySwarmHistory.setLastRunID = (async () => ({
+      scope: "scope",
+      chat_history: [],
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.setLastRunID
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      sentHistory = args.chatHistory
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _ of stream.fullStream) {
+    }
+
+    expect(sentHistory).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Preparing transfer." }],
+      },
+      {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "choose handoff target" }],
+      },
+      {
+        type: "function_call",
+        call_id: "call_handoff",
+        name: "transfer_to_math_agent",
+        arguments: "{}",
+      },
+      {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "start handoff response" }],
+      },
+      {
+        type: "message",
+        role: "assistant",
+        agent: "MathAgent",
+        content: [{ type: "output_text", text: "Math agent now has control." }],
+      },
+      {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "stale private state" }],
       },
     ])
   })
