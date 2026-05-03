@@ -248,12 +248,17 @@ function structuredFileContent(part: MessageV2.FilePart): Array<Record<string, u
 function normalizeStructuredFileURL(part: MessageV2.FilePart): string | undefined {
   if (part.url.startsWith("data:") || part.url.startsWith("http://") || part.url.startsWith("https://")) return part.url
   if (!part.url.startsWith("file://")) return undefined
+  let filepath: string | undefined
   try {
-    const filepath = fileURLToPath(part.url)
+    filepath = fileURLToPath(part.url)
     const data = readFileSync(filepath).toString("base64")
     return `data:${part.mime || "application/octet-stream"};base64,${data}`
   } catch {
-    return undefined
+    const filename =
+      part.filename || path.basename(part.source?.type === "file" ? part.source.path : (filepath ?? "")) || "attachment"
+    throw new Error(
+      `Agent Swarm Run mode cannot read local attachment "${filename}". Check that the file still exists and is readable.`,
+    )
   }
 }
 

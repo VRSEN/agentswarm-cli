@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { readFile, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { MessageV2 } from "../../src/session/message-v2"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
@@ -352,6 +353,60 @@ describe("session.agency-swarm-utils", () => {
         ],
       },
     ])
+  })
+
+  test("buildStructuredOutgoingMessage encodes readable local file attachments", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-structured-file-"))
+    const filepath = path.join(dir, "proof.txt")
+    const content = Buffer.from("local proof")
+    await writeFile(filepath, content)
+
+    try {
+      expect(
+        buildStructuredOutgoingMessage(
+          msg([
+            file("part-1", {
+              type: "file",
+              mime: "text/plain",
+              filename: "proof.txt",
+              url: pathToFileURL(filepath).href,
+            }),
+          ]),
+        ),
+      ).toEqual([
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_file",
+              file_data: `data:text/plain;base64,${content.toString("base64")}`,
+              filename: "proof.txt",
+            },
+          ],
+        },
+      ])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("buildStructuredOutgoingMessage rejects missing local file attachments", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-missing-file-"))
+    const filepath = path.join(dir, "missing.txt")
+    await rm(dir, { recursive: true, force: true })
+
+    expect(() =>
+      buildStructuredOutgoingMessage(
+        msg([
+          file("part-1", {
+            type: "file",
+            mime: "text/plain",
+            filename: "missing.txt",
+            url: pathToFileURL(filepath).href,
+          }),
+        ]),
+      ),
+    ).toThrow('Agent Swarm Run mode cannot read local attachment "missing.txt"')
   })
 
   test("hasAgencyHandoffEvidence accepts handoff output item metadata", () => {
