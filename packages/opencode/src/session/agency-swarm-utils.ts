@@ -1,5 +1,5 @@
 import type { MessageV2 } from "@/session/message-v2"
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -16,6 +16,8 @@ type CollectFileURLOptions = {
   allowLocalFilePaths?: boolean
   materializedFilePaths?: string[]
 }
+
+export type AgencyMessageInput = string | Array<Record<string, unknown>>
 
 export function normalizeCallerAgent(value: string | undefined): string | null | undefined {
   if (!value) return undefined
@@ -185,6 +187,22 @@ export function buildOutgoingMessage(message: MessageV2.WithParts): string {
   return textParts.join("\n\n")
 }
 
+export function buildStructuredOutgoingMessage(message: MessageV2.WithParts): AgencyMessageInput {
+  const files = message.parts.filter((part): part is MessageV2.FilePart => part.type === "file")
+  const text = buildOutgoingMessage(message)
+  if (files.length === 0) return text
+
+  const hasSyntheticText = message.parts.some((part) => part.type === "text" && !part.ignored && part.synthetic)
+  const content = files.flatMap((part) => structuredFileContent(part, { hasSyntheticText }))
+  if (text) content.push({ type: "input_text", text })
+  return [
+    {
+      role: "user",
+      content,
+    },
+  ]
+}
+
 function visibleOutgoingText(part: MessageV2.TextPart): string {
   if (!part.synthetic) return part.text.trim()
 
@@ -195,6 +213,64 @@ function visibleOutgoingText(part: MessageV2.TextPart): string {
   if (end === -1) return ""
 
   return text.slice(end + "</system-reminder>".length).trim()
+}
+
+function structuredFileContent(
+  part: MessageV2.FilePart,
+  options: { hasSyntheticText?: boolean } = {},
+): Array<Record<string, unknown>> {
+  if (part.mime === "application/x-directory") return []
+  if (isExpandedLocalTextFile(part, options)) return []
+
+  const filename = part.filename || path.basename(part.source?.type === "file" ? part.source.path : "") || "attachment"
+  const url = normalizeStructuredFileURL(part)
+  if (!url) return []
+  if (part.mime.startsWith("image/")) {
+    return [
+      {
+        type: "input_image",
+        image_url: url,
+        detail: "auto",
+      },
+    ]
+  }
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return [
+      {
+        type: "input_file",
+        file_url: url,
+        filename,
+      },
+    ]
+  }
+  return [
+    {
+      type: "input_file",
+      file_data: url,
+      filename,
+    },
+  ]
+}
+
+function isExpandedLocalTextFile(part: MessageV2.FilePart, options: { hasSyntheticText?: boolean }) {
+  return !!options.hasSyntheticText && part.source?.type === "file" && !!part.source.text && part.mime === "text/plain"
+}
+
+function normalizeStructuredFileURL(part: MessageV2.FilePart): string | undefined {
+  if (part.url.startsWith("data:") || part.url.startsWith("http://") || part.url.startsWith("https://")) return part.url
+  if (!part.url.startsWith("file://")) return undefined
+  let filepath: string | undefined
+  try {
+    filepath = fileURLToPath(part.url)
+    const data = readFileSync(filepath).toString("base64")
+    return `data:${part.mime || "application/octet-stream"};base64,${data}`
+  } catch {
+    const filename =
+      part.filename || path.basename(part.source?.type === "file" ? part.source.path : (filepath ?? "")) || "attachment"
+    throw new Error(
+      `Agent Swarm Run mode cannot read local attachment "${filename}". Check that the file still exists and is readable.`,
+    )
+  }
 }
 
 export function findRecipientAgent(message: MessageV2.WithParts): string | undefined {

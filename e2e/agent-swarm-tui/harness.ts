@@ -230,7 +230,14 @@ export async function startTui(input: {
     },
     async waitForText(text, timeoutMs = 10_000) {
       await waitFor(
-        () => this.screen().includes(text) || this.history().includes(text),
+        () => {
+          if (exitCode !== undefined) {
+            throw new Error(
+              `TUI exited with code ${exitCode} while waiting for ${JSON.stringify(text)}.\n\n${tail(this.history())}`,
+            )
+          }
+          return this.screen().includes(text) || this.history().includes(text)
+        },
         () =>
           `Timed out waiting for ${JSON.stringify(text)}.\n\nScreen:\n${this.screen()}\n\nHistory tail:\n${tail(this.history())}`,
         timeoutMs,
@@ -287,6 +294,7 @@ type AgencyFixture = {
 const qaAgencyFixture: AgencyFixture = {
   agencyID: "local-agency",
   metadata: {
+    agency_swarm_version: "1.9.6",
     metadata: {
       agencyName: "Live QA Agency",
       agents: ["entry-agent", "review-agent"],
@@ -352,11 +360,11 @@ const qaAgencyFixture: AgencyFixture = {
 const tuiDemoAgencyFixture: AgencyFixture = {
   agencyID: "tui-demo-agency",
   metadata: {
+    agency_swarm_version: "1.9.6",
     metadata: {
       agencyName: "TuiDemoAgency",
       agents: ["UserSupportAgent", "MathAgent"],
       entryPoints: ["UserSupportAgent"],
-      agency_swarm_version: "1.9.3",
     },
     nodes: [
       {

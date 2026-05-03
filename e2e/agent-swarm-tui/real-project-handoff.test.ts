@@ -56,15 +56,30 @@ describe("Agent Swarm real project TUI handoff e2e", () => {
     await currentTui.waitFor(() => currentServer!.requests.length === 2, "post-delegation request", timeoutMs)
 
     const delegation = currentServer.requests[0]?.body
-    expect(delegation?.message).toContain("delegate this research with SendMessage")
+    expect(messageText(delegation?.message)).toContain("delegate this research with SendMessage")
     expect(delegation).toMatchObject({
       recipient_agent: "UserSupportAgent",
     })
-    expect(delegation?.file_urls).toEqual({
-      "handoff-proof.png": resolvedImagePath,
-    })
+    expect(delegation?.message).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_image",
+            image_url: `data:image/png;base64,${"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="}`,
+            detail: "auto",
+          },
+          {
+            type: "input_text",
+            text: "[Image 1] delegate this research with SendMessage",
+          },
+        ],
+      },
+    ])
+    expect(delegation?.file_urls).toBeUndefined()
+    expect(path.basename(resolvedImagePath)).toBe("handoff-proof.png")
     const afterDelegation = currentServer.requests[1]?.body
-    expect(afterDelegation?.message).toContain("follow up after delegation")
+    expect(messageText(afterDelegation?.message)).toContain("follow up after delegation")
     expect(afterDelegation).toMatchObject({
       recipient_agent: "UserSupportAgent",
     })
@@ -79,12 +94,12 @@ describe("Agent Swarm real project TUI handoff e2e", () => {
     await currentTui.waitFor(() => currentServer!.requests.length === 4, "post-handoff request", timeoutMs)
 
     const handoff = currentServer.requests[2]?.body
-    expect(handoff?.message).toContain("please handoff this calculation")
+    expect(messageText(handoff?.message)).toContain("please handoff this calculation")
     expect(handoff).toMatchObject({
       recipient_agent: "UserSupportAgent",
     })
     const afterHandoff = currentServer.requests[3]?.body
-    expect(afterHandoff?.message).toContain("continue after handoff")
+    expect(messageText(afterHandoff?.message)).toContain("continue after handoff")
     expect(afterHandoff).toMatchObject({
       recipient_agent: "MathAgent",
     })
@@ -147,11 +162,11 @@ async function startRealProjectAgencyServer(): Promise<AgencyProtocolServer> {
 }
 
 const realProjectMetadata = {
+  agency_swarm_version: "1.9.6",
   metadata: {
     agencyName: "RealHandoffAgency",
     agents: ["UserSupportAgent", "ResearchAgent", "MathAgent"],
     entryPoints: ["UserSupportAgent"],
-    agency_swarm_version: "1.9.4",
   },
   nodes: [
     agentNode("UserSupportAgent", "Receives user requests and chooses delegation or handoff.", true),
@@ -174,7 +189,7 @@ function agentNode(id: string, description: string, isEntryPoint: boolean) {
 }
 
 function realProjectStream(body: Record<string, unknown>, count: number) {
-  const message = typeof body.message === "string" ? body.message.toLowerCase() : ""
+  const message = messageText(body.message).toLowerCase()
   if (message.includes("delegate")) {
     return sse([
       ["meta", { run_id: `run_real_project_${count}` }],
@@ -217,6 +232,22 @@ function realProjectStream(body: Record<string, unknown>, count: number) {
     ],
     ["end", {}],
   ])
+}
+
+function messageText(message: unknown): string {
+  if (typeof message === "string") return message
+  if (!Array.isArray(message)) return ""
+  return message
+    .flatMap((item) => {
+      if (!item || typeof item !== "object" || !Array.isArray((item as { content?: unknown }).content)) return []
+      return (item as { content: unknown[] }).content
+    })
+    .flatMap((item) => {
+      if (!item || typeof item !== "object") return []
+      const content = item as { type?: unknown; text?: unknown }
+      return content.type === "input_text" && typeof content.text === "string" ? [content.text] : []
+    })
+    .join("\n")
 }
 
 function sendMessageCall() {

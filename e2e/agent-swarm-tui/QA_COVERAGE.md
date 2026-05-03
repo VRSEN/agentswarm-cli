@@ -9,7 +9,7 @@
 - `USER_FLOWS.md` Run Mode: native `/editor`, `/variants`, `/init`, and `/review` slash commands stay hidden.
 - `USER_FLOWS.md` Run Mode: `/agents` uses Swarm and agent wording, live agency labels, swarm-row routing, and specific-agent routing against an Agency Swarm TUI-demo-shaped swarm.
 - `USER_FLOWS.md` Run Mode: prompt submit reaches a local Agency Swarm protocol server with the configured agent.
-- `USER_FLOWS.md` Run Mode: bracketed-paste image paths reach the local Agency Swarm protocol server as file paths, not inline `data:` URLs.
+- `USER_FLOWS.md` Run Mode: bracketed-paste image paths reach the local Agency Swarm protocol server as structured Responses `message` content.
 - `USER_FLOWS.md` Run Mode: ordinary and nested `SendMessage` delegation does not switch the user's active recipient.
 - `USER_FLOWS.md` Run Mode: `transfer_to_*`, top-level handoff, and `agent_updated_stream_event` handoffs switch control to the target agent for the next turn.
 - Harness setup: a copied real `agency.py` project path plus deterministic protocol server proves the same Run Mode delegation and handoff semantics without claiming launcher or Python bridge startup coverage.

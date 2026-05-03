@@ -243,6 +243,12 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `ensureLatestAgencySwarm` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `a77de00c`
 
+- **Run-mode attachments use structured Agency Swarm messages**
+  - Intent: send user-attached file context through the Agency Swarm FastAPI `message` contract instead of routing normal attachments through OpenAI Files API upload paths.
+  - Behavior: Run mode forwards file and image parts as structured Responses `message` content for structured-capable backends, uses legacy `file_urls` payloads for older backends, and keeps attachments available across follow-up prompts by replaying manual history, which may resend inline attachment content or references.
+  - Implementation: `buildStructuredOutgoingMessage` in `packages/opencode/src/session/agency-swarm-utils.ts` and `SessionAgencySwarm.stream` in `packages/opencode/src/session/agency-swarm.ts`.
+  - Added by: `2c88f1e1d`, `d08e55e2d`, PR #187.
+
 - **Run-mode session resumes recover the last local Agency project**
   - Intent: reopen a Run mode session in the right local Agency project without asking the user to pick it again.
   - Behavior: session resumes can recover the saved local Agency project before the TUI opens.

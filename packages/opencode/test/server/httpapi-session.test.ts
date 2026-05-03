@@ -282,7 +282,7 @@ describe("session HttpApi", () => {
     const originalStream = AgencySwarmAdapter.streamRun
     const firstStarted = defer<void>()
     const finishFirst = defer<void>()
-    const prompts: string[] = []
+    const prompts: Array<string | Record<string, unknown>[]> = []
 
     AgencySwarmAdapter.getMetadata = (async () => ({
       metadata: { agents: ["entry-agent"] },

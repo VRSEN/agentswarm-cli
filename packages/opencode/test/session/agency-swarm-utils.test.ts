@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { readFile, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { MessageV2 } from "../../src/session/message-v2"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
@@ -9,6 +10,7 @@ import {
   asRawString,
   asString,
   buildOutgoingMessage,
+  buildStructuredOutgoingMessage,
   collectFileURLs,
   compactMetadata,
   extractEventMeta,
@@ -305,6 +307,196 @@ describe("session.agency-swarm-utils", () => {
         ]),
       ),
     ).toBe("Reviewer")
+  })
+
+  test("buildStructuredOutgoingMessage forwards attachments as Responses content", () => {
+    const encoded = Buffer.from("pdf content").toString("base64")
+
+    expect(
+      buildStructuredOutgoingMessage(
+        msg([
+          text("part-1", {
+            type: "text",
+            text: "[PDF 1] Which phrase appears here?",
+            ignored: false,
+          }),
+          file("part-2", {
+            type: "file",
+            mime: "application/pdf",
+            filename: "proof.pdf",
+            url: `data:application/pdf;base64,${encoded}`,
+            source: {
+              type: "file",
+              path: "/tmp/proof.pdf",
+              text: {
+                value: "[PDF 1]",
+                start: 0,
+                end: 7,
+              },
+            },
+          }),
+        ]),
+      ),
+    ).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_file",
+            file_data: `data:application/pdf;base64,${encoded}`,
+            filename: "proof.pdf",
+          },
+          {
+            type: "input_text",
+            text: "[PDF 1] Which phrase appears here?",
+          },
+        ],
+      },
+    ])
+  })
+
+  test("buildStructuredOutgoingMessage encodes readable local file attachments", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-structured-file-"))
+    const filepath = path.join(dir, "proof.txt")
+    const content = Buffer.from("local proof")
+    await writeFile(filepath, content)
+
+    try {
+      expect(
+        buildStructuredOutgoingMessage(
+          msg([
+            file("part-1", {
+              type: "file",
+              mime: "text/plain",
+              filename: "proof.txt",
+              url: pathToFileURL(filepath).href,
+            }),
+          ]),
+        ),
+      ).toEqual([
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_file",
+              file_data: `data:text/plain;base64,${content.toString("base64")}`,
+              filename: "proof.txt",
+            },
+          ],
+        },
+      ])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("buildStructuredOutgoingMessage skips expanded local text file data", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-structured-text-"))
+    const filepath = path.join(dir, "proof.txt")
+    await writeFile(filepath, "expanded proof")
+
+    try {
+      expect(
+        buildStructuredOutgoingMessage(
+          msg([
+            text("part-1", {
+              type: "text",
+              synthetic: true,
+              text: 'Called the Read tool with the following input: {"filePath":"proof.txt"}',
+              ignored: false,
+            }),
+            text("part-2", {
+              type: "text",
+              synthetic: true,
+              text: "expanded proof",
+              ignored: false,
+            }),
+            file("part-3", {
+              type: "file",
+              mime: "text/plain",
+              filename: "proof.txt",
+              url: pathToFileURL(filepath).href,
+              source: {
+                type: "file",
+                path: filepath,
+                text: {
+                  value: "[File 1]",
+                  start: 0,
+                  end: 8,
+                },
+              },
+            }),
+          ]),
+        ),
+      ).toEqual([
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: 'Called the Read tool with the following input: {"filePath":"proof.txt"}\n\nexpanded proof',
+            },
+          ],
+        },
+      ])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("buildStructuredOutgoingMessage skips directory file data and keeps expanded text", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-structured-directory-"))
+
+    try {
+      expect(
+        buildStructuredOutgoingMessage(
+          msg([
+            text("part-1", {
+              type: "text",
+              text: "[Directory 1]\n- src\n- package.json",
+              ignored: false,
+            }),
+            file("part-2", {
+              type: "file",
+              mime: "application/x-directory",
+              filename: "project",
+              url: pathToFileURL(dir).href,
+            }),
+          ]),
+        ),
+      ).toEqual([
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: "[Directory 1]\n- src\n- package.json",
+            },
+          ],
+        },
+      ])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("buildStructuredOutgoingMessage rejects missing local file attachments", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-missing-file-"))
+    const filepath = path.join(dir, "missing.txt")
+    await rm(dir, { recursive: true, force: true })
+
+    expect(() =>
+      buildStructuredOutgoingMessage(
+        msg([
+          file("part-1", {
+            type: "file",
+            mime: "text/plain",
+            filename: "missing.txt",
+            url: pathToFileURL(filepath).href,
+          }),
+        ]),
+      ),
+    ).toThrow('Agent Swarm Run mode cannot read local attachment "missing.txt"')
   })
 
   test("hasAgencyHandoffEvidence accepts handoff output item metadata", () => {

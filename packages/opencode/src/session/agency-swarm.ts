@@ -28,6 +28,7 @@ import {
   asRawString,
   asString,
   buildOutgoingMessage,
+  buildStructuredOutgoingMessage,
   cleanupMaterializedFilePaths,
   compactMetadata,
   collectFileURLs,
@@ -41,6 +42,7 @@ import {
   normalizeCallerAgent as normalizeCallerAgentValue,
   parseToolInput,
   stringifyToolOutput,
+  type AgencyMessageInput,
   type AgencySwarmEventMeta,
 } from "./agency-swarm-utils"
 
@@ -49,6 +51,7 @@ export namespace SessionAgencySwarm {
   export const PROVIDER_ID = AgencySwarmAdapter.PROVIDER_ID
 
   const CANCEL_BEFORE_META_ABORT_MS = 3000
+  const STRUCTURED_ATTACHMENT_MESSAGE_MIN_VERSION = "1.9.6"
 
   export type RuntimeOptions = {
     baseURL: string
@@ -380,12 +383,9 @@ export namespace SessionAgencySwarm {
     if (!version) return undefined
     const match = version.trim().match(/^(?:v)?(\d+\.\d+\.\d+)(?:(?:\.post\d+)|(?:post\d+)|(?:\+[0-9a-z.-]+))?$/i)
     if (!match) {
-      log.warn(
-        "agency metadata exposed a prerelease or unreadable agency_swarm_version while deciding Codex OAuth routing",
-        {
-          version,
-        },
-      )
+      log.warn("agency metadata exposed a prerelease or unreadable agency_swarm_version", {
+        version,
+      })
       return undefined
     }
     return match[1]
@@ -395,6 +395,26 @@ export namespace SessionAgencySwarm {
     const version = readStableAgencySwarmVersion(metadata)
     if (!version) return false
     return semver.gte(version, "1.9.3")
+  }
+
+  function supportsStructuredAttachmentMessages(metadata: AgencySwarmAdapter.AgencyMetadata): boolean {
+    if (hasStructuredAttachmentCapability(metadata)) return true
+    const version = readStableAgencySwarmVersion(metadata)
+    if (!version) return false
+    return semver.gte(version, STRUCTURED_ATTACHMENT_MESSAGE_MIN_VERSION)
+  }
+
+  function hasStructuredAttachmentCapability(metadata: AgencySwarmAdapter.AgencyMetadata): boolean {
+    const capabilities = asRecord(metadata["capabilities"])
+    const features = asRecord(metadata["features"])
+    return (
+      metadata["structured_message_attachments"] === true ||
+      metadata["structuredMessageAttachments"] === true ||
+      capabilities?.["structured_message_attachments"] === true ||
+      capabilities?.["structuredMessageAttachments"] === true ||
+      features?.["structured_message_attachments"] === true ||
+      features?.["structuredMessageAttachments"] === true
+    )
   }
 
   async function shouldStripCodexOAuth(
@@ -457,6 +477,12 @@ export namespace SessionAgencySwarm {
   }
 
   function stripCodexOAuthForNonOpenAI(
+    generated: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined {
+    return stripGeneratedCodexOAuth(generated)
+  }
+
+  function stripGeneratedCodexOAuth(
     generated: Record<string, unknown> | undefined,
   ): Record<string, unknown> | undefined {
     if (!generated) return generated
@@ -604,16 +630,6 @@ export namespace SessionAgencySwarm {
         })
       }
     }
-    let fileURLs: Record<string, string> | undefined
-    try {
-      fileURLs = collectFileURLs(input.userMessage, {
-        allowLocalFilePaths: isLocalAgencyURL(input.options.baseURL),
-        materializedFilePaths,
-      })
-    } catch (error) {
-      await cleanupMaterializedFiles()
-      throw error
-    }
     const mentionedRecipient = findRecipientAgent(input.userMessage)
 
     const tools = new Map<string, Tool>()
@@ -637,6 +653,7 @@ export namespace SessionAgencySwarm {
     let cancelBeforeMetaTimer: ReturnType<typeof setTimeout> | undefined
     let streamAborted = false
     let hadDanglingTool = false
+    let replayedAttachmentKeys = new Set<string>()
     const agentUpdatedHandoffAgents = new Set<string>()
 
     const streamAbort = new AbortController()
@@ -1211,7 +1228,11 @@ export namespace SessionAgencySwarm {
 
     const handleMessagesPayload = async function* (payload: Record<string, unknown>) {
       const newMessages = Array.isArray(payload["new_messages"]) ? payload["new_messages"] : []
-      await AgencySwarmHistory.appendMessages(scope, newMessages)
+      const historyMessages =
+        replayedAttachmentKeys.size > 0
+          ? stripReplayedAttachmentsFromMessages(newMessages, replayedAttachmentKeys)
+          : newMessages
+      await AgencySwarmHistory.appendMessages(scope, historyMessages)
       setUsage(asRecord(payload["usage"]))
 
       const runFromMessages = asString(payload["run_id"])
@@ -1542,13 +1563,24 @@ export namespace SessionAgencySwarm {
       yield { type: "start" }
       yield { type: "start-step" }
       let streamError: Error | undefined
+      let compactedHistoryFromMessages: Array<Record<string, unknown>> | undefined
+      let compactedHistoryHasFileAttachments = false
       let rebuiltHistoryFromMessages: Array<Record<string, unknown>> | undefined
+      let sessionMessages: MessageV2.WithParts[] | undefined
 
       const history = await AgencySwarmHistory.load(scope)
       const chatHistory = await Session.messages({ sessionID: input.sessionID })
         .then((msgs) => {
+          sessionMessages = msgs
           const compacted = compactHistory({ msgs, currentID: input.userMessage.info.id })
-          if (compacted) return compacted
+          if (compacted) {
+            compactedHistoryFromMessages = compacted
+            compactedHistoryHasFileAttachments = compactHistoryHasPriorFileParts({
+              msgs,
+              currentID: input.userMessage.info.id,
+            })
+            return compacted
+          }
           // Forked sessions clone local messages but get a fresh AgencySwarmHistory key, so the bridge
           // would otherwise start with no context. Rebuild from the cloned messages when stored history
           // is empty and prior messages are all agency-swarm.
@@ -1593,16 +1625,80 @@ export namespace SessionAgencySwarm {
         sessionLitellmModel,
       )
 
+      const hasCurrentFileAttachments = hasFileParts(input.userMessage)
+      const hasRebuildableFileAttachments =
+        history.chat_history.length === 0 &&
+        !!rebuiltHistoryFromMessages &&
+        !!sessionMessages &&
+        hasPriorFileParts(sessionMessages, input.userMessage.info.id)
+      const sanitizedChatHistory = sanitizeAgencyHistoryForTransport(chatHistory)
+      const replayOnlyOutgoing = replayStoredAttachmentsInOutgoingMessage(outgoingMessage, sanitizedChatHistory)
+      const attachmentMessage =
+        hasCurrentFileAttachments ||
+        hasRebuildableFileAttachments ||
+        compactedHistoryHasFileAttachments ||
+        messageHasAttachmentContent(replayOnlyOutgoing.message)
+      const structuredAttachmentsSupported =
+        attachmentMessage &&
+        (await supportsStructuredAttachmentMessagesForBackend({
+          baseURL: input.options.baseURL,
+          agency,
+          token: input.options.token,
+          timeoutMs: input.options.discoveryTimeoutMs,
+        }))
+      let effectiveChatHistory = chatHistory
+      if (structuredAttachmentsSupported && sessionMessages) {
+        if (compactedHistoryFromMessages) {
+          const compacted = compactHistory({
+            msgs: sessionMessages,
+            currentID: input.userMessage.info.id,
+            structuredAttachments: true,
+          })
+          if (compacted) {
+            compactedHistoryFromMessages = compacted
+            effectiveChatHistory = compacted
+          }
+        } else if (rebuiltHistoryFromMessages) {
+          const rebuilt = buildAgencyHistoryFromMessages({
+            msgs: sessionMessages,
+            currentID: input.userMessage.info.id,
+            structuredAttachments: true,
+          })
+          if (rebuilt && rebuilt.length > 0) {
+            rebuiltHistoryFromMessages = rebuilt
+            effectiveChatHistory = rebuilt
+          }
+        }
+      }
+
       if (rebuiltHistoryFromMessages) {
         await AgencySwarmHistory.appendMessages(scope, rebuiltHistoryFromMessages)
       }
-      const transportChatHistory = sanitizeAgencyHistoryForTransport(chatHistory)
+      const transportChatHistory = sanitizeAgencyHistoryForTransport(effectiveChatHistory)
+      let requestMessage: AgencyMessageInput = outgoingMessage
+      let fileURLs: Record<string, string> | undefined
+      if (structuredAttachmentsSupported) {
+        const outgoing = replayStoredAttachmentsInOutgoingMessage(
+          buildStructuredOutgoingMessage(input.userMessage),
+          transportChatHistory,
+        )
+        requestMessage = outgoing.message
+        replayedAttachmentKeys = outgoing.replayedAttachmentKeys
+      } else {
+        replayedAttachmentKeys = new Set()
+        if (hasCurrentFileAttachments) {
+          fileURLs = collectFileURLs(input.userMessage, {
+            allowLocalFilePaths: isLocalAgencyURL(input.options.baseURL),
+            materializedFilePaths,
+          })
+        }
+      }
 
       try {
         for await (const frame of AgencySwarmAdapter.streamRun({
           baseURL: input.options.baseURL,
           agency,
-          message: outgoingMessage,
+          message: requestMessage,
           chatHistory: transportChatHistory,
           recipientAgent,
           additionalInstructions: input.options.additionalInstructions,
@@ -1973,6 +2069,25 @@ export namespace SessionAgencySwarm {
     }
   }
 
+  async function supportsStructuredAttachmentMessagesForBackend(input: {
+    baseURL: string
+    agency: string
+    token?: string
+    timeoutMs: number
+  }) {
+    try {
+      const metadata = await AgencySwarmAdapter.getMetadata(input)
+      return supportsStructuredAttachmentMessages(metadata)
+    } catch (error) {
+      log.warn("unable to load agency metadata; using legacy attachment transport", {
+        baseURL: input.baseURL,
+        agency: input.agency,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return false
+    }
+  }
+
   async function applyAssistantLabel(message: MessageV2.Assistant, metadata: AgencySwarmEventMeta) {
     if (!metadata.agent) return
     if (metadata.agent === message.agent) return
@@ -2195,7 +2310,26 @@ export namespace SessionAgencySwarm {
     return undefined
   }
 
-  export function compactHistory(input: { msgs: MessageV2.WithParts[]; currentID: string }) {
+  export function compactHistory(input: {
+    msgs: MessageV2.WithParts[]
+    currentID: string
+    structuredAttachments?: boolean
+  }): Array<Record<string, unknown>> | undefined {
+    const slice = compactHistoryMessages(input)
+    if (!slice) return
+
+    return slice.flatMap((msg) => messageToHistoryItem(msg, input.currentID, !!input.structuredAttachments))
+  }
+
+  function compactHistoryHasPriorFileParts(input: { msgs: MessageV2.WithParts[]; currentID: string }) {
+    const slice = compactHistoryMessages(input)
+    return !!slice?.some((msg) => msg.info.id !== input.currentID && hasFileParts(msg))
+  }
+
+  function compactHistoryMessages(input: {
+    msgs: MessageV2.WithParts[]
+    currentID: string
+  }): MessageV2.WithParts[] | undefined {
     let start = -1
     for (let i = input.msgs.length - 1; i >= 0; i--) {
       const msg = input.msgs[i]
@@ -2212,8 +2346,7 @@ export namespace SessionAgencySwarm {
     if (start < 0) return
     const slice = input.msgs.slice(start < 0 ? 0 : start)
     if (slice.some((msg) => msg.info.id !== input.currentID && !isAgencySwarmMessage(msg))) return
-
-    return slice.flatMap((msg) => messageToHistoryItem(msg, input.currentID))
+    return slice
   }
 
   /**
@@ -2222,23 +2355,31 @@ export namespace SessionAgencySwarm {
    * never streamed before). Returns undefined when the prior messages are not all agency-swarm,
    * to avoid sending mismatched-shape items into the bridge.
    */
-  export function buildAgencyHistoryFromMessages(input: { msgs: MessageV2.WithParts[]; currentID: string }) {
+  export function buildAgencyHistoryFromMessages(input: {
+    msgs: MessageV2.WithParts[]
+    currentID: string
+    structuredAttachments?: boolean
+  }): Array<Record<string, unknown>> | undefined {
     if (input.msgs.length <= 1) return undefined
     if (input.msgs.some((msg) => msg.info.id !== input.currentID && !isAgencySwarmMessage(msg))) return undefined
-    return input.msgs.flatMap((msg) => messageToHistoryItem(msg, input.currentID))
+    return input.msgs.flatMap((msg) => messageToHistoryItem(msg, input.currentID, !!input.structuredAttachments))
   }
 
-  function messageToHistoryItem(msg: MessageV2.WithParts, currentID: string) {
+  function messageToHistoryItem(
+    msg: MessageV2.WithParts,
+    currentID: string,
+    structuredAttachments = false,
+  ): Array<Record<string, unknown>> {
     if (msg.info.id === currentID) return []
 
     if (msg.info.role === "user") {
-      const text = buildOutgoingMessage(msg)
-      if (!text) return []
+      const content = userMessageHistoryContent(msg, structuredAttachments)
+      if (content.length === 0) return []
       return [
         {
           type: "message",
           role: "user",
-          content: [{ type: "input_text", text }],
+          content,
           agent: msg.info.agent,
           callerAgent: null,
           timestamp: msg.info.time.created,
@@ -2265,6 +2406,47 @@ export namespace SessionAgencySwarm {
     ]
   }
 
+  function userMessageHistoryContent(
+    msg: MessageV2.WithParts,
+    structuredAttachments: boolean,
+  ): Array<Record<string, unknown>> {
+    const text = buildOutgoingMessage(msg)
+
+    if (structuredAttachments && !(text && hasLocalFileParts(msg) && hasSyntheticTextParts(msg))) {
+      const structured = buildStructuredOutgoingMessage(msg)
+      if (Array.isArray(structured)) {
+        const user = structured.find((item) => asString(item["role"]) === "user")
+        const content = user?.["content"]
+        if (Array.isArray(content)) {
+          const result: Array<Record<string, unknown>> = []
+          for (const item of content) {
+            const record = asRecord(item)
+            if (record) result.push(record)
+          }
+          return result
+        }
+      }
+    }
+
+    return text ? [{ type: "input_text", text }] : []
+  }
+
+  function hasLocalFileParts(msg: MessageV2.WithParts) {
+    return msg.parts.some((part) => part.type === "file" && part.url.startsWith("file://"))
+  }
+
+  function hasSyntheticTextParts(msg: MessageV2.WithParts) {
+    return msg.parts.some((part) => part.type === "text" && part.synthetic)
+  }
+
+  function hasFileParts(msg: MessageV2.WithParts) {
+    return msg.parts.some((part) => part.type === "file")
+  }
+
+  function hasPriorFileParts(msgs: MessageV2.WithParts[], currentID: string) {
+    return msgs.some((msg) => msg.info.id !== currentID && hasFileParts(msg))
+  }
+
   function sanitizeAgencyHistoryForTransport(history: Array<Record<string, unknown>>) {
     return history.flatMap((item) => {
       const type = asString(item["type"])
@@ -2277,6 +2459,138 @@ export namespace SessionAgencySwarm {
         return []
       }
       return [stripOpenAIResponseItemID(item)]
+    })
+  }
+
+  function replayStoredAttachmentsInOutgoingMessage(
+    message: AgencyMessageInput,
+    history: Array<Record<string, unknown>>,
+  ): { message: AgencyMessageInput; replayedAttachmentKeys: Set<string> } {
+    const replayedAttachments = collectReplayableAttachmentContent(history)
+    if (replayedAttachments.length === 0) {
+      return {
+        message,
+        replayedAttachmentKeys: new Set(),
+      }
+    }
+
+    const existingAttachmentKeys = collectMessageAttachmentKeys(message)
+    const attachments = replayedAttachments.filter((part) => !existingAttachmentKeys.has(replayableAttachmentKey(part)))
+    const replayedAttachmentKeys = new Set(attachments.map((part) => replayableAttachmentKey(part)))
+    if (attachments.length === 0) {
+      return {
+        message,
+        replayedAttachmentKeys: new Set(),
+      }
+    }
+
+    if (Array.isArray(message)) {
+      const index = message.findIndex((item) => asString(item["role"]) === "user")
+      if (index < 0) {
+        return {
+          message,
+          replayedAttachmentKeys: new Set(),
+        }
+      }
+      const next = message.map((item, itemIndex) => {
+        if (itemIndex !== index) return item
+        const content = Array.isArray(item["content"]) ? item["content"] : []
+        return {
+          ...item,
+          content: [...attachments, ...content],
+        }
+      })
+      return {
+        message: next,
+        replayedAttachmentKeys,
+      }
+    }
+
+    const text = message.trim()
+    const content = [...attachments]
+    if (text) content.push({ type: "input_text", text })
+    return {
+      message: [
+        {
+          role: "user",
+          content,
+        },
+      ],
+      replayedAttachmentKeys,
+    }
+  }
+
+  function collectReplayableAttachmentContent(history: Array<Record<string, unknown>>) {
+    const result: Array<Record<string, unknown>> = []
+    const seen = new Set<string>()
+    for (const item of history) {
+      if (asString(item["type"]) !== "message" || asString(item["role"]) !== "user") continue
+      const content = item["content"]
+      if (!Array.isArray(content)) continue
+      for (const rawPart of content) {
+        const part = asRecord(rawPart)
+        if (!part || !isReplayableAttachmentPart(part)) continue
+        const key = replayableAttachmentKey(part)
+        if (seen.has(key)) continue
+        seen.add(key)
+        result.push({ ...part })
+      }
+    }
+    return result
+  }
+
+  function stripReplayedAttachmentsFromMessages(messages: unknown[], replayedKeys: Set<string>) {
+    return messages.map((raw) => {
+      const message = asRecord(raw)
+      if (!message || asString(message["type"]) !== "message" || asString(message["role"]) !== "user") return raw
+      const content = message["content"]
+      if (!Array.isArray(content)) return raw
+      const stripped = content.filter((rawPart) => {
+        const part = asRecord(rawPart)
+        return !part || !isReplayableAttachmentPart(part) || !replayedKeys.has(replayableAttachmentKey(part))
+      })
+      if (stripped.length === content.length) return raw
+      return {
+        ...message,
+        content: stripped,
+      }
+    })
+  }
+
+  function messageHasAttachmentContent(message: AgencyMessageInput) {
+    return collectMessageAttachmentKeys(message).size > 0
+  }
+
+  function collectMessageAttachmentKeys(message: AgencyMessageInput) {
+    const keys = new Set<string>()
+    if (!Array.isArray(message)) return keys
+    for (const item of message) {
+      const content = item["content"]
+      if (!Array.isArray(content)) continue
+      for (const rawPart of content) {
+        const part = asRecord(rawPart)
+        if (!part || !isReplayableAttachmentPart(part)) continue
+        keys.add(replayableAttachmentKey(part))
+      }
+    }
+    return keys
+  }
+
+  function isReplayableAttachmentPart(part: Record<string, unknown> | undefined) {
+    const type = asString(part?.["type"])
+    if (type === "input_image") return !!asString(part?.["image_url"])
+    if (type !== "input_file") return false
+    return !!(asString(part?.["file_data"]) || asString(part?.["file_url"]) || asString(part?.["file_id"]))
+  }
+
+  function replayableAttachmentKey(part: Record<string, unknown>) {
+    return JSON.stringify({
+      type: asString(part["type"]),
+      file_data: asString(part["file_data"]),
+      file_url: asString(part["file_url"]),
+      file_id: asString(part["file_id"]),
+      image_url: asString(part["image_url"]),
+      filename: asString(part["filename"]),
     })
   }
 

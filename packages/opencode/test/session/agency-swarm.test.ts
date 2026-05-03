@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { readFile } from "node:fs/promises"
+import { rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { Auth } from "../../src/auth"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
@@ -95,10 +96,10 @@ describe("session.agency-swarm", () => {
     }
   }
 
-  const mockHistory = (lastRunID?: string) => {
+  const mockHistory = (lastRunID?: string, initialChatHistory: unknown[] = []) => {
     const appended: unknown[][] = []
     const runs: (string | undefined)[] = []
-    const chatHistory: unknown[] = []
+    const chatHistory: unknown[] = [...initialChatHistory]
     AgencySwarmHistory.load = (async () => ({
       scope: "http://127.0.0.1:8000|builder|session_1",
       chat_history: chatHistory,
@@ -125,6 +126,16 @@ describe("session.agency-swarm", () => {
       }
     }) as typeof AgencySwarmHistory.setLastRunID
     return { appended, runs }
+  }
+
+  const mockAgencyVersion = (version: string) => {
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      agency_swarm_version: version,
+      metadata: {
+        agents: ["AgentA"],
+      },
+      nodes: [],
+    })) as typeof AgencySwarmAdapter.getMetadata
   }
 
   const addCompletedTransferPart = async (input: {
@@ -197,16 +208,8 @@ describe("session.agency-swarm", () => {
     expect(called).toBeFalse()
   })
 
-  test("stream sends local source paths for dropped data URL images to loopback Agency servers", async () => {
-    mockHistory()
-    let captured: Record<string, string> | undefined
-    AgencySwarmAdapter.streamRun = async function* (input) {
-      captured = input.fileURLs
-      yield { type: "end" }
-    } as typeof AgencySwarmAdapter.streamRun
-
-    const { input } = helper()
-    input.userMessage.parts = [
+  const droppedImageParts = (content: Buffer) =>
+    [
       {
         type: "text",
         text: "[Image 1] inspect this image",
@@ -216,7 +219,7 @@ describe("session.agency-swarm", () => {
         type: "file",
         mime: "image/png",
         filename: "red-dot.png",
-        url: "data:image/png;base64,AAA=",
+        url: `data:image/png;base64,${content.toString("base64")}`,
         source: {
           type: "file",
           path: "/tmp/red-dot.png",
@@ -229,14 +232,717 @@ describe("session.agency-swarm", () => {
       },
     ] as any
 
+  test("stream forwards dropped data URL images as structured message content", async () => {
+    mockHistory()
+    mockAgencyVersion("1.9.6")
+    const content = Buffer.from("red dot image")
+    let captured: unknown
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.message
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = droppedImageParts(content)
+
     const stream = await SessionAgencySwarm.stream(input)
     for await (const _event of stream.fullStream) {
       // consume
     }
 
-    expect(captured).toEqual({
-      "red-dot.png": "/tmp/red-dot.png",
+    expect(captured).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_image",
+            image_url: `data:image/png;base64,${content.toString("base64")}`,
+            detail: "auto",
+          },
+          {
+            type: "input_text",
+            text: "[Image 1] inspect this image",
+          },
+        ],
+      },
+    ])
+  })
+
+  test("stream sends legacy attachment payloads when metadata predates structured messages", async () => {
+    mockHistory()
+    mockAgencyVersion("1.9.4")
+    let capturedMessage: unknown
+    let capturedFileURLs: Record<string, string> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      capturedFileURLs = input.fileURLs
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[PDF 1] Which phrase appears here?",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "application/pdf",
+        filename: "proof.pdf",
+        url: "https://example.com/proof.pdf",
+        source: {
+          type: "file",
+          path: "/tmp/proof.pdf",
+          text: {
+            value: "[PDF 1]",
+            start: 0,
+            end: 7,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toBe("[PDF 1] Which phrase appears here?")
+    expect(capturedFileURLs).toEqual({
+      "proof.pdf": "https://example.com/proof.pdf",
     })
+  })
+
+  test("stream keeps local directory attachments on legacy transport when metadata predates structured messages", async () => {
+    await using tmp = await tmpdir()
+    mockHistory()
+    mockAgencyVersion("1.9.4")
+    let capturedMessage: unknown
+    let capturedFileURLs: Record<string, string> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      capturedFileURLs = input.fileURLs
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[Directory 1] List the project files.",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "application/octet-stream",
+        filename: "project-dir",
+        url: pathToFileURL(tmp.path).href,
+        source: {
+          type: "file",
+          path: tmp.path,
+          text: {
+            value: "[Directory 1]",
+            start: 0,
+            end: 13,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toBe("[Directory 1] List the project files.")
+    expect(capturedFileURLs).toEqual({
+      "project-dir": tmp.path,
+    })
+  })
+
+  test("stream skips directory file data on structured transport and sends expanded text", async () => {
+    await using tmp = await tmpdir()
+    mockHistory()
+    mockAgencyVersion("1.9.6")
+    let capturedMessage: unknown
+    let capturedFileURLs: Record<string, string> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      capturedFileURLs = input.fileURLs
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[Directory 1]\n- src\n- package.json",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "application/x-directory",
+        filename: "project-dir",
+        url: pathToFileURL(tmp.path).href,
+        source: {
+          type: "file",
+          path: tmp.path,
+          text: {
+            value: "[Directory 1]",
+            start: 0,
+            end: 13,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: "[Directory 1]\n- src\n- package.json",
+          },
+        ],
+      },
+    ])
+    expect(capturedFileURLs).toBeUndefined()
+  })
+
+  test("stream skips expanded local text file data on structured transport", async () => {
+    await using tmp = await tmpdir()
+    mockHistory()
+    mockAgencyVersion("1.9.6")
+    const filepath = path.join(tmp.path, "notes.txt")
+    await writeFile(filepath, "visible text file contents")
+    let capturedMessage: unknown
+    let capturedFileURLs: Record<string, string> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      capturedFileURLs = input.fileURLs
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        synthetic: true,
+        text: 'Called the Read tool with the following input: {"filePath":"notes.txt"}',
+        ignored: false,
+      },
+      {
+        type: "text",
+        synthetic: true,
+        text: "visible text file contents",
+        ignored: false,
+      },
+      {
+        type: "text",
+        text: "Summarize it.",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "text/plain",
+        filename: "notes.txt",
+        url: pathToFileURL(filepath).href,
+        source: {
+          type: "file",
+          path: filepath,
+          text: {
+            value: "[notes.txt](file:///tmp/notes.txt)",
+            start: 0,
+            end: 32,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: 'Called the Read tool with the following input: {"filePath":"notes.txt"}\n\nvisible text file contents\n\nSummarize it.',
+          },
+        ],
+      },
+    ])
+    expect(capturedFileURLs).toBeUndefined()
+  })
+
+  test("stream keeps local PDF file data on structured transport", async () => {
+    await using tmp = await tmpdir()
+    mockHistory()
+    mockAgencyVersion("1.9.6")
+    const content = Buffer.from("%PDF proof")
+    const filepath = path.join(tmp.path, "proof.pdf")
+    await writeFile(filepath, content)
+    let capturedMessage: unknown
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[PDF 1] Which phrase appears here?",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "application/pdf",
+        filename: "proof.pdf",
+        url: pathToFileURL(filepath).href,
+        source: {
+          type: "file",
+          path: filepath,
+          text: {
+            value: "[PDF 1]",
+            start: 0,
+            end: 7,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_file",
+            file_data: `data:application/pdf;base64,${content.toString("base64")}`,
+            filename: "proof.pdf",
+          },
+          {
+            type: "input_text",
+            text: "[PDF 1] Which phrase appears here?",
+          },
+        ],
+      },
+    ])
+  })
+
+  test("stream keeps browser auth client_config while forwarding attachments inline", async () => {
+    mockHistory()
+    mockAgencyVersion("1.9.6")
+    await Auth.set("openai", {
+      type: "oauth",
+      access: "oauth-access",
+      refresh: "oauth-refresh",
+      expires: Date.now() + 60_000,
+      accountId: "acct_123",
+    } as any)
+
+    const content = Buffer.from("red dot image")
+    let capturedClientConfig: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedClientConfig = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    try {
+      const { input } = helper()
+      input.userMessage.parts = droppedImageParts(content)
+
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _event of stream.fullStream) {
+        // consume
+      }
+
+      expect(capturedClientConfig).toEqual({
+        api_key: "oauth-access",
+        base_url: "https://chatgpt.com/backend-api/codex",
+        default_headers: {
+          "ChatGPT-Account-Id": "acct_123",
+        },
+      })
+    } finally {
+      await Auth.remove("openai")
+    }
+  })
+
+  test("stream replays stored attachment content into follow-up requests without duplicating history", async () => {
+    mockAgencyVersion("1.9.6")
+    const filePart = {
+      type: "input_file",
+      file_data: `data:application/pdf;base64,${Buffer.from("Attachment proof phrase one: cobalt lantern.").toString("base64")}`,
+      filename: "proof.pdf",
+    }
+    const priorUser = {
+      type: "message",
+      role: "user",
+      content: [
+        filePart,
+        {
+          type: "input_text",
+          text: "[PDF 1] In the attached PDF, what is the exact value of phrase two?",
+        },
+      ],
+    }
+    const priorAssistant = {
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: "silver compass" }],
+    }
+    const { appended } = mockHistory(undefined, [priorUser, priorAssistant])
+    let capturedMessage: unknown
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      yield {
+        type: "messages",
+        payload: {
+          new_messages: [
+            {
+              type: "message",
+              role: "user",
+              content: [
+                filePart,
+                {
+                  type: "input_text",
+                  text: "Without re-attaching the file, what is the exact value of phrase one?",
+                },
+              ],
+            },
+            {
+              type: "message",
+              id: "msg_follow_up",
+              role: "assistant",
+              content: [{ type: "output_text", text: "cobalt lantern" }],
+            },
+          ],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "Without re-attaching the file, what is the exact value of phrase one?",
+        ignored: false,
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toEqual([
+      {
+        role: "user",
+        content: [
+          filePart,
+          {
+            type: "input_text",
+            text: "Without re-attaching the file, what is the exact value of phrase one?",
+          },
+        ],
+      },
+    ])
+    expect(appended.at(-1)?.[0]).toEqual({
+      type: "message",
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: "Without re-attaching the file, what is the exact value of phrase one?",
+        },
+      ],
+    })
+  })
+
+  test("stream replays stored attachment content when the follow-up has a new attachment", async () => {
+    mockAgencyVersion("1.9.6")
+    const priorFilePart = {
+      type: "input_file",
+      file_data: `data:application/pdf;base64,${Buffer.from("Prior attachment phrase: cobalt lantern.").toString("base64")}`,
+      filename: "prior.pdf",
+    }
+    const newFilePart = {
+      type: "input_file",
+      file_data: `data:application/pdf;base64,${Buffer.from("New attachment phrase: silver compass.").toString("base64")}`,
+      filename: "new.pdf",
+    }
+    const priorUser = {
+      type: "message",
+      role: "user",
+      content: [
+        priorFilePart,
+        {
+          type: "input_text",
+          text: "[PDF 1] What phrase appears here?",
+        },
+      ],
+    }
+    const priorAssistant = {
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: "cobalt lantern" }],
+    }
+    const { appended } = mockHistory(undefined, [priorUser, priorAssistant])
+    let capturedMessage: unknown
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      yield {
+        type: "messages",
+        payload: {
+          new_messages: [
+            {
+              type: "message",
+              role: "user",
+              content: [
+                priorFilePart,
+                newFilePart,
+                {
+                  type: "input_text",
+                  text: "[PDF 2] Compare this new file with the previous one.",
+                },
+              ],
+            },
+            {
+              type: "message",
+              id: "msg_compare",
+              role: "assistant",
+              content: [{ type: "output_text", text: "compared" }],
+            },
+          ],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[PDF 2] Compare this new file with the previous one.",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "application/pdf",
+        filename: "new.pdf",
+        url: newFilePart.file_data,
+        source: {
+          type: "file",
+          path: "/tmp/new.pdf",
+          text: {
+            value: "[PDF 2]",
+            start: 0,
+            end: 7,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toEqual([
+      {
+        role: "user",
+        content: [
+          priorFilePart,
+          newFilePart,
+          {
+            type: "input_text",
+            text: "[PDF 2] Compare this new file with the previous one.",
+          },
+        ],
+      },
+    ])
+    expect(appended.at(-1)?.[0]).toEqual({
+      type: "message",
+      role: "user",
+      content: [
+        newFilePart,
+        {
+          type: "input_text",
+          text: "[PDF 2] Compare this new file with the previous one.",
+        },
+      ],
+    })
+  })
+
+  test("stream replays compacted-session attachment content into follow-up requests", async () => {
+    mockHistory()
+    mockAgencyVersion("1.9.6")
+    const fileData = `data:application/pdf;base64,${Buffer.from("Compacted proof phrase: amber beacon.").toString("base64")}`
+    const currentID = MessageID.ascending()
+    const compactedMessages = [
+      {
+        info: {
+          id: "compact_user",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "compaction", auto: true, overflow: true }],
+      },
+      {
+        info: {
+          id: "summary",
+          role: "assistant",
+          parentID: "compact_user",
+          providerID: "agency-swarm",
+          agent: "Planner",
+          summary: true,
+          finish: "end_turn",
+          time: { created: 2 },
+        },
+        parts: [{ type: "text", text: "summary body" }],
+      },
+      {
+        info: {
+          id: "user_after_compaction",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [
+          { type: "text", text: "[PDF 1] What phrase is in this file?", ignored: false },
+          {
+            type: "file",
+            mime: "application/pdf",
+            filename: "proof.pdf",
+            url: fileData,
+            source: {
+              type: "file",
+              path: "/tmp/proof.pdf",
+              text: {
+                value: "[PDF 1]",
+                start: 0,
+                end: 7,
+              },
+            },
+          },
+        ],
+      },
+      {
+        info: {
+          id: "assistant_after_compaction",
+          role: "assistant",
+          parentID: "user_after_compaction",
+          providerID: "agency-swarm",
+          agent: "Reviewer",
+          time: { created: 4 },
+        },
+        parts: [{ type: "text", text: "amber beacon" }],
+      },
+      {
+        info: {
+          id: currentID,
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 5 },
+        },
+        parts: [{ type: "text", text: "Without re-attaching it, repeat the phrase.", ignored: false }],
+      },
+    ] as any
+
+    let capturedMessage: unknown
+    let capturedHistory: unknown
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      capturedHistory = input.chatHistory
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const messagesSpy = spyOn(Session, "messages").mockResolvedValue(compactedMessages)
+    try {
+      const { input } = helper()
+      input.userMessage.info.id = currentID
+      input.userMessage.parts = [
+        { type: "text", text: "Without re-attaching it, repeat the phrase.", ignored: false },
+      ] as any
+
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _event of stream.fullStream) {
+        // consume
+      }
+    } finally {
+      messagesSpy.mockRestore()
+    }
+
+    const filePart = {
+      type: "input_file",
+      file_data: fileData,
+      filename: "proof.pdf",
+    }
+    expect(capturedHistory).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "summary body" }],
+        agent: "Planner",
+        callerAgent: null,
+        timestamp: 2,
+      },
+      {
+        type: "message",
+        role: "user",
+        content: [
+          filePart,
+          {
+            type: "input_text",
+            text: "[PDF 1] What phrase is in this file?",
+          },
+        ],
+        agent: "build",
+        callerAgent: null,
+        timestamp: 3,
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "amber beacon" }],
+        agent: "Reviewer",
+        callerAgent: null,
+        timestamp: 4,
+      },
+    ])
+    expect(capturedMessage).toEqual([
+      {
+        role: "user",
+        content: [
+          filePart,
+          {
+            type: "input_text",
+            text: "Without re-attaching it, repeat the phrase.",
+          },
+        ],
+      },
+    ])
   })
 
   const clipboardImageParts = (content: Buffer) =>
@@ -263,15 +969,13 @@ describe("session.agency-swarm", () => {
       },
     ] as any
 
-  test("stream materializes clipboard data URL images for loopback Agency servers", async () => {
+  test("stream forwards clipboard data URL images as structured message content", async () => {
     mockHistory()
+    mockAgencyVersion("1.9.6")
     const content = Buffer.from("clipboard image")
-    let captured: Record<string, string> | undefined
-    let observedContent: Buffer | undefined
+    let captured: unknown
     AgencySwarmAdapter.streamRun = async function* (input) {
-      captured = input.fileURLs
-      const filepath = input.fileURLs?.["clipboard"]
-      if (filepath) observedContent = await readFile(filepath)
+      captured = input.message
       yield { type: "end" }
     } as typeof AgencySwarmAdapter.streamRun
 
@@ -283,163 +987,23 @@ describe("session.agency-swarm", () => {
       // consume
     }
 
-    const filepath = captured?.["clipboard"]
-    expect(filepath).toBeDefined()
-    expect(path.isAbsolute(filepath!)).toBeTrue()
-    expect(path.basename(filepath!)).toBe("clipboard-image.png")
-    expect(observedContent).toEqual(content)
-    await expect(readFile(filepath!)).rejects.toThrow()
-  })
-
-  test("stream cleans up materialized clipboard images when Agency streaming fails", async () => {
-    mockHistory()
-    const content = Buffer.from("clipboard image")
-    let captured: Record<string, string> | undefined
-    let observedContent: Buffer | undefined
-    AgencySwarmAdapter.streamRun = async function* (input) {
-      captured = input.fileURLs
-      const filepath = input.fileURLs?.["clipboard"]
-      if (filepath) observedContent = await readFile(filepath)
-      throw new Error("backend failed")
-    } as typeof AgencySwarmAdapter.streamRun
-
-    const { input } = helper()
-    input.userMessage.parts = clipboardImageParts(content)
-
-    const stream = await SessionAgencySwarm.stream(input)
-    const events: any[] = []
-    for await (const event of stream.fullStream) {
-      events.push(event)
-    }
-
-    const filepath = captured?.["clipboard"]
-    expect(filepath).toBeDefined()
-    expect(observedContent).toEqual(content)
-    expect(events.at(-1)?.type).toBe("error")
-    expect(events.at(-1)?.error.message).toBe("backend failed")
-    await expect(readFile(filepath!)).rejects.toThrow()
-  })
-
-  test("stream cleans up materialized clipboard images when the stream is closed", async () => {
-    mockHistory()
-    const content = Buffer.from("clipboard image")
-    let captured: Record<string, string> | undefined
-    AgencySwarmAdapter.streamRun = async function* (input) {
-      captured = input.fileURLs
-      yield {
-        type: "data",
-        payload: {
-          type: "raw_response_event",
-          data: {
-            type: "response.content_part.added",
-            item_id: "item_1",
-            content_index: 0,
-            part: {
-              type: "output_text",
-            },
-          },
-        },
-      }
-      yield { type: "end" }
-    } as typeof AgencySwarmAdapter.streamRun
-
-    const { input } = helper()
-    input.userMessage.parts = clipboardImageParts(content)
-
-    const stream = await SessionAgencySwarm.stream(input)
-    expect((await stream.fullStream.next()).value.type).toBe("start")
-    expect((await stream.fullStream.next()).value.type).toBe("start-step")
-    expect((await stream.fullStream.next()).value.type).toBe("text-start")
-
-    const filepath = captured?.["clipboard"]
-    expect(filepath).toBeDefined()
-    await expect(readFile(filepath!)).resolves.toEqual(content)
-
-    await stream.fullStream.return(undefined)
-    await expect(readFile(filepath!)).rejects.toThrow()
-  })
-
-  test("stream rejects clipboard data URL images for remote Agency servers", async () => {
-    mockHistory()
-    let called = false
-    AgencySwarmAdapter.streamRun = async function* () {
-      called = true
-      yield { type: "end" }
-    } as typeof AgencySwarmAdapter.streamRun
-
-    const { input } = helper()
-    input.options.baseURL = "https://agency.example.com"
-    input.userMessage.parts = [
+    expect(captured).toEqual([
       {
-        type: "text",
-        text: "[Image 1] inspect this image",
-        ignored: false,
-      },
-      {
-        type: "file",
-        mime: "image/png",
-        filename: "clipboard",
-        url: "data:image/png;base64,AAA=",
-        source: {
-          type: "file",
-          path: "clipboard",
-          text: {
-            value: "[Image 1]",
-            start: 0,
-            end: 9,
+        role: "user",
+        content: [
+          {
+            type: "input_image",
+            image_url: `data:image/png;base64,${content.toString("base64")}`,
+            detail: "auto",
           },
-        },
+          {
+            type: "input_text",
+            text: "[Image 1] inspect this image",
+          },
+        ],
       },
-    ] as any
-
-    await expect(SessionAgencySwarm.stream(input)).rejects.toThrow("Agent Swarm Run mode cannot send inline image data")
-    expect(called).toBeFalse()
+    ])
   })
-
-  for (const baseURL of ["http://host.docker.internal:8000", "http://kubernetes.docker.internal:8000"]) {
-    test(`stream sends local source paths for dropped data URL images to ${new URL(baseURL).hostname} Agency servers`, async () => {
-      mockHistory()
-      let captured: Record<string, string> | undefined
-      AgencySwarmAdapter.streamRun = async function* (input) {
-        captured = input.fileURLs
-        yield { type: "end" }
-      } as typeof AgencySwarmAdapter.streamRun
-
-      const { input } = helper()
-      input.options.baseURL = baseURL
-      input.userMessage.parts = [
-        {
-          type: "text",
-          text: "[Image 1] inspect this image",
-          ignored: false,
-        },
-        {
-          type: "file",
-          mime: "image/png",
-          filename: "red-dot.png",
-          url: "data:image/png;base64,AAA=",
-          source: {
-            type: "file",
-            path: "/tmp/red-dot.png",
-            text: {
-              value: "[Image 1]",
-              start: 0,
-              end: 9,
-            },
-          },
-        },
-      ] as any
-
-      const stream = await SessionAgencySwarm.stream(input)
-      for await (const _event of stream.fullStream) {
-        // consume
-      }
-
-      expect(captured).toEqual({
-        "red-dot.png": "/tmp/red-dot.png",
-      })
-    })
-  }
 
   test("optionsFromProvider maps supported FastAPI request options", () => {
     const options = SessionAgencySwarm.optionsFromProvider({
@@ -591,6 +1155,37 @@ describe("session.agency-swarm", () => {
       // consume
     }
 
+    expect(captured).toEqual({
+      base_url: "https://proxy.example.com/v1",
+    })
+  })
+
+  test("stream skips local auth loading for remote agency-swarm servers without credential forwarding", async () => {
+    mockHistory()
+    const authSpy = spyOn(Auth, "all").mockImplementation(async () => {
+      throw new Error("auth store should not be loaded")
+    }) as typeof Auth.all
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.baseURL = "https://agency.example.com"
+    input.options.clientConfig = {
+      base_url: "https://proxy.example.com/v1",
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: unknown[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    expect(authSpy).not.toHaveBeenCalled()
+    expect(events.some((event) => (event as any).type === "error")).toBeFalse()
     expect(captured).toEqual({
       base_url: "https://proxy.example.com/v1",
     })
@@ -2807,6 +3402,129 @@ describe("session.agency-swarm", () => {
     ])
   })
 
+  test("compactHistory preserves historical local file read text when the source file is gone", async () => {
+    await using tmp = await tmpdir()
+    const filepath = path.join(tmp.path, "proof.txt")
+    await Bun.write(filepath, "current bytes")
+    await rm(filepath)
+
+    const msgs = [
+      {
+        info: {
+          id: "compact_user",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "compaction", auto: true, overflow: true }],
+      },
+      {
+        info: {
+          id: "summary",
+          role: "assistant",
+          parentID: "compact_user",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Planner",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          summary: true,
+          finish: "end_turn",
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "summary body" }],
+      },
+      {
+        info: {
+          id: "user_after_compaction",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [
+          { type: "text", text: "[File 1]\noriginal bytes", ignored: false, synthetic: true },
+          {
+            type: "file",
+            mime: "text/plain",
+            filename: "proof.txt",
+            url: pathToFileURL(filepath).href,
+          },
+        ],
+      },
+      {
+        info: {
+          id: "assistant_after_compaction",
+          role: "assistant",
+          parentID: "user_after_compaction",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Reviewer",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 4 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "original bytes" }],
+      },
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 5 },
+        },
+        parts: [{ type: "text", text: "repeat the file", ignored: false }],
+      },
+    ] as any
+
+    expect(SessionAgencySwarm.compactHistory({ msgs, currentID: "current", structuredAttachments: true })).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "summary body" }],
+        agent: "Planner",
+        callerAgent: null,
+        timestamp: 2,
+      },
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "[File 1]\noriginal bytes" }],
+        agent: "build",
+        callerAgent: null,
+        timestamp: 3,
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "original bytes" }],
+        agent: "Reviewer",
+        callerAgent: null,
+        timestamp: 4,
+      },
+    ])
+  })
+
   test("compactHistory falls back when no compaction summary exists", () => {
     const msgs = [
       {
@@ -2994,6 +3712,85 @@ describe("session.agency-swarm", () => {
         type: "message",
         role: "assistant",
         content: [{ type: "output_text", text: "first answer" }],
+        agent: "Reviewer",
+        callerAgent: null,
+        timestamp: 2,
+      },
+    ])
+  })
+
+  test("buildAgencyHistoryFromMessages preserves historical local file read text after the file changes", async () => {
+    await using tmp = await tmpdir()
+    const filepath = path.join(tmp.path, "proof.txt")
+    await Bun.write(filepath, "new bytes")
+
+    const msgs = [
+      {
+        info: {
+          id: "user_1",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [
+          { type: "text", text: "[File 1]\nold bytes", ignored: false, synthetic: true },
+          {
+            type: "file",
+            mime: "text/plain",
+            filename: "proof.txt",
+            url: pathToFileURL(filepath).href,
+          },
+        ],
+      },
+      {
+        info: {
+          id: "assistant_1",
+          role: "assistant",
+          parentID: "user_1",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Reviewer",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: { total: 0, input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "old bytes" }],
+      },
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [{ type: "text", text: "follow up", ignored: false }],
+      },
+    ] as any
+
+    expect(
+      SessionAgencySwarm.buildAgencyHistoryFromMessages({
+        msgs,
+        currentID: "current",
+        structuredAttachments: true,
+      }),
+    ).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "[File 1]\nold bytes" }],
+        agent: "build",
+        callerAgent: null,
+        timestamp: 1,
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "old bytes" }],
         agent: "Reviewer",
         callerAgent: null,
         timestamp: 2,
@@ -3394,6 +4191,15 @@ describe("session.agency-swarm", () => {
   })
 
   test("stream rebuilds chat history from cloned messages when bridge history is empty", async () => {
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        const filepath = path.join(dir, "proof.txt")
+        await Bun.write(filepath, "forked proof")
+        return filepath
+      },
+    })
+    mockAgencyVersion("1.9.6")
+    const fileData = `data:text/plain;base64,${Buffer.from("forked proof").toString("base64")}`
     const clonedAgencyMessages = [
       {
         info: {
@@ -3403,7 +4209,24 @@ describe("session.agency-swarm", () => {
           model: { providerID: "agency-swarm", modelID: "default" },
           time: { created: 1 },
         },
-        parts: [{ type: "text", text: "before fork", ignored: false }],
+        parts: [
+          { type: "text", text: "[File 1] before fork", ignored: false },
+          {
+            type: "file",
+            mime: "text/plain",
+            filename: "proof.txt",
+            url: pathToFileURL(tmp.extra).href,
+            source: {
+              type: "file",
+              path: tmp.extra,
+              text: {
+                value: "[File 1]",
+                start: 0,
+                end: 8,
+              },
+            },
+          },
+        ],
       },
       {
         info: {
@@ -3473,7 +4296,10 @@ describe("session.agency-swarm", () => {
       {
         type: "message",
         role: "user",
-        content: [{ type: "input_text", text: "before fork" }],
+        content: [
+          { type: "input_file", file_data: fileData, filename: "proof.txt" },
+          { type: "input_text", text: "[File 1] before fork" },
+        ],
         agent: "build",
         callerAgent: null,
         timestamp: 1,

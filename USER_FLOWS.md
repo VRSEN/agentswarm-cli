@@ -154,7 +154,8 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
   - Route prompts through the Agency Swarm adapter.
   - Discover swarms and agents from the backend.
   - Selecting a swarm routes through the default agency path without a stale explicit recipient; selecting an agent routes the next prompt to that agent.
-  - Send pasted local image paths to Agency runs as file paths, not inline data URLs.
+  - Send attached files and pasted images to structured-capable Agency runs as structured `message` content; older backends use legacy `file_urls` payloads.
+  - Keep attached file and image context available across follow-up prompts without requiring the user to attach the same file again; manual history replay may resend inline attachment content or references.
   - Pass compatible configured provider credentials into Agency runs through the credential bridge.
   - Cancel in-flight Agency runs through the Agency Swarm bridge.
   - Preserve handoff-selected recipient agents across turns while keeping ordinary `SendMessage` delegation from changing user control.
