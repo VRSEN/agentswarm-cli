@@ -1566,6 +1566,8 @@ export namespace SessionAgencySwarm {
       yield { type: "start" }
       yield { type: "start-step" }
       let streamError: Error | undefined
+      let compactedHistoryFromMessages: Array<Record<string, unknown>> | undefined
+      let compactedHistoryHasFileAttachments = false
       let rebuiltHistoryFromMessages: Array<Record<string, unknown>> | undefined
       let sessionMessages: MessageV2.WithParts[] | undefined
 
@@ -1574,7 +1576,14 @@ export namespace SessionAgencySwarm {
         .then((msgs) => {
           sessionMessages = msgs
           const compacted = compactHistory({ msgs, currentID: input.userMessage.info.id })
-          if (compacted) return compacted
+          if (compacted) {
+            compactedHistoryFromMessages = compacted
+            compactedHistoryHasFileAttachments = compactHistoryHasPriorFileParts({
+              msgs,
+              currentID: input.userMessage.info.id,
+            })
+            return compacted
+          }
           // Forked sessions clone local messages but get a fresh AgencySwarmHistory key, so the bridge
           // would otherwise start with no context. Rebuild from the cloned messages when stored history
           // is empty and prior messages are all agency-swarm.
@@ -1630,6 +1639,7 @@ export namespace SessionAgencySwarm {
       const attachmentMessage =
         hasCurrentFileAttachments ||
         hasRebuildableFileAttachments ||
+        compactedHistoryHasFileAttachments ||
         messageHasAttachmentContent(replayOnlyOutgoing.message)
       const structuredAttachmentsSupported =
         attachmentMessage &&
@@ -1640,15 +1650,27 @@ export namespace SessionAgencySwarm {
           timeoutMs: input.options.discoveryTimeoutMs,
         }))
       let effectiveChatHistory = chatHistory
-      if (structuredAttachmentsSupported && rebuiltHistoryFromMessages && sessionMessages) {
-        const rebuilt = buildAgencyHistoryFromMessages({
-          msgs: sessionMessages,
-          currentID: input.userMessage.info.id,
-          structuredAttachments: true,
-        })
-        if (rebuilt && rebuilt.length > 0) {
-          rebuiltHistoryFromMessages = rebuilt
-          effectiveChatHistory = rebuilt
+      if (structuredAttachmentsSupported && sessionMessages) {
+        if (compactedHistoryFromMessages) {
+          const compacted = compactHistory({
+            msgs: sessionMessages,
+            currentID: input.userMessage.info.id,
+            structuredAttachments: true,
+          })
+          if (compacted) {
+            compactedHistoryFromMessages = compacted
+            effectiveChatHistory = compacted
+          }
+        } else if (rebuiltHistoryFromMessages) {
+          const rebuilt = buildAgencyHistoryFromMessages({
+            msgs: sessionMessages,
+            currentID: input.userMessage.info.id,
+            structuredAttachments: true,
+          })
+          if (rebuilt && rebuilt.length > 0) {
+            rebuiltHistoryFromMessages = rebuilt
+            effectiveChatHistory = rebuilt
+          }
         }
       }
 
@@ -2294,7 +2316,23 @@ export namespace SessionAgencySwarm {
   export function compactHistory(input: {
     msgs: MessageV2.WithParts[]
     currentID: string
+    structuredAttachments?: boolean
   }): Array<Record<string, unknown>> | undefined {
+    const slice = compactHistoryMessages(input)
+    if (!slice) return
+
+    return slice.flatMap((msg) => messageToHistoryItem(msg, input.currentID, !!input.structuredAttachments))
+  }
+
+  function compactHistoryHasPriorFileParts(input: { msgs: MessageV2.WithParts[]; currentID: string }) {
+    const slice = compactHistoryMessages(input)
+    return !!slice?.some((msg) => msg.info.id !== input.currentID && hasFileParts(msg))
+  }
+
+  function compactHistoryMessages(input: {
+    msgs: MessageV2.WithParts[]
+    currentID: string
+  }): MessageV2.WithParts[] | undefined {
     let start = -1
     for (let i = input.msgs.length - 1; i >= 0; i--) {
       const msg = input.msgs[i]
@@ -2311,8 +2349,7 @@ export namespace SessionAgencySwarm {
     if (start < 0) return
     const slice = input.msgs.slice(start < 0 ? 0 : start)
     if (slice.some((msg) => msg.info.id !== input.currentID && !isAgencySwarmMessage(msg))) return
-
-    return slice.flatMap((msg) => messageToHistoryItem(msg, input.currentID))
+    return slice
   }
 
   /**

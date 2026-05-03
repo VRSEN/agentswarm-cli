@@ -546,6 +546,160 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream replays compacted-session attachment content into follow-up requests", async () => {
+    mockHistory()
+    mockAgencyVersion("1.9.5")
+    const fileData = `data:application/pdf;base64,${Buffer.from("Compacted proof phrase: amber beacon.").toString("base64")}`
+    const currentID = MessageID.ascending()
+    const compactedMessages = [
+      {
+        info: {
+          id: "compact_user",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "compaction", auto: true, overflow: true }],
+      },
+      {
+        info: {
+          id: "summary",
+          role: "assistant",
+          parentID: "compact_user",
+          providerID: "agency-swarm",
+          agent: "Planner",
+          summary: true,
+          finish: "end_turn",
+          time: { created: 2 },
+        },
+        parts: [{ type: "text", text: "summary body" }],
+      },
+      {
+        info: {
+          id: "user_after_compaction",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [
+          { type: "text", text: "[PDF 1] What phrase is in this file?", ignored: false },
+          {
+            type: "file",
+            mime: "application/pdf",
+            filename: "proof.pdf",
+            url: fileData,
+            source: {
+              type: "file",
+              path: "/tmp/proof.pdf",
+              text: {
+                value: "[PDF 1]",
+                start: 0,
+                end: 7,
+              },
+            },
+          },
+        ],
+      },
+      {
+        info: {
+          id: "assistant_after_compaction",
+          role: "assistant",
+          parentID: "user_after_compaction",
+          providerID: "agency-swarm",
+          agent: "Reviewer",
+          time: { created: 4 },
+        },
+        parts: [{ type: "text", text: "amber beacon" }],
+      },
+      {
+        info: {
+          id: currentID,
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 5 },
+        },
+        parts: [{ type: "text", text: "Without re-attaching it, repeat the phrase.", ignored: false }],
+      },
+    ] as any
+
+    let capturedMessage: unknown
+    let capturedHistory: unknown
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      capturedHistory = input.chatHistory
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const messagesSpy = spyOn(Session, "messages").mockResolvedValue(compactedMessages)
+    try {
+      const { input } = helper()
+      input.userMessage.info.id = currentID
+      input.userMessage.parts = [
+        { type: "text", text: "Without re-attaching it, repeat the phrase.", ignored: false },
+      ] as any
+
+      const stream = await SessionAgencySwarm.stream(input)
+      for await (const _event of stream.fullStream) {
+        // consume
+      }
+    } finally {
+      messagesSpy.mockRestore()
+    }
+
+    const filePart = {
+      type: "input_file",
+      file_data: fileData,
+      filename: "proof.pdf",
+    }
+    expect(capturedHistory).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "summary body" }],
+        agent: "Planner",
+        callerAgent: null,
+        timestamp: 2,
+      },
+      {
+        type: "message",
+        role: "user",
+        content: [
+          filePart,
+          {
+            type: "input_text",
+            text: "[PDF 1] What phrase is in this file?",
+          },
+        ],
+        agent: "build",
+        callerAgent: null,
+        timestamp: 3,
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "amber beacon" }],
+        agent: "Reviewer",
+        callerAgent: null,
+        timestamp: 4,
+      },
+    ])
+    expect(capturedMessage).toEqual([
+      {
+        role: "user",
+        content: [
+          filePart,
+          {
+            type: "input_text",
+            text: "Without re-attaching it, repeat the phrase.",
+          },
+        ],
+      },
+    ])
+  })
+
   const clipboardImageParts = (content: Buffer) =>
     [
       {
