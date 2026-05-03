@@ -29,7 +29,9 @@ import {
   asString,
   buildOutgoingMessage,
   buildStructuredOutgoingMessage,
+  cleanupMaterializedFilePaths,
   compactMetadata,
+  collectFileURLs,
   extractEventMeta,
   extractFunctionCallOutputs as extractFunctionCallOutputsFromMessages,
   findRecipientAgent,
@@ -49,6 +51,7 @@ export namespace SessionAgencySwarm {
   export const PROVIDER_ID = AgencySwarmAdapter.PROVIDER_ID
 
   const CANCEL_BEFORE_META_ABORT_MS = 3000
+  const STRUCTURED_ATTACHMENT_MESSAGE_MIN_VERSION = "1.9.5"
 
   export type RuntimeOptions = {
     baseURL: string
@@ -383,12 +386,9 @@ export namespace SessionAgencySwarm {
     if (!version) return undefined
     const match = version.trim().match(/^(?:v)?(\d+\.\d+\.\d+)(?:(?:\.post\d+)|(?:post\d+)|(?:\+[0-9a-z.-]+))?$/i)
     if (!match) {
-      log.warn(
-        "agency metadata exposed a prerelease or unreadable agency_swarm_version while deciding Codex OAuth routing",
-        {
-          version,
-        },
-      )
+      log.warn("agency metadata exposed a prerelease or unreadable agency_swarm_version", {
+        version,
+      })
       return undefined
     }
     return match[1]
@@ -398,6 +398,26 @@ export namespace SessionAgencySwarm {
     const version = readStableAgencySwarmVersion(metadata)
     if (!version) return false
     return semver.gte(version, "1.9.3")
+  }
+
+  function supportsStructuredAttachmentMessages(metadata: AgencySwarmAdapter.AgencyMetadata): boolean {
+    if (hasStructuredAttachmentCapability(metadata)) return true
+    const version = readStableAgencySwarmVersion(metadata)
+    if (!version) return false
+    return semver.gte(version, STRUCTURED_ATTACHMENT_MESSAGE_MIN_VERSION)
+  }
+
+  function hasStructuredAttachmentCapability(metadata: AgencySwarmAdapter.AgencyMetadata): boolean {
+    const capabilities = asRecord(metadata["capabilities"])
+    const features = asRecord(metadata["features"])
+    return (
+      metadata["structured_message_attachments"] === true ||
+      metadata["structuredMessageAttachments"] === true ||
+      capabilities?.["structured_message_attachments"] === true ||
+      capabilities?.["structuredMessageAttachments"] === true ||
+      features?.["structured_message_attachments"] === true ||
+      features?.["structuredMessageAttachments"] === true
+    )
   }
 
   async function shouldStripCodexOAuth(
@@ -602,6 +622,18 @@ export namespace SessionAgencySwarm {
       sessionID: input.sessionID,
     }
 
+    const outgoingMessage = buildOutgoingMessage(input.userMessage)
+    const structuredOutgoingMessage = buildStructuredOutgoingMessage(input.userMessage)
+    const materializedFilePaths: string[] = []
+    const cleanupMaterializedFiles = async () => {
+      try {
+        await cleanupMaterializedFilePaths(materializedFilePaths)
+      } catch (error) {
+        log.warn("failed to clean up materialized clipboard image files", {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
     const mentionedRecipient = findRecipientAgent(input.userMessage)
 
     const tools = new Map<string, Tool>()
@@ -1590,23 +1622,41 @@ export namespace SessionAgencySwarm {
         await AgencySwarmHistory.appendMessages(scope, rebuiltHistoryFromMessages)
       }
       const transportChatHistory = sanitizeAgencyHistoryForTransport(chatHistory)
-      const outgoing = replayStoredAttachmentsInOutgoingMessage(
-        buildStructuredOutgoingMessage(input.userMessage),
-        transportChatHistory,
-      )
-      replayedAttachmentKeys = outgoing.replayedAttachmentKeys
+      const outgoing = replayStoredAttachmentsInOutgoingMessage(structuredOutgoingMessage, transportChatHistory)
+      const attachmentMessage = messageHasAttachmentContent(outgoing.message)
+      const structuredAttachmentsSupported =
+        attachmentMessage &&
+        (await supportsStructuredAttachmentMessagesForBackend({
+          baseURL: input.options.baseURL,
+          agency,
+          token: input.options.token,
+          timeoutMs: input.options.discoveryTimeoutMs,
+        }))
+      let requestMessage = outgoing.message
+      let fileURLs: Record<string, string> | undefined
+      if (attachmentMessage && !structuredAttachmentsSupported) {
+        requestMessage = outgoingMessage
+        replayedAttachmentKeys = new Set()
+        fileURLs = collectFileURLs(input.userMessage, {
+          allowLocalFilePaths: isLocalAgencyURL(input.options.baseURL),
+          materializedFilePaths,
+        })
+      } else {
+        replayedAttachmentKeys = outgoing.replayedAttachmentKeys
+      }
 
       try {
         for await (const frame of AgencySwarmAdapter.streamRun({
           baseURL: input.options.baseURL,
           agency,
-          message: outgoing.message,
+          message: requestMessage,
           chatHistory: transportChatHistory,
           recipientAgent,
           additionalInstructions: input.options.additionalInstructions,
           userContext: input.options.userContext,
           fileIDs: input.options.fileIDs,
           token: input.options.token,
+          fileURLs,
           generateChatName: input.options.generateChatName,
           clientConfig,
           abort: streamSignal,
@@ -1957,8 +2007,35 @@ export namespace SessionAgencySwarm {
       }
     })()
 
+    const fullStream = (async function* () {
+      try {
+        yield* stream
+      } finally {
+        await cleanupMaterializedFiles()
+      }
+    })()
+
     return {
-      fullStream: stream,
+      fullStream,
+    }
+  }
+
+  async function supportsStructuredAttachmentMessagesForBackend(input: {
+    baseURL: string
+    agency: string
+    token?: string
+    timeoutMs: number
+  }) {
+    try {
+      const metadata = await AgencySwarmAdapter.getMetadata(input)
+      return supportsStructuredAttachmentMessages(metadata)
+    } catch (error) {
+      log.warn("unable to load agency metadata; using legacy attachment transport", {
+        baseURL: input.baseURL,
+        agency: input.agency,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return false
     }
   }
 

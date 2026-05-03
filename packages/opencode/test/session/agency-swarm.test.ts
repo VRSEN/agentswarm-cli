@@ -126,6 +126,16 @@ describe("session.agency-swarm", () => {
     return { appended, runs }
   }
 
+  const mockAgencyVersion = (version: string) => {
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      agency_swarm_version: version,
+      metadata: {
+        agents: ["AgentA"],
+      },
+      nodes: [],
+    })) as typeof AgencySwarmAdapter.getMetadata
+  }
+
   const addCompletedTransferPart = async (input: {
     sessionID: string
     messageID: string
@@ -222,6 +232,7 @@ describe("session.agency-swarm", () => {
 
   test("stream forwards dropped data URL images as structured message content", async () => {
     mockHistory()
+    mockAgencyVersion("1.9.5")
     const content = Buffer.from("red dot image")
     let captured: unknown
     AgencySwarmAdapter.streamRun = async function* (input) {
@@ -255,8 +266,55 @@ describe("session.agency-swarm", () => {
     ])
   })
 
+  test("stream sends legacy attachment payloads when metadata predates structured messages", async () => {
+    mockHistory()
+    mockAgencyVersion("1.9.4")
+    let capturedMessage: unknown
+    let capturedFileURLs: Record<string, string> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      capturedFileURLs = input.fileURLs
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[PDF 1] Which phrase appears here?",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "application/pdf",
+        filename: "proof.pdf",
+        url: "https://example.com/proof.pdf",
+        source: {
+          type: "file",
+          path: "/tmp/proof.pdf",
+          text: {
+            value: "[PDF 1]",
+            start: 0,
+            end: 7,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toBe("[PDF 1] Which phrase appears here?")
+    expect(capturedFileURLs).toEqual({
+      "proof.pdf": "https://example.com/proof.pdf",
+    })
+  })
+
   test("stream keeps browser auth client_config while forwarding attachments inline", async () => {
     mockHistory()
+    mockAgencyVersion("1.9.5")
     await Auth.set("openai", {
       type: "oauth",
       access: "oauth-access",
@@ -294,6 +352,7 @@ describe("session.agency-swarm", () => {
   })
 
   test("stream replays stored attachment content into follow-up requests without duplicating history", async () => {
+    mockAgencyVersion("1.9.5")
     const filePart = {
       type: "input_file",
       file_data: `data:application/pdf;base64,${Buffer.from("Attachment proof phrase one: cobalt lantern.").toString("base64")}`,
@@ -410,6 +469,7 @@ describe("session.agency-swarm", () => {
 
   test("stream forwards clipboard data URL images as structured message content", async () => {
     mockHistory()
+    mockAgencyVersion("1.9.5")
     const content = Buffer.from("clipboard image")
     let captured: unknown
     AgencySwarmAdapter.streamRun = async function* (input) {
