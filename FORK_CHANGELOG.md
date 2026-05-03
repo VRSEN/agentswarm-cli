@@ -243,10 +243,10 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `ensureLatestAgencySwarm` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `a77de00c`
 
-- **Launcher-managed local projects allow safe local file drops**
-  - Intent: let Run mode send local file drops to a launcher-managed local Agency server without exposing arbitrary filesystem paths.
-  - Behavior: the launcher enables local file materialization, allowlists the project directory plus the local materialization root, and requires Agency Swarm FastAPI `allowed_local_file_dirs` support before starting the bridge.
-  - Implementation: `prepareProjectLaunch`, `startProjectServer`, and `buildAgencyConfig` in `packages/opencode/src/agency-swarm/npx.ts`, plus `buildServerLauncherScript` in `packages/opencode/src/agency-swarm/server-launcher.ts`.
+- **Run-mode attachments use structured Agency Swarm messages**
+  - Intent: send user-attached file context through the Agency Swarm FastAPI `message` contract instead of routing normal attachments through OpenAI Files API upload paths.
+  - Behavior: Run mode forwards file and image parts as structured Responses `message` content, preserving browser-auth chat credentials because attachments are inline message content.
+  - Implementation: `buildStructuredOutgoingMessage` in `packages/opencode/src/session/agency-swarm-utils.ts` and `SessionAgencySwarm.stream` in `packages/opencode/src/session/agency-swarm.ts`.
   - Added by: `2c88f1e1d`, `d08e55e2d`, PR #187.
 
 - **Run-mode session resumes recover the last local Agency project**

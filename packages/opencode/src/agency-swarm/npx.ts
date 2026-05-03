@@ -6,10 +6,9 @@ import { createWriteStream, existsSync, statSync } from "node:fs"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { AgencySwarmRunSession } from "./run-session"
-import { buildServerLauncherScript } from "./server-launcher"
+import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
 import { Storage } from "@/storage/storage"
 import { Filesystem } from "@/util/filesystem"
-import { localFileMaterializationRoot } from "@/session/agency-swarm-utils"
 import type { Session } from "@/session"
 import { SessionID } from "@/session/schema"
 
@@ -50,6 +49,7 @@ interface PythonInfo {
 interface VenvCanaryResult {
   healthy: boolean
   stderr: string
+  timedOut: boolean
 }
 
 interface DependencyInstallResult extends CommandResult {
@@ -61,16 +61,25 @@ interface RunCommandOptions {
   env?: NodeJS.ProcessEnv
   logFile?: string
   streamOutputToStderr?: boolean
+  suppressPythonTracebackStderr?: boolean
   timeoutMs?: number
 }
 
-const LOCAL_FILE_ALLOWLIST_CANARY_ERROR = "agency-swarm FastAPI run_fastapi does not support allowed_local_file_dirs"
-const VENV_CANARY_SCRIPT = [
-  "import agency_swarm",
-  "import inspect",
-  "from agency_swarm.integrations.fastapi import run_fastapi",
-  `if "allowed_local_file_dirs" not in inspect.signature(run_fastapi).parameters: raise RuntimeError("${LOCAL_FILE_ALLOWLIST_CANARY_ERROR}")`,
-].join("\n")
+interface OutputWriter {
+  write: (chunk: string) => void
+  close?: () => void
+}
+
+interface ServerStderrCollector {
+  read(timeoutMs: number): Promise<string>
+  stop(): void
+}
+
+const VENV_CANARY_SCRIPT = ["import agency_swarm", "from agency_swarm.integrations.fastapi import run_fastapi"].join(
+  "\n",
+)
+const VENV_CANARY_TIMEOUT_MS = 60 * 1000
+const SERVER_STDERR_COLLECT_TIMEOUT_MS = 1000
 const REBUILD_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 const PROCESS_KILL_GRACE_MS = 5000
 
@@ -318,13 +327,7 @@ function isLoopbackBaseURL(baseURL: string) {
   }
 }
 
-export function buildAgencyConfig(input: {
-  baseURL: string
-  agency: string
-  token?: string
-  materializeLocalFiles?: boolean
-  localFilePathAllowlist?: string[]
-}) {
+export function buildAgencyConfig(input: { baseURL: string; agency: string; token?: string }) {
   return JSON.stringify({
     $schema: "https://opencode.ai/config.json",
     model: `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
@@ -335,8 +338,6 @@ export function buildAgencyConfig(input: {
           baseURL: input.baseURL,
           agency: input.agency,
           discoveryTimeoutMs: 2000,
-          ...(input.materializeLocalFiles ? { materializeLocalFiles: true } : {}),
-          ...(input.localFilePathAllowlist?.length ? { localFilePathAllowlist: input.localFilePathAllowlist } : {}),
           ...(input.token ? { token: input.token } : {}),
         },
       },
@@ -646,8 +647,6 @@ export async function prepareProjectLaunch(project: AgencyProject): Promise<Prep
     configContent: buildAgencyConfig({
       baseURL: server.baseURL,
       agency: LOCAL_AGENCY_ID,
-      materializeLocalFiles: true,
-      localFilePathAllowlist: [path.resolve(project.directory), path.resolve(localFileMaterializationRoot())],
     }),
     cleanup: server.cleanup,
   }
@@ -688,13 +687,18 @@ async function ensureProjectPython(directory: string) {
       }
       if (!corruptedVenv) {
         prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
-        const canary = await venvCanaryPasses([venvPython], { includeStderr: true })
+        let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
+        try {
+          canary = await venvCanaryPasses([venvPython], { includeStderr: true })
+        } catch {
+          canary = { healthy: false, stderr: "", timedOut: false }
+        }
         if (canary.healthy) {
           prompts.log.success("Python environment ready")
           return [venvPython]
         }
-        if (isLocalFileAllowlistCanaryFailure(canary.stderr)) {
-          throw new Error(await formatPostInstallCanaryFailure(directory, true, canary.stderr))
+        if (canary.timedOut) {
+          throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
         }
         corruptedVenv = true
       }
@@ -732,11 +736,8 @@ async function ensureProjectPython(directory: string) {
       return
     }
     if (!createVenv) {
-      const canary = await venvCanaryPasses(rebuildCmd, { includeStderr: true })
-      if (!canary.healthy) {
-        if (isLocalFileAllowlistCanaryFailure(canary.stderr)) {
-          throw new Error(await formatPostInstallCanaryFailure(directory, true, canary.stderr))
-        }
+      const check = await runCommand([...rebuildCmd, "-c", "import agency_swarm"])
+      if (check.code !== 0) {
         throw new Error(
           "This project does not have a `.venv` yet, and the selected Python environment cannot import `agency_swarm`.",
         )
@@ -778,6 +779,9 @@ async function ensureProjectPython(directory: string) {
   }
   prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
   const canary = await venvCanaryPasses([venvPython], { cwd: directory, includeStderr: true })
+  if (canary.timedOut) {
+    throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
+  }
   if (!canary.healthy) {
     throw new Error(await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr))
   }
@@ -829,11 +833,6 @@ async function installProjectDependencies(
 async function formatPostInstallCanaryFailure(directory: string, hadManifests: boolean, stderr: string) {
   const summary = summarizeBridgeStderr(stderr)
   const shadowingHint = await formatShadowingHint(directory)
-  if (isLocalFileAllowlistCanaryFailure(stderr)) {
-    return summary
-      ? `Local file drops require an agency-swarm FastAPI version that supports allowed_local_file_dirs. Upgrade this project's agency-swarm[fastapi] dependency.${shadowingHint} Canary stderr: ${summary}`
-      : `Local file drops require an agency-swarm FastAPI version that supports allowed_local_file_dirs. Upgrade this project's agency-swarm[fastapi] dependency.${shadowingHint}`
-  }
   if (isImportLikeCanaryFailure(stderr)) {
     if (hadManifests) {
       return summary
@@ -849,12 +848,16 @@ async function formatPostInstallCanaryFailure(directory: string, hadManifests: b
     : `Project \`.venv\` rebuilt successfully, but the Agency Swarm import canary still failed.${shadowingHint}`
 }
 
-function isImportLikeCanaryFailure(stderr: string) {
-  return /\b(?:ImportError|ModuleNotFoundError)\b/.test(stderr)
+async function formatCanaryTimeoutFailure(directory: string, stderr: string) {
+  const summary = summarizeBridgeStderr(stderr)
+  const shadowingHint = await formatShadowingHint(directory)
+  return summary
+    ? `Agency Swarm import canary timed out after ${formatInstallDuration(VENV_CANARY_TIMEOUT_MS)}. Startup stopped instead of waiting indefinitely.${shadowingHint} Canary stderr: ${summary}`
+    : `Agency Swarm import canary timed out after ${formatInstallDuration(VENV_CANARY_TIMEOUT_MS)}. Startup stopped instead of waiting indefinitely.${shadowingHint}`
 }
 
-function isLocalFileAllowlistCanaryFailure(stderr: string) {
-  return stderr.includes(LOCAL_FILE_ALLOWLIST_CANARY_ERROR)
+function isImportLikeCanaryFailure(stderr: string) {
+  return /\b(?:ImportError|ModuleNotFoundError)\b/.test(stderr)
 }
 
 async function formatShadowingHint(directory: string) {
@@ -882,17 +885,18 @@ async function venvCanaryPasses(python: string[], options?: { cwd?: string; incl
   // sitting next to `agency.py`) that shadow installed packages and falsely flag a healthy
   // .venv as broken. Callers that need the server-launch cwd (post-install verification)
   // pass it explicitly.
-  const result = await runCommand(
-    [...python, "-c", VENV_CANARY_SCRIPT],
-    options?.cwd ? { cwd: options.cwd } : undefined,
-  )
+  const result = await runCommand([...python, "-c", VENV_CANARY_SCRIPT], {
+    cwd: options?.cwd,
+    timeoutMs: VENV_CANARY_TIMEOUT_MS,
+  })
   if (options?.includeStderr) {
     return {
-      healthy: result.code === 0,
+      healthy: result.code === 0 && !result.timedOut,
       stderr: result.stderr,
+      timedOut: result.timedOut === true,
     }
   }
-  return result.code === 0
+  return result.code === 0 && !result.timedOut
 }
 
 async function ensureLatestAgencySwarm(
@@ -908,6 +912,7 @@ async function ensureLatestAgencySwarm(
       cwd: directory,
       logFile: options?.logFile,
       streamOutputToStderr: true,
+      suppressPythonTracebackStderr: true,
       timeoutMs: options?.timeoutMs,
     })
     if (result.timedOut) {
@@ -953,7 +958,7 @@ async function tryCreateProjectCommandLogFile(directory: string, stem: string, l
 }
 
 function summarizeCommandOutput(result: Pick<CommandResult, "stdout" | "stderr">) {
-  return summarizeBridgeStderr(result.stderr) || summarizeBridgeStderr(result.stdout)
+  return summarizeInstallerOutput(result.stderr) || summarizeInstallerOutput(result.stdout)
 }
 
 function formatCommandFailure(result: CommandResult, fallback: string) {
@@ -990,14 +995,7 @@ async function startProjectServer(directory: string, python: string[]) {
     }).catch(() => undefined)
 
   try {
-    const allowedLocalFileDirs = [path.resolve(directory), path.resolve(localFileMaterializationRoot())]
-    await mkdir(allowedLocalFileDirs[1]!, { recursive: true, mode: 0o700 })
-    await Filesystem.write(
-      scriptPath,
-      buildServerLauncherScript({
-        allowedLocalFileDirs,
-      }),
-    )
+    await Filesystem.write(scriptPath, SERVER_LAUNCHER_SCRIPT)
   } catch (error) {
     await remove()
     throw error
@@ -1016,10 +1014,11 @@ async function startProjectServer(directory: string, python: string[]) {
     await remove()
     throw error
   }
-  const stderrPromise = child.stderr ? new Response(child.stderr).text().catch(() => "") : Promise.resolve("")
+  const stderr = createServerStderrCollector(child.stderr)
 
   const cleanup = async () => {
     child.kill()
+    stderr.stop()
     await Promise.race([child.exited, sleep(5000)])
     await remove()
   }
@@ -1028,7 +1027,7 @@ async function startProjectServer(directory: string, python: string[]) {
     await waitForServer({
       baseURL: `http://127.0.0.1:${port}`,
       child,
-      stderrPromise,
+      stderr,
     })
   } catch (error) {
     await cleanup()
@@ -1044,14 +1043,14 @@ async function startProjectServer(directory: string, python: string[]) {
 async function waitForServer(input: {
   baseURL: string
   child: ReturnType<typeof Bun.spawn>
-  stderrPromise: Promise<string>
+  stderr: ServerStderrCollector
 }) {
   const deadline = Date.now() + 30000
   const metadataURL = `${input.baseURL}/${LOCAL_AGENCY_ID}/get_metadata`
   while (Date.now() < deadline) {
     const exited = await Promise.race([input.child.exited.then((code: number) => code), sleep(200).then(() => null)])
     if (typeof exited === "number") {
-      const stderr = await input.stderrPromise
+      const stderr = await input.stderr.read(SERVER_STDERR_COLLECT_TIMEOUT_MS)
       const summary = summarizeBridgeStderr(stderr)
       throw new Error(
         summary
@@ -1069,7 +1068,7 @@ async function waitForServer(input: {
   }
 
   input.child.kill()
-  const stderr = await input.stderrPromise
+  const stderr = await input.stderr.read(SERVER_STDERR_COLLECT_TIMEOUT_MS)
   const summary = summarizeBridgeStderr(stderr)
   throw new Error(
     summary
@@ -1078,12 +1077,82 @@ async function waitForServer(input: {
   )
 }
 
+function createServerStderrCollector(
+  output: string | ReadableStream<Uint8Array> | null | undefined,
+): ServerStderrCollector {
+  if (typeof output === "string") {
+    return {
+      read: async () => output,
+      stop() {},
+    }
+  }
+  if (!output) {
+    return {
+      read: async () => "",
+      stop() {},
+    }
+  }
+
+  const reader = output.getReader()
+  const decoder = new TextDecoder()
+  let text = ""
+  let settled = false
+  const done = (async () => {
+    try {
+      while (true) {
+        const chunk = await reader.read()
+        if (chunk.done) break
+        if (!chunk.value || chunk.value.length === 0) continue
+        text += decoder.decode(chunk.value, { stream: true })
+      }
+      text += decoder.decode()
+    } catch {
+      text += decoder.decode()
+    } finally {
+      settled = true
+    }
+  })()
+
+  return {
+    async read(timeoutMs: number) {
+      if (!settled) {
+        await Promise.race([done, sleep(timeoutMs)])
+      }
+      return text
+    },
+    stop() {
+      if (settled) return
+      void reader.cancel().catch(() => undefined)
+    },
+  }
+}
+
 export function summarizeBridgeStderr(stderr: string): string {
   const trimmed = stderr.trim()
   if (!trimmed) return ""
   const lines = trimmed.split(/\r?\n/).filter((line) => line.trim().length > 0)
   const tail = lines.slice(-5).join(" | ")
   return tail.length > 500 ? `${tail.slice(0, 500)}...` : tail
+}
+
+function summarizeInstallerOutput(output: string) {
+  const tracebackSummary = summarizePythonTraceback(output)
+  if (tracebackSummary) return tracebackSummary
+  return summarizeBridgeStderr(output)
+}
+
+function summarizePythonTraceback(output: string) {
+  const lines = output
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  if (!lines.some((line) => line === "Traceback (most recent call last):")) return ""
+  return lines.findLast(isPythonTracebackFinalExceptionLine) ?? ""
+}
+
+function isPythonTracebackFinalExceptionLine(line: string) {
+  return /^[A-Za-z_][\w.]*:(?:\s|$)/.test(line)
 }
 
 async function hasGitHubTemplateFlow() {
@@ -1193,14 +1262,19 @@ async function getFreePort() {
 
 async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<CommandResult> {
   const commandLog = openCommandLog(options?.logFile)
-  const writeChunk = (chunk: string) => {
-    if (options?.streamOutputToStderr) {
+  const writeChunk = (chunk: string, streamToStderr: boolean) => {
+    if (streamToStderr) {
       try {
         process.stderr.write(chunk)
       } catch {}
     }
     commandLog.write(chunk)
   }
+  const stderrWriter = createStderrCommandWriter({
+    commandLog,
+    streamToStderr: options?.streamOutputToStderr === true,
+    suppressPythonTracebacks: options?.suppressPythonTracebackStderr === true,
+  })
   try {
     const proc = Bun.spawn({
       cmd,
@@ -1238,8 +1312,12 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
           })
     const [result, stdout, stderr] = await Promise.all([
       timeoutResult ? Promise.race([exitResult, timeoutResult]) : exitResult,
-      readCommandOutput(proc.stdout, writeChunk, outputAbort.signal),
-      readCommandOutput(proc.stderr, writeChunk, outputAbort.signal),
+      readCommandOutput(
+        proc.stdout,
+        (chunk) => writeChunk(chunk, options?.streamOutputToStderr === true),
+        outputAbort.signal,
+      ),
+      readCommandOutput(proc.stderr, stderrWriter, outputAbort.signal),
     ])
     const logFile = await closeCommandLog(commandLog)
     return { code: result.code, stdout, stderr, timedOut: result.timedOut, logFile }
@@ -1304,18 +1382,83 @@ function openCommandLog(logFile?: string) {
   }
 }
 
+function createStderrCommandWriter(input: {
+  commandLog: ReturnType<typeof openCommandLog>
+  streamToStderr: boolean
+  suppressPythonTracebacks: boolean
+}): OutputWriter {
+  const userWriter = createUserStderrWriter(input.streamToStderr, input.suppressPythonTracebacks)
+  return {
+    write(chunk) {
+      input.commandLog.write(chunk)
+      userWriter.write(chunk)
+    },
+    close() {
+      userWriter.close?.()
+    },
+  }
+}
+
+function createUserStderrWriter(streamToStderr: boolean, suppressPythonTracebacks: boolean): OutputWriter {
+  let pending = ""
+  let suppressingTraceback = false
+
+  const writeLine = (line: string) => {
+    const trimmed = line.trim()
+    if (suppressPythonTracebacks && !suppressingTraceback && trimmed === "Traceback (most recent call last):") {
+      suppressingTraceback = true
+      return
+    }
+    if (suppressingTraceback) {
+      if (isPythonTracebackFinalExceptionLine(trimmed)) suppressingTraceback = false
+      return
+    }
+    if (!streamToStderr) return
+    try {
+      process.stderr.write(line)
+    } catch {}
+  }
+
+  return {
+    write(chunk) {
+      const text = pending + chunk
+      const lines = text.split(/(?<=\n)/)
+      pending = lines.at(-1)?.endsWith("\n") ? "" : (lines.pop() ?? "")
+      for (const line of lines) {
+        writeLine(line)
+      }
+    },
+    close() {
+      if (!pending) return
+      writeLine(pending)
+      pending = ""
+    },
+  }
+}
+
 async function closeCommandLog(log: ReturnType<typeof openCommandLog>) {
   await log.close()
   return log.getLogFile()
 }
 
+function writeOutput(writer: ((chunk: string) => void) | OutputWriter, chunk: string) {
+  if (typeof writer === "function") writer(chunk)
+  else writer.write(chunk)
+}
+
+function closeOutputWriter(writer: ((chunk: string) => void) | OutputWriter | undefined) {
+  if (typeof writer === "function") return
+  writer?.close?.()
+}
+
 async function readCommandOutput(
   output: string | ReadableStream<Uint8Array> | null | undefined,
-  writer?: (chunk: string) => void,
+  writer?: ((chunk: string) => void) | OutputWriter,
   signal?: AbortSignal,
 ) {
   if (typeof output === "string") {
-    if (output && writer) writer(output)
+    if (output && writer) writeOutput(writer, output)
+    closeOutputWriter(writer)
     return output
   }
   if (!output) return ""
@@ -1334,12 +1477,12 @@ async function readCommandOutput(
       if (done || signal?.aborted) break
       if (!value || value.length === 0) continue
       const chunk = decoder.decode(value, { stream: true })
-      if (writer) writer(chunk)
+      if (writer) writeOutput(writer, chunk)
       text += chunk
     }
     const tail = decoder.decode()
     if (tail) {
-      if (writer) writer(tail)
+      if (writer) writeOutput(writer, tail)
       text += tail
     }
     return text
@@ -1347,6 +1490,7 @@ async function readCommandOutput(
     if (signal?.aborted) return text
     throw error
   } finally {
+    closeOutputWriter(writer)
     signal?.removeEventListener("abort", abortRead)
   }
 }

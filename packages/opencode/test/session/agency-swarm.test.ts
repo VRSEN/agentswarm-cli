@@ -1,10 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
-import { tmpdir as osTmpdir } from "node:os"
 import path from "node:path"
-import { pathToFileURL } from "node:url"
 import { Auth } from "../../src/auth"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
@@ -14,7 +11,6 @@ import { Provider } from "../../src/provider/provider"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Session } from "../../src/session"
 import { SessionAgencySwarm } from "../../src/session/agency-swarm"
-import { localFileMaterializationRoot } from "../../src/session/agency-swarm-utils"
 import { MessageID, PartID } from "../../src/session/schema"
 import { tmpdir } from "../fixture/fixture"
 
@@ -224,21 +220,16 @@ describe("session.agency-swarm", () => {
       },
     ] as any
 
-  async function expectStreamMaterializesDroppedImage(baseURL?: string) {
+  test("stream forwards dropped data URL images as structured message content", async () => {
     mockHistory()
     const content = Buffer.from("red dot image")
-    let captured: Record<string, string> | undefined
-    let observedContent: Buffer | undefined
+    let captured: unknown
     AgencySwarmAdapter.streamRun = async function* (input) {
-      captured = input.fileURLs
-      const filepath = input.fileURLs?.["red-dot.png"]
-      if (filepath) observedContent = await readFile(filepath)
+      captured = input.message
       yield { type: "end" }
     } as typeof AgencySwarmAdapter.streamRun
 
     const { input } = helper()
-    if (baseURL) input.options.baseURL = baseURL
-    input.options.materializeLocalFiles = true
     input.userMessage.parts = droppedImageParts(content)
 
     const stream = await SessionAgencySwarm.stream(input)
@@ -246,91 +237,43 @@ describe("session.agency-swarm", () => {
       // consume
     }
 
-    const filepath = captured?.["red-dot.png"]
-    expect(filepath).toBeDefined()
-    expect(path.isAbsolute(filepath!)).toBeTrue()
-    expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
-    expect(path.basename(filepath!)).toBe("red-dot.png")
-    expect(observedContent).toEqual(content)
-    await expect(readFile(filepath!)).rejects.toThrow()
-  }
-
-  test("stream materializes dropped data URL images for launcher Agency servers", async () => {
-    await expectStreamMaterializesDroppedImage()
-  })
-
-  test("stream blocks launcher file drops when only ChatGPT browser auth is available", async () => {
-    mockHistory()
-    await Auth.set("openai", {
-      type: "oauth",
-      access: "oauth-access",
-      refresh: "oauth-refresh",
-      expires: Date.now() + 60_000,
-      accountId: "acct_123",
-    } as any)
-
-    const content = Buffer.from("red dot image")
-    let called = false
-    AgencySwarmAdapter.streamRun = async function* () {
-      called = true
-      yield { type: "end" }
-    } as typeof AgencySwarmAdapter.streamRun
-
-    try {
-      const { input } = helper()
-      input.options.materializeLocalFiles = true
-      input.userMessage.parts = droppedImageParts(content)
-
-      await expect(async () => {
-        const stream = await SessionAgencySwarm.stream(input)
-        for await (const _event of stream.fullStream) {
-          // consume
-        }
-      }).toThrow("cannot send file attachments through ChatGPT browser auth")
-      expect(called).toBeFalse()
-    } finally {
-      await Auth.remove("openai")
-    }
-  })
-
-  test("stream uses an OpenAI API key for launcher file drops when browser auth is also stored", async () => {
-    mockHistory()
-    await Auth.set("openai", {
-      type: "oauth",
-      access: "oauth-access",
-      refresh: "oauth-refresh",
-      expires: Date.now() + 60_000,
-      accountId: "acct_123",
-    } as any)
-    spyOn(Env, "all").mockImplementation(() => ({
-      OPENAI_API_KEY: "sk-env-openai",
-    })) as typeof Env.all
-    spyOn(Provider, "list").mockImplementation(async () => ({
-      openai: {
-        id: "openai",
-        name: "OpenAI",
-        source: "api",
-        env: ["OPENAI_API_KEY"],
-        options: {},
-        models: {},
+    expect(captured).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_image",
+            image_url: `data:image/png;base64,${content.toString("base64")}`,
+            detail: "auto",
+          },
+          {
+            type: "input_text",
+            text: "[Image 1] inspect this image",
+          },
+        ],
       },
-    })) as typeof Provider.list
+    ])
+  })
+
+  test("stream keeps browser auth client_config while forwarding attachments inline", async () => {
+    mockHistory()
+    await Auth.set("openai", {
+      type: "oauth",
+      access: "oauth-access",
+      refresh: "oauth-refresh",
+      expires: Date.now() + 60_000,
+      accountId: "acct_123",
+    } as any)
 
     const content = Buffer.from("red dot image")
-    let capturedFileURLs: Record<string, string> | undefined
     let capturedClientConfig: Record<string, unknown> | undefined
     AgencySwarmAdapter.streamRun = async function* (input) {
-      capturedFileURLs = input.fileURLs
       capturedClientConfig = input.clientConfig
-      const filepath = input.fileURLs?.["red-dot.png"]
-      expect(filepath).toBeDefined()
-      await expect(readFile(filepath!)).resolves.toEqual(content)
       yield { type: "end" }
     } as typeof AgencySwarmAdapter.streamRun
 
     try {
       const { input } = helper()
-      input.options.materializeLocalFiles = true
       input.userMessage.parts = droppedImageParts(content)
 
       const stream = await SessionAgencySwarm.stream(input)
@@ -338,161 +281,15 @@ describe("session.agency-swarm", () => {
         // consume
       }
 
-      const filepath = capturedFileURLs?.["red-dot.png"]
-      expect(filepath).toBeDefined()
-      expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
       expect(capturedClientConfig).toEqual({
-        api_key: "sk-env-openai",
+        api_key: "oauth-access",
+        base_url: "https://chatgpt.com/backend-api/codex",
+        default_headers: {
+          "ChatGPT-Account-Id": "acct_123",
+        },
       })
-      await expect(readFile(filepath!)).rejects.toThrow()
     } finally {
       await Auth.remove("openai")
-    }
-  })
-
-  test("stream materializes file URL attachments for launcher Agency servers", async () => {
-    mockHistory()
-    const sourceDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-file-url-stream-"))
-    const sourcePath = path.join(sourceDir, "outside-project.txt")
-    const content = Buffer.from("outside project")
-    await Bun.write(sourcePath, content)
-
-    let captured: Record<string, string> | undefined
-    let observedContent: Buffer | undefined
-    AgencySwarmAdapter.streamRun = async function* (input) {
-      captured = input.fileURLs
-      const filepath = input.fileURLs?.["outside-project.txt"]
-      if (filepath) observedContent = await readFile(filepath)
-      yield { type: "end" }
-    } as typeof AgencySwarmAdapter.streamRun
-
-    let filepath: string | undefined
-    try {
-      const { input } = helper()
-      input.options.materializeLocalFiles = true
-      input.userMessage.parts = [
-        {
-          type: "text",
-          text: "inspect this file",
-          ignored: false,
-        },
-        {
-          type: "file",
-          mime: "text/plain",
-          filename: "outside-project.txt",
-          url: pathToFileURL(sourcePath).href,
-        },
-      ] as any
-
-      const stream = await SessionAgencySwarm.stream(input)
-      for await (const _event of stream.fullStream) {
-        // consume
-      }
-
-      filepath = captured?.["outside-project.txt"]
-      expect(filepath).toBeDefined()
-      expect(filepath).not.toBe(sourcePath)
-      expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
-      expect(path.basename(filepath!)).toBe("outside-project.txt")
-      expect(observedContent).toEqual(content)
-      await expect(readFile(filepath!)).rejects.toThrow()
-    } finally {
-      await Promise.all([
-        rm(sourceDir, { recursive: true, force: true }),
-        filepath && filepath !== sourcePath
-          ? rm(path.dirname(filepath), { recursive: true, force: true })
-          : Promise.resolve(),
-      ])
-    }
-  })
-
-  test("stream preserves launcher-managed project directory attachments", async () => {
-    mockHistory()
-    const projectDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-project-stream-"))
-    const sourcePath = path.join(projectDir, "docs")
-    await mkdir(sourcePath)
-
-    let captured: Record<string, string> | undefined
-    AgencySwarmAdapter.streamRun = async function* (input) {
-      captured = input.fileURLs
-      yield { type: "end" }
-    } as typeof AgencySwarmAdapter.streamRun
-
-    try {
-      const { input } = helper()
-      input.options.materializeLocalFiles = true
-      input.options.localFilePathAllowlist = [projectDir]
-      input.userMessage.parts = [
-        {
-          type: "text",
-          text: "inspect this directory",
-          ignored: false,
-        },
-        {
-          type: "file",
-          mime: "application/x-directory",
-          filename: "docs",
-          url: pathToFileURL(sourcePath).href,
-        },
-      ] as any
-
-      const stream = await SessionAgencySwarm.stream(input)
-      for await (const _event of stream.fullStream) {
-        // consume
-      }
-
-      expect(captured).toEqual({
-        docs: sourcePath,
-      })
-    } finally {
-      await rm(projectDir, { recursive: true, force: true })
-    }
-  })
-
-  test("stream preserves file URL attachments for manual loopback Agency servers", async () => {
-    mockHistory()
-    const sourceDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-file-url-stream-"))
-    const sourcePath = path.join(sourceDir, "outside-project.txt")
-    const content = Buffer.from("outside project")
-    await Bun.write(sourcePath, content)
-
-    let captured: Record<string, string> | undefined
-    let observedContent: Buffer | undefined
-    AgencySwarmAdapter.streamRun = async function* (input) {
-      captured = input.fileURLs
-      const filepath = input.fileURLs?.["outside-project.txt"]
-      if (filepath) observedContent = await readFile(filepath)
-      yield { type: "end" }
-    } as typeof AgencySwarmAdapter.streamRun
-
-    try {
-      const { input } = helper()
-      input.userMessage.parts = [
-        {
-          type: "text",
-          text: "inspect this file",
-          ignored: false,
-        },
-        {
-          type: "file",
-          mime: "text/plain",
-          filename: "outside-project.txt",
-          url: pathToFileURL(sourcePath).href,
-        },
-      ] as any
-
-      const stream = await SessionAgencySwarm.stream(input)
-      for await (const _event of stream.fullStream) {
-        // consume
-      }
-
-      expect(captured).toEqual({
-        "outside-project.txt": sourcePath,
-      })
-      expect(observedContent).toEqual(content)
-      await expect(readFile(sourcePath)).resolves.toEqual(content)
-    } finally {
-      await rm(sourceDir, { recursive: true, force: true })
     }
   })
 
@@ -520,15 +317,12 @@ describe("session.agency-swarm", () => {
       },
     ] as any
 
-  test("stream materializes clipboard data URL images for manual loopback Agency servers", async () => {
+  test("stream forwards clipboard data URL images as structured message content", async () => {
     mockHistory()
     const content = Buffer.from("clipboard image")
-    let captured: Record<string, string> | undefined
-    let observedContent: Buffer | undefined
+    let captured: unknown
     AgencySwarmAdapter.streamRun = async function* (input) {
-      captured = input.fileURLs
-      const filepath = input.fileURLs?.["clipboard"]
-      if (filepath) observedContent = await readFile(filepath)
+      captured = input.message
       yield { type: "end" }
     } as typeof AgencySwarmAdapter.streamRun
 
@@ -540,155 +334,23 @@ describe("session.agency-swarm", () => {
       // consume
     }
 
-    const filepath = captured?.["clipboard"]
-    expect(filepath).toBeDefined()
-    expect(path.isAbsolute(filepath!)).toBeTrue()
-    expect(path.basename(filepath!)).toBe("clipboard-image.png")
-    expect(observedContent).toEqual(content)
-    await expect(readFile(filepath!)).rejects.toThrow()
-  })
-
-  test("stream materializes clipboard data URL images for launcher-managed loopback Agency servers", async () => {
-    mockHistory()
-    const content = Buffer.from("clipboard image")
-    let captured: Record<string, string> | undefined
-    let observedContent: Buffer | undefined
-    AgencySwarmAdapter.streamRun = async function* (input) {
-      captured = input.fileURLs
-      const filepath = input.fileURLs?.["clipboard"]
-      if (filepath) observedContent = await readFile(filepath)
-      yield { type: "end" }
-    } as typeof AgencySwarmAdapter.streamRun
-
-    const { input } = helper()
-    input.options.materializeLocalFiles = true
-    input.userMessage.parts = clipboardImageParts(content)
-
-    const stream = await SessionAgencySwarm.stream(input)
-    for await (const _event of stream.fullStream) {
-      // consume
-    }
-
-    const filepath = captured?.["clipboard"]
-    expect(filepath).toBeDefined()
-    expect(path.isAbsolute(filepath!)).toBeTrue()
-    expect(path.basename(filepath!)).toBe("clipboard-image.png")
-    expect(observedContent).toEqual(content)
-    await expect(readFile(filepath!)).rejects.toThrow()
-  })
-
-  test("stream cleans up materialized clipboard images when Agency streaming fails", async () => {
-    mockHistory()
-    const content = Buffer.from("clipboard image")
-    let captured: Record<string, string> | undefined
-    let observedContent: Buffer | undefined
-    AgencySwarmAdapter.streamRun = async function* (input) {
-      captured = input.fileURLs
-      const filepath = input.fileURLs?.["clipboard"]
-      if (filepath) observedContent = await readFile(filepath)
-      throw new Error("backend failed")
-    } as typeof AgencySwarmAdapter.streamRun
-
-    const { input } = helper()
-    input.options.materializeLocalFiles = true
-    input.userMessage.parts = clipboardImageParts(content)
-
-    const stream = await SessionAgencySwarm.stream(input)
-    const events: any[] = []
-    for await (const event of stream.fullStream) {
-      events.push(event)
-    }
-
-    const filepath = captured?.["clipboard"]
-    expect(filepath).toBeDefined()
-    expect(observedContent).toEqual(content)
-    expect(events.at(-1)?.type).toBe("error")
-    expect(events.at(-1)?.error.message).toBe("backend failed")
-    await expect(readFile(filepath!)).rejects.toThrow()
-  })
-
-  test("stream cleans up materialized clipboard images when the stream is closed", async () => {
-    mockHistory()
-    const content = Buffer.from("clipboard image")
-    let captured: Record<string, string> | undefined
-    AgencySwarmAdapter.streamRun = async function* (input) {
-      captured = input.fileURLs
-      yield {
-        type: "data",
-        payload: {
-          type: "raw_response_event",
-          data: {
-            type: "response.content_part.added",
-            item_id: "item_1",
-            content_index: 0,
-            part: {
-              type: "output_text",
-            },
-          },
-        },
-      }
-      yield { type: "end" }
-    } as typeof AgencySwarmAdapter.streamRun
-
-    const { input } = helper()
-    input.options.materializeLocalFiles = true
-    input.userMessage.parts = clipboardImageParts(content)
-
-    const stream = await SessionAgencySwarm.stream(input)
-    expect((await stream.fullStream.next()).value.type).toBe("start")
-    expect((await stream.fullStream.next()).value.type).toBe("start-step")
-    expect((await stream.fullStream.next()).value.type).toBe("text-start")
-
-    const filepath = captured?.["clipboard"]
-    expect(filepath).toBeDefined()
-    await expect(readFile(filepath!)).resolves.toEqual(content)
-
-    await stream.fullStream.return(undefined)
-    await expect(readFile(filepath!)).rejects.toThrow()
-  })
-
-  test("stream rejects clipboard data URL images for remote Agency servers", async () => {
-    mockHistory()
-    let called = false
-    AgencySwarmAdapter.streamRun = async function* () {
-      called = true
-      yield { type: "end" }
-    } as typeof AgencySwarmAdapter.streamRun
-
-    const { input } = helper()
-    input.options.baseURL = "https://agency.example.com"
-    input.userMessage.parts = [
+    expect(captured).toEqual([
       {
-        type: "text",
-        text: "[Image 1] inspect this image",
-        ignored: false,
-      },
-      {
-        type: "file",
-        mime: "image/png",
-        filename: "clipboard",
-        url: "data:image/png;base64,AAA=",
-        source: {
-          type: "file",
-          path: "clipboard",
-          text: {
-            value: "[Image 1]",
-            start: 0,
-            end: 9,
+        role: "user",
+        content: [
+          {
+            type: "input_image",
+            image_url: `data:image/png;base64,${content.toString("base64")}`,
+            detail: "auto",
           },
-        },
+          {
+            type: "input_text",
+            text: "[Image 1] inspect this image",
+          },
+        ],
       },
-    ] as any
-
-    await expect(SessionAgencySwarm.stream(input)).rejects.toThrow("Agent Swarm Run mode cannot send inline image data")
-    expect(called).toBeFalse()
+    ])
   })
-
-  for (const baseURL of ["http://host.docker.internal:8000", "http://kubernetes.docker.internal:8000"]) {
-    test(`stream materializes dropped data URL images for ${new URL(baseURL).hostname} Agency servers`, async () => {
-      await expectStreamMaterializesDroppedImage(baseURL)
-    })
-  }
 
   test("optionsFromProvider maps supported FastAPI request options", () => {
     const options = SessionAgencySwarm.optionsFromProvider({
@@ -707,8 +369,6 @@ describe("session.agency-swarm", () => {
         },
         fileIDs: ["file_1", "file_2"],
         generateChatName: true,
-        materializeLocalFiles: true,
-        localFilePathAllowlist: ["/tmp/project"],
         clientConfig: {
           base_url: "https://proxy.example.com/v1",
         },
@@ -723,8 +383,6 @@ describe("session.agency-swarm", () => {
     expect(options.userContext).toEqual({ tenant: "acme" })
     expect(options.fileIDs).toEqual(["file_1", "file_2"])
     expect(options.generateChatName).toBeTrue()
-    expect(options.materializeLocalFiles).toBeTrue()
-    expect(options.localFilePathAllowlist).toEqual(["/tmp/project"])
     expect(options.clientConfig).toEqual({ base_url: "https://proxy.example.com/v1" })
     expect(options.discoveryTimeoutMs).toBe(12000)
   })
@@ -3470,6 +3128,180 @@ describe("session.agency-swarm", () => {
     }
 
     expect(sentHistory).toEqual(storedHistory)
+  })
+
+  test("stream strips stored Responses item ids while pruning handoff-only transport items", async () => {
+    const storedHistory = [
+      {
+        type: "message",
+        id: "msg_kept",
+        role: "assistant",
+        content: [{ type: "output_text", text: "HANDOFF_AGENT_ACTIVE" }],
+      },
+      {
+        type: "message",
+        id: "rs_message_kept",
+        role: "assistant",
+        content: [{ type: "output_text", text: "normal message with backend rs id" }],
+      },
+      {
+        type: "reasoning",
+        id: "rs_stale",
+        summary: [{ type: "summary_text", text: "private chain state" }],
+      },
+      {
+        type: "item_reference",
+        id: "rs_ref_rejected",
+      },
+      {
+        type: "handoff_output_item",
+        output: { assistant: "HandoffAgent" },
+      },
+    ]
+    let sentHistory: unknown
+    AgencySwarmHistory.load = (async () => ({
+      scope: "http://127.0.0.1:8000|builder|session_1",
+      chat_history: storedHistory as any,
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.load
+    AgencySwarmHistory.appendMessages = (async () => ({
+      scope: "scope",
+      chat_history: [],
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.appendMessages
+    AgencySwarmHistory.setLastRunID = (async () => ({
+      scope: "scope",
+      chat_history: [],
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.setLastRunID
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      sentHistory = args.chatHistory
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _ of stream.fullStream) {
+    }
+
+    expect(sentHistory).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "HANDOFF_AGENT_ACTIVE" }],
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "normal message with backend rs id" }],
+      },
+      {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "private chain state" }],
+      },
+    ])
+  })
+
+  test("stream strips stored Responses item ids after handoff", async () => {
+    const storedHistory = [
+      {
+        type: "message",
+        id: "msg_before_handoff",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Preparing transfer." }],
+      },
+      {
+        type: "reasoning",
+        id: "rs_required",
+        summary: [{ type: "summary_text", text: "choose handoff target" }],
+      },
+      {
+        type: "function_call",
+        id: "fc_handoff",
+        call_id: "call_handoff",
+        name: "transfer_to_math_agent",
+        arguments: "{}",
+      },
+      {
+        type: "handoff_output_item",
+        call_id: "call_handoff",
+        output: { assistant: "MathAgent" },
+      },
+      {
+        type: "reasoning",
+        id: "rs_required_message",
+        summary: [{ type: "summary_text", text: "start handoff response" }],
+      },
+      {
+        type: "message",
+        id: "msg_after_handoff",
+        role: "assistant",
+        agent: "MathAgent",
+        content: [{ type: "output_text", text: "Math agent now has control." }],
+      },
+      {
+        type: "reasoning",
+        id: "rs_orphan",
+        summary: [{ type: "summary_text", text: "stale private state" }],
+      },
+    ]
+    let sentHistory: unknown
+    AgencySwarmHistory.load = (async () => ({
+      scope: "http://127.0.0.1:8000|builder|session_1",
+      chat_history: storedHistory as any,
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.load
+    AgencySwarmHistory.appendMessages = (async () => ({
+      scope: "scope",
+      chat_history: [],
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.appendMessages
+    AgencySwarmHistory.setLastRunID = (async () => ({
+      scope: "scope",
+      chat_history: [],
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.setLastRunID
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      sentHistory = args.chatHistory
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _ of stream.fullStream) {
+    }
+
+    expect(sentHistory).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Preparing transfer." }],
+      },
+      {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "choose handoff target" }],
+      },
+      {
+        type: "function_call",
+        call_id: "call_handoff",
+        name: "transfer_to_math_agent",
+        arguments: "{}",
+      },
+      {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "start handoff response" }],
+      },
+      {
+        type: "message",
+        role: "assistant",
+        agent: "MathAgent",
+        content: [{ type: "output_text", text: "Math agent now has control." }],
+      },
+      {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "stale private state" }],
+      },
+    ])
   })
 
   test("stream rebuilds chat history from cloned messages when bridge history is empty", async () => {

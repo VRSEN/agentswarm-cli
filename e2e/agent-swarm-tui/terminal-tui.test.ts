@@ -383,19 +383,14 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
   })
 
-  test("bracketed-paste image paths reach manually configured loopback servers as original local file paths", async () => {
+  test("bracketed-paste image paths reach Agency servers as structured message content", async () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({ baseURL: currentServer.baseURL })
     const imageDir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-image-drop-"))
     tempDirs.push(imageDir)
     const imagePath = path.join(imageDir, "red-dot.png")
-    await writeFile(
-      imagePath,
-      Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
-        "base64",
-      ),
-    )
+    const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    await writeFile(imagePath, Buffer.from(pngBase64, "base64"))
 
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
     const pastedPath = path.relative(packageRoot, imagePath)
@@ -409,9 +404,17 @@ describe("Agent Swarm terminal TUI e2e", () => {
     )
 
     const body = currentServer.requests[0]?.body
-    expect(body?.message).toContain("[Image 1] please inspect this image")
-    const fileURLs = body?.file_urls as Record<string, string> | undefined
-    expect(fileURLs?.["red-dot.png"]).toBe(imagePath)
+    const message = body?.message as Array<{ content?: Array<Record<string, unknown>> }> | undefined
+    expect(message?.[0]?.content).toContainEqual({
+      type: "input_image",
+      image_url: `data:image/png;base64,${pngBase64}`,
+      detail: "auto",
+    })
+    expect(message?.[0]?.content).toContainEqual({
+      type: "input_text",
+      text: "[Image 1] please inspect this image",
+    })
+    expect(body?.file_urls).toBeUndefined()
   })
 
   test("Esc twice cancels queued Run-mode prompt before active stream drains", async () => {

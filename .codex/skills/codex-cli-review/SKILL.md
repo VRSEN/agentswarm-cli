@@ -1,6 +1,6 @@
 ---
 name: codex-cli-review
-description: Use when a local Codex CLI review, pull-request comment review loop, or saved Codex review artifact is required for this repo.
+description: Use when a local Codex CLI review, pull-request opening or update compliance check, pull-request comment review loop, or saved Codex review artifact is required for this repo.
 ---
 
 # Codex CLI Review
@@ -11,9 +11,9 @@ Use this skill for local Codex review artifacts and pull-request review loops.
 
 - Before opening, updating, merging, or release-reviewing a pull request, read `AGENTS.md`, `CONTRIBUTING.md`, `.github/pull_request_template.md`, and the relevant `.github/workflows/*` for PR standards, compliance, typecheck, test, release, or publish.
 - Also read `FORK_CHANGELOG.md` and `USER_FLOWS.md` when fork behavior, TUI, release QA, or user flows are touched.
-- Verify PR title, linked issue or allowed exception, checked type, non-empty verification, checked checklist, no unrelated changes, live comments, labels, unresolved threads, and required checks before handoff.
-- The pull-request body must satisfy the live template and compliance workflow when the pull request is opened and stay compliant after edits or synchronize events.
-- `needs:compliance` comments or labels are critical-path blockers because non-compliant PRs are auto-closed after 2 hours from the compliance comment.
+- Verify PR title, issue-first status or allowed exception, template sections, checked type, non-empty verification, checked checklist, no unrelated changes, live PR-standard and compliance comments, labels, unresolved threads, and required checks before handoff.
+- The pull-request body must satisfy the live template, issue-first policy, and compliance workflow when opened, and must stay compliant after edits or synchronize events.
+- Any `needs:title`, `needs:issue`, or `needs:compliance` label, comment marker beginning `<!-- pr-standards:`, or `<!-- issue-compliance -->` comment is a critical-path blocker until the PR is fixed, the workflow removes it, or a checked policy exception is recorded. `needs:compliance` can auto-close a PR after 2 hours from the compliance comment.
 
 ## Human Review And QA Packet
 

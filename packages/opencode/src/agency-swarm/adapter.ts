@@ -36,7 +36,7 @@ export namespace AgencySwarmAdapter {
   export type StreamRunInput = {
     baseURL: string
     agency: string
-    message: string
+    message: string | Array<Record<string, unknown>>
     chatHistory: Array<Record<string, unknown>>
     recipientAgent?: string | null
     additionalInstructions?: string

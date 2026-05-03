@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises"
-import { tmpdir as osTmpdir } from "node:os"
+import { readFile, rm } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
-import { pathToFileURL } from "node:url"
 import { MessageV2 } from "../../src/session/message-v2"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
@@ -10,7 +9,7 @@ import {
   asRawString,
   asString,
   buildOutgoingMessage,
-  localFileMaterializationRoot,
+  buildStructuredOutgoingMessage,
   collectFileURLs,
   compactMetadata,
   extractEventMeta,
@@ -130,366 +129,51 @@ describe("session.agency-swarm-utils", () => {
     })
   })
 
-  test("collectFileURLs keeps valid file parts and materializes local data URL files", async () => {
-    const imageContent = Buffer.from("inline image")
-    const pdfContent = Buffer.from("%PDF-1.4\n")
-    const materializedFilePaths: string[] = []
-    const result = collectFileURLs(
-      msg([
-        file("part-1", {
-          type: "file",
-          mime: "application/pdf",
-          url: "https://example.com/plan.pdf",
-        }),
-        file("part-2", {
-          type: "file",
-          mime: "text/plain",
-          url: "not-a-url",
-        }),
-        file("part-3", {
-          type: "file",
-          mime: "image/png",
-          url: `data:image/png;base64,${imageContent.toString("base64")}`,
-          filename: "inline.png",
-          source: {
-            type: "file",
-            path: "/tmp/inline.png",
-            text: {
-              value: "[Image 1]",
-              start: 0,
-              end: 9,
-            },
-          },
-        }),
-        file("part-4", {
-          type: "file",
-          mime: "application/pdf",
-          url: `data:application/pdf;base64,${pdfContent.toString("base64")}`,
-          filename: "report.pdf",
-          source: {
-            type: "file",
-            path: "/tmp/report.pdf",
-            text: {
-              value: "[PDF 1]",
-              start: 10,
-              end: 17,
-            },
-          },
-        }),
-      ]),
-      {
-        allowLocalFilePaths: true,
-        materializeLocalFilePaths: true,
-        materializedFilePaths,
-      },
-    )
-
-    const inline = result?.["inline.png"]
-    const pdf = result?.["report.pdf"]
-    expect(inline).toBeDefined()
-    expect(pdf).toBeDefined()
-    const inlinePath = inline!
-    const pdfPath = pdf!
-    expect(inlinePath.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
-    expect(pdfPath.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
-    expect(path.basename(inlinePath)).toBe("inline.png")
-    expect(path.basename(pdfPath)).toBe("report.pdf")
-    expect(materializedFilePaths).toEqual([inlinePath, pdfPath])
-
-    try {
-      expect(result).toEqual({
-        "plan.pdf": "https://example.com/plan.pdf",
-        "inline.png": inlinePath,
-        "report.pdf": pdfPath,
-      })
-      await expect(readFile(inlinePath)).resolves.toEqual(imageContent)
-      await expect(readFile(pdfPath)).resolves.toEqual(pdfContent)
-    } finally {
-      await Promise.all([
-        rm(path.dirname(inlinePath), { recursive: true, force: true }),
-        rm(path.dirname(pdfPath), { recursive: true, force: true }),
-      ])
-    }
-  })
-
-  test("collectFileURLs preserves local data URL source paths without materialization", () => {
-    const sourcePath = "/tmp/report.pdf"
-    const result = collectFileURLs(
-      msg([
-        file("part-1", {
-          type: "file",
-          mime: "application/pdf",
-          url: `data:application/pdf;base64,${Buffer.from("%PDF-1.4\n").toString("base64")}`,
-          filename: "report.pdf",
-          source: {
-            type: "file",
-            path: sourcePath,
-            text: {
-              value: "[PDF 1]",
-              start: 0,
-              end: 7,
-            },
-          },
-        }),
-      ]),
-      {
-        allowLocalFilePaths: true,
-      },
-    )
-
-    expect(result).toEqual({
-      "report.pdf": sourcePath,
-    })
-  })
-
-  test("collectFileURLs preserves file URL attachments for manually connected local Agency servers", async () => {
-    const sourceDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-file-url-source-"))
-    const sourcePath = path.join(sourceDir, "outside-project.txt")
-    const content = Buffer.from("outside project")
-    await Bun.write(sourcePath, content)
-
-    const materializedFilePaths: string[] = []
-    try {
-      const result = collectFileURLs(
+  test("collectFileURLs keeps valid file parts and normalizes file URLs", () => {
+    expect(
+      collectFileURLs(
         msg([
           file("part-1", {
             type: "file",
             mime: "text/plain",
-            url: pathToFileURL(sourcePath).href,
-            filename: "outside-project.txt",
+            url: "file:///tmp/spec.md",
+            filename: "spec.md",
           }),
-        ]),
-        {
-          allowLocalFilePaths: true,
-          materializedFilePaths,
-        },
-      )
-
-      expect(result).toEqual({
-        "outside-project.txt": sourcePath,
-      })
-      expect(materializedFilePaths).toEqual([])
-      await expect(readFile(sourcePath)).resolves.toEqual(content)
-    } finally {
-      await rm(sourceDir, { recursive: true, force: true })
-    }
-  })
-
-  test("collectFileURLs materializes file URL attachments for launcher Agency servers", async () => {
-    const sourceDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-file-url-source-"))
-    const sourcePath = path.join(sourceDir, "outside-project.txt")
-    const content = Buffer.from("outside project")
-    await Bun.write(sourcePath, content)
-
-    const materializedFilePaths: string[] = []
-    let filepath: string | undefined
-    try {
-      const result = collectFileURLs(
-        msg([
-          file("part-1", {
-            type: "file",
-            mime: "text/plain",
-            url: pathToFileURL(sourcePath).href,
-            filename: "outside-project.txt",
-          }),
-        ]),
-        {
-          allowLocalFilePaths: true,
-          materializeLocalFilePaths: true,
-          materializedFilePaths,
-        },
-      )
-
-      filepath = result?.["outside-project.txt"]
-      expect(filepath).toBeDefined()
-      expect(filepath).not.toBe(sourcePath)
-      expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
-      expect(path.basename(filepath!)).toBe("outside-project.txt")
-      expect(materializedFilePaths).toEqual([filepath!])
-      await expect(readFile(filepath!)).resolves.toEqual(content)
-    } finally {
-      await Promise.all([
-        rm(sourceDir, { recursive: true, force: true }),
-        filepath && filepath !== sourcePath
-          ? rm(path.dirname(filepath), { recursive: true, force: true })
-          : Promise.resolve(),
-      ])
-    }
-  })
-
-  test("collectFileURLs preserves launcher-managed project file attachments", async () => {
-    const projectDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-project-"))
-    const sourcePath = path.join(projectDir, "project.txt")
-    const content = Buffer.from("project file")
-    await Bun.write(sourcePath, content)
-
-    const materializedFilePaths: string[] = []
-    try {
-      const result = collectFileURLs(
-        msg([
-          file("part-1", {
-            type: "file",
-            mime: "text/plain",
-            url: pathToFileURL(sourcePath).href,
-            filename: "project.txt",
-          }),
-        ]),
-        {
-          allowLocalFilePaths: true,
-          materializeLocalFilePaths: true,
-          localFilePathAllowlist: [projectDir],
-          materializedFilePaths,
-        },
-      )
-
-      expect(result).toEqual({
-        "project.txt": sourcePath,
-      })
-      expect(materializedFilePaths).toEqual([])
-      await expect(readFile(sourcePath)).resolves.toEqual(content)
-    } finally {
-      await rm(projectDir, { recursive: true, force: true })
-    }
-  })
-
-  test("collectFileURLs preserves launcher-managed project data URL source paths", async () => {
-    const projectDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-project-"))
-    const sourcePath = path.join(projectDir, "report.pdf")
-    const content = Buffer.from("%PDF-1.4\n")
-    await Bun.write(sourcePath, content)
-
-    const materializedFilePaths: string[] = []
-    try {
-      const result = collectFileURLs(
-        msg([
-          file("part-1", {
+          file("part-2", {
             type: "file",
             mime: "application/pdf",
-            url: `data:application/pdf;base64,${content.toString("base64")}`,
-            filename: "report.pdf",
+            url: "https://example.com/plan.pdf",
+          }),
+          file("part-3", {
+            type: "file",
+            mime: "text/plain",
+            url: "not-a-url",
+          }),
+          file("part-4", {
+            type: "file",
+            mime: "image/png",
+            url: "data:image/png;base64,AAA=",
+            filename: "inline.png",
             source: {
               type: "file",
-              path: sourcePath,
+              path: "/tmp/inline.png",
               text: {
-                value: "[PDF 1]",
+                value: "[Image 1]",
                 start: 0,
-                end: 7,
+                end: 9,
               },
             },
           }),
         ]),
         {
           allowLocalFilePaths: true,
-          materializeLocalFilePaths: true,
-          localFilePathAllowlist: [projectDir],
-          materializedFilePaths,
         },
-      )
-
-      expect(result).toEqual({
-        "report.pdf": sourcePath,
-      })
-      expect(materializedFilePaths).toEqual([])
-      await expect(readFile(sourcePath)).resolves.toEqual(content)
-    } finally {
-      await rm(projectDir, { recursive: true, force: true })
-    }
-  })
-
-  test("collectFileURLs preserves launcher-managed project directory attachments", async () => {
-    const projectDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-project-"))
-    const sourcePath = path.join(projectDir, "docs")
-    await mkdir(sourcePath)
-
-    const materializedFilePaths: string[] = []
-    try {
-      const result = collectFileURLs(
-        msg([
-          file("part-1", {
-            type: "file",
-            mime: "application/x-directory",
-            url: pathToFileURL(sourcePath).href,
-            filename: "docs",
-          }),
-        ]),
-        {
-          allowLocalFilePaths: true,
-          materializeLocalFilePaths: true,
-          localFilePathAllowlist: [projectDir],
-          materializedFilePaths,
-        },
-      )
-
-      expect(result).toEqual({
-        docs: sourcePath,
-      })
-      expect(materializedFilePaths).toEqual([])
-    } finally {
-      await rm(projectDir, { recursive: true, force: true })
-    }
-  })
-
-  test("collectFileURLs rejects launcher-managed directory attachments outside the allowlist", async () => {
-    const projectDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-project-"))
-    const sourcePath = await mkdtemp(path.join(osTmpdir(), "agentswarm-outside-dir-"))
-
-    try {
-      expect(() =>
-        collectFileURLs(
-          msg([
-            file("part-1", {
-              type: "file",
-              mime: "application/x-directory",
-              url: pathToFileURL(sourcePath).href,
-              filename: "outside",
-            }),
-          ]),
-          {
-            allowLocalFilePaths: true,
-            materializeLocalFilePaths: true,
-            localFilePathAllowlist: [projectDir],
-          },
-        ),
-      ).toThrow("Agent Swarm Run mode cannot send directory attachments outside the local file allowlist")
-    } finally {
-      await Promise.all([
-        rm(projectDir, { recursive: true, force: true }),
-        rm(sourcePath, { recursive: true, force: true }),
-      ])
-    }
-  })
-
-  test("collectFileURLs rejects non-regular file URL attachments outside the allowlist", async () => {
-    if (process.platform === "win32") return
-    const sourcePath = "/dev/null"
-    const sourceStats = await stat(sourcePath)
-    expect(sourceStats.isFile()).toBeFalse()
-
-    const projectDir = await mkdtemp(path.join(osTmpdir(), "agentswarm-project-"))
-    const materializedFilePaths: string[] = []
-    try {
-      expect(() =>
-        collectFileURLs(
-          msg([
-            file("part-1", {
-              type: "file",
-              mime: "application/octet-stream",
-              url: pathToFileURL(sourcePath).href,
-              filename: "null",
-            }),
-          ]),
-          {
-            allowLocalFilePaths: true,
-            materializeLocalFilePaths: true,
-            localFilePathAllowlist: [projectDir],
-            materializedFilePaths,
-          },
-        ),
-      ).toThrow("Agent Swarm Run mode cannot send non-regular file attachments outside the local file allowlist")
-      expect(materializedFilePaths).toEqual([])
-    } finally {
-      await rm(projectDir, { recursive: true, force: true })
-    }
+      ),
+    ).toEqual({
+      "spec.md": "/tmp/spec.md",
+      "plan.pdf": "https://example.com/plan.pdf",
+      "inline.png": "/tmp/inline.png",
+    })
   })
 
   test("collectFileURLs blocks data URL attachments without an allowed local file path", () => {
@@ -529,12 +213,11 @@ describe("session.agency-swarm-utils", () => {
           allowLocalFilePaths: false,
         },
       ),
-    ).toThrow("Agent Swarm Run mode cannot send local files to a remote Agency server")
+    ).toThrow("Agent Swarm Run mode cannot send local image files to a remote Agency server")
   })
 
-  test("collectFileURLs materializes clipboard images for manually connected local Agency servers", async () => {
+  test("collectFileURLs materializes clipboard images for local Agency servers", async () => {
     const content = Buffer.from("clipboard image")
-    const materializedFilePaths: string[] = []
     const result = collectFileURLs(
       msg([
         file("part-1", {
@@ -555,58 +238,14 @@ describe("session.agency-swarm-utils", () => {
       ]),
       {
         allowLocalFilePaths: true,
-        materializedFilePaths,
       },
     )
 
     const filepath = result?.["clipboard"]
     expect(filepath).toBeDefined()
     expect(path.isAbsolute(filepath!)).toBeTrue()
-    expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
+    expect(filepath!.startsWith(path.join(os.tmpdir(), "agentswarm-clipboard-"))).toBeTrue()
     expect(path.basename(filepath!)).toBe("clipboard-image.png")
-    expect(materializedFilePaths).toEqual([filepath!])
-
-    try {
-      await expect(readFile(filepath!)).resolves.toEqual(content)
-    } finally {
-      await rm(path.dirname(filepath!), { recursive: true, force: true })
-    }
-  })
-
-  test("collectFileURLs materializes clipboard images for launcher-managed local Agency servers", async () => {
-    const content = Buffer.from("clipboard image")
-    const materializedFilePaths: string[] = []
-    const result = collectFileURLs(
-      msg([
-        file("part-1", {
-          type: "file",
-          mime: "image/png",
-          url: `data:image/png;base64,${content.toString("base64")}`,
-          filename: "clipboard",
-          source: {
-            type: "file",
-            path: "clipboard",
-            text: {
-              value: "[Image 1]",
-              start: 0,
-              end: 9,
-            },
-          },
-        }),
-      ]),
-      {
-        allowLocalFilePaths: true,
-        materializeLocalFilePaths: true,
-        materializedFilePaths,
-      },
-    )
-
-    const filepath = result?.["clipboard"]
-    expect(filepath).toBeDefined()
-    expect(path.isAbsolute(filepath!)).toBeTrue()
-    expect(filepath!.startsWith(`${path.resolve(localFileMaterializationRoot())}${path.sep}`)).toBeTrue()
-    expect(path.basename(filepath!)).toBe("clipboard-image.png")
-    expect(materializedFilePaths).toEqual([filepath!])
 
     try {
       await expect(readFile(filepath!)).resolves.toEqual(content)
@@ -667,6 +306,52 @@ describe("session.agency-swarm-utils", () => {
         ]),
       ),
     ).toBe("Reviewer")
+  })
+
+  test("buildStructuredOutgoingMessage forwards attachments as Responses content", () => {
+    const encoded = Buffer.from("pdf content").toString("base64")
+
+    expect(
+      buildStructuredOutgoingMessage(
+        msg([
+          text("part-1", {
+            type: "text",
+            text: "[PDF 1] Which phrase appears here?",
+            ignored: false,
+          }),
+          file("part-2", {
+            type: "file",
+            mime: "application/pdf",
+            filename: "proof.pdf",
+            url: `data:application/pdf;base64,${encoded}`,
+            source: {
+              type: "file",
+              path: "/tmp/proof.pdf",
+              text: {
+                value: "[PDF 1]",
+                start: 0,
+                end: 7,
+              },
+            },
+          }),
+        ]),
+      ),
+    ).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_file",
+            file_data: `data:application/pdf;base64,${encoded}`,
+            filename: "proof.pdf",
+          },
+          {
+            type: "input_text",
+            text: "[PDF 1] Which phrase appears here?",
+          },
+        ],
+      },
+    ])
   })
 
   test("hasAgencyHandoffEvidence accepts handoff output item metadata", () => {

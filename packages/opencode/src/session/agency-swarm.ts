@@ -28,9 +28,8 @@ import {
   asRawString,
   asString,
   buildOutgoingMessage,
-  cleanupMaterializedFilePaths,
+  buildStructuredOutgoingMessage,
   compactMetadata,
-  collectFileURLs,
   extractEventMeta,
   extractFunctionCallOutputs as extractFunctionCallOutputsFromMessages,
   findRecipientAgent,
@@ -60,8 +59,6 @@ export namespace SessionAgencySwarm {
     fileIDs?: string[]
     generateChatName?: boolean
     clientConfig?: Record<string, unknown>
-    materializeLocalFiles?: boolean
-    localFilePathAllowlist?: string[]
     /** When true, merge stored/env credentials into client_config for non-local base URLs (see also AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS). */
     forwardUpstreamCredentials?: boolean
     token?: string
@@ -115,12 +112,6 @@ export namespace SessionAgencySwarm {
       asBoolean(provider?.options?.["generateChatName"]) ?? asBoolean(provider?.options?.["generate_chat_name"])
     const rawClientConfig =
       asRecord(provider?.options?.["clientConfig"]) ?? asRecord(provider?.options?.["client_config"])
-    const rawMaterializeLocalFiles =
-      asBoolean(provider?.options?.["materializeLocalFiles"]) ??
-      asBoolean(provider?.options?.["materialize_local_files"])
-    const rawLocalFilePathAllowlist = asStringArray(
-      provider?.options?.["localFilePathAllowlist"] ?? provider?.options?.["local_file_path_allowlist"],
-    )
     const opts = provider?.options
     const rawForwardUpstream =
       opts?.["forwardUpstreamCredentials"] === true || opts?.["forward_upstream_credentials"] === true
@@ -137,8 +128,6 @@ export namespace SessionAgencySwarm {
       fileIDs: rawFileIDs.length > 0 ? rawFileIDs : undefined,
       generateChatName: rawGenerateChatName,
       clientConfig: rawClientConfig,
-      materializeLocalFiles: rawMaterializeLocalFiles === true ? true : undefined,
-      localFilePathAllowlist: rawLocalFilePathAllowlist.length > 0 ? rawLocalFilePathAllowlist : undefined,
       forwardUpstreamCredentials: rawForwardUpstream === true ? true : undefined,
       token: rawToken || undefined,
       discoveryTimeoutMs:
@@ -180,15 +169,9 @@ export namespace SessionAgencySwarm {
     config: Record<string, unknown> | undefined,
     forwardUpstreamCredentials?: boolean,
     sessionLitellmModel?: string,
-    requiresFileUpload?: boolean,
   ): Promise<Record<string, unknown> | undefined> {
     const explicit = asRecord(config)
     const explicitUpstreamBaseURL = readConfiguredBaseURL(explicit)
-    if (requiresFileUpload && explicitUpstreamBaseURL && isCodexAPIBaseURL(explicitUpstreamBaseURL)) {
-      throw new Error(
-        "Agent Swarm Run mode cannot send file attachments through ChatGPT browser auth because the local Agency server uses client_config for both chat and file uploads. Configure an OpenAI API key for file attachments.",
-      )
-    }
     const explicitModel = explicit && asString(explicit["model"])
     const requestedModel = explicitModel ? normalizeExplicitClientConfigModel(explicitModel) : sessionLitellmModel
     const forwardGenerated =
@@ -197,11 +180,10 @@ export namespace SessionAgencySwarm {
     const auths = await Auth.all()
     const providers = await listProvidersForEnvCheck()
     const env = await getEnvForClientConfig()
-    const hasStoredOpenAIOAuth = isStoredOpenAIOAuth(auths["openai"])
     const rawGenerated = forwardGenerated
       ? await buildAuthClientConfig(auths, providers, env, {
           skipOpenAIApiKeyInjection: skipOpenAIApiKey,
-          skipOpenAIOAuthFromStored: hasExplicitOpenAIClientConfig(config) || requiresFileUpload === true,
+          skipOpenAIOAuthFromStored: hasExplicitOpenAIClientConfig(config),
           allowStoredOpenAIOAuth: !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
         })
       : undefined
@@ -227,17 +209,6 @@ export namespace SessionAgencySwarm {
           ? stripCodexOAuthForNonOpenAI(rawGenerated)
           : rawGenerated
         : rawGenerated
-    if (
-      requiresFileUpload &&
-      hasStoredOpenAIOAuth &&
-      forwardGenerated &&
-      !hasSupportedFileUploadClientConfig(generated) &&
-      !hasSupportedFileUploadClientConfig(explicit)
-    ) {
-      throw new Error(
-        "Agent Swarm Run mode cannot send file attachments through ChatGPT browser auth because the local Agency server uses client_config for both chat and file uploads. Configure an OpenAI API key for file attachments.",
-      )
-    }
     if (!config) {
       return finalizeClientConfig(generated, undefined, sessionLitellmModel)
     }
@@ -511,18 +482,6 @@ export namespace SessionAgencySwarm {
     return Object.keys(out).length > 0 ? out : undefined
   }
 
-  function isStoredOpenAIOAuth(auth: Auth.Info | undefined) {
-    return auth?.type === "oauth"
-  }
-
-  function hasSupportedFileUploadClientConfig(config: Record<string, unknown> | undefined) {
-    if (!config) return false
-    const baseURL = readConfiguredBaseURL(config)
-    if (baseURL && !isCodexAPIBaseURL(baseURL)) return true
-    if (asString(config["api_key"]) ?? asString(config["apiKey"])) return true
-    return !!readCredentialHeaders(config)
-  }
-
   function hasEnvCredential(
     providerID: string,
     providers: Record<string, Provider.Info> | undefined,
@@ -642,29 +601,7 @@ export namespace SessionAgencySwarm {
       sessionID: input.sessionID,
     }
 
-    const outgoingMessage = buildOutgoingMessage(input.userMessage)
-    const materializedFilePaths: string[] = []
-    const cleanupMaterializedFiles = async () => {
-      try {
-        await cleanupMaterializedFilePaths(materializedFilePaths)
-      } catch (error) {
-        log.warn("failed to clean up materialized clipboard image files", {
-          error: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
-    let fileURLs: Record<string, string> | undefined
-    try {
-      fileURLs = collectFileURLs(input.userMessage, {
-        allowLocalFilePaths: isLocalAgencyURL(input.options.baseURL),
-        materializeLocalFilePaths: input.options.materializeLocalFiles === true,
-        localFilePathAllowlist: input.options.localFilePathAllowlist,
-        materializedFilePaths,
-      })
-    } catch (error) {
-      await cleanupMaterializedFiles()
-      throw error
-    }
+    const outgoingMessage = buildStructuredOutgoingMessage(input.userMessage)
     const mentionedRecipient = findRecipientAgent(input.userMessage)
 
     const tools = new Map<string, Tool>()
@@ -1642,7 +1579,6 @@ export namespace SessionAgencySwarm {
         input.options.clientConfig,
         input.options.forwardUpstreamCredentials,
         sessionLitellmModel,
-        !!fileURLs && Object.keys(fileURLs).length > 0,
       )
 
       if (rebuiltHistoryFromMessages) {
@@ -1661,7 +1597,6 @@ export namespace SessionAgencySwarm {
           userContext: input.options.userContext,
           fileIDs: input.options.fileIDs,
           token: input.options.token,
-          fileURLs,
           generateChatName: input.options.generateChatName,
           clientConfig,
           abort: streamSignal,
@@ -2012,16 +1947,8 @@ export namespace SessionAgencySwarm {
       }
     })()
 
-    const fullStream = (async function* () {
-      try {
-        yield* stream
-      } finally {
-        await cleanupMaterializedFiles()
-      }
-    })()
-
     return {
-      fullStream,
+      fullStream: stream,
     }
   }
 
@@ -2318,16 +2245,31 @@ export namespace SessionAgencySwarm {
   }
 
   function sanitizeAgencyHistoryForTransport(history: Array<Record<string, unknown>>) {
-    return history.filter((item) => {
+    return history.flatMap((item) => {
       const type = asString(item["type"])
-      if (type === "handoff_output_item") return false
-      if (type !== "message") return true
-      if (asString(item["role"]) !== "assistant") return true
-      const content = item["content"]
-      if (Array.isArray(content)) return content.length > 0
-      if (typeof content === "string") return content.length > 0
-      return content !== undefined && content !== null
+      if (type === "handoff_output_item" || type === "item_reference") return []
+      if (
+        type === "message" &&
+        asString(item["role"]) === "assistant" &&
+        !hasReplayableMessageContent(item["content"])
+      ) {
+        return []
+      }
+      return [stripOpenAIResponseItemID(item)]
     })
+  }
+
+  function stripOpenAIResponseItemID(item: Record<string, unknown>) {
+    if (!Object.prototype.hasOwnProperty.call(item, "id")) return item
+    const result = { ...item }
+    delete result["id"]
+    return result
+  }
+
+  function hasReplayableMessageContent(content: unknown) {
+    if (Array.isArray(content)) return content.length > 0
+    if (typeof content === "string") return content.length > 0
+    return content !== undefined && content !== null
   }
 
   function extractCallerAgent(msg: MessageV2.WithParts): string | null {

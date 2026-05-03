@@ -1,5 +1,5 @@
 import type { MessageV2 } from "@/session/message-v2"
-import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -14,10 +14,10 @@ export type AgencySwarmEventMeta = {
 
 type CollectFileURLOptions = {
   allowLocalFilePaths?: boolean
-  materializeLocalFilePaths?: boolean
-  localFilePathAllowlist?: string[]
   materializedFilePaths?: string[]
 }
+
+export type AgencyMessageInput = string | Array<Record<string, unknown>>
 
 export function normalizeCallerAgent(value: string | undefined): string | null | undefined {
   if (!value) return undefined
@@ -187,6 +187,21 @@ export function buildOutgoingMessage(message: MessageV2.WithParts): string {
   return textParts.join("\n\n")
 }
 
+export function buildStructuredOutgoingMessage(message: MessageV2.WithParts): AgencyMessageInput {
+  const files = message.parts.filter((part): part is MessageV2.FilePart => part.type === "file")
+  const text = buildOutgoingMessage(message)
+  if (files.length === 0) return text
+
+  const content = files.flatMap((part) => structuredFileContent(part))
+  if (text) content.push({ type: "input_text", text })
+  return [
+    {
+      role: "user",
+      content,
+    },
+  ]
+}
+
 function visibleOutgoingText(part: MessageV2.TextPart): string {
   if (!part.synthetic) return part.text.trim()
 
@@ -197,6 +212,49 @@ function visibleOutgoingText(part: MessageV2.TextPart): string {
   if (end === -1) return ""
 
   return text.slice(end + "</system-reminder>".length).trim()
+}
+
+function structuredFileContent(part: MessageV2.FilePart): Array<Record<string, unknown>> {
+  const filename = part.filename || path.basename(part.source?.type === "file" ? part.source.path : "") || "attachment"
+  const url = normalizeStructuredFileURL(part)
+  if (!url) return []
+  if (part.mime.startsWith("image/")) {
+    return [
+      {
+        type: "input_image",
+        image_url: url,
+        detail: "auto",
+      },
+    ]
+  }
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return [
+      {
+        type: "input_file",
+        file_url: url,
+        filename,
+      },
+    ]
+  }
+  return [
+    {
+      type: "input_file",
+      file_data: url,
+      filename,
+    },
+  ]
+}
+
+function normalizeStructuredFileURL(part: MessageV2.FilePart): string | undefined {
+  if (part.url.startsWith("data:") || part.url.startsWith("http://") || part.url.startsWith("https://")) return part.url
+  if (!part.url.startsWith("file://")) return undefined
+  try {
+    const filepath = fileURLToPath(part.url)
+    const data = readFileSync(filepath).toString("base64")
+    return `data:${part.mime || "application/octet-stream"};base64,${data}`
+  } catch {
+    return undefined
+  }
 }
 
 export function findRecipientAgent(message: MessageV2.WithParts): string | undefined {
@@ -222,24 +280,11 @@ export function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptions): string | undefined {
   if (part.url.startsWith("file://")) {
-    let filepath: string
     try {
-      filepath = fileURLToPath(part.url)
+      return fileURLToPath(part.url)
     } catch {
       return undefined
     }
-    if (!options.allowLocalFilePaths) {
-      throw new Error(
-        "Agent Swarm Run mode cannot send local files to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
-      )
-    }
-    if (!options.materializeLocalFilePaths) return filepath
-    const allowlistedPath = preserveAllowlistedLocalPath(filepath, options)
-    if (allowlistedPath) return allowlistedPath
-    rejectNonRegularMaterializedFilePath(filepath)
-    const materializedFile = materializeLocalFilePath(filepath, path.basename(part.filename || filepath) || "file")
-    options.materializedFilePaths?.push(materializedFile)
-    return materializedFile
   }
 
   if (part.url.startsWith("http://") || part.url.startsWith("https://")) {
@@ -262,21 +307,9 @@ function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptio
     }
 
     if (part.source?.type === "file" && part.source.path && path.isAbsolute(part.source.path)) {
-      if (options.allowLocalFilePaths && !options.materializeLocalFilePaths) return part.source.path
-      if (options.allowLocalFilePaths && options.materializeLocalFilePaths) {
-        const allowlistedPath = preserveAllowlistedLocalPath(part.source.path, options)
-        if (allowlistedPath) return allowlistedPath
-        const materializedFile = materializeDataFilePart(
-          part,
-          path.parse(part.filename || part.source.path).name || "file",
-        )
-        if (materializedFile) {
-          options.materializedFilePaths?.push(materializedFile)
-          return materializedFile
-        }
-      }
+      if (options.allowLocalFilePaths) return part.source.path
       throw new Error(
-        "Agent Swarm Run mode cannot send local files to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
+        "Agent Swarm Run mode cannot send local image files to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
       )
     }
 
@@ -297,87 +330,22 @@ export async function cleanupMaterializedFilePaths(filepaths: readonly string[])
   await Promise.all(Array.from(dirs, (dir) => rm(dir, { recursive: true, force: true })))
 }
 
-export function localFileMaterializationRoot() {
-  return path.join(tmpdir(), "agentswarm-local-files")
-}
-
 function isClipboardImage(part: MessageV2.FilePart) {
   return part.source?.type === "file" && part.source.path === "clipboard" && part.mime.startsWith("image/")
 }
 
 function materializedClipboardDir(filepath: string): string | undefined {
   const dir = path.resolve(path.dirname(filepath))
-  const root = path.resolve(localFileMaterializationRoot())
-  return dir.startsWith(`${root}${path.sep}`) ? dir : undefined
-}
-
-function preserveAllowlistedLocalPath(filepath: string, options: CollectFileURLOptions): string | undefined {
-  return isLocalFilePathAllowed(filepath, options.localFilePathAllowlist) ? filepath : undefined
-}
-
-function rejectNonRegularMaterializedFilePath(filepath: string) {
-  let stats
-  try {
-    stats = statSync(filepath)
-  } catch {
-    return
-  }
-  if (stats.isFile()) return
-  if (stats.isDirectory()) {
-    throw new Error(
-      "Agent Swarm Run mode cannot send directory attachments outside the local file allowlist. Attach a project-local directory or a regular file.",
-    )
-  }
-  throw new Error(
-    "Agent Swarm Run mode cannot send non-regular file attachments outside the local file allowlist. Attach a regular file.",
-  )
-}
-
-function isLocalFilePathAllowed(filepath: string, allowlist: readonly string[] | undefined) {
-  if (!allowlist || allowlist.length === 0) return false
-  const candidate = realLocalPath(filepath)
-  return allowlist.some((root) => isSamePathOrChild(candidate, realLocalPath(root)))
-}
-
-function realLocalPath(filepath: string) {
-  try {
-    return realpathSync(filepath)
-  } catch {
-    return path.resolve(filepath)
-  }
-}
-
-function isSamePathOrChild(filepath: string, root: string) {
-  const relative = path.relative(root, filepath)
-  return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative))
+  const prefix = `${path.resolve(tmpdir())}${path.sep}agentswarm-clipboard-`
+  return dir.startsWith(prefix) ? dir : undefined
 }
 
 function materializeClipboardImage(part: MessageV2.FilePart): string | undefined {
-  return materializeDataFilePart(part, "clipboard-image")
-}
-
-function materializeLocalFilePath(sourcePath: string, filename: string): string {
-  const root = localFileMaterializationRoot()
-  mkdirSync(root, { recursive: true, mode: 0o700 })
-  const dir = mkdtempSync(path.join(root, "file-"))
-  const filepath = path.join(dir, filename)
-  try {
-    copyFileSync(sourcePath, filepath)
-    return filepath
-  } catch (error) {
-    rmSync(dir, { recursive: true, force: true })
-    throw error
-  }
-}
-
-function materializeDataFilePart(part: MessageV2.FilePart, stem: string): string | undefined {
   const parsed = parseBase64DataURL(part.url)
-  if (!parsed) return undefined
+  if (!parsed?.mime.startsWith("image/")) return undefined
 
-  const root = localFileMaterializationRoot()
-  mkdirSync(root, { recursive: true, mode: 0o700 })
-  const dir = mkdtempSync(path.join(root, "file-"))
-  const filepath = path.join(dir, `${stem}${extensionForMime(parsed.mime, part.filename)}`)
+  const dir = mkdtempSync(path.join(tmpdir(), "agentswarm-clipboard-"))
+  const filepath = path.join(dir, `clipboard-image${extensionForMime(parsed.mime)}`)
   writeFileSync(filepath, Buffer.from(parsed.data, "base64"), { mode: 0o600 })
   return filepath
 }
@@ -393,14 +361,8 @@ function parseBase64DataURL(value: string): { mime: string; data: string } | und
   }
 }
 
-function extensionForMime(mime: string, filename?: string): string {
-  const ext = filename ? path.extname(filename) : ""
-  if (ext) return ext
+function extensionForMime(mime: string): string {
   switch (mime) {
-    case "application/pdf":
-      return ".pdf"
-    case "text/plain":
-      return ".txt"
     case "image/jpeg":
       return ".jpg"
     case "image/png":

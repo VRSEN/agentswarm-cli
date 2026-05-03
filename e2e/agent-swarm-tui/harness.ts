@@ -6,6 +6,8 @@ import { spawn, type Proc } from "../../packages/opencode/src/pty/pty.bun"
 const repoRoot = path.resolve(import.meta.dir, "../..")
 const packageRoot = path.join(repoRoot, "packages", "opencode")
 const modelsFixture = path.join(packageRoot, "test", "tool", "fixtures", "models-api.json")
+const discoveryTimeoutMs = process.env.CI ? 5_000 : 500
+const initialOutputTimeoutMs = process.env.CI ? 15_000 : 5_000
 
 export type AgencyProtocolServer = {
   baseURL: string
@@ -114,7 +116,7 @@ export async function startTui(input: {
               baseURL: input.baseURL,
               agency: input.agency ?? "local-agency",
               recipientAgent: input.recipientAgent ?? "entry-agent",
-              discoveryTimeoutMs: 500,
+              discoveryTimeoutMs,
               token: "bridge-token",
               clientConfig: {
                 apiKey: "not-a-live-key",
@@ -152,22 +154,44 @@ export async function startTui(input: {
     ...(configContent && input.configSource !== "file" ? { OPENCODE_CONFIG_CONTENT: configContent } : {}),
     ...(input.env ?? {}),
   })
-  const proc = spawn(process.execPath, ["--conditions=browser", "./src/index.ts", ...args], {
-    cwd: input.cwd ?? packageRoot,
-    cols: 100,
-    rows: 30,
-    name: "xterm-256color",
-    env: cleanEnv(env),
-  })
+  let proc = spawnTuiProcess({ args, cwd: input.cwd, env })
 
-  proc.onData((chunk) => {
-    raw += chunk
-    if (raw.length > 200_000) raw = raw.slice(-120_000)
-    screen.feed(chunk)
-  })
-  proc.onExit((event) => {
-    exitCode = event.exitCode
-  })
+  let dataReceived = false
+  let activeProc = proc
+  const attachProcess = (next: Proc) => {
+    activeProc = next
+    next.onData((chunk) => {
+      if (next !== activeProc) return
+      dataReceived = true
+      raw += chunk
+      if (raw.length > 200_000) raw = raw.slice(-120_000)
+      screen.feed(chunk)
+    })
+    next.onExit((event) => {
+      if (next !== activeProc) return
+      exitCode = event.exitCode
+    })
+  }
+  attachProcess(proc)
+
+  try {
+    await waitForInitialOutput({
+      hasOutput: () => dataReceived,
+      getExitCode: () => exitCode,
+      history: () => stripAnsi(raw),
+      timeoutMs: initialOutputTimeoutMs,
+      onRetry: async () => {
+        await closeProcess(proc)
+        proc = spawnTuiProcess({ args, cwd: input.cwd, env })
+        dataReceived = false
+        exitCode = undefined
+        attachProcess(proc)
+      },
+    })
+  } catch (error) {
+    await cleanupTuiProcess(proc, root, exitCode === undefined)
+    throw error
+  }
 
   return {
     root,
@@ -210,10 +234,19 @@ export async function startTui(input: {
       )
     },
     async close() {
-      await closeProcess(proc)
-      await rm(root, { recursive: true, force: true })
+      await cleanupTuiProcess(proc, root, exitCode === undefined)
     },
   }
+}
+
+function spawnTuiProcess(input: { args: string[]; cwd?: string; env: Record<string, string | undefined> }) {
+  return spawn(process.execPath, ["--conditions=browser", "./src/index.ts", ...input.args], {
+    cwd: input.cwd ?? packageRoot,
+    cols: 100,
+    rows: 30,
+    name: "xterm-256color",
+    env: cleanEnv(input.env),
+  })
 }
 
 export async function writeAgencyProject(dir: string) {
@@ -683,6 +716,14 @@ async function closeProcess(proc: Proc) {
   dispose?.()
 }
 
+async function cleanupTuiProcess(proc: Proc, root: string, closeActiveProcess: boolean) {
+  try {
+    if (closeActiveProcess) await closeProcess(proc)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
 async function waitFor(predicate: () => boolean, failure: () => string, timeoutMs: number) {
   const deadline = Date.now() + timeoutMs
   let lastError: unknown
@@ -697,6 +738,50 @@ async function waitFor(predicate: () => boolean, failure: () => string, timeoutM
   }
   if (lastError) throw lastError
   throw new Error(failure())
+}
+
+async function waitForInitialOutput(input: {
+  hasOutput: () => boolean
+  getExitCode: () => number | undefined
+  history: () => string
+  timeoutMs: number
+  onRetry: () => Promise<void>
+}) {
+  try {
+    await waitForInitialOutputOnce(input, "initial TUI output")
+  } catch {
+    const exitCode = input.getExitCode()
+    if (exitCode !== undefined) throw initialOutputExitError(exitCode, "initial TUI output", input.history())
+    await input.onRetry()
+    await waitForInitialOutputOnce(input, "initial TUI output after retry")
+  }
+}
+
+async function waitForInitialOutputOnce(
+  input: {
+    hasOutput: () => boolean
+    getExitCode: () => number | undefined
+    history: () => string
+    timeoutMs: number
+  },
+  message: string,
+) {
+  await waitFor(
+    () => {
+      if (input.hasOutput()) return true
+      const exitCode = input.getExitCode()
+      if (exitCode !== undefined) {
+        throw initialOutputExitError(exitCode, message, input.history())
+      }
+      return false
+    },
+    () => `Timed out waiting for ${message}`,
+    input.timeoutMs,
+  )
+}
+
+function initialOutputExitError(exitCode: number, message: string, history: string) {
+  return new Error(`TUI exited with code ${exitCode} before ${message}.\n\nHistory tail:\n${tail(history)}`)
 }
 
 function cleanEnv(env: Record<string, string | undefined>) {

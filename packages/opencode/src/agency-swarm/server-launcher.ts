@@ -1,6 +1,4 @@
-export function buildServerLauncherScript(input: { allowedLocalFileDirs?: string[] } = {}) {
-  const allowedLocalFileDirs = JSON.stringify(input.allowedLocalFileDirs ?? [])
-  return `from agency import create_agency
+export const SERVER_LAUNCHER_SCRIPT = `from agency import create_agency
 from agency_swarm.integrations.fastapi import run_fastapi
 import sys
 
@@ -13,9 +11,5 @@ run_fastapi(
     port=port,
     server_url=f"http://127.0.0.1:{port}",
     app_token_env="",
-    allowed_local_file_dirs=${allowedLocalFileDirs},
 )
 `
-}
-
-export const SERVER_LAUNCHER_SCRIPT = buildServerLauncherScript()
