@@ -390,6 +390,42 @@ describe("session.agency-swarm-utils", () => {
     }
   })
 
+  test("buildStructuredOutgoingMessage skips directory file data and keeps expanded text", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-structured-directory-"))
+
+    try {
+      expect(
+        buildStructuredOutgoingMessage(
+          msg([
+            text("part-1", {
+              type: "text",
+              text: "[Directory 1]\n- src\n- package.json",
+              ignored: false,
+            }),
+            file("part-2", {
+              type: "file",
+              mime: "application/x-directory",
+              filename: "project",
+              url: pathToFileURL(dir).href,
+            }),
+          ]),
+        ),
+      ).toEqual([
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: "[Directory 1]\n- src\n- package.json",
+            },
+          ],
+        },
+      ])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   test("buildStructuredOutgoingMessage rejects missing local file attachments", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-missing-file-"))
     const filepath = path.join(dir, "missing.txt")

@@ -360,6 +360,61 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream skips directory file data on structured transport and sends expanded text", async () => {
+    await using tmp = await tmpdir()
+    mockHistory()
+    mockAgencyVersion("1.9.5")
+    let capturedMessage: unknown
+    let capturedFileURLs: Record<string, string> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      capturedFileURLs = input.fileURLs
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[Directory 1]\n- src\n- package.json",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "application/x-directory",
+        filename: "project-dir",
+        url: pathToFileURL(tmp.path).href,
+        source: {
+          type: "file",
+          path: tmp.path,
+          text: {
+            value: "[Directory 1]",
+            start: 0,
+            end: 13,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: "[Directory 1]\n- src\n- package.json",
+          },
+        ],
+      },
+    ])
+    expect(capturedFileURLs).toBeUndefined()
+  })
+
   test("stream keeps browser auth client_config while forwarding attachments inline", async () => {
     mockHistory()
     mockAgencyVersion("1.9.5")

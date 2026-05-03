@@ -215,6 +215,8 @@ function visibleOutgoingText(part: MessageV2.TextPart): string {
 }
 
 function structuredFileContent(part: MessageV2.FilePart): Array<Record<string, unknown>> {
+  if (part.mime === "application/x-directory") return []
+
   const filename = part.filename || path.basename(part.source?.type === "file" ? part.source.path : "") || "attachment"
   const url = normalizeStructuredFileURL(part)
   if (!url) return []
