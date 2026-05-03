@@ -2412,8 +2412,20 @@ export namespace SessionAgencySwarm {
   ): Array<Record<string, unknown>> {
     const text = buildOutgoingMessage(msg)
 
-    if (structuredAttachments && !(text && hasLocalFileParts(msg) && hasSyntheticTextParts(msg))) {
-      const structured = buildStructuredOutgoingMessage(msg)
+    if (structuredAttachments) {
+      const structuredMessage =
+        text && hasLocalFileParts(msg) && hasSyntheticTextParts(msg)
+          ? {
+              ...msg,
+              parts: msg.parts.filter((part) => !isExpandedLocalReplayFile(part)),
+            }
+          : msg
+      let structured: AgencyMessageInput | undefined
+      try {
+        structured = buildStructuredOutgoingMessage(structuredMessage)
+      } catch (error) {
+        if (structuredMessage === msg) throw error
+      }
       if (Array.isArray(structured)) {
         const user = structured.find((item) => asString(item["role"]) === "user")
         const content = user?.["content"]
@@ -2429,6 +2441,12 @@ export namespace SessionAgencySwarm {
     }
 
     return text ? [{ type: "input_text", text }] : []
+  }
+
+  function isExpandedLocalReplayFile(part: MessageV2.Part) {
+    if (part.type !== "file") return false
+    if (!part.url.startsWith("file://")) return false
+    return part.mime === "application/x-directory" || part.mime === "text/plain"
   }
 
   function hasLocalFileParts(msg: MessageV2.WithParts) {
