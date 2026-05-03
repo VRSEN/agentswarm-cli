@@ -94,10 +94,10 @@ describe("session.agency-swarm", () => {
     }
   }
 
-  const mockHistory = (lastRunID?: string) => {
+  const mockHistory = (lastRunID?: string, initialChatHistory: unknown[] = []) => {
     const appended: unknown[][] = []
     const runs: (string | undefined)[] = []
-    const chatHistory: unknown[] = []
+    const chatHistory: unknown[] = [...initialChatHistory]
     AgencySwarmHistory.load = (async () => ({
       scope: "http://127.0.0.1:8000|builder|session_1",
       chat_history: chatHistory,
@@ -291,6 +291,97 @@ describe("session.agency-swarm", () => {
     } finally {
       await Auth.remove("openai")
     }
+  })
+
+  test("stream replays stored attachment content into follow-up requests without duplicating history", async () => {
+    const filePart = {
+      type: "input_file",
+      file_data: `data:application/pdf;base64,${Buffer.from("Attachment proof phrase one: cobalt lantern.").toString("base64")}`,
+      filename: "proof.pdf",
+    }
+    const priorUser = {
+      type: "message",
+      role: "user",
+      content: [
+        filePart,
+        {
+          type: "input_text",
+          text: "[PDF 1] In the attached PDF, what is the exact value of phrase two?",
+        },
+      ],
+    }
+    const priorAssistant = {
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: "silver compass" }],
+    }
+    const { appended } = mockHistory(undefined, [priorUser, priorAssistant])
+    let capturedMessage: unknown
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      yield {
+        type: "messages",
+        payload: {
+          new_messages: [
+            {
+              type: "message",
+              role: "user",
+              content: [
+                filePart,
+                {
+                  type: "input_text",
+                  text: "Without re-attaching the file, what is the exact value of phrase one?",
+                },
+              ],
+            },
+            {
+              type: "message",
+              id: "msg_follow_up",
+              role: "assistant",
+              content: [{ type: "output_text", text: "cobalt lantern" }],
+            },
+          ],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "Without re-attaching the file, what is the exact value of phrase one?",
+        ignored: false,
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toEqual([
+      {
+        role: "user",
+        content: [
+          filePart,
+          {
+            type: "input_text",
+            text: "Without re-attaching the file, what is the exact value of phrase one?",
+          },
+        ],
+      },
+    ])
+    expect(appended.at(-1)?.[0]).toEqual({
+      type: "message",
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: "Without re-attaching the file, what is the exact value of phrase one?",
+        },
+      ],
+    })
   })
 
   const clipboardImageParts = (content: Buffer) =>

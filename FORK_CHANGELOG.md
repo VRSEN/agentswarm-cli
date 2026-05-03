@@ -245,7 +245,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 - **Run-mode attachments use structured Agency Swarm messages**
   - Intent: send user-attached file context through the Agency Swarm FastAPI `message` contract instead of routing normal attachments through OpenAI Files API upload paths.
-  - Behavior: Run mode forwards file and image parts as structured Responses `message` content, preserving browser-auth chat credentials because attachments are inline message content.
+  - Behavior: Run mode forwards file and image parts as structured Responses `message` content, and follow-up prompts replay stored attachment content without writing replay-only attachment parts back into local history.
   - Implementation: `buildStructuredOutgoingMessage` in `packages/opencode/src/session/agency-swarm-utils.ts` and `SessionAgencySwarm.stream` in `packages/opencode/src/session/agency-swarm.ts`.
   - Added by: `2c88f1e1d`, `d08e55e2d`, PR #187.
 

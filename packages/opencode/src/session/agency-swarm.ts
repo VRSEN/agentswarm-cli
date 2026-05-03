@@ -40,6 +40,7 @@ import {
   normalizeCallerAgent as normalizeCallerAgentValue,
   parseToolInput,
   stringifyToolOutput,
+  type AgencyMessageInput,
   type AgencySwarmEventMeta,
 } from "./agency-swarm-utils"
 
@@ -601,7 +602,6 @@ export namespace SessionAgencySwarm {
       sessionID: input.sessionID,
     }
 
-    const outgoingMessage = buildStructuredOutgoingMessage(input.userMessage)
     const mentionedRecipient = findRecipientAgent(input.userMessage)
 
     const tools = new Map<string, Tool>()
@@ -625,6 +625,7 @@ export namespace SessionAgencySwarm {
     let cancelBeforeMetaTimer: ReturnType<typeof setTimeout> | undefined
     let streamAborted = false
     let hadDanglingTool = false
+    let replayedAttachmentKeys = new Set<string>()
     const agentUpdatedHandoffAgents = new Set<string>()
 
     const streamAbort = new AbortController()
@@ -1199,7 +1200,11 @@ export namespace SessionAgencySwarm {
 
     const handleMessagesPayload = async function* (payload: Record<string, unknown>) {
       const newMessages = Array.isArray(payload["new_messages"]) ? payload["new_messages"] : []
-      await AgencySwarmHistory.appendMessages(scope, newMessages)
+      const historyMessages =
+        replayedAttachmentKeys.size > 0
+          ? stripReplayedAttachmentsFromMessages(newMessages, replayedAttachmentKeys)
+          : newMessages
+      await AgencySwarmHistory.appendMessages(scope, historyMessages)
       setUsage(asRecord(payload["usage"]))
 
       const runFromMessages = asString(payload["run_id"])
@@ -1585,12 +1590,17 @@ export namespace SessionAgencySwarm {
         await AgencySwarmHistory.appendMessages(scope, rebuiltHistoryFromMessages)
       }
       const transportChatHistory = sanitizeAgencyHistoryForTransport(chatHistory)
+      const outgoing = replayStoredAttachmentsInOutgoingMessage(
+        buildStructuredOutgoingMessage(input.userMessage),
+        transportChatHistory,
+      )
+      replayedAttachmentKeys = outgoing.replayedAttachmentKeys
 
       try {
         for await (const frame of AgencySwarmAdapter.streamRun({
           baseURL: input.options.baseURL,
           agency,
-          message: outgoingMessage,
+          message: outgoing.message,
           chatHistory: transportChatHistory,
           recipientAgent,
           additionalInstructions: input.options.additionalInstructions,
@@ -2256,6 +2266,118 @@ export namespace SessionAgencySwarm {
         return []
       }
       return [stripOpenAIResponseItemID(item)]
+    })
+  }
+
+  function replayStoredAttachmentsInOutgoingMessage(
+    message: AgencyMessageInput,
+    history: Array<Record<string, unknown>>,
+  ): { message: AgencyMessageInput; replayedAttachmentKeys: Set<string> } {
+    const replayedAttachments = collectReplayableAttachmentContent(history)
+    const replayedAttachmentKeys = new Set(replayedAttachments.map((part) => replayableAttachmentKey(part)))
+    if (replayedAttachments.length === 0 || messageHasAttachmentContent(message)) {
+      return {
+        message,
+        replayedAttachmentKeys: new Set(),
+      }
+    }
+
+    if (Array.isArray(message)) {
+      const index = message.findIndex((item) => asString(item["role"]) === "user")
+      if (index < 0) {
+        return {
+          message,
+          replayedAttachmentKeys: new Set(),
+        }
+      }
+      const next = message.map((item, itemIndex) => {
+        if (itemIndex !== index) return item
+        const content = Array.isArray(item["content"]) ? item["content"] : []
+        return {
+          ...item,
+          content: [...replayedAttachments, ...content],
+        }
+      })
+      return {
+        message: next,
+        replayedAttachmentKeys,
+      }
+    }
+
+    const text = message.trim()
+    const content = [...replayedAttachments]
+    if (text) content.push({ type: "input_text", text })
+    return {
+      message: [
+        {
+          role: "user",
+          content,
+        },
+      ],
+      replayedAttachmentKeys,
+    }
+  }
+
+  function collectReplayableAttachmentContent(history: Array<Record<string, unknown>>) {
+    const result: Array<Record<string, unknown>> = []
+    const seen = new Set<string>()
+    for (const item of history) {
+      if (asString(item["type"]) !== "message" || asString(item["role"]) !== "user") continue
+      const content = item["content"]
+      if (!Array.isArray(content)) continue
+      for (const rawPart of content) {
+        const part = asRecord(rawPart)
+        if (!part || !isReplayableAttachmentPart(part)) continue
+        const key = replayableAttachmentKey(part)
+        if (seen.has(key)) continue
+        seen.add(key)
+        result.push({ ...part })
+      }
+    }
+    return result
+  }
+
+  function stripReplayedAttachmentsFromMessages(messages: unknown[], replayedKeys: Set<string>) {
+    return messages.map((raw) => {
+      const message = asRecord(raw)
+      if (!message || asString(message["type"]) !== "message" || asString(message["role"]) !== "user") return raw
+      const content = message["content"]
+      if (!Array.isArray(content)) return raw
+      const stripped = content.filter((rawPart) => {
+        const part = asRecord(rawPart)
+        return !part || !isReplayableAttachmentPart(part) || !replayedKeys.has(replayableAttachmentKey(part))
+      })
+      if (stripped.length === content.length) return raw
+      return {
+        ...message,
+        content: stripped,
+      }
+    })
+  }
+
+  function messageHasAttachmentContent(message: AgencyMessageInput) {
+    if (!Array.isArray(message)) return false
+    return message.some((item) => {
+      const content = item["content"]
+      return Array.isArray(content) && content.some((part) => isReplayableAttachmentPart(asRecord(part)))
+    })
+  }
+
+  function isReplayableAttachmentPart(part: Record<string, unknown> | undefined) {
+    const type = asString(part?.["type"])
+    if (type === "input_image") return !!asString(part?.["image_url"])
+    if (type !== "input_file") return false
+    return !!(asString(part?.["file_data"]) || asString(part?.["file_url"]) || asString(part?.["file_id"]))
+  }
+
+  function replayableAttachmentKey(part: Record<string, unknown>) {
+    return JSON.stringify({
+      type: asString(part["type"]),
+      file_data: asString(part["file_data"]),
+      file_url: asString(part["file_url"]),
+      file_id: asString(part["file_id"]),
+      image_url: asString(part["image_url"]),
+      filename: asString(part["filename"]),
     })
   }
 
