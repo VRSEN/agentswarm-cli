@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { Auth } from "../../src/auth"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
@@ -309,6 +310,53 @@ describe("session.agency-swarm", () => {
     expect(capturedMessage).toBe("[PDF 1] Which phrase appears here?")
     expect(capturedFileURLs).toEqual({
       "proof.pdf": "https://example.com/proof.pdf",
+    })
+  })
+
+  test("stream keeps local directory attachments on legacy transport when metadata predates structured messages", async () => {
+    await using tmp = await tmpdir()
+    mockHistory()
+    mockAgencyVersion("1.9.4")
+    let capturedMessage: unknown
+    let capturedFileURLs: Record<string, string> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      capturedFileURLs = input.fileURLs
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[Directory 1] List the project files.",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "application/octet-stream",
+        filename: "project-dir",
+        url: pathToFileURL(tmp.path).href,
+        source: {
+          type: "file",
+          path: tmp.path,
+          text: {
+            value: "[Directory 1]",
+            start: 0,
+            end: 13,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toBe("[Directory 1] List the project files.")
+    expect(capturedFileURLs).toEqual({
+      "project-dir": tmp.path,
     })
   })
 
@@ -3456,6 +3504,15 @@ describe("session.agency-swarm", () => {
   })
 
   test("stream rebuilds chat history from cloned messages when bridge history is empty", async () => {
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        const filepath = path.join(dir, "proof.txt")
+        await Bun.write(filepath, "forked proof")
+        return filepath
+      },
+    })
+    mockAgencyVersion("1.9.5")
+    const fileData = `data:text/plain;base64,${Buffer.from("forked proof").toString("base64")}`
     const clonedAgencyMessages = [
       {
         info: {
@@ -3465,7 +3522,24 @@ describe("session.agency-swarm", () => {
           model: { providerID: "agency-swarm", modelID: "default" },
           time: { created: 1 },
         },
-        parts: [{ type: "text", text: "before fork", ignored: false }],
+        parts: [
+          { type: "text", text: "[File 1] before fork", ignored: false },
+          {
+            type: "file",
+            mime: "text/plain",
+            filename: "proof.txt",
+            url: pathToFileURL(tmp.extra).href,
+            source: {
+              type: "file",
+              path: tmp.extra,
+              text: {
+                value: "[File 1]",
+                start: 0,
+                end: 8,
+              },
+            },
+          },
+        ],
       },
       {
         info: {
@@ -3535,7 +3609,10 @@ describe("session.agency-swarm", () => {
       {
         type: "message",
         role: "user",
-        content: [{ type: "input_text", text: "before fork" }],
+        content: [
+          { type: "input_file", file_data: fileData, filename: "proof.txt" },
+          { type: "input_text", text: "[File 1] before fork" },
+        ],
         agent: "build",
         callerAgent: null,
         timestamp: 1,
