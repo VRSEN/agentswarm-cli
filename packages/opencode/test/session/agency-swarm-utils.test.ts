@@ -390,6 +390,60 @@ describe("session.agency-swarm-utils", () => {
     }
   })
 
+  test("buildStructuredOutgoingMessage skips expanded local text file data", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-structured-text-"))
+    const filepath = path.join(dir, "proof.txt")
+    await writeFile(filepath, "expanded proof")
+
+    try {
+      expect(
+        buildStructuredOutgoingMessage(
+          msg([
+            text("part-1", {
+              type: "text",
+              synthetic: true,
+              text: 'Called the Read tool with the following input: {"filePath":"proof.txt"}',
+              ignored: false,
+            }),
+            text("part-2", {
+              type: "text",
+              synthetic: true,
+              text: "expanded proof",
+              ignored: false,
+            }),
+            file("part-3", {
+              type: "file",
+              mime: "text/plain",
+              filename: "proof.txt",
+              url: pathToFileURL(filepath).href,
+              source: {
+                type: "file",
+                path: filepath,
+                text: {
+                  value: "[File 1]",
+                  start: 0,
+                  end: 8,
+                },
+              },
+            }),
+          ]),
+        ),
+      ).toEqual([
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: 'Called the Read tool with the following input: {"filePath":"proof.txt"}\n\nexpanded proof',
+            },
+          ],
+        },
+      ])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   test("buildStructuredOutgoingMessage skips directory file data and keeps expanded text", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-structured-directory-"))
 

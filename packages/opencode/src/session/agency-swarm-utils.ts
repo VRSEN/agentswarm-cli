@@ -192,7 +192,8 @@ export function buildStructuredOutgoingMessage(message: MessageV2.WithParts): Ag
   const text = buildOutgoingMessage(message)
   if (files.length === 0) return text
 
-  const content = files.flatMap((part) => structuredFileContent(part))
+  const hasSyntheticText = message.parts.some((part) => part.type === "text" && !part.ignored && part.synthetic)
+  const content = files.flatMap((part) => structuredFileContent(part, { hasSyntheticText }))
   if (text) content.push({ type: "input_text", text })
   return [
     {
@@ -214,8 +215,12 @@ function visibleOutgoingText(part: MessageV2.TextPart): string {
   return text.slice(end + "</system-reminder>".length).trim()
 }
 
-function structuredFileContent(part: MessageV2.FilePart): Array<Record<string, unknown>> {
+function structuredFileContent(
+  part: MessageV2.FilePart,
+  options: { hasSyntheticText?: boolean } = {},
+): Array<Record<string, unknown>> {
   if (part.mime === "application/x-directory") return []
+  if (isExpandedLocalTextFile(part, options)) return []
 
   const filename = part.filename || path.basename(part.source?.type === "file" ? part.source.path : "") || "attachment"
   const url = normalizeStructuredFileURL(part)
@@ -245,6 +250,10 @@ function structuredFileContent(part: MessageV2.FilePart): Array<Record<string, u
       filename,
     },
   ]
+}
+
+function isExpandedLocalTextFile(part: MessageV2.FilePart, options: { hasSyntheticText?: boolean }) {
+  return !!options.hasSyntheticText && part.source?.type === "file" && !!part.source.text && part.mime === "text/plain"
 }
 
 function normalizeStructuredFileURL(part: MessageV2.FilePart): string | undefined {

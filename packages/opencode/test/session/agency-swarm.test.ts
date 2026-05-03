@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { rm } from "node:fs/promises"
+import { rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import path from "node:path"
@@ -414,6 +414,135 @@ describe("session.agency-swarm", () => {
       },
     ])
     expect(capturedFileURLs).toBeUndefined()
+  })
+
+  test("stream skips expanded local text file data on structured transport", async () => {
+    await using tmp = await tmpdir()
+    mockHistory()
+    mockAgencyVersion("1.9.6")
+    const filepath = path.join(tmp.path, "notes.txt")
+    await writeFile(filepath, "visible text file contents")
+    let capturedMessage: unknown
+    let capturedFileURLs: Record<string, string> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      capturedFileURLs = input.fileURLs
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        synthetic: true,
+        text: 'Called the Read tool with the following input: {"filePath":"notes.txt"}',
+        ignored: false,
+      },
+      {
+        type: "text",
+        synthetic: true,
+        text: "visible text file contents",
+        ignored: false,
+      },
+      {
+        type: "text",
+        text: "Summarize it.",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "text/plain",
+        filename: "notes.txt",
+        url: pathToFileURL(filepath).href,
+        source: {
+          type: "file",
+          path: filepath,
+          text: {
+            value: "[notes.txt](file:///tmp/notes.txt)",
+            start: 0,
+            end: 32,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: 'Called the Read tool with the following input: {"filePath":"notes.txt"}\n\nvisible text file contents\n\nSummarize it.',
+          },
+        ],
+      },
+    ])
+    expect(capturedFileURLs).toBeUndefined()
+  })
+
+  test("stream keeps local PDF file data on structured transport", async () => {
+    await using tmp = await tmpdir()
+    mockHistory()
+    mockAgencyVersion("1.9.6")
+    const content = Buffer.from("%PDF proof")
+    const filepath = path.join(tmp.path, "proof.pdf")
+    await writeFile(filepath, content)
+    let capturedMessage: unknown
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[PDF 1] Which phrase appears here?",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "application/pdf",
+        filename: "proof.pdf",
+        url: pathToFileURL(filepath).href,
+        source: {
+          type: "file",
+          path: filepath,
+          text: {
+            value: "[PDF 1]",
+            start: 0,
+            end: 7,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_file",
+            file_data: `data:application/pdf;base64,${content.toString("base64")}`,
+            filename: "proof.pdf",
+          },
+          {
+            type: "input_text",
+            text: "[PDF 1] Which phrase appears here?",
+          },
+        ],
+      },
+    ])
   })
 
   test("stream keeps browser auth client_config while forwarding attachments inline", async () => {
