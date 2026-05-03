@@ -177,6 +177,7 @@ export async function startTui(input: {
   await waitForInitialOutput({
     hasOutput: () => dataReceived,
     getExitCode: () => exitCode,
+    history: () => stripAnsi(raw),
     timeoutMs: initialOutputTimeoutMs,
     onRetry: async () => {
       await closeProcess(proc)
@@ -723,23 +724,45 @@ async function waitFor(predicate: () => boolean, failure: () => string, timeoutM
 async function waitForInitialOutput(input: {
   hasOutput: () => boolean
   getExitCode: () => number | undefined
+  history: () => string
   timeoutMs: number
   onRetry: () => Promise<void>
 }) {
-  await waitFor(
-    () => input.hasOutput() || input.getExitCode() !== undefined,
-    () => "Timed out waiting for initial TUI output",
-    input.timeoutMs,
-  ).catch(async (error) => {
+  try {
+    await waitForInitialOutputOnce(input, "initial TUI output")
+  } catch {
+    const exitCode = input.getExitCode()
+    if (exitCode !== undefined) throw initialOutputExitError(exitCode, "initial TUI output", input.history())
     await input.onRetry()
-    await waitFor(
-      () => input.hasOutput() || input.getExitCode() !== undefined,
-      () => "Timed out waiting for initial TUI output after retry",
-      input.timeoutMs,
-    )
-    if (input.hasOutput()) return
-    throw error
-  })
+    await waitForInitialOutputOnce(input, "initial TUI output after retry")
+  }
+}
+
+async function waitForInitialOutputOnce(
+  input: {
+    hasOutput: () => boolean
+    getExitCode: () => number | undefined
+    history: () => string
+    timeoutMs: number
+  },
+  message: string,
+) {
+  await waitFor(
+    () => {
+      if (input.hasOutput()) return true
+      const exitCode = input.getExitCode()
+      if (exitCode !== undefined) {
+        throw initialOutputExitError(exitCode, message, input.history())
+      }
+      return false
+    },
+    () => `Timed out waiting for ${message}`,
+    input.timeoutMs,
+  )
+}
+
+function initialOutputExitError(exitCode: number, message: string, history: string) {
+  return new Error(`TUI exited with code ${exitCode} before ${message}.\n\nHistory tail:\n${tail(history)}`)
 }
 
 function cleanEnv(env: Record<string, string | undefined>) {
