@@ -546,6 +546,121 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream replays stored attachment content when the follow-up has a new attachment", async () => {
+    mockAgencyVersion("1.9.5")
+    const priorFilePart = {
+      type: "input_file",
+      file_data: `data:application/pdf;base64,${Buffer.from("Prior attachment phrase: cobalt lantern.").toString("base64")}`,
+      filename: "prior.pdf",
+    }
+    const newFilePart = {
+      type: "input_file",
+      file_data: `data:application/pdf;base64,${Buffer.from("New attachment phrase: silver compass.").toString("base64")}`,
+      filename: "new.pdf",
+    }
+    const priorUser = {
+      type: "message",
+      role: "user",
+      content: [
+        priorFilePart,
+        {
+          type: "input_text",
+          text: "[PDF 1] What phrase appears here?",
+        },
+      ],
+    }
+    const priorAssistant = {
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: "cobalt lantern" }],
+    }
+    const { appended } = mockHistory(undefined, [priorUser, priorAssistant])
+    let capturedMessage: unknown
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      capturedMessage = input.message
+      yield {
+        type: "messages",
+        payload: {
+          new_messages: [
+            {
+              type: "message",
+              role: "user",
+              content: [
+                priorFilePart,
+                newFilePart,
+                {
+                  type: "input_text",
+                  text: "[PDF 2] Compare this new file with the previous one.",
+                },
+              ],
+            },
+            {
+              type: "message",
+              id: "msg_compare",
+              role: "assistant",
+              content: [{ type: "output_text", text: "compared" }],
+            },
+          ],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[PDF 2] Compare this new file with the previous one.",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "application/pdf",
+        filename: "new.pdf",
+        url: newFilePart.file_data,
+        source: {
+          type: "file",
+          path: "/tmp/new.pdf",
+          text: {
+            value: "[PDF 2]",
+            start: 0,
+            end: 7,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(capturedMessage).toEqual([
+      {
+        role: "user",
+        content: [
+          priorFilePart,
+          newFilePart,
+          {
+            type: "input_text",
+            text: "[PDF 2] Compare this new file with the previous one.",
+          },
+        ],
+      },
+    ])
+    expect(appended.at(-1)?.[0]).toEqual({
+      type: "message",
+      role: "user",
+      content: [
+        newFilePart,
+        {
+          type: "input_text",
+          text: "[PDF 2] Compare this new file with the previous one.",
+        },
+      ],
+    })
+  })
+
   test("stream replays compacted-session attachment content into follow-up requests", async () => {
     mockHistory()
     mockAgencyVersion("1.9.5")

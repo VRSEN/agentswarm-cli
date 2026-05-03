@@ -2461,8 +2461,17 @@ export namespace SessionAgencySwarm {
     history: Array<Record<string, unknown>>,
   ): { message: AgencyMessageInput; replayedAttachmentKeys: Set<string> } {
     const replayedAttachments = collectReplayableAttachmentContent(history)
-    const replayedAttachmentKeys = new Set(replayedAttachments.map((part) => replayableAttachmentKey(part)))
-    if (replayedAttachments.length === 0 || messageHasAttachmentContent(message)) {
+    if (replayedAttachments.length === 0) {
+      return {
+        message,
+        replayedAttachmentKeys: new Set(),
+      }
+    }
+
+    const existingAttachmentKeys = collectMessageAttachmentKeys(message)
+    const attachments = replayedAttachments.filter((part) => !existingAttachmentKeys.has(replayableAttachmentKey(part)))
+    const replayedAttachmentKeys = new Set(attachments.map((part) => replayableAttachmentKey(part)))
+    if (attachments.length === 0) {
       return {
         message,
         replayedAttachmentKeys: new Set(),
@@ -2482,7 +2491,7 @@ export namespace SessionAgencySwarm {
         const content = Array.isArray(item["content"]) ? item["content"] : []
         return {
           ...item,
-          content: [...replayedAttachments, ...content],
+          content: [...attachments, ...content],
         }
       })
       return {
@@ -2492,7 +2501,7 @@ export namespace SessionAgencySwarm {
     }
 
     const text = message.trim()
-    const content = [...replayedAttachments]
+    const content = [...attachments]
     if (text) content.push({ type: "input_text", text })
     return {
       message: [
@@ -2543,11 +2552,22 @@ export namespace SessionAgencySwarm {
   }
 
   function messageHasAttachmentContent(message: AgencyMessageInput) {
-    if (!Array.isArray(message)) return false
-    return message.some((item) => {
+    return collectMessageAttachmentKeys(message).size > 0
+  }
+
+  function collectMessageAttachmentKeys(message: AgencyMessageInput) {
+    const keys = new Set<string>()
+    if (!Array.isArray(message)) return keys
+    for (const item of message) {
       const content = item["content"]
-      return Array.isArray(content) && content.some((part) => isReplayableAttachmentPart(asRecord(part)))
-    })
+      if (!Array.isArray(content)) continue
+      for (const rawPart of content) {
+        const part = asRecord(rawPart)
+        if (!part || !isReplayableAttachmentPart(part)) continue
+        keys.add(replayableAttachmentKey(part))
+      }
+    }
+    return keys
   }
 
   function isReplayableAttachmentPart(part: Record<string, unknown> | undefined) {
