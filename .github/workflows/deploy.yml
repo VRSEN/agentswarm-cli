@@ -14,11 +14,11 @@ jobs:
     if: github.repository == 'anomalyco/opencode'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
 
       - uses: ./.github/actions/setup-bun
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
 
