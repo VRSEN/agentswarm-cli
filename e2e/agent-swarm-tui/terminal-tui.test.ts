@@ -342,6 +342,14 @@ describe("Agent Swarm terminal TUI e2e", () => {
       "live handoff request",
       tuiInteractionTimeoutMs,
     )
+    await currentTui.waitFor(
+      () => currentTui!.screen().includes("MathAgent · Agency Swarm"),
+      "live handoff routed prompt",
+      tuiInteractionTimeoutMs,
+    )
+    // CI can briefly focus transient picker/search UI after live handoff routing.
+    currentTui.write("\x1b")
+    await Bun.sleep(100)
 
     currentTui.write("continue after live handoff\r")
     await currentTui.waitFor(
