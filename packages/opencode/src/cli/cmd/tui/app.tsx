@@ -8,7 +8,12 @@ import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import semver from "semver"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
-import { DialogAgencySwarmConnect, DialogAuth } from "@tui/component/dialog-provider"
+import {
+  DialogAddons,
+  DialogAgencySwarmConnect,
+  DialogAuth,
+  DialogProvider as DialogProviderConnect,
+} from "@tui/component/dialog-provider"
 import { ErrorComponent } from "@tui/component/error-component"
 import { PluginRouteMissing } from "@tui/component/plugin-route-missing"
 import { ProjectProvider } from "@tui/context/project"
@@ -685,6 +690,23 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       category: "Provider",
     },
     {
+      title: "Configure add-ons",
+      value: "provider.addons",
+      enabled: frameworkMode(),
+      hidden: !frameworkMode(),
+      slash: {
+        name: "addons",
+      },
+      onSelect: () => {
+        const providerID =
+          (["openai", "anthropic", "google"] as const).find((id) => sync.data.provider_next.connected.includes(id)) ??
+          local.model.current()?.providerID ??
+          AgencySwarmAdapter.PROVIDER_ID
+        dialog.replace(() => <DialogAddons providerID={providerID} onDone={() => dialog.clear()} />)
+      },
+      category: "Provider",
+    },
+    {
       title: AgencyProduct.connect,
       value: "provider.connect",
       suggested: !connected(),
@@ -692,7 +714,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         name: "connect",
       },
       onSelect: () => {
-        dialog.replace(() => <DialogAgencySwarmConnect />)
+        const agency = local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID
+        dialog.replace(() => (agency ? <DialogAgencySwarmConnect /> : <DialogProviderConnect />))
       },
       category: "Provider",
     },

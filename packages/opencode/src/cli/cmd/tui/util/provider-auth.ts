@@ -27,7 +27,7 @@ export function getVisibleProviderAuthMethods(
   if (providerID === "openai") {
     return methods.filter((item) => !(item.type === "oauth" && /headless/i.test(item.label)))
   }
-  return methods.filter((item) => item.type === "api")
+  return methods
 }
 
 export function getStoredProviderAuthMethod(provider: Provider): StoredProviderAuthMethod | undefined {
@@ -39,6 +39,18 @@ export function getStoredProviderAuthMethod(provider: Provider): StoredProviderA
     if (provider.id === "opencode" && options["apiKey"] === "public") return undefined
     if (options["apiKey"] === OAUTH_DUMMY_KEY) return "oauth"
     if (Object.keys(options).length > 0) return "oauth"
+  }
+  return undefined
+}
+
+export function getProviderAuthMethodSuffix(
+  method: ProviderAuthMethod,
+  current?: StoredProviderAuthMethod,
+): string | undefined {
+  if (!current) return undefined
+  if (current === "oauth") return method.type === "oauth" ? "<- current" : undefined
+  if (current === "api" || current === "env" || current === "config") {
+    return method.type === "api" ? "<- current" : undefined
   }
   return undefined
 }

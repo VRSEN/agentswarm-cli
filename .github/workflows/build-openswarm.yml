@@ -1,0 +1,36 @@
+name: build-openswarm
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to bake into the binary (e.g. 1.0.1). Leave blank to use agentswarm-cli package version."
+        required: false
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build binary
+        env:
+          OPENSWARM_VERSION: ${{ steps.version.outputs.value }}
+        run: bun run script/build.ts --single --skip-install

@@ -251,10 +251,6 @@ export const GlobalRoutes = lazy(() =>
           Installation.Service.use((svc) =>
             Effect.gen(function* () {
               const method = yield* svc.method()
-              if (method === "unknown") {
-                return { success: false as const, status: 400 as const, error: "Unknown installation method" }
-              }
-
               const target = c.req.valid("json").target || (yield* svc.latest(method))
               const result = yield* Effect.catch(
                 svc.upgrade(method, target).pipe(Effect.as({ success: true as const, version: target })),

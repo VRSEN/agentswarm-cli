@@ -1,6 +1,10 @@
-export const SERVER_LAUNCHER_SCRIPT = `from agency import create_agency
+export const SERVER_LAUNCHER_SCRIPT = `import sys
+import os
+
+sys.path.insert(0, os.getcwd())
+
+from swarm import create_agency
 from agency_swarm.integrations.fastapi import run_fastapi
-import sys
 
 port = int(sys.argv[1])
 agency_id = sys.argv[2]

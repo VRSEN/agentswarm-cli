@@ -10,19 +10,20 @@ import { useTheme } from "../context/theme"
 import { useLocal } from "@tui/context/local"
 import { TextAttributes } from "@opentui/core"
 import type { ProviderAuthAuthorization, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
-import { DialogModel } from "./dialog-model"
 import { useKeyboard } from "@opentui/solid"
 import * as Clipboard from "@tui/util/clipboard"
 import { useToast } from "../ui/toast"
 import { CONSOLE_MANAGED_ICON, isConsoleManagedProvider } from "@tui/util/provider-origin"
 import {
   getStoredProviderAuthMethod,
+  getProviderAuthMethodSuffix,
   getVisibleProviderAuthMethods,
   hasStoredProviderCredential,
 } from "@tui/util/provider-auth"
+import { readEnvKey, writeEnvKey } from "@tui/util/env-file"
 import { refreshAfterProviderAuth } from "@tui/util/provider-auth-refresh"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import { isAgencySwarmFrameworkMode, isSupportedAgencyAuthProvider } from "../session-error"
+import { isAgencySwarmFrameworkMode } from "../session-error"
 import { errorMessage as toErrorMessage } from "@/util/error"
 import { Log } from "@/util"
 import open from "open"
@@ -150,6 +151,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
                       options={visibleMethods.map((x, index) => ({
                         title: x.label,
                         value: index,
+                        description: getProviderAuthMethodSuffix(x, storedAuthMethod),
                       }))}
                       onSelect={(option) => resolve(option.value)}
                     />
@@ -274,6 +276,22 @@ function DialogRemoveCredential() {
   return <DialogSelect title="Remove credential" options={options()} />
 }
 
+function DialogAuthOpenAI() {
+  const dialog = useDialog()
+  const options = createDialogProviderOptionsWithFilter({ providerIDs: ["openai"] })
+
+  onMount(() => {
+    const [openai] = options()
+    if (openai?.onSelect) {
+      openai.onSelect()
+      return
+    }
+    dialog.clear()
+  })
+
+  return null
+}
+
 export function DialogAuth() {
   const dialog = useDialog()
   const sync = useSync()
@@ -288,14 +306,7 @@ export function DialogAuth() {
       agentModel: local.agent.current()?.model,
     }),
   )
-  const providerIDs = frameworkMode()
-    ? sync.data.provider_next.all
-        .filter((provider) =>
-          isSupportedAgencyAuthProvider(provider.id, provider, sync.data.provider_auth[provider.id] ?? []),
-        )
-        .map((provider) => provider.id)
-    : undefined
-  const providerOptions = createDialogProviderOptionsWithFilter({ providerIDs })
+  const providerOptions = createDialogProviderOptionsWithFilter({})
   const options = createMemo<DialogSelectOption<string>[]>(() => {
     const removable = listRemovableAuthProviders({
       all: sync.data.provider_next.all,
@@ -320,7 +331,9 @@ export function DialogAuth() {
   })
 
   return (
-    <DialogSelect title={frameworkMode() ? "Manage Agent Swarm auth" : "Manage provider auth"} options={options()} />
+    <Show when={frameworkMode()} fallback={<DialogSelect title="Manage provider auth" options={options()} />}>
+      <DialogAuthOpenAI />
+    </Show>
   )
 }
 
@@ -339,29 +352,100 @@ export function closeDialogAuthOnEscape(
   return true
 }
 
-/** After auth in Agency Swarm mode, offer model selection (CLI model drives `client_config` for that provider). */
-function DialogPostAuthModelChoice(props: { providerID: string }) {
+type AddonConfig = {
+  id: string
+  title: string
+  keys: string[]
+  excludeProviderIDs?: string[]
+}
+
+const ADDONS: AddonConfig[] = [
+  { id: "search", title: "Web Search", keys: ["SEARCH_API_KEY"] },
+  { id: "anthropic", title: "Anthropic Claude", keys: ["ANTHROPIC_API_KEY"], excludeProviderIDs: ["anthropic"] },
+  { id: "composio", title: "Composio", keys: ["COMPOSIO_API_KEY", "COMPOSIO_USER_ID"] },
+  { id: "google", title: "Google Gemini", keys: ["GOOGLE_API_KEY"], excludeProviderIDs: ["google"] },
+  { id: "fal", title: "Fal.ai", keys: ["FAL_KEY"] },
+  { id: "pexels", title: "Pexels", keys: ["PEXELS_API_KEY"] },
+  { id: "pixabay", title: "Pixabay", keys: ["PIXABAY_API_KEY"] },
+  { id: "unsplash", title: "Unsplash", keys: ["UNSPLASH_ACCESS_KEY"] },
+]
+
+function collectAddonKeys(addons: AddonConfig[]) {
+  return addons.flatMap((addon) => addon.keys.map((key) => ({ addon, key })))
+}
+
+export function DialogAddons(props: { providerID: string; onDone: () => void }) {
   const dialog = useDialog()
-  const sync = useSync()
-  const providerName = createMemo(() => {
-    const p = sync.data.provider_next.all.find((x) => x.id === props.providerID)
-    return p?.name ?? props.providerID
+  const { theme } = useTheme()
+  const [selected, setSelected] = createSignal(new Set<string>())
+  const visibleAddons = createMemo(() =>
+    ADDONS.filter((addon) => !addon.excludeProviderIDs?.includes(props.providerID)),
+  )
+
+  onMount(() => {
+    if (visibleAddons().length === 0) props.onDone()
   })
+
+  const promptKey = (key: string) =>
+    new Promise<string | null>((resolve) => {
+      dialog.replace(
+        () => (
+          <DialogPrompt
+            title={key}
+            placeholder={readEnvKey(key) ? "Already set" : key}
+            onConfirm={(value) => resolve(value)}
+          />
+        ),
+        () => resolve(null),
+      )
+    })
+
+  const continueFlow = async () => {
+    const chosen = visibleAddons().filter((addon) => selected().has(addon.id))
+    for (const { key } of collectAddonKeys(chosen)) {
+      const value = await promptKey(key)
+      if (value === null) {
+        dialog.replace(() => <DialogAddons providerID={props.providerID} onDone={props.onDone} />)
+        return
+      }
+      const trimmed = value.trim()
+      if (trimmed) writeEnvKey(key, trimmed)
+    }
+    props.onDone()
+  }
+
   return (
     <DialogSelect
-      title={`${providerName()} connected`}
+      title="Configure add-ons"
       options={[
+        ...visibleAddons().map((addon) => {
+          const checked = selected().has(addon.id)
+          return {
+            title: addon.title,
+            value: addon.id,
+            description: addon.keys.some((key) => readEnvKey(key)) ? "configured" : undefined,
+            gutter: checked ? <text fg={theme.success}>*</text> : undefined,
+            onSelect: () => {
+              const next = new Set(selected())
+              if (next.has(addon.id)) next.delete(addon.id)
+              else next.add(addon.id)
+              setSelected(next)
+            },
+          } satisfies DialogSelectOption<string>
+        }),
         {
-          title: "Select model",
-          value: "model",
-          description: "Choose which model to use for this session",
-          onSelect: () => dialog.replace(() => <DialogModel providerID={props.providerID} />),
+          title: "Continue",
+          value: "__continue__",
+          category: "Actions",
+          onSelect: () => {
+            void continueFlow()
+          },
         },
         {
-          title: "Done",
-          value: "done",
-          description: "Keep your current model selection",
-          onSelect: () => dialog.clear(),
+          title: "Skip",
+          value: "__skip__",
+          category: "Actions",
+          onSelect: props.onDone,
         },
       ]}
     />
@@ -834,10 +918,10 @@ function AutoMethod(props: AutoMethodProps) {
         bootstrap: () => sync.bootstrap(),
       })
       if (frameworkMode()) {
-        dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
+        dialog.replace(() => <DialogAddons providerID={props.providerID} onDone={() => dialog.clear()} />)
         return
       }
-      dialog.replace(() => <DialogModel providerID={props.providerID} />)
+      dialog.clear()
     } catch (error) {
       const message = toErrorMessage(error)
       log.error("provider oauth post-callback bootstrap failed", {
@@ -921,10 +1005,10 @@ function CodeMethod(props: CodeMethodProps) {
               bootstrap: () => sync.bootstrap(),
             })
             if (frameworkMode()) {
-              dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
+              dialog.replace(() => <DialogAddons providerID={props.providerID} onDone={() => dialog.clear()} />)
               return
             }
-            dialog.replace(() => <DialogModel providerID={props.providerID} />)
+            dialog.clear()
           } catch (error) {
             const message = toErrorMessage(error)
             log.error("provider oauth code-flow bootstrap failed", {
@@ -1056,10 +1140,10 @@ function ApiMethod(props: ApiMethodProps) {
             bootstrap: () => sync.bootstrap(),
           })
           if (frameworkMode()) {
-            dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
+            dialog.replace(() => <DialogAddons providerID={props.providerID} onDone={() => dialog.clear()} />)
             return
           }
-          dialog.replace(() => <DialogModel providerID={props.providerID} />)
+          dialog.clear()
         } catch (error) {
           const message = toErrorMessage(error)
           log.error("provider api auth bootstrap failed", {

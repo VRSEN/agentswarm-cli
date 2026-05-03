@@ -145,7 +145,7 @@ test("keeps openai headless auth outside agency-swarm framework mode", () => {
   ])
 })
 
-test("keeps only API auth methods for non-openai providers in agency-swarm framework mode", () => {
+test("keeps non-openai auth methods in agency-swarm framework mode", () => {
   expect(
     getVisibleProviderAuthMethods(
       "github-copilot",
@@ -155,7 +155,10 @@ test("keeps only API auth methods for non-openai providers in agency-swarm frame
       ],
       { frameworkMode: true },
     ),
-  ).toEqual([{ type: "api", label: "API key" }])
+  ).toEqual([
+    { type: "oauth", label: "GitHub sign-in" },
+    { type: "api", label: "API key" },
+  ])
 })
 
 test("getStoredProviderAuthMethod returns 'api' for stored API key", () => {

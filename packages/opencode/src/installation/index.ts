@@ -71,7 +71,6 @@ export class UpgradeFailedError extends Schema.TaggedErrorClass<UpgradeFailedErr
 
 // Response schemas for external version APIs
 const GitHubRelease = Schema.Struct({ tag_name: Schema.String })
-const NpmPackage = Schema.Struct({ version: Schema.String })
 
 export interface Interface {
   readonly info: () => Effect.Effect<Info>
@@ -89,6 +88,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
       const http = yield* HttpClient.HttpClient
       const httpOk = HttpClient.filterStatusOk(withTransientReadRetry(http))
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+      const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm"
 
       const text = Effect.fnUntraced(
         function* (cmd: string[], opts?: { cwd?: string; env?: Record<string, string> }) {
@@ -125,18 +125,6 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
         Effect.catch(() => Effect.succeed({ code: ChildProcessSpawner.ExitCode(1), stdout: "", stderr: "" })),
       )
 
-      // Use the package manager's resolver so registries, mirrors, auth, proxies, and dist-tags match upgrade behavior.
-      const viewVersion = Effect.fnUntraced(function* (method: "npm" | "pnpm" | "bun", spec: string) {
-        const args = method === "bun" ? ["pm", "view", spec, "version", "--json"] : ["view", spec, "version", "--json"]
-        const result = yield* run([method, ...args])
-        if (result.code !== 0 || !result.stdout.trim()) {
-          return yield* new UpgradeFailedError({
-            stderr: result.stderr || result.stdout || `Failed to resolve ${spec}`,
-          })
-        }
-        return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.String))(result.stdout)
-      })
-
       const upgradeCurl = Effect.fnUntraced(
         function* (target: string) {
           const response = yield* httpOk.execute(HttpClientRequest.get(InstallationDistribution.installURL))
@@ -172,7 +160,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
           const exec = process.execPath.toLowerCase()
 
           const checks: Array<{ name: Method; command: () => Effect.Effect<string> }> = [
-            { name: "npm", command: () => text(["npm", "list", "-g", "--depth=0"]) },
+            { name: "npm", command: () => text([npmCmd, "list", "-g", "--depth=0"]) },
             { name: "yarn", command: () => text(["yarn", "global", "list"]) },
             { name: "pnpm", command: () => text(["pnpm", "list", "-g", "--depth=0"]) },
             { name: "bun", command: () => text(["bun", "pm", "ls", "-g"]) },
@@ -198,24 +186,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
 
           return "unknown" as Method
         }),
-        latest: Effect.fn("Installation.latest")(function* (installMethod?: Method) {
-          const detectedMethod = installMethod || (yield* result.method())
-
-          if (
-            detectedMethod === "brew" ||
-            detectedMethod === "choco" ||
-            detectedMethod === "scoop" ||
-            detectedMethod === "yarn"
-          ) {
-            return yield* new UpgradeFailedError({
-              stderr: `${InstallationDistribution.packageName} is not published to ${detectedMethod}. Use npm, pnpm, bun, or curl instead.`,
-            })
-          }
-
-          if (detectedMethod === "npm" || detectedMethod === "bun" || detectedMethod === "pnpm") {
-            return yield* viewVersion(detectedMethod, `${InstallationDistribution.packageName}@${InstallationChannel}`)
-          }
-
+        latest: Effect.fn("Installation.latest")(function* (_installMethod?: Method) {
           const response = yield* httpOk.execute(
             HttpClientRequest.get(
               `https://api.github.com/repos/${InstallationDistribution.releaseRepo}/releases/latest`,
@@ -231,7 +202,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
               upgradeResult = yield* upgradeCurl(target)
               break
             case "npm":
-              upgradeResult = yield* run(["npm", "install", "-g", `${InstallationDistribution.packageName}@${target}`])
+              upgradeResult = yield* run([npmCmd, "install", "-g", `${InstallationDistribution.packageName}@${target}`])
               break
             case "pnpm":
               upgradeResult = yield* run(["pnpm", "install", "-g", `${InstallationDistribution.packageName}@${target}`])
@@ -260,7 +231,8 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
               })
               break
             default:
-              return yield* new UpgradeFailedError({ stderr: `Unknown method: ${m}` })
+              // npx / unknown install — fall back to global npm install
+              upgradeResult = yield* run([npmCmd, "install", "-g", `${InstallationDistribution.packageName}@${target}`])
           }
           if (!upgradeResult || upgradeResult.code !== 0) {
             const stderr = upgradeResult?.stderr || ""
