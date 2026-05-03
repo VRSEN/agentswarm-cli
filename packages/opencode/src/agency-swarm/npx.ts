@@ -654,8 +654,10 @@ export async function prepareProjectLaunch(project: AgencyProject): Promise<Prep
 
 async function ensureProjectPython(directory: string) {
   const venvPython = getVenvPythonPath(directory)
+  const venvDir = path.resolve(path.join(directory, ".venv"))
   let selfHealing = false
   let corruptedVenv = false
+  const hasVenvPath = await Filesystem.exists(venvDir)
   const hasVenv = await Filesystem.exists(venvPython)
   if (hasVenv) {
     // Probing the venv's interpreter can throw if the base Python was removed
@@ -703,9 +705,10 @@ async function ensureProjectPython(directory: string) {
         corruptedVenv = true
       }
     }
+  } else if (hasVenvPath) {
+    corruptedVenv = true
   }
 
-  const venvDir = path.resolve(path.join(directory, ".venv"))
   const detected = await findPythonExecutable(corruptedVenv ? venvDir : undefined)
   if (!detected) {
     if (corruptedVenv) {
@@ -722,8 +725,8 @@ async function ensureProjectPython(directory: string) {
   prompts.log.info(`Detected Python: ${formatPython(detected, rebuildCmd)}`)
 
   if (corruptedVenv) {
-    prompts.log.warn("Project `.venv` is missing module sources (corrupted install). Rebuilding...")
-    await rm(path.join(directory, ".venv"), { recursive: true, force: true })
+    prompts.log.warn("Project `.venv` is incomplete or corrupted. Rebuilding...")
+    await rm(venvDir, { recursive: true, force: true })
     selfHealing = true
   }
 
@@ -783,7 +786,9 @@ async function ensureProjectPython(directory: string) {
     throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
   }
   if (!canary.healthy) {
-    throw new Error(await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr))
+    throw new Error(
+      await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr, install.logFile),
+    )
   }
   prompts.log.success("Python environment ready")
   return [venvPython]
@@ -830,22 +835,23 @@ async function installProjectDependencies(
   return { ...result, hadManifests: false }
 }
 
-async function formatPostInstallCanaryFailure(directory: string, hadManifests: boolean, stderr: string) {
+async function formatPostInstallCanaryFailure(
+  directory: string,
+  hadManifests: boolean,
+  stderr: string,
+  logFile?: string,
+) {
   const summary = summarizeBridgeStderr(stderr)
   const shadowingHint = await formatShadowingHint(directory)
+  const logHint = logFile ? ` Check the log file at ${logFile}.` : ""
+  const detail = summary ? ` Details: ${summary}` : ""
   if (isImportLikeCanaryFailure(stderr)) {
     if (hadManifests) {
-      return summary
-        ? `Canary import failed. Check requirements.txt/pyproject.toml for agency-swarm version compatibility.${shadowingHint} Canary stderr: ${summary}`
-        : `Canary import failed. Check requirements.txt/pyproject.toml for agency-swarm version compatibility.${shadowingHint}`
+      return `The launcher recreated the local Python environment, but it still could not import required Agency Swarm packages. Check requirements.txt/pyproject.toml for agency-swarm version compatibility.${shadowingHint}${logHint}${detail}`
     }
-    return summary
-      ? `Canary import failed on fallback install. Inspect the stderr below and check for project-local fastapi.py/agency_swarm.py that may shadow installed packages.${shadowingHint} Canary stderr: ${summary}`
-      : `Canary import failed on fallback install. Inspect the stderr below and check for project-local fastapi.py/agency_swarm.py that may shadow installed packages.${shadowingHint}`
+    return `The launcher recreated the local Python environment, but it still could not import required Agency Swarm packages. Check for project-local fastapi.py/agency_swarm.py files that may shadow installed packages.${shadowingHint}${logHint}${detail}`
   }
-  return summary
-    ? `Project \`.venv\` rebuilt successfully, but the Agency Swarm import canary still failed.${shadowingHint} Canary stderr: ${summary}`
-    : `Project \`.venv\` rebuilt successfully, but the Agency Swarm import canary still failed.${shadowingHint}`
+  return `The launcher recreated the local Python environment, but it still could not repair it.${shadowingHint}${logHint}${detail}`
 }
 
 async function formatCanaryTimeoutFailure(directory: string, stderr: string) {

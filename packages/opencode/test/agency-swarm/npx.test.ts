@@ -204,6 +204,60 @@ describe("agency-swarm npx onboarding", () => {
     ])
   })
 
+  test("prepareProjectLaunch recreates an incomplete `.venv` instead of overlaying it", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    const staleFile = path.join(dir.path, ".venv", "lib", "python3.12", "site-packages", "stale.py")
+    await mkdir(path.dirname(staleFile), { recursive: true })
+    await Bun.write(staleFile, "stale")
+
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+
+    const commands: string[][] = []
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "/usr/bin/python3.12\n3.12.7\n",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("venv")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("pip")) {
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: "dependency install failed",
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    await expect(
+      prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      }),
+    ).rejects.toThrow("Dependency install failed")
+
+    expect(confirm).not.toHaveBeenCalled()
+    expect(await Bun.file(staleFile).exists()).toBe(false)
+    expect(commands.some((cmd) => cmd.includes("venv"))).toBe(true)
+  })
+
   test("prepareProjectLaunch reruns the canary after rebuilding `.venv` and surfaces manifest import mismatches", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
@@ -290,9 +344,11 @@ describe("agency-swarm npx onboarding", () => {
     expect(error).toBeInstanceOf(Error)
     if (!error) throw new Error("Expected prepareProjectLaunch to fail")
     expect(error.message).toContain(
-      "Canary import failed. Check requirements.txt/pyproject.toml for agency-swarm version compatibility.",
+      "The launcher recreated the local Python environment, but it still could not import required Agency Swarm packages.",
     )
-    expect(error.message).not.toContain("Canary import failed on fallback install.")
+    expect(error.message).toContain("Check requirements.txt/pyproject.toml for agency-swarm version compatibility.")
+    expect(error.message).toContain("Check the log file at")
+    expect(error.message).not.toContain("Canary import failed")
     expect(error.message).toContain("LoadFileAttachment")
 
     const canaryCommands = commands.filter(isCanaryCommand)
@@ -1568,7 +1624,7 @@ describe("agency-swarm npx onboarding", () => {
         agencyFile: path.join(dir.path, "agency.py"),
       }),
     ).rejects.toThrow(
-      "Canary import failed on fallback install. Inspect the stderr below and check for project-local fastapi.py/agency_swarm.py that may shadow installed packages.",
+      "The launcher recreated the local Python environment, but it still could not import required Agency Swarm packages. Check for project-local fastapi.py/agency_swarm.py files that may shadow installed packages.",
     )
   })
 
