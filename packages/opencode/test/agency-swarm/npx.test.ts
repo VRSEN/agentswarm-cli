@@ -333,6 +333,13 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
+      if (isPipVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "pip 25.0\n",
+          stderr: "",
+        } as never
+      }
       if (isPipInstallCommand(cmd)) {
         return {
           exited: installExited,
@@ -384,6 +391,13 @@ describe("agency-swarm npx onboarding", () => {
         return {
           exited: Promise.resolve(0),
           stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPipVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "pip 25.0\n",
           stderr: "",
         } as never
       }
@@ -453,6 +467,13 @@ describe("agency-swarm npx onboarding", () => {
         return {
           exited: Promise.resolve(0),
           stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPipVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "pip 25.0\n",
           stderr: "",
         } as never
       }
@@ -529,6 +550,13 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
+      if (isPipVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "pip 25.0\n",
+          stderr: "",
+        } as never
+      }
       if (isPipInstallCommand(cmd)) {
         let resolveExit!: (code: number) => void
         const stderr = createTextOutputStream("still working...\n")
@@ -599,6 +627,13 @@ describe("agency-swarm npx onboarding", () => {
         return {
           exited: Promise.resolve(0),
           stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPipVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "pip 25.0\n",
           stderr: "",
         } as never
       }
@@ -682,6 +717,13 @@ describe("agency-swarm npx onboarding", () => {
         return {
           exited: Promise.resolve(0),
           stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (isPipVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "pip 25.0\n",
           stderr: "",
         } as never
       }
@@ -781,6 +823,13 @@ describe("agency-swarm npx onboarding", () => {
         return {
           exited: Promise.resolve(0),
           stdout: `${target}\n3.13.3\n`,
+          stderr: "",
+        } as never
+      }
+      if (isPipVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "pip 25.0\n",
           stderr: "",
         } as never
       }
@@ -885,6 +934,13 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
+      if (isPipVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "pip 25.0\n",
+          stderr: "",
+        } as never
+      }
       if (isPipInstallCommand(cmd)) {
         return {
           exited: Promise.resolve(1),
@@ -974,6 +1030,13 @@ describe("agency-swarm npx onboarding", () => {
         return {
           exited: Promise.resolve(0),
           stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (isPipVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "pip 25.0\n",
           stderr: "",
         } as never
       }
@@ -1137,6 +1200,13 @@ describe("agency-swarm npx onboarding", () => {
         return {
           exited: Promise.resolve(1),
           stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPipVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "pip 25.0\n",
           stderr: "",
         } as never
       }
@@ -1384,6 +1454,13 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
+      if (isPipVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "pip 25.0\n",
+          stderr: "",
+        } as never
+      }
       if (isPipInstallCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
@@ -1455,6 +1532,13 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
+      if (isPipVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "pip 25.0\n",
+          stderr: "",
+        } as never
+      }
       if (isPipInstallCommand(cmd)) {
         return {
           exited: Promise.resolve(1),
@@ -1510,6 +1594,13 @@ describe("agency-swarm npx onboarding", () => {
         return {
           exited: Promise.resolve(0),
           stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPipVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "pip 25.0\n",
           stderr: "",
         } as never
       }
@@ -2300,6 +2391,10 @@ function createTextOutputStream(initial?: string) {
 
 function isPipInstallCommand(cmd: string[]) {
   return cmd[1] === "-m" && cmd[2] === "pip" && cmd[3] === "install"
+}
+
+function isPipVersionCommand(cmd: string[]) {
+  return cmd[1] === "-m" && cmd[2] === "pip" && cmd[3] === "--version"
 }
 
 function isCanaryCommand(cmd: string[]) {

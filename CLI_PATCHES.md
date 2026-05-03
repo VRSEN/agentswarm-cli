@@ -190,7 +190,7 @@ Same replacement applied in `createStarterProject`:
 
 ### 5c. npm install + playwright install in `ensureProjectPython`
 
-**Change:** Added Node.js dependency installation and Playwright browser installation after Python dependency setup.
+**Change:** Added Node.js dependency installation and Playwright browser installation after Python dependency setup. The Node Playwright install uses `npx playwright install chromium chromium-headless-shell` with `PLAYWRIGHT_BROWSERS_PATH=<project>/.playwright-browsers`, so Node-based exporters can find Chromium without relying on npm's ephemeral `_npx` cache. The Python Playwright install is still run for Python-side integrations.
 
 ```diff
   prompts.log.step("Python environment ready")
@@ -203,6 +203,10 @@ Same replacement applied in `createStarterProject`:
 + }
 +
 + prompts.log.step("Installing Playwright browsers (this may take a minute)...")
++ await runCommand(["npx", "-y", "playwright", "install", "chromium", "chromium-headless-shell"], {
++   cwd: directory,
++   env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: path.join(directory, ".playwright-browsers") },
++ })
 + await runCommand([venvPython, "-m", "playwright", "install", "chromium"], { cwd: directory })
 + prompts.log.step("Playwright browsers installed")
 ```
@@ -223,7 +227,7 @@ Same replacement applied in `createStarterProject`:
 
 **Change:** Added `registerGlobalCommand(directory)` which runs every time a project is launched (called from `prepareProjectLaunch`). It creates a wrapper in the npm global bin directory that:
 
-- `cd`s into the project directory
+- `cd`s into the project directory when it still exists, otherwise warns and starts from the current directory
 - Sets `AGENTSWARM_LAUNCHER=1` so the full launcher flow fires (which starts the FastAPI server)
 - Runs `agentswarm.exe` (our custom binary, path from `AGENTSWARM_BIN_PATH` env set by `bin/openswarm`)
 
@@ -239,11 +243,11 @@ Same replacement applied in `createStarterProject`:
 +   try {
 +     if (process.platform === "win32") {
 +       const cmdPath = path.join(prefix, "openswarm.cmd")
-+       await writeFile(cmdPath, `@echo off\r\ncd /d "${directory}"\r\nset AGENTSWARM_LAUNCHER=1\r\n"${agentswarmBin}" %*\r\n`)
++       await writeFile(cmdPath, buildGlobalCommandScript({ directory, agentswarmBin }))
 +     } else {
 +       const linkPath = path.join(prefix, "bin", "openswarm")
 +       try { await unlink(linkPath) } catch {}
-+       await writeFile(linkPath, `#!/bin/sh\ncd "${directory}"\nexport AGENTSWARM_LAUNCHER=1\nexec "${agentswarmBin}" "$@"\n`)
++       await writeFile(linkPath, buildGlobalCommandScript({ directory, agentswarmBin }))
 +       await chmod(linkPath, 0o755)
 +     }
 +     prompts.log.step("`openswarm` registered as a global command")
@@ -437,14 +441,20 @@ At all three auth-success points (OAuth callback, code entry, API key entry), `D
 
 **Problem:** `agentswarm-cli-new` was missing `findUv` and all `uv`-based install paths, so every install used slow plain `pip`.
 
-**Fix:** Ported `findUv` from `agentswarm-cli-dev` and updated `ensureProjectPython` + `installProjectDependencies` to use it:
+**Fix:** Ported `findUv` from `agentswarm-cli-dev` and updated `ensureProjectPython`, `installProjectDependencies`, and refresh installs to use it. `uv` commands run with `UV_LINK_MODE=copy` by default to avoid hardlink issues across temp/cache/project boundaries.
 
 ```diff
 + async function findUv(python: string[]): Promise<string | null> {
-+   const check = await runCommand(["uv", "--version"])
-+   if (check.code === 0) return "uv"
++   const uv = await findExistingUv()
++   if (uv) return uv
 +   const install = await runCommand([...python, "-m", "pip", "install", "uv"])
 +   if (install.code === 0) return "uv"
++   return null
++ }
++
++ async function findExistingUv(): Promise<string | null> {
++   const check = await runCommand(["uv", "--version"])
++   if (check.code === 0) return "uv"
 +   return null
 + }
 

@@ -439,6 +439,40 @@ export async function prepareProjectLaunch(project: AgencyProject): Promise<Prep
   }
 }
 
+export function buildGlobalCommandScript(input: {
+  directory: string
+  agentswarmBin: string
+  platform?: NodeJS.Platform
+}) {
+  if ((input.platform ?? process.platform) === "win32") {
+    return [
+      "@echo off",
+      `if exist "${input.directory}\\." (`,
+      `  cd /d "${input.directory}"`,
+      ") else (",
+      `  echo openswarm: remembered project directory no longer exists: ${input.directory}`,
+      "  echo openswarm: starting from the current directory instead.",
+      ")",
+      "set AGENTSWARM_LAUNCHER=1",
+      `"${input.agentswarmBin}" %*`,
+      "",
+    ].join("\r\n")
+  }
+
+  return [
+    "#!/bin/sh",
+    `if [ -d "${input.directory}" ]; then`,
+    `  cd "${input.directory}" || exit $?`,
+    "else",
+    `  echo "openswarm: remembered project directory no longer exists: ${input.directory}" >&2`,
+    '  echo "openswarm: starting from the current directory instead." >&2',
+    "fi",
+    "export AGENTSWARM_LAUNCHER=1",
+    `exec "${input.agentswarmBin}" "$@"`,
+    "",
+  ].join("\n")
+}
+
 async function registerGlobalCommand(directory: string): Promise<void> {
   const agentswarmBin = process.env.AGENTSWARM_BIN_PATH ?? process.execPath
   if (!(await Filesystem.exists(agentswarmBin))) return
@@ -450,19 +484,13 @@ async function registerGlobalCommand(directory: string): Promise<void> {
   try {
     if (process.platform === "win32") {
       const cmdPath = path.join(prefix, "openswarm.cmd")
-      await writeFile(
-        cmdPath,
-        `@echo off\r\ncd /d "${directory}"\r\nset AGENTSWARM_LAUNCHER=1\r\n"${agentswarmBin}" %*\r\n`,
-      )
+      await writeFile(cmdPath, buildGlobalCommandScript({ directory, agentswarmBin }))
     } else {
       const linkPath = path.join(prefix, "bin", "openswarm")
       try {
         await unlink(linkPath)
       } catch {}
-      await writeFile(
-        linkPath,
-        `#!/bin/sh\ncd "${directory}"\nexport AGENTSWARM_LAUNCHER=1\nexec "${agentswarmBin}" "$@"\n`,
-      )
+      await writeFile(linkPath, buildGlobalCommandScript({ directory, agentswarmBin }))
       await chmod(linkPath, 0o755)
     }
     prompts.log.step("`openswarm` registered as a global command")
@@ -623,7 +651,27 @@ async function ensureProjectPython(directory: string) {
     }
   }
 
+  // Install Node Playwright browsers into a project-local cache so Node-based
+  // exporters can launch Chromium without requiring a manual install.
   prompts.log.step("Installing Playwright browsers (this may take a minute)...")
+  try {
+    const browsersPath = path.join(directory, ".playwright-browsers")
+    const installNodePlaywright = await runCommand(
+      ["npx", "-y", "playwright", "install", "chromium", "chromium-headless-shell"],
+      {
+        cwd: directory,
+        env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: browsersPath },
+      },
+    )
+    if (installNodePlaywright.code !== 0) {
+      prompts.log.warn(
+        `Playwright (Node) install: ${installNodePlaywright.stderr.trim() || installNodePlaywright.stdout.trim()}`,
+      )
+    }
+  } catch (error) {
+    prompts.log.warn(`Playwright (Node) install skipped: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
   const playwright = await runCommand([venvPython, "-m", "playwright", "install", "chromium"], { cwd: directory })
   if (playwright.code !== 0) {
     prompts.log.warn(summarizeCommandOutput(playwright) || "Playwright browser install failed")
@@ -683,10 +731,16 @@ async function installProjectDependencies(
 }
 
 async function findUv(python: string[]): Promise<string | null> {
-  const check = await runCommand(["uv", "--version"])
-  if (check.code === 0) return "uv"
+  const uv = await findExistingUv()
+  if (uv) return uv
   const install = await runCommand([...python, "-m", "pip", "install", "uv"])
   if (install.code === 0) return "uv"
+  return null
+}
+
+async function findExistingUv(): Promise<string | null> {
+  const check = await runCommand(["uv", "--version"])
+  if (check.code === 0) return "uv"
   return null
 }
 
@@ -768,13 +822,30 @@ async function ensureLatestAgencySwarm(
   },
 ) {
   try {
-    const result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]"], {
-      cwd: directory,
-      logFile: options?.logFile,
-      streamOutputToStderr: true,
-      suppressPythonTracebackStderr: true,
-      timeoutMs: options?.timeoutMs,
-    })
+    const uv = await findExistingUv()
+    let result: CommandResult
+    if (uv) {
+      result = await runCommand(
+        [uv, "pip", "install", "--python", python[0], "--upgrade", "agency-swarm[fastapi,litellm]"],
+        {
+          cwd: directory,
+          logFile: options?.logFile,
+          streamOutputToStderr: true,
+          suppressPythonTracebackStderr: true,
+          timeoutMs: options?.timeoutMs,
+        },
+      )
+    } else {
+      const pip = await runCommand([...python, "-m", "pip", "--version"], { cwd: directory })
+      if (pip.code !== 0) return
+      result = await runCommand([...python, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]"], {
+        cwd: directory,
+        logFile: options?.logFile,
+        streamOutputToStderr: true,
+        suppressPythonTracebackStderr: true,
+        timeoutMs: options?.timeoutMs,
+      })
+    }
     if (result.timedOut) {
       prompts.log.warn(
         result.logFile
@@ -1134,7 +1205,7 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
       cwd: options?.cwd,
       stdout: "pipe",
       stderr: "pipe",
-      env: options?.env ?? process.env,
+      env: commandEnv(cmd, options?.env ?? process.env),
     })
     const outputAbort = new AbortController()
     let timeout: ReturnType<typeof setTimeout> | undefined
@@ -1190,6 +1261,15 @@ function resolveCmd(cmd: string[]): string[] {
   const shellCmds = ["npm", "npx", "git"]
   if (shellCmds.includes(cmd[0])) return ["cmd.exe", "/c", ...cmd]
   return cmd
+}
+
+function commandEnv(cmd: string[], env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const commandName = path.basename(cmd[0]).toLowerCase()
+  if (commandName !== "uv" && commandName !== "uv.exe") return env
+  return {
+    ...env,
+    UV_LINK_MODE: env.UV_LINK_MODE ?? "copy",
+  }
 }
 
 function openCommandLog(logFile?: string) {
