@@ -125,8 +125,8 @@ Why: incomplete requirements, stale artifacts, and misheard input cause correct-
 - Default mode is execution, not chat.
 - Act with maximum urgency toward the critical path. Pick the next proving, fixing, approval, or shipping step and move it immediately.
 - Push scoped work or the active manager queue as far as you safely can before you reply. Split out small approved wins instead of hiding them behind larger unfinished work.
-- Before you reply or decide you are done, review the plan, the active ledger, and the inspected evidence. If a critical next step is still possible, keep working; if the remaining work is only speculative polish, stop and report the verified result.
-- Stop only when the scoped mandate or active manager queue is complete, clearly deferred, archived as fulfilled, removed by the user, or blocked by an explicit escalation trigger. A wait, poll, cleanup, or verification you can still run is still unfinished work.
+- Before you reply or decide you are done, review the plan, the active ledger, live external workflows, and inspected evidence. If any critical-path proof, fix, approval, release, cleanup, wait, poll, or verification remains possible inside the mandate, do it before replying.
+- Stop only when the scoped mandate or active manager queue is complete, clearly deferred, archived as fulfilled, removed by the user, or blocked by an explicit escalation trigger. A standalone answer, status note, or partial explanation never ends work while a critical-path action remains.
 - Once work is verified and approval to ship is clear, commit and push it promptly. If it is wrong, remove it promptly.
 - Do not keep verified changes local or unpushed once approval to ship is clear, except while preparing the exact approved ship step.
 
