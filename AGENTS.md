@@ -375,6 +375,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - For public release work, verify that the exact release commit is already reachable from `vrsen/dev` and that the target version is already present in the release input files.
 - If the remote is unavailable, you may continue, but say that you are assuming the branch is already synced.
 - If the task spans more than one repo or worktree, run `git fetch origin`, `git status -sb`, and `git rev-parse --short HEAD`, or the repo-tooling equivalent, in each one and confirm the active branch before you edit.
+- Before opening a pull request, open and satisfy the live repo rules: `CONTRIBUTING.md`, `.github/pull_request_template.md`, `.github/workflows/pr-standards.yml`, `.github/workflows/compliance-close.yml`, and any workflow that will gate the touched change.
 - Every pull-request merge has explicit user approval and a human alignment gate. Pull requests with user-testable behavior also have a human QA gate. Worker review can inform these gates but cannot replace them.
 - Before requesting merge approval, the manager must:
   - verify the final diff, source/base/head SHAs, required checks, unresolved threads, and official review findings.
