@@ -3525,6 +3525,134 @@ describe("session.agency-swarm", () => {
     ])
   })
 
+  test("compactHistory preserves same-turn attachments when skipping expanded local file replay", () => {
+    const imageData = "data:image/png;base64,aW1hZ2U="
+    const msgs = [
+      {
+        info: {
+          id: "compact_user",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [{ type: "compaction", auto: true, overflow: true }],
+      },
+      {
+        info: {
+          id: "summary",
+          role: "assistant",
+          parentID: "compact_user",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Planner",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          summary: true,
+          finish: "end_turn",
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "summary body" }],
+      },
+      {
+        info: {
+          id: "user_after_compaction",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [
+          { type: "text", text: "[File 1]\nold bytes", ignored: false, synthetic: true },
+          {
+            type: "file",
+            mime: "text/plain",
+            filename: "proof.txt",
+            url: "file:///tmp/proof.txt",
+          },
+          {
+            type: "file",
+            mime: "image/png",
+            filename: "diagram.png",
+            url: imageData,
+          },
+        ],
+      },
+      {
+        info: {
+          id: "assistant_after_compaction",
+          role: "assistant",
+          parentID: "user_after_compaction",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Reviewer",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: {
+            total: 0,
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          time: { created: 4 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "saw both" }],
+      },
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 5 },
+        },
+        parts: [{ type: "text", text: "repeat the inputs", ignored: false }],
+      },
+    ] as any
+
+    expect(SessionAgencySwarm.compactHistory({ msgs, currentID: "current", structuredAttachments: true })).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "summary body" }],
+        agent: "Planner",
+        callerAgent: null,
+        timestamp: 2,
+      },
+      {
+        type: "message",
+        role: "user",
+        content: [
+          { type: "input_image", image_url: imageData, detail: "auto" },
+          { type: "input_text", text: "[File 1]\nold bytes" },
+        ],
+        agent: "build",
+        callerAgent: null,
+        timestamp: 3,
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "saw both" }],
+        agent: "Reviewer",
+        callerAgent: null,
+        timestamp: 4,
+      },
+    ])
+  })
+
   test("compactHistory falls back when no compaction summary exists", () => {
     const msgs = [
       {
@@ -3791,6 +3919,91 @@ describe("session.agency-swarm", () => {
         type: "message",
         role: "assistant",
         content: [{ type: "output_text", text: "old bytes" }],
+        agent: "Reviewer",
+        callerAgent: null,
+        timestamp: 2,
+      },
+    ])
+  })
+
+  test("buildAgencyHistoryFromMessages preserves same-turn attachments when skipping expanded local file replay", () => {
+    const pdfData = "data:application/pdf;base64,cGRm"
+    const msgs = [
+      {
+        info: {
+          id: "user_1",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 1 },
+        },
+        parts: [
+          { type: "text", text: "[File 1]\nold bytes", ignored: false, synthetic: true },
+          {
+            type: "file",
+            mime: "text/plain",
+            filename: "proof.txt",
+            url: "file:///tmp/proof.txt",
+          },
+          {
+            type: "file",
+            mime: "application/pdf",
+            filename: "brief.pdf",
+            url: pdfData,
+          },
+        ],
+      },
+      {
+        info: {
+          id: "assistant_1",
+          role: "assistant",
+          parentID: "user_1",
+          providerID: "agency-swarm",
+          modelID: "default",
+          mode: "Default",
+          agent: "Reviewer",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: { total: 0, input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: 2 },
+          sessionID: "session_1",
+        },
+        parts: [{ type: "text", text: "saw both" }],
+      },
+      {
+        info: {
+          id: "current",
+          role: "user",
+          agent: "build",
+          model: { providerID: "agency-swarm", modelID: "default" },
+          time: { created: 3 },
+        },
+        parts: [{ type: "text", text: "follow up", ignored: false }],
+      },
+    ] as any
+
+    expect(
+      SessionAgencySwarm.buildAgencyHistoryFromMessages({
+        msgs,
+        currentID: "current",
+        structuredAttachments: true,
+      }),
+    ).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: [
+          { type: "input_file", file_data: pdfData, filename: "brief.pdf" },
+          { type: "input_text", text: "[File 1]\nold bytes" },
+        ],
+        agent: "build",
+        callerAgent: null,
+        timestamp: 1,
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "saw both" }],
         agent: "Reviewer",
         callerAgent: null,
         timestamp: 2,
