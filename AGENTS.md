@@ -87,10 +87,18 @@ Why: incomplete requirements, stale artifacts, and misheard input cause correct-
   - `Did I actually use everything the user already provided that is necessary for this task?`
 - Never work without fully understanding the context.
 - Before a non-trivial edit in a shared, upstream-mirrored, previously failed, or policy-sensitive area, identify directly related pull requests, commits, issues, or branches with a bounded search such as `git log --follow` or targeted `gh pr list` filters. Include closed, rejected, superseded, or reverted attempts when they are directly related. Stop when the next layer is clearly unrelated. If a prior change was reverted or partly reverted, state exactly what it undid.
-- Before creating or materially changing a public durable artifact, including an issue, pull request, docs page, or release note, first run a bounded search of existing source-of-truth artifacts: open and closed issues, directly related pull requests, recent history, and ledger entries. Reuse or update the existing artifact when it covers the work.
 - If you cannot write a one-sentence link for every directly related artifact, stop and ask the user one short question before you edit.
 - If either answer above is `no` or `unclear`, or if something you expected does not exist, first acquire the missing fact with bounded inspection, search, or testing. Ask the user only when the missing fact materially changes the outcome and cannot be obtained safely inside the mandate.
 - Expect speech-to-text mistakes. Use context to sort out homophones. If two meanings still fit, escalate with numbered options.
+
+## Artifact And Resource Discipline
+
+- Track every active branch, pull request, issue, commit, worktree, file, temp asset, release artifact, published binary, review artifact, screenshot, QA directory, and owned public artifact in the ledger with current artifact links.
+- Ledger is the source of truth for active work. Missing coverage is an ownership defect, not deletion proof; keep artifacts active until shipped, handed off, or discarded.
+- Monitor owned artifacts continuously at task boundaries, before public mutations, and before any substantive reply; stale, closed, failing, or duplicated artifacts are active work until reused, fixed, shipped, or explicitly discarded.
+- Before creating or materially changing any public durable artifact, including an issue, pull request, docs page, or release note, run a bounded search of existing source-of-truth artifacts: active ledger, archive, open and closed issues, directly related pull requests, and recent history.
+- Reuse or update an existing artifact when it covers the same intent. If the code diff or durable content is materially unchanged, reopen or repair the existing pull request instead of creating a replacement; create a new artifact only when reuse is impossible or explicitly justified.
+- Fix artifact compliance in place when possible. A non-compliant issue or pull request is a repair target, not a reason to duplicate the artifact.
 
 ## Repository Mandate Boundary
 
@@ -361,11 +369,6 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Treat subagents as focused independent contributors or counsel. Their output is evidence that the manager must verify, not authority by itself.
 - Keep environment repair, credentials, review path selection, worker rotation, and pull-request-specific delegation mechanics in the skill playbook.
 - Workers may create branches, commits, and pull requests inside their mandate. They must not merge, publish releases, tag, force-push, delete shared artifacts, or run destructive operations unless the manager explicitly delegates that exact action for that exact artifact after review.
-
-### Artifacts
-
-- Track every active branch, pull request, issue, commit, worktree, file, temp asset, release artifact, published binary, review artifact, screenshot, QA directory, and owned public artifact in the ledger with current artifact links.
-- Ledger is the source of truth for active work. Missing coverage is an ownership defect, not deletion proof; keep artifacts active until shipped, handed off, or discarded.
 
 ### Repo And Pull Requests
 
