@@ -18,7 +18,11 @@ const tuiReadyTimeoutMs = process.env.CI ? 120_000 : 30_000
 const tuiInteractionTimeoutMs = process.env.CI ? 60_000 : 45_000
 
 async function waitForConfiguredDemoRecipient(tui: TuiProcess) {
-  await tui.waitForText("UserSupportAgent", tuiInteractionTimeoutMs)
+  await tui.waitFor(
+    () => tui.screen().includes("UserSupportAgent"),
+    "configured demo recipient",
+    tuiInteractionTimeoutMs,
+  )
 }
 
 afterEach(async () => {

@@ -204,6 +204,167 @@ describe("agency-swarm npx onboarding", () => {
     ])
   })
 
+  test("prepareProjectLaunch recreates an incomplete `.venv` instead of overlaying it", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    const staleFile = path.join(dir.path, ".venv", "lib", "python3.12", "site-packages", "stale.py")
+    await mkdir(path.dirname(staleFile), { recursive: true })
+    await Bun.write(staleFile, "stale")
+
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+
+    const commands: string[][] = []
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "/usr/bin/python3.12\n3.12.7\n",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("venv")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("pip")) {
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: "dependency install failed",
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    await expect(
+      prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      }),
+    ).rejects.toThrow("Dependency install failed")
+
+    expect(confirm).not.toHaveBeenCalled()
+    expect(await Bun.file(staleFile).exists()).toBe(false)
+    expect(commands.some((cmd) => cmd.includes("venv"))).toBe(true)
+  })
+
+  test("prepareProjectLaunch recreates `.venv` when project pip is corrupted", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    const venvPython = path.join(
+      dir.path,
+      ".venv",
+      process.platform === "win32" ? "Scripts" : "bin",
+      process.platform === "win32" ? "python.exe" : "python",
+    )
+    const staleFile = path.join(dir.path, ".venv", "lib", "python3.12", "site-packages", "stale.py")
+    await mkdir(path.dirname(venvPython), { recursive: true })
+    await mkdir(path.dirname(staleFile), { recursive: true })
+    await Bun.write(venvPython, "")
+    await Bun.write(staleFile, "stale")
+
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+    const commands: string[][] = []
+    const replacementPython = process.platform === "win32" ? "C:\\Python312\\python.exe" : "/usr/bin/python3.12"
+    const replacementPythonCommands =
+      process.platform === "win32"
+        ? [["py", "-3.13"], ["py", "-3.12"], ["python"], ["python3"]]
+        : [["python3.13"], ["python3.12"], ["python3"], ["python"]]
+    let pipRuns = 0
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        if (target.endsWith(process.platform === "win32" ? "\\python.exe" : "/python")) {
+          return {
+            exited: Promise.resolve(0),
+            stdout: `${target}\n3.12.7\n`,
+            stderr: "",
+          } as never
+        }
+        if (replacementPythonCommands.some((candidate) => candidate.every((part, index) => cmd[index] === part))) {
+          return {
+            exited: Promise.resolve(0),
+            stdout: `${replacementPython}\n3.12.7\n`,
+            stderr: "",
+          } as never
+        }
+      }
+      if (cmd.includes("venv")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd)) {
+        pipRuns += 1
+        return {
+          exited: Promise.resolve(pipRuns === 1 ? 1 : 0),
+          stdout: "",
+          stderr:
+            pipRuns === 1
+              ? [
+                  "Traceback (most recent call last):",
+                  '  File "<frozen runpy>", line 198, in _run_module_as_main',
+                  "ModuleNotFoundError: No module named 'pip._internal.cli.main'",
+                ].join("\n")
+              : "",
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    })
+
+    expect(confirm).not.toHaveBeenCalled()
+    expect(await Bun.file(staleFile).exists()).toBe(false)
+    expect(commands.some((cmd) => cmd.includes("venv"))).toBe(true)
+    expect(pipRuns).toBe(2)
+    await launch?.cleanup?.()
+  })
+
   test("prepareProjectLaunch reruns the canary after rebuilding `.venv` and surfaces manifest import mismatches", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
@@ -290,9 +451,11 @@ describe("agency-swarm npx onboarding", () => {
     expect(error).toBeInstanceOf(Error)
     if (!error) throw new Error("Expected prepareProjectLaunch to fail")
     expect(error.message).toContain(
-      "Canary import failed. Check requirements.txt/pyproject.toml for agency-swarm version compatibility.",
+      "The launcher recreated the local Python environment, but it still could not import required Agency Swarm packages.",
     )
-    expect(error.message).not.toContain("Canary import failed on fallback install.")
+    expect(error.message).toContain("Check requirements.txt/pyproject.toml for agency-swarm version compatibility.")
+    expect(error.message).toContain("Check the log file at")
+    expect(error.message).not.toContain("Canary import failed")
     expect(error.message).toContain("LoadFileAttachment")
 
     const canaryCommands = commands.filter(isCanaryCommand)
@@ -774,6 +937,7 @@ describe("agency-swarm npx onboarding", () => {
     const stderrWrite = spyOn(process.stderr, "write").mockImplementation(() => true as never)
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
+    let pipRuns = 0
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
       const cmd = options?.cmd as string[] | undefined
       if (!cmd) throw new Error("Missing command")
@@ -785,11 +949,19 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (isPipInstallCommand(cmd)) {
+      if (cmd.includes("venv")) {
         return {
-          exited: Promise.resolve(1),
+          exited: Promise.resolve(0),
           stdout: "",
-          stderr: `${pipTraceback}\n`,
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd)) {
+        pipRuns += 1
+        return {
+          exited: Promise.resolve(pipRuns === 1 ? 1 : 0),
+          stdout: "",
+          stderr: pipRuns === 1 ? `${pipTraceback}\n` : "",
         } as never
       }
       if (isCanaryCommand(cmd)) {
@@ -1219,7 +1391,7 @@ describe("agency-swarm npx onboarding", () => {
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     spyOn(Date, "now").mockImplementation(() => {
       const value = now
-      now = 30001
+      now = 90001
       return value
     })
     spyOn(globalThis, "fetch").mockRejectedValue(new Error("not ready") as never)
@@ -1280,8 +1452,103 @@ describe("agency-swarm npx onboarding", () => {
     if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
     expect(killSignals).toEqual([undefined, undefined])
     expect(outcome.message).toContain(
-      "Timed out waiting for the Agency Swarm server to start. Last bridge output: bridge still starting",
+      "Timed out waiting for the Agency Swarm server to start after 90 seconds. Last bridge output: bridge still starting",
     )
+  })
+
+  test("prepareProjectLaunch labels optional bridge warnings as non-fatal on readiness timeout", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
+      recursive: true,
+    })
+    await Bun.write(
+      path.join(
+        dir.path,
+        ".venv",
+        process.platform === "win32" ? "Scripts" : "bin",
+        process.platform === "win32" ? "python.exe" : "python",
+      ),
+      "",
+    )
+
+    const realSetTimeout = globalThis.setTimeout
+    const serverStderr = createTextOutputStream(
+      [
+        "Files folder '/project/example_agent/files' does not exist. Skipping...",
+        "App token is not set. Authentication will be disabled.",
+      ].join("\n"),
+    )
+    const killSignals: Array<string | undefined> = []
+    let resolveServerExit!: (code: number) => void
+    let now = 0
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(Date, "now").mockImplementation(() => {
+      const value = now
+      now = 90001
+      return value
+    })
+    spyOn(globalThis, "fetch").mockRejectedValue(new Error("not ready") as never)
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        return {
+          exited: Promise.resolve(0),
+          stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        return {
+          exited: new Promise<number>((resolve) => {
+            resolveServerExit = resolve
+          }),
+          stderr: serverStderr.stream,
+          kill(signal?: string) {
+            killSignals.push(signal)
+            if (killSignals.length > 1) resolveServerExit(1)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    })
+    const pending = Symbol("pending")
+    const outcome = await Promise.race([
+      launch.then(
+        () => "resolved",
+        (error) => error,
+      ),
+      new Promise((resolve) => realSetTimeout(() => resolve(pending), 1500)),
+    ])
+
+    if (outcome === pending) {
+      serverStderr.close()
+      await launch.catch(() => undefined)
+    }
+
+    expect(outcome).not.toBe(pending)
+    expect(outcome).toBeInstanceOf(Error)
+    if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
+    expect(killSignals).toEqual([undefined, undefined])
+    expect(outcome.message).toContain("Timed out waiting for the Agency Swarm server to start after 90 seconds.")
+    expect(outcome.message).toContain("Bridge output only contained non-fatal startup warnings")
+    expect(outcome.message).not.toContain("Last bridge output")
   })
 
   test("prepareProjectLaunch does not fail healthy `.venv` launches when refresh logging cannot be created", async () => {
@@ -1568,7 +1835,7 @@ describe("agency-swarm npx onboarding", () => {
         agencyFile: path.join(dir.path, "agency.py"),
       }),
     ).rejects.toThrow(
-      "Canary import failed on fallback install. Inspect the stderr below and check for project-local fastapi.py/agency_swarm.py that may shadow installed packages.",
+      "The launcher recreated the local Python environment, but it still could not import required Agency Swarm packages. Check for project-local fastapi.py/agency_swarm.py files that may shadow installed packages.",
     )
   })
 

@@ -7,8 +7,9 @@ const repoRoot = path.resolve(import.meta.dir, "../..")
 const packageRoot = path.join(repoRoot, "packages", "opencode")
 const modelsFixture = path.join(packageRoot, "test", "tool", "fixtures", "models-api.json")
 const discoveryTimeoutMs = process.env.CI ? 5_000 : 500
-const initialOutputAttemptCount = process.env.CI ? 3 : 2
-const initialOutputTimeoutMs = process.env.CI ? 15_000 : 5_000
+const initialOutputAttemptCount = 2
+const initialOutputTimeoutMs = process.env.CI ? 45_000 : 5_000
+const initialOutputRetryDelayMs = process.env.CI ? 1_000 : 250
 
 export type AgencyProtocolServer = {
   baseURL: string
@@ -205,7 +206,7 @@ export async function startTui(input: {
       timeoutMs: initialOutputTimeoutMs,
       onRetry: async () => {
         await closeProcess(proc)
-        await Bun.sleep(250)
+        await Bun.sleep(initialOutputRetryDelayMs)
         proc = spawnTuiProcess({ args, cwd: input.cwd, env })
         dataReceived = false
         exitCode = undefined
