@@ -782,6 +782,10 @@ async function ensureProjectPython(directory: string) {
   if (install.code !== 0) {
     throw new Error(formatCommandFailure(install, "Dependency install failed"))
   }
+  await ensureLatestAgencySwarm(directory, [venvPython], {
+    logFile: installLogFile,
+    timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+  })
   prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
   const canary = await venvCanaryPasses([venvPython], { cwd: directory, includeStderr: true })
   if (canary.timedOut) {

@@ -239,7 +239,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 - **Launcher refreshes `agency-swarm` inside the project `.venv`**
   - Intent: keep the project backend package fresh enough for the launcher path to work.
-  - Behavior: the launcher upgrades the project `agency-swarm` install inside `.venv` before running when needed.
+  - Behavior: the launcher upgrades the project `agency-swarm` install inside `.venv` before running, including after fresh or rebuilt dependency installs.
   - Implementation: `ensureLatestAgencySwarm` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `a77de00c`
 

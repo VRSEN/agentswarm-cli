@@ -269,6 +269,82 @@ describe("agency-swarm npx onboarding", () => {
     ])
   })
 
+  test("prepareProjectLaunch refreshes agency-swarm after manifest installs before canary", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await Bun.write(path.join(dir.path, "requirements.txt"), "agency-swarm==1.9.6\n")
+
+    spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+    const commands: string[][] = []
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "/usr/bin/python3.12\n3.12.7\n",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("venv")) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPipInstallCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    })
+
+    const venvPython = getTestVenvPython(dir.path)
+    const pipCommands = commands.filter(isPipInstallCommand)
+    expect(pipCommands).toHaveLength(2)
+    expect(pipCommands[0]).toEqual([venvPython, "-m", "pip", "install", "--upgrade", "-r", "requirements.txt"])
+    expect(pipCommands[1]).toEqual([venvPython, "-m", "pip", "install", "--upgrade", "agency-swarm[fastapi,litellm]"])
+    expect(commands.findIndex((cmd) => cmd === pipCommands[1])).toBeLessThan(commands.findIndex(isCanaryCommand))
+
+    await launch?.cleanup?.()
+  })
+
   test("prepareProjectLaunch recreates an incomplete `.venv` instead of overlaying it", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
@@ -422,7 +498,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(confirm).not.toHaveBeenCalled()
     expect(await Bun.file(staleFile).exists()).toBe(false)
     expect(commands.some((cmd) => cmd.includes("venv"))).toBe(true)
-    expect(pipRuns).toBe(2)
+    expect(pipRuns).toBe(3)
     await launch?.cleanup?.()
   })
 
@@ -2617,6 +2693,15 @@ function launcherLogDirectory(directory: string) {
 
 function launcherLogFilePath(directory: string, stem: string, iso: string) {
   return path.join(launcherLogDirectory(directory), `${iso.replaceAll(":", "").replaceAll(".", "")}-${stem}.log`)
+}
+
+function getTestVenvPython(directory: string) {
+  return path.join(
+    directory,
+    ".venv",
+    process.platform === "win32" ? "Scripts" : "bin",
+    process.platform === "win32" ? "python.exe" : "python",
+  )
 }
 
 function createTextOutputStream(initial?: string) {
