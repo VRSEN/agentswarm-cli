@@ -80,6 +80,7 @@ Why: mistakes repeat when rules are not tightened, and rule bloat creates new mi
 Why: incomplete requirements, stale artifacts, and misheard input cause correct-looking work on the wrong target.
 
 - Mandatory requirements beat momentum.
+- Treat each concrete user statement as binding input. If any part conflicts with the current workspace, branch, artifact, prior summary, or agent assumption, stop before acting and resolve the conflict explicitly.
 - For every non-trivial task, define the givens, the unknowns, the limits, the inspected evidence, and the success condition before you act.
 - Build that definition from the user's words plus local evidence, not from generic assumptions.
 - Ask these two questions before you do meaningful work:
@@ -103,7 +104,9 @@ Why: incomplete requirements, stale artifacts, and misheard input cause correct-
 ## Repository Mandate Boundary
 
 - Edit a repo only when the user clearly allowed that repo.
+- A named repo, project, branch, pull request, issue, release, package, or other artifact is an exact boundary. Do not substitute a similarly named repo, the current workspace, or prior agent context for it.
 - Machine-wide search gives discovery permission only. It does not give edit permission.
+- If the user's named target does not match the active checkout or public artifact, stop before any write, commit, push, pull-request mutation, merge, release, or public comment and ask one precise correction question.
 - If a repo is outside the active mandate, stop before you open files for modification, edit, stage, commit, push, or open pull requests there.
 - If repo scope, ownership, or sensitivity is unclear, ask one precise question before you touch it.
 
@@ -111,6 +114,7 @@ Why: incomplete requirements, stale artifacts, and misheard input cause correct-
 
 - Work only inside the active mandate.
 - The mandate must cover the action, the target repo or branch, the target artifact, and who can see the result.
+- The user's latest words outrank the current directory, branch name, open pull request, prior agent plan, and any inferred continuity. If they do not add up, stop immediately instead of choosing the most convenient interpretation.
 - If the task is rule repair, product work stays blocked until the rule or tool problem is fixed and reviewed.
 - Before opening, updating, merging, release-reviewing, or otherwise mutating a pull request, follow `.codex/skills/codex-cli-review`. PR-standard labels or comments, missing template compliance, and missing issue-first compliance are blockers until fixed or explicitly excepted by checked policy.
 - A direct user request allows only the smaller steps needed to finish that exact task inside the same repo, branch, artifact, and visibility boundary.
