@@ -37,8 +37,8 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
    - If the user chooses connect, build session-scoped Agency provider config for the selected server.
 4. Prepare a local project.
    - Verify Python 3.12+ and `agency_swarm`.
-   - Reuse, repair, or create `.venv`.
-   - Upgrade the project `agency-swarm[fastapi,litellm]` install when needed.
+   - Reuse `.venv`, or repair/create it with uv.
+   - Re-run `requirements.txt` or `pyproject.toml` installs with uv when present; use launcher-managed `agency-swarm[fastapi,litellm]` only when no manifest exists.
    - Start the local FastAPI bridge and point the TUI at `local-agency`.
 5. Recover local project context for resume.
    - Use the fork run-session record when its saved directory still matches the session directory.
@@ -72,7 +72,8 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
 - Expected path:
   - Offer `Use detected Agency Swarm project` as the first onboarding choice.
   - Reuse a healthy `.venv`.
-  - Upgrade the existing project `agency-swarm[fastapi,litellm]` install.
+  - Re-run `requirements.txt` or `pyproject.toml` installs with uv while respecting pins, without a second unpinned `agency-swarm` upgrade.
+  - Use uv for launcher-managed fallback installs into `.venv`.
   - Rebuild a broken `.venv` when Python 3.12+ is available.
   - Start the local FastAPI bridge and open the TUI in Run mode against `local-agency`.
 - Expected failures:

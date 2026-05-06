@@ -237,10 +237,10 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `ensureProjectPython`, `installProjectDependencies`, and `venvCanaryPasses` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `f10d9d84`
 
-- **Launcher refreshes `agency-swarm` inside the project `.venv`**
-  - Intent: keep the project backend package fresh enough for the launcher path to work.
-  - Behavior: the launcher upgrades the project `agency-swarm` install inside `.venv` before running when needed.
-  - Implementation: `ensureLatestAgencySwarm` in `packages/opencode/src/agency-swarm/npx.ts`.
+- **Launcher manages Python dependency setup with uv**
+  - Intent: keep the project backend package ready for the launcher path without overriding user dependency manifests.
+  - Behavior: the launcher creates `.venv` with uv, re-runs `requirements.txt` or `pyproject.toml` installs with uv when present, and only installs or refreshes `agency-swarm[fastapi,litellm]` when no manifest exists.
+  - Implementation: `installProjectDependencies` and `ensureLatestAgencySwarm` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `a77de00c`
 
 - **Run-mode attachments use structured Agency Swarm messages**
