@@ -20,7 +20,7 @@ import { CODEX_API_BASE_URL, extractAccountId, refreshAccessToken } from "@/plug
 import { Provider } from "@/provider/provider"
 import { Session } from "@/session"
 import { MessageV2 } from "@/session/message-v2"
-import { SessionID } from "@/session/schema"
+import { PartID, SessionID } from "@/session/schema"
 import { Log } from "@/util"
 import semver from "semver"
 import {
@@ -97,6 +97,11 @@ export namespace SessionAgencySwarm {
     started: boolean
     running: boolean
     done: boolean
+  }
+
+  type ToolOutput = {
+    output: string
+    attachments?: MessageV2.FilePart[]
   }
 
   export function optionsFromProvider(provider: Provider.Info | undefined): RuntimeOptions {
@@ -792,12 +797,45 @@ export namespace SessionAgencySwarm {
       return stringifyToolOutput(asRecord(item["input"]) ?? asRecord(item["action"]) ?? {})
     }
 
-    const toolOutput = (itemType: string, item: Record<string, unknown> | undefined) => {
-      if (!item) return ""
-      if (item["output"] !== undefined) return stringifyToolOutput(item["output"])
-      if (itemType === "file_search_call") return stringifyToolOutput(item["results"] ?? item)
-      if (itemType === "mcp_call") return stringifyToolOutput(item["result"] ?? item)
-      return stringifyToolOutput(item)
+    const toolOutput = (callID: string, itemType: string, item: Record<string, unknown> | undefined) => {
+      if (!item) return { output: "" }
+      if (itemType === "image_generation_call") {
+        const result = asString(item["result"])
+        if (result) {
+          const format = imageGenerationFormat(item)
+          return {
+            output: "Generated image attached.",
+            attachments: [
+              {
+                id: PartID.ascending(),
+                sessionID: input.sessionID,
+                messageID: input.assistantMessage.id,
+                type: "file" as const,
+                mime: `image/${format.mime}`,
+                filename: `image-generation-${callID}.${format.extension}`,
+                url: `data:image/${format.mime};base64,${result}`,
+              },
+            ],
+          }
+        }
+      }
+      if (item["output"] !== undefined) return { output: stringifyToolOutput(item["output"]) }
+      if (itemType === "file_search_call") return { output: stringifyToolOutput(item["results"] ?? item) }
+      if (itemType === "mcp_call") return { output: stringifyToolOutput(item["result"] ?? item) }
+      return { output: stringifyToolOutput(item) }
+    }
+
+    const imageGenerationFormat = (item: Record<string, unknown>) => {
+      const value = asString(item["output_format"]) ?? asString(item["format"])
+      switch (value?.toLowerCase()) {
+        case "jpeg":
+        case "jpg":
+          return { mime: "jpeg", extension: "jpg" }
+        case "webp":
+          return { mime: "webp", extension: "webp" }
+        default:
+          return { mime: "png", extension: "png" }
+      }
     }
 
     const isToolOutputItem = (itemType: string) => itemType.endsWith("_output") || isAgencyToolOutputType(itemType)
@@ -1140,7 +1178,7 @@ export namespace SessionAgencySwarm {
     const completeTool = (
       callID: string,
       toolName: string,
-      output: string,
+      output: string | ToolOutput,
       meta: AgencySwarmEventMeta,
       extra?: Record<string, unknown>,
     ) => {
@@ -1150,17 +1188,19 @@ export namespace SessionAgencySwarm {
         return parts
       }
       tool.done = true
+      const result = typeof output === "string" ? { output } : output
       parts.push({
         type: "tool-result",
         toolCallId: callID,
         input: parseToolInput(tool.raw),
         output: {
-          output,
+          output: result.output,
           title: "",
           metadata: mergeMeta(meta, {
             call_id: callID,
             ...(extra ?? {}),
           }),
+          attachments: result.attachments,
         },
       })
       return parts
@@ -1254,6 +1294,20 @@ export namespace SessionAgencySwarm {
         yield* completeTool(output.callID, tool.tool, output.output, output.metadata, { item_type: output.itemType })
       }
 
+      for (const image of extractImageGenerationCallsFromMessages(newMessages)) {
+        const tool = ensureTool(image.callID, toolNameFor(image.callID))
+        yield* completeTool(
+          image.callID,
+          tool.tool,
+          toolOutput(image.callID, "image_generation_call", image.item),
+          image.metadata,
+          {
+            item_type: "image_generation_call",
+            source: "messages",
+          },
+        )
+      }
+
       for (const raw of newMessages) {
         const message = asRecord(raw)
         if (!message || asString(message["type"]) !== "message") continue
@@ -1269,6 +1323,29 @@ export namespace SessionAgencySwarm {
           ...agentUpdatedHandoffMetadata(messageMeta.agent),
         })
       }
+    }
+
+    const extractImageGenerationCallsFromMessages = (newMessages: unknown[]) => {
+      const images: Array<{
+        callID: string
+        item: Record<string, unknown>
+        metadata: AgencySwarmEventMeta
+      }> = []
+      for (const raw of newMessages) {
+        const message = asRecord(raw)
+        if (!message) continue
+        if (asString(message["type"]) !== "image_generation_call") continue
+        if (!asString(message["result"])) continue
+        const callID = asString(message["call_id"]) || asString(message["id"])
+        if (!callID) continue
+        const messageMetadata = asRecord(message["metadata"])
+        images.push({
+          callID,
+          item: message,
+          metadata: extractEventMeta(messageMetadata ? { ...messageMetadata, ...message } : message),
+        })
+      }
+      return images
     }
 
     const handleOutputItemAdded = (
@@ -1324,7 +1401,7 @@ export namespace SessionAgencySwarm {
         return completeTool(
           callID,
           tool.tool,
-          toolOutput(itemType, item),
+          toolOutput(callID, itemType, item),
           eventMeta,
           outputMeta(outputIndex, {
             item_id: itemID,
@@ -1373,7 +1450,7 @@ export namespace SessionAgencySwarm {
         return completeTool(
           callID,
           tool.tool,
-          toolOutput(itemType, item),
+          toolOutput(callID, itemType, item),
           eventMeta,
           outputMeta(outputIndex, { item_type: itemType }),
         )
@@ -1397,7 +1474,7 @@ export namespace SessionAgencySwarm {
         if (itemType === "function_call") {
           return parts
         }
-        return [...parts, ...completeTool(callID, toolName, toolOutput(itemType, item), eventMeta, metadata)]
+        return [...parts, ...completeTool(callID, toolName, toolOutput(callID, itemType, item), eventMeta, metadata)]
       }
 
       return []
@@ -1437,11 +1514,20 @@ export namespace SessionAgencySwarm {
         if (!callID) return []
         const tool = ensureTool(callID, toolNameFor(callID))
         const output = item?.["output"] ?? rawItem["output"]
-        if (output === undefined) return []
-        return completeTool(callID, tool.tool, stringifyToolOutput(output), eventMeta, {
-          item_type: itemType || undefined,
-          source: "run_item_stream_event",
-        })
+        if (output === undefined && !(itemType === "image_generation_call" && rawItem["result"] !== undefined))
+          return []
+        return completeTool(
+          callID,
+          tool.tool,
+          itemType === "image_generation_call" && rawItem["result"] !== undefined
+            ? toolOutput(callID, itemType, rawItem)
+            : stringifyToolOutput(output),
+          eventMeta,
+          {
+            item_type: itemType || undefined,
+            source: "run_item_stream_event",
+          },
+        )
       }
 
       if (name === "message_output_created" && itemType === "message") {

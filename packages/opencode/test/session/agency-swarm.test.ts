@@ -2960,6 +2960,98 @@ describe("session.agency-swarm", () => {
     expect(types.at(-2)).toBe("finish-step")
   })
 
+  test("stream maps OpenAI image generation calls to image attachments", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: {
+              type: "image_generation_call",
+              id: "ig_1",
+              status: "in_progress",
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "1",
+            item: {
+              type: "image_generation_call",
+              id: "ig_1",
+              status: "completed",
+              result: "aW1hZ2U=",
+              output_format: "png",
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    const result = events.find((event) => event.type === "tool-result")
+    expect(result?.output?.output).toBe("Generated image attached.")
+    expect(result?.output?.attachments?.[0]).toMatchObject({
+      type: "file",
+      mime: "image/png",
+      filename: "image-generation-ig_1.png",
+      url: "data:image/png;base64,aW1hZ2U=",
+    })
+  })
+
+  test("stream maps message-frame image generation calls to image attachments", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "messages",
+        payload: {
+          new_messages: [
+            {
+              type: "image_generation_call",
+              id: "ig_messages",
+              status: "completed",
+              result: "aW1hZ2U=",
+              output_format: "webp",
+            },
+          ],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    const result = events.find((event) => event.type === "tool-result")
+    expect(result?.output?.output).toBe("Generated image attached.")
+    expect(result?.output?.attachments?.[0]).toMatchObject({
+      type: "file",
+      mime: "image/webp",
+      filename: "image-generation-ig_messages.webp",
+      url: "data:image/webp;base64,aW1hZ2U=",
+    })
+  })
+
   test("stream skips stale configured recipient agent based on live metadata", async () => {
     mockHistory()
     let sentRecipient: string | undefined

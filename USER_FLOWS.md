@@ -165,6 +165,7 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
   - Surface bridge error frames as session errors.
   - Strip Codex OAuth from non-OpenAI LiteLLM agency runs.
   - Preserve Agency tool-output metadata.
+  - Render hosted image-generation tool results as image attachments, not base64 text.
   - Hide Builder, Plan, `/editor`, `/variants`, `/init`, `/review`, and other upstream-native surfaces that are disabled in Run mode.
   - Limit `/models` and `/auth` to Agency-supported providers.
   - Keep `agency-swarm/default` active over stale stored model state until the user changes it.

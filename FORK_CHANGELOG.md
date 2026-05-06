@@ -113,6 +113,12 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `findCallID` and the `tool_output` branch in `handleRunItemEvent` in `packages/opencode/src/session/agency-swarm.ts`.
   - Added by: `e28e3a02`
 
+- **Hosted image generation outputs render as attachments**
+  - Intent: show OpenAI Agents SDK image-generation results as generated images instead of dumping base64 payloads into the tool output text.
+  - Behavior: Agency Swarm `image_generation_call` results attach a data-url image file to the tool result and keep the visible output concise.
+  - Implementation: `toolOutput` in `packages/opencode/src/session/agency-swarm.ts`.
+  - Added by: this PR.
+
 ## CLI/TUI UX
 
 - **`/auth` is separate from `/connect`**
