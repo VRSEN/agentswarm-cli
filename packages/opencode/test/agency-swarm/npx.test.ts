@@ -674,6 +674,75 @@ describe("agency-swarm npx onboarding", () => {
     await launch?.cleanup?.()
   })
 
+  test("prepareProjectLaunch preserves corrupted existing venv when rebuild needs missing uv", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await writeVenvPython(dir.path)
+    const staleFile = path.join(dir.path, ".venv", "lib", "python3.12", "site-packages", "stale.py")
+    await mkdir(path.dirname(staleFile), { recursive: true })
+    await Bun.write(staleFile, "stale")
+
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+
+    const commands: string[][] = []
+    const replacementPython = process.platform === "win32" ? "C:\\Python312\\python.exe" : "/usr/bin/python3.12"
+    let uvVersionAttempts = 0
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (isUvVersionCommand(cmd)) {
+        uvVersionAttempts += 1
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: "uv: command not found",
+        } as never
+      }
+      commands.push(cmd)
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        if (target.endsWith(process.platform === "win32" ? "\\python.exe" : "/python")) {
+          return {
+            exited: Promise.resolve(0),
+            stdout: `${target}\n3.12.7\n`,
+            stderr: "",
+          } as never
+        }
+        if (isReplacementPythonProbe(cmd)) {
+          return {
+            exited: Promise.resolve(0),
+            stdout: `${replacementPython}\n3.12.7\n`,
+            stderr: "",
+          } as never
+        }
+      }
+      if (isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: "ModuleNotFoundError: No module named 'agency_swarm'",
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    await expect(
+      prepareProjectLaunch({
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+      }),
+    ).rejects.toThrow("uv was not found. Install uv and rerun `npx @vrsen/agentswarm`")
+
+    expect(confirm).not.toHaveBeenCalled()
+    expect(uvVersionAttempts).toBeGreaterThanOrEqual(2)
+    expect(await Bun.file(getTestVenvPython(dir.path)).exists()).toBe(true)
+    expect(await Bun.file(staleFile).exists()).toBe(true)
+    expect(commands.some(isUvVenvCommand)).toBe(false)
+    expect(commands.some(isUvPipInstallCommand)).toBe(false)
+  })
+
   test("prepareProjectLaunch recreates an incomplete `.venv` instead of overlaying it", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)

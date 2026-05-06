@@ -727,6 +727,7 @@ async function ensureProjectPython(directory: string) {
   const rebuildCmd = corruptedVenv ? [detected.executable] : detected.cmd
   prompts.log.info(`Detected Python: ${formatPython(detected, rebuildCmd)}`)
 
+  const uv = corruptedVenv ? await findUv() : undefined
   if (corruptedVenv) {
     prompts.log.warn("Project `.venv` is incomplete or corrupted. Rebuilding...")
     await rm(venvDir, { recursive: true, force: true })
@@ -752,10 +753,10 @@ async function ensureProjectPython(directory: string) {
     }
   }
 
-  const uv = await findUv()
+  const rebuildUv = uv ?? (await findUv())
   const spinner = prompts.spinner()
   spinner.start("Creating `.venv`")
-  const created = await runCommand([...uv.cmd, "venv", "--python", detected.executable, ".venv"], {
+  const created = await runCommand([...rebuildUv.cmd, "venv", "--python", detected.executable, ".venv"], {
     cwd: directory,
   })
   if (created.code !== 0) {
