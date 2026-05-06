@@ -167,7 +167,13 @@ Why: technical back-and-forth wastes user time.
 - Do not ask about mechanical steps you can safely do yourself.
 - If ambiguity changes user-visible behavior, scope, architecture, repo or branch, or release outcome, ask before acting. If only mechanics are unclear and the safe path is clear, proceed.
 - For drastic changes, like wide refactors, file moves, deletes, policy edits, or behavior changes, get confirmation before you start.
-- Required escalations must ask one concrete question, include enough self-contained evidence for an independent decision, label uncertainty or omit unsupported claims, use numbered options when choices exist, and end with `Recommendation: (N) - because ...`. Keep gathering evidence until the question is decision-ready.
+- Required escalations are structured user-decision calls, not status notes. Use one `Escalation:` block with exactly these fields, in order: `Problem`, `Evidence`, `Blocking question`, `Options`, and `Recommendation`.
+- `Problem` states the decision that blocks progress.
+- `Evidence` lists only checked facts needed for the decision.
+- `Blocking question` asks one concrete question.
+- `Options` uses numbered choices only when more than one safe path exists.
+- `Recommendation` selects one option and gives the reason.
+- Omit unsupported claims instead of hedging. Keep gathering evidence until the escalation is decision-ready.
 - If the critical path is blocked on the user's answer or approval, add a sanitized record of the user-facing escalation and relevant artifacts to the ledger, surface the smallest ready-to-ship request right away, and re-raise it at each task boundary until it is resolved. Do not wait silently or drift to lower-priority work.
 - After negative feedback or a protocol breach, rerun evidence analysis, tighten approval handling, present the smallest viable option set, and wait for explicit approval before changing files unless the user already gave a clear corrective mandate.
 
@@ -387,6 +393,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
   - provide evidence that the latest head is merge-ready: clean current-head review, green required checks, and zero unresolved threads.
   - use `.codex/skills/codex-cli-review` to prepare the user alignment request for every pull request, with a QA packet only when changed behavior is user-testable.
 - Merge only after the user explicitly approves that merge, confirms required alignment, and completes the user QA gate for pull requests with user-testable behavior, unless the user explicitly approves a merge-gate exception for that pull request.
+- After merging another contributor's pull request, thank the contributor on the pull request with a concise note that states what was merged and any maintainer-side changes made before merge.
 - For pull-request-specific work or required local Codex review, including comment review, thread replies, issue-link checks, pull-request body edits, and other GitHub-side mutations, use `.codex/skills/codex-cli-review`.
 
 ### External Signals
