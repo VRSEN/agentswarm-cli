@@ -607,6 +607,73 @@ describe("agency-swarm npx onboarding", () => {
     await launch?.cleanup?.()
   })
 
+  test("prepareProjectLaunch keeps a healthy existing venv when uv is missing", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await writeVenvPython(dir.path)
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    const warn = spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+    const commands: string[][] = []
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+      if (isUvVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: "uv: command not found",
+        } as never
+      }
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        return {
+          exited: Promise.resolve(0),
+          stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    })
+
+    expect(warn).toHaveBeenCalledWith(
+      "uv was not found, so project dependency refresh was skipped. The current venv package set will be used as-is.",
+    )
+    expect(commands.some(isUvPipInstallCommand)).toBe(false)
+    expect(commands.some(isUvVenvCommand)).toBe(false)
+    expect(commands.some(isCanaryCommand)).toBe(true)
+
+    await launch?.cleanup?.()
+  })
+
   test("prepareProjectLaunch recreates an incomplete `.venv` instead of overlaying it", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)

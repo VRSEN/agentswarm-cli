@@ -851,31 +851,42 @@ async function refreshProjectDependencies(
     timeoutMs: number
   },
 ): Promise<{ installerFailed: boolean }> {
-  if (!(await hasDependencyManifest(directory))) {
-    return ensureLatestAgencySwarm(directory, venvPython, options)
-  }
+  try {
+    if (!(await hasDependencyManifest(directory))) {
+      return await ensureLatestAgencySwarm(directory, venvPython, options)
+    }
 
-  const result = await installProjectDependencies(directory, venvPython, options)
-  if (result.timedOut) {
+    const result = await installProjectDependencies(directory, venvPython, options)
+    if (result.timedOut) {
+      prompts.log.warn(
+        result.logFile
+          ? `Timed out while refreshing project dependencies after ${formatInstallDuration(options.timeoutMs)}. Check the log file at ${result.logFile}.`
+          : `Timed out while refreshing project dependencies after ${formatInstallDuration(options.timeoutMs)}.`,
+      )
+      return { installerFailed: false }
+    }
+    if (result.code !== 0) {
+      const summary = summarizeCommandOutput(result)
+      prompts.log.warn(
+        summary
+          ? `Could not refresh project dependencies from the manifest. Installer output: ${summary}.${
+              result.logFile ? ` Check the log file at ${result.logFile}.` : ""
+            } The current venv package set will be used as-is.`
+          : "Could not refresh project dependencies from the manifest. The current venv package set will be used as-is.",
+      )
+      return { installerFailed: isUvLaunchFailure(`${result.stderr}\n${result.stdout}`) }
+    }
+  } catch (error) {
+    if (!isUvUnavailableError(error)) throw error
     prompts.log.warn(
-      result.logFile
-        ? `Timed out while refreshing project dependencies after ${formatInstallDuration(options.timeoutMs)}. Check the log file at ${result.logFile}.`
-        : `Timed out while refreshing project dependencies after ${formatInstallDuration(options.timeoutMs)}.`,
+      "uv was not found, so project dependency refresh was skipped. The current venv package set will be used as-is.",
     )
-    return { installerFailed: false }
-  }
-  if (result.code !== 0) {
-    const summary = summarizeCommandOutput(result)
-    prompts.log.warn(
-      summary
-        ? `Could not refresh project dependencies from the manifest. Installer output: ${summary}.${
-            result.logFile ? ` Check the log file at ${result.logFile}.` : ""
-          } The current venv package set will be used as-is.`
-        : "Could not refresh project dependencies from the manifest. The current venv package set will be used as-is.",
-    )
-    return { installerFailed: isUvLaunchFailure(`${result.stderr}\n${result.stdout}`) }
   }
   return { installerFailed: false }
+}
+
+function isUvUnavailableError(error: unknown) {
+  return error instanceof Error && error.message.includes("uv was not found")
 }
 
 async function formatPostInstallCanaryFailure(
