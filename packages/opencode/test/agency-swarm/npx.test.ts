@@ -6,6 +6,7 @@ import * as prompts from "@clack/prompts"
 import {
   buildAgencyConfig,
   buildPythonEnv,
+  collectUnixPythonCandidates,
   detectAgencyProject,
   formatProjectLabel,
   LAUNCHER_ENTRY_ENV,
@@ -141,6 +142,70 @@ describe("agency-swarm npx onboarding", () => {
 
     expect(env.PYTHONPATH).toBe(`/tmp/project${path.delimiter}/existing/path`)
   })
+
+  test.skipIf(process.platform === "win32")(
+    "collectUnixPythonCandidates discovers any python3.<minor> on PATH and orders them oldest-first",
+    async () => {
+      await using oldDir = await tmpdir()
+      await using newDir = await tmpdir()
+      await Bun.write(path.join(oldDir.path, "python3.12"), "")
+      await Bun.write(path.join(newDir.path, "python3.14"), "")
+      await Bun.write(path.join(newDir.path, "python3"), "")
+      await Bun.write(path.join(newDir.path, "python3.99"), "") // far-future version
+
+      const originalPath = process.env.PATH
+      process.env.PATH = [oldDir.path, newDir.path].join(":")
+      try {
+        const candidates = await collectUnixPythonCandidates()
+        const versioned = candidates.map(([name]) => name).filter((name) => /^python3\.\d+$/.test(name))
+        expect(versioned).toEqual(["python3.12", "python3.14", "python3.99"])
+        expect(candidates.at(-2)).toEqual(["python3"])
+        expect(candidates.at(-1)).toEqual(["python"])
+      } finally {
+        process.env.PATH = originalPath
+      }
+    },
+  )
+
+  test.skipIf(process.platform === "win32")(
+    "collectUnixPythonCandidates finds python3.14 when it is the only supported versioned binary",
+    async () => {
+      await using dir = await tmpdir()
+      await Bun.write(path.join(dir.path, "python3.9"), "")
+      await Bun.write(path.join(dir.path, "python3.14"), "")
+
+      const originalPath = process.env.PATH
+      process.env.PATH = dir.path
+      try {
+        const candidates = await collectUnixPythonCandidates()
+        expect(candidates.map(([name]) => name)).toEqual(["python3.14", "python3", "python"])
+      } finally {
+        process.env.PATH = originalPath
+      }
+    },
+  )
+
+  test.skipIf(process.platform === "win32")(
+    "collectUnixPythonCandidates skips python3.<minor> below 3.12 and ignores junk entries",
+    async () => {
+      await using dir = await tmpdir()
+      await Bun.write(path.join(dir.path, "python3.9"), "")
+      await Bun.write(path.join(dir.path, "python3.11"), "")
+      await Bun.write(path.join(dir.path, "python3.13"), "")
+      await Bun.write(path.join(dir.path, "python3.13-config"), "")
+      await Bun.write(path.join(dir.path, "python"), "")
+
+      const originalPath = process.env.PATH
+      process.env.PATH = dir.path
+      try {
+        const candidates = await collectUnixPythonCandidates()
+        const versioned = candidates.map(([name]) => name).filter((name) => /^python3\.\d+$/.test(name))
+        expect(versioned).toEqual(["python3.13"])
+      } finally {
+        process.env.PATH = originalPath
+      }
+    },
+  )
 
   test("prepareProjectLaunch installs LiteLLM extras when no dependency manifest exists", async () => {
     await using dir = await tmpdir()
@@ -282,10 +347,6 @@ describe("agency-swarm npx onboarding", () => {
 
     const commands: string[][] = []
     const replacementPython = process.platform === "win32" ? "C:\\Python312\\python.exe" : "/usr/bin/python3.12"
-    const replacementPythonCommands =
-      process.platform === "win32"
-        ? [["py", "-3.13"], ["py", "-3.12"], ["python"], ["python3"]]
-        : [["python3.13"], ["python3.12"], ["python3"], ["python"]]
     let pipRuns = 0
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
       const cmd = options?.cmd as string[] | undefined
@@ -300,7 +361,7 @@ describe("agency-swarm npx onboarding", () => {
             stderr: "",
           } as never
         }
-        if (replacementPythonCommands.some((candidate) => candidate.every((part, index) => cmd[index] === part))) {
+        if (isReplacementPythonProbe(cmd)) {
           return {
             exited: Promise.resolve(0),
             stdout: `${replacementPython}\n3.12.7\n`,
@@ -406,7 +467,7 @@ describe("agency-swarm npx onboarding", () => {
             stderr: "",
           } as never
         }
-        if (cmd[0] === "python3.12") {
+        if (isReplacementPythonProbe(cmd)) {
           return {
             exited: Promise.resolve(0),
             stdout: `/usr/bin/python3.12\n3.12.7\n`,
@@ -2513,7 +2574,7 @@ function mockPrepareProjectLaunchCanaryFailure(canaryStderr: string) {
           stderr: "",
         } as never
       }
-      if (cmd[0] === "python3.12") {
+      if (isReplacementPythonProbe(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "/usr/bin/python3.12\n3.12.7\n",
@@ -2587,6 +2648,15 @@ function createTextOutputStream(initial?: string) {
 
 function isPipInstallCommand(cmd: string[]) {
   return cmd[1] === "-m" && cmd[2] === "pip" && cmd[3] === "install"
+}
+
+function isReplacementPythonProbe(cmd: string[]) {
+  const target = cmd[0] ?? ""
+  if (process.platform === "win32") {
+    if (target === "py" && (cmd[1]?.startsWith("-3.") ?? false)) return true
+    return target === "python" || target === "python3"
+  }
+  return target === "python" || target === "python3" || /^python3\.\d+$/.test(target)
 }
 
 function isCanaryCommand(cmd: string[]) {

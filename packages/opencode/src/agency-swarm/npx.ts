@@ -3,7 +3,7 @@ import net from "node:net"
 import os from "node:os"
 import path from "node:path"
 import { createWriteStream, existsSync, statSync } from "node:fs"
-import { mkdir, mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { AgencySwarmRunSession } from "./run-session"
 import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
@@ -1203,11 +1203,37 @@ async function hasGitHubTemplateFlow() {
   return auth.code === 0
 }
 
+// Walk $PATH for python3.<minor> binaries before trying unqualified names. Some
+// installers leave `python3` pointed at an older system interpreter while exposing
+// supported versions only through their fully qualified names, such as python3.14.
+// Prefer the oldest supported version when several are installed.
+export async function collectUnixPythonCandidates(): Promise<string[][]> {
+  const found = new Map<string, number>()
+  for (const dir of (process.env.PATH ?? "").split(":")) {
+    if (!dir) continue
+    let entries: string[]
+    try {
+      entries = await readdir(dir)
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      const match = entry.match(/^python3\.(\d+)$/)
+      if (!match) continue
+      const minor = Number(match[1])
+      if (minor < 12) continue
+      if (!found.has(entry)) found.set(entry, minor)
+    }
+  }
+  const versioned = [...found.entries()].sort(([, a], [, b]) => a - b).map(([name]) => [name])
+  return [...versioned, ["python3"], ["python"]]
+}
+
 async function findPythonExecutable(excludeUnder?: string) {
   const candidates: string[][] =
     process.platform === "win32"
       ? [["py", "-3.13"], ["py", "-3.12"], ["python"], ["python3"]]
-      : [["python3.13"], ["python3.12"], ["python3"], ["python"]]
+      : await collectUnixPythonCandidates()
 
   const excludeRoot = excludeUnder ? path.resolve(excludeUnder) : undefined
   const excludePrefix = excludeRoot ? excludeRoot + path.sep : undefined
