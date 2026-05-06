@@ -168,6 +168,24 @@ describe("agency-swarm npx onboarding", () => {
   )
 
   test.skipIf(process.platform === "win32")(
+    "collectUnixPythonCandidates finds python3.14 when it is the only supported versioned binary",
+    async () => {
+      await using dir = await tmpdir()
+      await Bun.write(path.join(dir.path, "python3.9"), "")
+      await Bun.write(path.join(dir.path, "python3.14"), "")
+
+      const originalPath = process.env.PATH
+      process.env.PATH = dir.path
+      try {
+        const candidates = await collectUnixPythonCandidates()
+        expect(candidates.map(([name]) => name)).toEqual(["python3.14", "python3", "python"])
+      } finally {
+        process.env.PATH = originalPath
+      }
+    },
+  )
+
+  test.skipIf(process.platform === "win32")(
     "collectUnixPythonCandidates skips python3.<minor> below 3.12 and ignores junk entries",
     async () => {
       await using dir = await tmpdir()

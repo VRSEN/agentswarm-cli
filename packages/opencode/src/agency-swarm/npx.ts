@@ -1203,17 +1203,10 @@ async function hasGitHubTemplateFlow() {
   return auth.code === 0
 }
 
-// Walk $PATH for python3.<minor> binaries and order them oldest-first within the
-// supported range. Hardcoded candidates (e.g. python3.13, python3.12) go stale at
-// every Python release and miss versions installed only with their fully-qualified
-// name — for example Homebrew installs python@3.14 as a dependency without
-// overriding the unversioned `python3`, which on macOS still resolves to Apple's
-// stock 3.9.6, so probing the bare `python3` reports an unsupported interpreter.
-//
-// We prefer the oldest >=3.12 because agency-swarm's pinned dependency graph
-// historically lags behind the newest CPython release (e.g. agency-swarm 1.9.7
-// pins datamodel-code-generator<0.34, whose PythonVersion enum tops out at 3.13),
-// so an older interpreter is the safer default when multiple are installed.
+// Walk $PATH for python3.<minor> binaries before trying unqualified names. Some
+// installers leave `python3` pointed at an older system interpreter while exposing
+// supported versions only through their fully qualified names, such as python3.14.
+// Prefer the oldest supported version when several are installed.
 export async function collectUnixPythonCandidates(): Promise<string[][]> {
   const found = new Map<string, number>()
   for (const dir of (process.env.PATH ?? "").split(":")) {
