@@ -423,6 +423,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 ## Documentation Rules
 
 - Keep private process out of public repo artifacts. Public pull-request descriptions, comments, issues, and docs must state final intent, technical facts, and reviewer-relevant context only. Do not mention private chats, ledgers, internal drafts, personal ownership cues, or wording that makes the work look externally misaligned.
+- Public artifacts must never expose internal ledger identifiers, source pointers, archive references, or private task labels. Replace them with public issue, pull-request, commit, release, or plain-language references while preserving every useful technical sentence.
 - Do not publish work-in-progress decision artifacts. Intermediate classification files, audit reports, keep/drop decision sheets, and other internal review artifacts stay internal. Keep them under `.codex/internal/` (gitignored) or `/tmp/`. Exception: if the user explicitly asks for a public review artifact.
 - Why: public process exposure creates noise for reviewers, leaks internal unclassified problems, and muddles what the repo actually ships.
 - Do not mention upstream fork origins in user-facing docs unless the user asked for that comparison.

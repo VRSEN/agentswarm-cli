@@ -24,6 +24,7 @@ Use this skill when task state must survive beyond the current chat or when a re
 13. Before opening a new PR for ongoing work, record the existing related PR and why it cannot be reused; if that reason is missing, reuse the existing PR instead.
 14. Before creating a public issue, pull request, docs page, or release note from ledger work, search the active ledger, archive, open and closed issues, related pull requests, and recent history; reuse or update existing artifacts when they cover the work.
 15. Track GitHub issue links on the relevant ledger item. Public bug issues should preserve useful repro details, evidence, expected behavior, and related links unless the details are sensitive.
+16. Never copy ledger identifiers, source pointers, archive references, private task labels, or internal task status into public artifacts. Convert them to public issue, pull-request, commit, release, or plain-language references and keep the useful technical content.
 
 ## CLI
 
