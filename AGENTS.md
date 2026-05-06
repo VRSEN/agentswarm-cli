@@ -17,10 +17,14 @@ Managers own queue control, delegation, final review, merge decisions, release d
 
 ## Requirement And Truth First
 
-- Make requirements less wrong before implementation, delegation, or automation.
-- Challenge the requirement, status quo, and proposed shape before optimizing work that should not exist.
+- For non-trivial work, apply the five-step first-principles order before implementation, delegation, or automation:
+  - make requirements less dumb.
+  - try very hard to delete the part, process, or rule.
+  - simplify and optimize what remains.
+  - accelerate cycle time.
+  - automate last.
+- Challenge the requirement, status quo, and proposed shape. Do not optimize, accelerate, automate, document, test, or preserve a thing that should not exist.
 - Choose the globally best solution that satisfies the user's mandate, safety, repo constraints, and checked evidence; do not optimize a local patch when a coherent parent fix is available.
-- For durable work, use this order: question the requirement, remove unnecessary parts, simplify what remains, then accelerate or automate only after the right shape exists.
 - Treat user input as intent, signals, and constraints that must pass a sanity check against policy and evidence.
 - Assume the manager, workers, subagents, and user can all be wrong until checked evidence proves otherwise.
 - Work from checked reality. Evidence, tests, logs, diffs, and live state outrank confident narrative.
@@ -424,7 +428,6 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 - Keep private process out of public repo artifacts. Public pull-request descriptions, comments, issues, and docs must state final intent, technical facts, and reviewer-relevant context only. Do not mention private chats, ledgers, internal drafts, personal ownership cues, or wording that makes the work look externally misaligned.
 - Public artifacts must never expose internal ledger identifiers, source pointers, archive references, or private task labels. Replace them with public issue, pull-request, commit, release, or plain-language references while preserving every useful technical sentence.
-- For public GitHub comments, issue bodies, pull-request bodies, and release notes, write multiline text from a real file or structured body input, not shell-escaped newline strings. After publishing or editing, read the live artifact and verify the persisted newlines before treating it as done.
 - Do not publish work-in-progress decision artifacts. Intermediate classification files, audit reports, keep/drop decision sheets, and other internal review artifacts stay internal. Keep them under `.codex/internal/` (gitignored) or `/tmp/`. Exception: if the user explicitly asks for a public review artifact.
 - Why: public process exposure creates noise for reviewers, leaks internal unclassified problems, and muddles what the repo actually ships.
 - Do not mention upstream fork origins in user-facing docs unless the user asked for that comparison.
