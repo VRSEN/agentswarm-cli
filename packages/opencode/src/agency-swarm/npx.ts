@@ -3,7 +3,7 @@ import net from "node:net"
 import os from "node:os"
 import path from "node:path"
 import { createWriteStream, existsSync, statSync } from "node:fs"
-import { mkdir, mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { AgencySwarmRunSession } from "./run-session"
 import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
@@ -1203,11 +1203,44 @@ async function hasGitHubTemplateFlow() {
   return auth.code === 0
 }
 
+// Walk $PATH for python3.<minor> binaries and order them oldest-first within the
+// supported range. Hardcoded candidates (e.g. python3.13, python3.12) go stale at
+// every Python release and miss versions installed only with their fully-qualified
+// name — for example Homebrew installs python@3.14 as a dependency without
+// overriding the unversioned `python3`, which on macOS still resolves to Apple's
+// stock 3.9.6, so probing the bare `python3` reports an unsupported interpreter.
+//
+// We prefer the oldest >=3.12 because agency-swarm's pinned dependency graph
+// historically lags behind the newest CPython release (e.g. agency-swarm 1.9.7
+// pins datamodel-code-generator<0.34, whose PythonVersion enum tops out at 3.13),
+// so an older interpreter is the safer default when multiple are installed.
+export async function collectUnixPythonCandidates(): Promise<string[][]> {
+  const found = new Map<string, number>()
+  for (const dir of (process.env.PATH ?? "").split(":")) {
+    if (!dir) continue
+    let entries: string[]
+    try {
+      entries = await readdir(dir)
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      const match = entry.match(/^python3\.(\d+)$/)
+      if (!match) continue
+      const minor = Number(match[1])
+      if (minor < 12) continue
+      if (!found.has(entry)) found.set(entry, minor)
+    }
+  }
+  const versioned = [...found.entries()].sort(([, a], [, b]) => a - b).map(([name]) => [name])
+  return [...versioned, ["python3"], ["python"]]
+}
+
 async function findPythonExecutable(excludeUnder?: string) {
   const candidates: string[][] =
     process.platform === "win32"
       ? [["py", "-3.13"], ["py", "-3.12"], ["python"], ["python3"]]
-      : [["python3.13"], ["python3.12"], ["python3"], ["python"]]
+      : await collectUnixPythonCandidates()
 
   const excludeRoot = excludeUnder ? path.resolve(excludeUnder) : undefined
   const excludePrefix = excludeRoot ? excludeRoot + path.sep : undefined
