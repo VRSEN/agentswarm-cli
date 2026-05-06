@@ -34,7 +34,7 @@
     "@solidjs/meta": "catalog:"
   },
   "devDependencies": {
-    "@actions/artifact": "4.0.0",
+    "@actions/artifact": "6.2.1",
     "@tauri-apps/cli": "^2",
     "@types/bun": "catalog:",
     "@typescript/native-preview": "catalog:",

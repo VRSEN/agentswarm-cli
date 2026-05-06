@@ -16,6 +16,7 @@ export default defineConfig({
   output: "server",
   adapter: cloudflare({
     imageService: "passthrough",
+    prerenderEnvironment: "node",
   }),
   devToolbar: {
     enabled: false,

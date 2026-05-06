@@ -3,7 +3,6 @@
   "version": "1.14.26",
   "dependencies": {
     "@jsx-email/all": "2.2.3",
-    "@jsx-email/cli": "1.4.3",
     "@tsconfig/bun": "1.0.9",
     "@types/react": "18.0.25",
     "react": "18.2.0",
@@ -14,9 +13,6 @@
   },
   "$schema": "https://json.schemastore.org/package.json",
   "private": true,
-  "scripts": {
-    "dev": "email preview emails/templates"
-  },
   "type": "module",
   "license": "MIT"
 }

@@ -52,6 +52,7 @@ export function Titlebar() {
   const web = createMemo(() => platform.platform === "web")
   const zoom = () => platform.webviewZoom?.() ?? 1
   const minHeight = () => (mac() ? `${40 / zoom()}px` : undefined)
+  const channel = import.meta.env.VITE_OPENCODE_CHANNEL ?? ""
 
   const [history, setHistory] = createStore({
     stack: [] as string[],
@@ -288,9 +289,9 @@ export function Titlebar() {
                 </div>
               </Show>
               <div id="opencode-titlebar-left" class="flex items-center gap-3 min-w-0 px-2" />
-              {["beta", "dev"].includes(import.meta.env.VITE_OPENCODE_CHANNEL) && (
+              {["beta", "dev"].includes(channel) && (
                 <div class="bg-icon-interactive-base text-[#FFF] font-medium px-2 rounded-sm uppercase font-mono">
-                  {import.meta.env.VITE_OPENCODE_CHANNEL.toUpperCase()}
+                  {channel.toUpperCase()}
                 </div>
               )}
             </div>

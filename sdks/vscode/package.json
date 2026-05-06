@@ -94,15 +94,25 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.94.0",
+    "@types/vscode": "^1.118.0",
     "@types/mocha": "^10.0.10",
-    "@types/node": "20.x",
-    "@typescript-eslint/eslint-plugin": "^8.31.1",
-    "@typescript-eslint/parser": "^8.31.1",
-    "eslint": "^9.25.1",
-    "esbuild": "^0.25.3",
-    "typescript": "^5.8.3",
-    "@vscode/test-cli": "^0.0.11",
+    "@types/node": "^25.6.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.2",
+    "@typescript-eslint/parser": "^8.59.2",
+    "eslint": "^10.3.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.3",
+    "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.5",
+    "diff": "8.0.4",
+    "flatted": "3.4.2",
+    "glob": "10.5.0",
+    "js-yaml": "4.1.1",
+    "minimatch": "10.2.5",
+    "picomatch": "4.0.4",
+    "serialize-javascript": "7.0.5"
   }
 }

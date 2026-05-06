@@ -5,16 +5,17 @@
   "private": true,
   "license": "MIT",
   "devDependencies": {
-    "@types/bun": "catalog:"
+    "@octokit/webhooks-types": "^7.6.1",
+    "@types/bun": "1.3.12"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "@actions/core": "1.11.1",
-    "@actions/github": "6.0.1",
+    "@actions/core": "3.0.1",
+    "@actions/github": "9.1.1",
     "@octokit/graphql": "9.0.1",
-    "@octokit/rest": "catalog:",
-    "@opencode-ai/sdk": "workspace:*"
+    "@octokit/rest": "22.0.0",
+    "@opencode-ai/sdk": "1.14.26"
   }
 }

@@ -4,11 +4,12 @@ import { Octokit } from "@octokit/rest"
 import { graphql } from "@octokit/graphql"
 import * as core from "@actions/core"
 import * as github from "@actions/github"
-import type { Context as GitHubContext } from "@actions/github/lib/context"
 import type { IssueCommentEvent, PullRequestReviewCommentEvent } from "@octokit/webhooks-types"
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import { spawn } from "node:child_process"
 import { setTimeout as sleep } from "node:timers/promises"
+
+type GitHubContext = typeof github.context
 
 type GitHubAuthor = {
   login: string
@@ -585,12 +586,16 @@ async function summarize(response: string) {
   }
 }
 
+function isScheduleEvent() {
+  return useContext().eventName === "schedule"
+}
+
 async function resolveAgent(): Promise<string | undefined> {
   const envAgent = useEnvAgent()
   if (!envAgent) return undefined
 
   // Validate the agent exists and is a primary agent
-  const agents = await client.agent.list<true>()
+  const agents = await client.app.agents<true>()
   const agent = agents.data?.find((a) => a.name === envAgent)
 
   if (!agent) {
@@ -611,11 +616,15 @@ async function chat(text: string, files: PromptFiles = []) {
   const { providerID, modelID } = useEnvModel()
   const agent = await resolveAgent()
 
-  const chat = await client.session.chat<true>({
-    path: session,
+  const chat = await client.session.prompt<true>({
+    path: {
+      id: session.id,
+    },
     body: {
-      providerID,
-      modelID,
+      model: {
+        providerID,
+        modelID,
+      },
       agent,
       parts: [
         {

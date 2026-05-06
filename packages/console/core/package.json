@@ -6,7 +6,7 @@
   "type": "module",
   "license": "MIT",
   "dependencies": {
-    "@aws-sdk/client-sts": "3.782.0",
+    "@aws-sdk/client-sts": "3.1043.0",
     "@jsx-email/render": "1.1.1",
     "@opencode-ai/console-mail": "workspace:*",
     "@opencode-ai/console-resource": "workspace:*",
