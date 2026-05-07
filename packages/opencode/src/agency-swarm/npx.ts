@@ -727,7 +727,7 @@ async function ensureProjectPython(directory: string) {
   const rebuildCmd = corruptedVenv ? [detected.executable] : detected.cmd
   prompts.log.info(`Detected Python: ${formatPython(detected, rebuildCmd)}`)
 
-  const uv = corruptedVenv ? await findUv() : undefined
+  const uv = corruptedVenv ? await findUv({ excludeUnder: venvDir }) : undefined
   if (corruptedVenv) {
     prompts.log.warn("Project `.venv` is incomplete or corrupted. Rebuilding...")
     await rm(venvDir, { recursive: true, force: true })
@@ -1243,16 +1243,46 @@ function isPythonTracebackFinalExceptionLine(line: string) {
   return /^[A-Za-z_][\w.]*:(?:\s|$)/.test(line.trimEnd())
 }
 
-async function findUv(): Promise<UvInfo> {
-  const result = await runCommand(["uv", "--version"])
-  if (result.code !== 0) {
-    throw new Error(
-      "uv was not found. Install uv and rerun `npx @vrsen/agentswarm`; the launcher does not bootstrap uv with pip.",
-    )
+async function findUv(options?: { excludeUnder?: string }): Promise<UvInfo> {
+  if (!options?.excludeUnder) {
+    const result = await runCommand(["uv", "--version"])
+    if (result.code !== 0) {
+      throw new Error(
+        "uv was not found. Install uv and rerun `npx @vrsen/agentswarm`; the launcher does not bootstrap uv with pip.",
+      )
+    }
+    return {
+      cmd: ["uv"],
+    }
   }
-  return {
-    cmd: ["uv"],
+
+  const env = stripVenvFromEnv(process.env, options.excludeUnder)
+  const pathKey = process.platform === "win32" ? "Path" : "PATH"
+  const rawPath = env[pathKey] ?? env.PATH ?? ""
+  const sep = process.platform === "win32" ? ";" : ":"
+  const names = process.platform === "win32" ? ["uv.exe", "uv.cmd", "uv.bat", "uv"] : ["uv"]
+  for (const dir of rawPath.split(sep)) {
+    if (!dir) continue
+    for (const name of names) {
+      const candidate = path.join(dir, name)
+      if (!existsSync(candidate)) continue
+      const result = await runCommand([candidate, "--version"], { env })
+      if (result.code === 0) {
+        return {
+          cmd: [candidate],
+        }
+      }
+    }
   }
+  const result = await runCommand(["uv", "--version"], { env })
+  if (result.code === 0) {
+    return {
+      cmd: ["uv"],
+    }
+  }
+  throw new Error(
+    "uv was not found. Install uv and rerun `npx @vrsen/agentswarm`; the launcher does not bootstrap uv with pip.",
+  )
 }
 
 function isUvLaunchFailure(output: string) {
