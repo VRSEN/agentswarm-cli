@@ -56,10 +56,6 @@ interface DependencyInstallResult extends CommandResult {
   hadManifests: boolean
 }
 
-interface UvInfo {
-  cmd: string[]
-}
-
 interface RunCommandOptions {
   cwd?: string
   env?: NodeJS.ProcessEnv
@@ -683,14 +679,27 @@ async function ensureProjectPython(directory: string) {
       const refreshLogFile = await tryCreateProjectCommandLogFile(directory, "launcher-refresh", "launcher refresh")
       prompts.log.info(
         refreshLogFile
-          ? `Refreshing project dependencies with uv. Streaming output to stderr. Full log: ${refreshLogFile}`
-          : "Refreshing project dependencies with uv. Streaming output to stderr.",
+          ? `Refreshing project dependencies with local uv. Streaming output to stderr. Full log: ${refreshLogFile}`
+          : "Refreshing project dependencies with local uv. Streaming output to stderr.",
       )
-      const refresh = await refreshProjectDependencies(directory, venvPython, {
-        logFile: refreshLogFile,
-        timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
-      })
-      if (refresh.installerFailed) corruptedVenv = true
+      let localUv: string | undefined
+      try {
+        localUv = await ensureLocalUv(directory, venvPython, {
+          logFile: refreshLogFile,
+          timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+        })
+      } catch {
+        prompts.log.warn(
+          "Local uv could not be installed, so dependency refresh was skipped. The current venv package set will be used as-is.",
+        )
+      }
+      if (localUv) {
+        const refresh = await refreshProjectDependencies(directory, venvPython, localUv, {
+          logFile: refreshLogFile,
+          timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+        })
+        if (refresh.installerFailed) corruptedVenv = true
+      }
       if (!corruptedVenv) {
         prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
         let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
@@ -728,7 +737,6 @@ async function ensureProjectPython(directory: string) {
   const rebuildCmd = corruptedVenv ? [detected.executable] : detected.cmd
   prompts.log.info(`Detected Python: ${formatPython(detected, rebuildCmd)}`)
 
-  const uv = corruptedVenv ? await findUv({ excludeUnder: venvDir }) : undefined
   if (corruptedVenv) {
     prompts.log.warn("Project `.venv` is incomplete or corrupted. Rebuilding...")
     await rm(venvDir, { recursive: true, force: true })
@@ -754,10 +762,9 @@ async function ensureProjectPython(directory: string) {
     }
   }
 
-  const rebuildUv = uv ?? (await findUv())
   const spinner = prompts.spinner()
   spinner.start("Creating `.venv`")
-  const created = await runCommand([...rebuildUv.cmd, "venv", "--python", detected.executable, ".venv"], {
+  const created = await runCommand([...rebuildCmd, "-m", "venv", ".venv"], {
     cwd: directory,
   })
   if (created.code !== 0) {
@@ -772,7 +779,12 @@ async function ensureProjectPython(directory: string) {
       ? `Installing project dependencies. Streaming output to stderr. Full log: ${installLogFile}`
       : "Installing project dependencies. Streaming output to stderr.",
   )
-  const install = await installProjectDependencies(directory, venvPython, {
+  const localUv = await ensureLocalUv(directory, venvPython, {
+    forceInstall: true,
+    logFile: installLogFile,
+    timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+  })
+  const install = await installProjectDependencies(directory, venvPython, localUv, {
     logFile: installLogFile,
     timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
   })
@@ -803,16 +815,16 @@ async function ensureProjectPython(directory: string) {
 async function installProjectDependencies(
   directory: string,
   venvPython: string,
+  localUv: string,
   options: {
     logFile?: string
     timeoutMs: number
   },
 ): Promise<DependencyInstallResult> {
-  const uv = await findUv()
   const requirements = path.join(directory, "requirements.txt")
   if (await Filesystem.exists(requirements)) {
     const result = await runCommand(
-      [...uv.cmd, "pip", "install", "--python", venvPython, "--upgrade", "-r", "requirements.txt"],
+      [localUv, "pip", "install", "--python", venvPython, "--upgrade", "-r", "requirements.txt"],
       {
         cwd: directory,
         logFile: options.logFile,
@@ -825,7 +837,7 @@ async function installProjectDependencies(
 
   const pyproject = path.join(directory, "pyproject.toml")
   if (await Filesystem.exists(pyproject)) {
-    const result = await runCommand([...uv.cmd, "pip", "install", "--python", venvPython, "--upgrade", "-e", "."], {
+    const result = await runCommand([localUv, "pip", "install", "--python", venvPython, "--upgrade", "-e", "."], {
       cwd: directory,
       logFile: options.logFile,
       streamOutputToStderr: true,
@@ -835,7 +847,7 @@ async function installProjectDependencies(
   }
 
   const result = await runCommand(
-    [...uv.cmd, "pip", "install", "--python", venvPython, FALLBACK_AGENCY_SWARM_REQUIREMENT],
+    [localUv, "pip", "install", "--python", venvPython, FALLBACK_AGENCY_SWARM_REQUIREMENT],
     {
       logFile: options.logFile,
       streamOutputToStderr: true,
@@ -848,47 +860,37 @@ async function installProjectDependencies(
 async function refreshProjectDependencies(
   directory: string,
   venvPython: string,
+  localUv: string,
   options: {
     logFile?: string
     timeoutMs: number
   },
 ): Promise<{ installerFailed: boolean }> {
-  try {
-    if (!(await hasDependencyManifest(directory))) {
-      return await ensureLatestAgencySwarm(directory, venvPython, options)
-    }
+  if (!(await hasDependencyManifest(directory))) {
+    return await ensureLatestAgencySwarm(directory, venvPython, localUv, options)
+  }
 
-    const result = await installProjectDependencies(directory, venvPython, options)
-    if (result.timedOut) {
-      prompts.log.warn(
-        result.logFile
-          ? `Timed out while refreshing project dependencies after ${formatInstallDuration(options.timeoutMs)}. Check the log file at ${result.logFile}.`
-          : `Timed out while refreshing project dependencies after ${formatInstallDuration(options.timeoutMs)}.`,
-      )
-      return { installerFailed: false }
-    }
-    if (result.code !== 0) {
-      const summary = summarizeCommandOutput(result)
-      prompts.log.warn(
-        summary
-          ? `Could not refresh project dependencies from the manifest. Installer output: ${summary}.${
-              result.logFile ? ` Check the log file at ${result.logFile}.` : ""
-            } The current venv package set will be used as-is.`
-          : "Could not refresh project dependencies from the manifest. The current venv package set will be used as-is.",
-      )
-      return { installerFailed: isUvLaunchFailure(`${result.stderr}\n${result.stdout}`) }
-    }
-  } catch (error) {
-    if (!isUvUnavailableError(error)) throw error
+  const result = await installProjectDependencies(directory, venvPython, localUv, options)
+  if (result.timedOut) {
     prompts.log.warn(
-      "uv was not found, so project dependency refresh was skipped. The current venv package set will be used as-is.",
+      result.logFile
+        ? `Timed out while refreshing project dependencies after ${formatInstallDuration(options.timeoutMs)}. Check the log file at ${result.logFile}.`
+        : `Timed out while refreshing project dependencies after ${formatInstallDuration(options.timeoutMs)}.`,
     )
+    return { installerFailed: false }
+  }
+  if (result.code !== 0) {
+    const summary = summarizeCommandOutput(result)
+    prompts.log.warn(
+      summary
+        ? `Could not refresh project dependencies from the manifest. Installer output: ${summary}.${
+            result.logFile ? ` Check the log file at ${result.logFile}.` : ""
+          } The current venv package set will be used as-is.`
+        : "Could not refresh project dependencies from the manifest. The current venv package set will be used as-is.",
+    )
+    return { installerFailed: isUvLaunchFailure(`${result.stderr}\n${result.stdout}`) }
   }
   return { installerFailed: false }
-}
-
-function isUvUnavailableError(error: unknown) {
-  return error instanceof Error && error.message.includes("uv was not found")
 }
 
 async function formatPostInstallCanaryFailure(
@@ -964,15 +966,15 @@ async function venvCanaryPasses(python: string[], options?: { cwd?: string; incl
 async function ensureLatestAgencySwarm(
   directory: string,
   venvPython: string,
+  localUv: string,
   options?: {
     logFile?: string
     timeoutMs?: number
   },
 ): Promise<{ installerFailed: boolean }> {
-  const uv = await findUv()
   try {
     const result = await runCommand(
-      [...uv.cmd, "pip", "install", "--python", venvPython, "--upgrade", "agency-swarm[fastapi,litellm]"],
+      [localUv, "pip", "install", "--python", venvPython, "--upgrade", "agency-swarm[fastapi,litellm]"],
       {
         cwd: directory,
         logFile: options?.logFile,
@@ -1004,6 +1006,51 @@ async function ensureLatestAgencySwarm(
     prompts.log.warn("Could not refresh launcher-managed agency-swarm. The current venv package will be used as-is.")
   }
   return { installerFailed: false }
+}
+
+async function ensureLocalUv(
+  directory: string,
+  venvPython: string,
+  options: {
+    forceInstall?: boolean
+    logFile?: string
+    timeoutMs: number
+  },
+) {
+  const localUv = getVenvUvPath(directory)
+  if (!options.forceInstall && (await localUvWorks(localUv))) return localUv
+
+  const result = await runCommand([venvPython, "-m", "pip", "install", "--upgrade", "uv"], {
+    cwd: directory,
+    logFile: options.logFile,
+    streamOutputToStderr: true,
+    timeoutMs: options.timeoutMs,
+  })
+  if (result.timedOut) {
+    throw new Error(
+      result.logFile
+        ? `Project Python environment setup timed out while installing uv after ${formatInstallDuration(options.timeoutMs)}. Check the log file at ${result.logFile}.`
+        : `Project Python environment setup timed out while installing uv after ${formatInstallDuration(options.timeoutMs)}.`,
+    )
+  }
+  if (result.code !== 0) {
+    throw new Error(formatCommandFailure(result, "Project Python environment setup failed while installing uv"))
+  }
+  try {
+    const verified = await runCommand([localUv, "--version"])
+    if (verified.code === 0) return localUv
+  } catch {}
+
+  throw new Error("Project Python environment setup installed uv, but the local `.venv` uv command is not runnable.")
+}
+
+async function localUvWorks(localUv: string) {
+  try {
+    const result = await runCommand([localUv, "--version"])
+    return result.code === 0
+  } catch {
+    return false
+  }
 }
 
 async function hasDependencyManifest(directory: string) {
@@ -1277,48 +1324,6 @@ function isPythonTracebackFinalExceptionLine(line: string) {
   return /^[A-Za-z_][\w.]*:(?:\s|$)/.test(line.trimEnd())
 }
 
-async function findUv(options?: { excludeUnder?: string }): Promise<UvInfo> {
-  if (!options?.excludeUnder) {
-    const result = await runCommand(["uv", "--version"])
-    if (result.code !== 0) {
-      throw new Error(
-        "uv was not found. Install uv and rerun `npx @vrsen/agentswarm`; the launcher does not bootstrap uv with pip.",
-      )
-    }
-    return {
-      cmd: ["uv"],
-    }
-  }
-
-  const env = stripVenvFromEnv(process.env, options.excludeUnder)
-  const pathKey = process.platform === "win32" ? "Path" : "PATH"
-  const rawPath = env[pathKey] ?? env.PATH ?? ""
-  const sep = process.platform === "win32" ? ";" : ":"
-  const names = process.platform === "win32" ? ["uv.exe", "uv.cmd", "uv.bat", "uv"] : ["uv"]
-  for (const dir of rawPath.split(sep)) {
-    if (!dir) continue
-    for (const name of names) {
-      const candidate = path.join(dir, name)
-      if (!existsSync(candidate)) continue
-      const result = await runCommand([candidate, "--version"], { env })
-      if (result.code === 0) {
-        return {
-          cmd: [candidate],
-        }
-      }
-    }
-  }
-  const result = await runCommand(["uv", "--version"], { env })
-  if (result.code === 0) {
-    return {
-      cmd: ["uv"],
-    }
-  }
-  throw new Error(
-    "uv was not found. Install uv and rerun `npx @vrsen/agentswarm`; the launcher does not bootstrap uv with pip.",
-  )
-}
-
 function isUvLaunchFailure(output: string) {
   return /uv(?:\.exe)?:?\s+(?:command not found|not found|No such file or directory|ENOENT)/i.test(output)
 }
@@ -1439,6 +1444,11 @@ function formatPython(info: PythonInfo | undefined, cmd: string[]) {
 function getVenvPythonPath(directory: string) {
   if (process.platform === "win32") return path.join(directory, ".venv", "Scripts", "python.exe")
   return path.join(directory, ".venv", "bin", "python")
+}
+
+function getVenvUvPath(directory: string) {
+  if (process.platform === "win32") return path.join(directory, ".venv", "Scripts", "uv.exe")
+  return path.join(directory, ".venv", "bin", "uv")
 }
 
 async function getFreePort() {

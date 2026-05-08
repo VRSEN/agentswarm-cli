@@ -235,7 +235,7 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -261,9 +261,9 @@ describe("agency-swarm npx onboarding", () => {
 
     const installCommand = commands.find(isUvPipInstallCommand)
 
-    expect(commands.filter(isUvVenvCommand)).toEqual([["uv", "venv", "--python", "/usr/bin/python3.12", ".venv"]])
+    expect(commands.filter(isPythonVenvCommand)).toEqual([["python3.12", "-m", "venv", ".venv"]])
     expect(installCommand).toEqual([
-      "uv",
+      getTestVenvUv(dir.path),
       "pip",
       "install",
       "--python",
@@ -272,7 +272,7 @@ describe("agency-swarm npx onboarding", () => {
     ])
   })
 
-  test("prepareProjectLaunch fails clearly when uv is missing", async () => {
+  test("prepareProjectLaunch fails clearly when local uv bootstrap fails", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
 
@@ -293,18 +293,18 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonVenvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
           stderr: "",
         } as never
       }
-      if (isUvVersionCommand(cmd)) {
+      if (isPythonPipInstallUvCommand(cmd)) {
         return {
           exited: Promise.resolve(1),
           stdout: "",
-          stderr: "uv: command not found",
+          stderr: "No matching distribution found for uv",
         } as never
       }
       throw new Error(`Unexpected command: ${cmd.join(" ")}`)
@@ -315,9 +315,9 @@ describe("agency-swarm npx onboarding", () => {
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
       }),
-    ).rejects.toThrow("uv was not found. Install uv and rerun `npx @vrsen/agentswarm`")
+    ).rejects.toThrow("Project Python environment setup failed while installing uv")
 
-    expect(commands.some((cmd) => cmd[0] === "uv" && isUvPipInstallCommand(cmd))).toBe(false)
+    expect(commands.some(isUvPipInstallCommand)).toBe(false)
   })
 
   test("prepareProjectLaunch installs requirements without a second agency-swarm upgrade", async () => {
@@ -351,7 +351,7 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -366,6 +366,13 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isUvPipInstallCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -396,7 +403,7 @@ describe("agency-swarm npx onboarding", () => {
     const venvPython = getTestVenvPython(dir.path)
     const uvInstallCommands = commands.filter(isUvPipInstallCommand)
     expect(uvInstallCommands).toEqual([
-      ["uv", "pip", "install", "--python", venvPython, "--upgrade", "-r", "requirements.txt"],
+      [getTestVenvUv(dir.path), "pip", "install", "--python", venvPython, "--upgrade", "-r", "requirements.txt"],
     ])
     expect(uvInstallCommands.some((cmd) => cmd.includes("agency-swarm[fastapi,litellm]"))).toBe(false)
 
@@ -434,7 +441,12 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv") || isUvPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+      if (
+        isPythonVenvCommand(cmd) ||
+        isPythonPipInstallUvCommand(cmd) ||
+        isUvPipInstallCommand(cmd) ||
+        isCanaryCommand(cmd)
+      ) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -464,7 +476,7 @@ describe("agency-swarm npx onboarding", () => {
 
     const uvInstallCommands = commands.filter(isUvPipInstallCommand)
     expect(uvInstallCommands).toEqual([
-      ["uv", "pip", "install", "--python", getTestVenvPython(dir.path), "--upgrade", "-e", "."],
+      [getTestVenvUv(dir.path), "pip", "install", "--python", getTestVenvPython(dir.path), "--upgrade", "-e", "."],
     ])
     expect(uvInstallCommands.some((cmd) => cmd.includes("agency-swarm[fastapi,litellm]"))).toBe(false)
 
@@ -530,9 +542,18 @@ describe("agency-swarm npx onboarding", () => {
 
     const uvInstallCommands = commands.filter(isUvPipInstallCommand)
     expect(uvInstallCommands).toEqual([
-      ["uv", "pip", "install", "--python", getTestVenvPython(dir.path), "--upgrade", "-r", "requirements.txt"],
+      [
+        getTestVenvUv(dir.path),
+        "pip",
+        "install",
+        "--python",
+        getTestVenvPython(dir.path),
+        "--upgrade",
+        "-r",
+        "requirements.txt",
+      ],
     ])
-    expect(commands.some((cmd) => cmd.includes("venv"))).toBe(false)
+    expect(commands.some(isPythonVenvCommand)).toBe(false)
     expect(uvInstallCommands.some((cmd) => cmd.includes("agency-swarm[fastapi,litellm]"))).toBe(false)
     expect(commands.findIndex(isUvPipInstallCommand)).toBeLessThan(commands.findIndex(isCanaryCommand))
 
@@ -598,16 +619,98 @@ describe("agency-swarm npx onboarding", () => {
 
     const uvInstallCommands = commands.filter(isUvPipInstallCommand)
     expect(uvInstallCommands).toEqual([
-      ["uv", "pip", "install", "--python", getTestVenvPython(dir.path), "--upgrade", "-e", "."],
+      [getTestVenvUv(dir.path), "pip", "install", "--python", getTestVenvPython(dir.path), "--upgrade", "-e", "."],
     ])
-    expect(commands.some((cmd) => cmd.includes("venv"))).toBe(false)
+    expect(commands.some(isPythonVenvCommand)).toBe(false)
     expect(uvInstallCommands.some((cmd) => cmd.includes("agency-swarm[fastapi,litellm]"))).toBe(false)
     expect(commands.findIndex(isUvPipInstallCommand)).toBeLessThan(commands.findIndex(isCanaryCommand))
 
     await launch?.cleanup?.()
   })
 
-  test("prepareProjectLaunch keeps a healthy existing venv when uv is missing", async () => {
+  test("prepareProjectLaunch bootstraps local uv for a healthy existing venv", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await writeVenvPython(dir.path)
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    const warn = spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+    const commands: string[][] = []
+    let uvInstalled = false
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+      if (isUvVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(uvInstalled ? 0 : 1),
+          stdout: "",
+          stderr: uvInstalled ? "" : "uv: command not found",
+        } as never
+      }
+      if (isPythonPipInstallUvCommand(cmd)) {
+        uvInstalled = true
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        return {
+          exited: Promise.resolve(0),
+          stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isUvPipInstallCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    })
+
+    expect(warn).not.toHaveBeenCalled()
+    expect(commands.some(isPythonPipInstallUvCommand)).toBe(true)
+    expect(commands.some(isUvPipInstallCommand)).toBe(true)
+    expect(commands.some(isPythonVenvCommand)).toBe(false)
+    expect(commands.some(isCanaryCommand)).toBe(true)
+
+    await launch?.cleanup?.()
+  })
+
+  test("prepareProjectLaunch continues healthy existing venv launches when local uv bootstrap fails", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
     await writeVenvPython(dir.path)
@@ -626,6 +729,13 @@ describe("agency-swarm npx onboarding", () => {
           exited: Promise.resolve(1),
           stdout: "",
           stderr: "uv: command not found",
+        } as never
+      }
+      if (isPythonPipInstallUvCommand(cmd)) {
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: "No matching distribution found for uv",
         } as never
       }
       if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
@@ -665,16 +775,17 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(warn).toHaveBeenCalledWith(
-      "uv was not found, so project dependency refresh was skipped. The current venv package set will be used as-is.",
+      "Local uv could not be installed, so dependency refresh was skipped. The current venv package set will be used as-is.",
     )
+    expect(commands.some(isPythonPipInstallUvCommand)).toBe(true)
     expect(commands.some(isUvPipInstallCommand)).toBe(false)
-    expect(commands.some(isUvVenvCommand)).toBe(false)
+    expect(commands.some(isPythonVenvCommand)).toBe(false)
     expect(commands.some(isCanaryCommand)).toBe(true)
 
     await launch?.cleanup?.()
   })
 
-  test("prepareProjectLaunch preserves corrupted existing venv when rebuild needs missing uv", async () => {
+  test("prepareProjectLaunch surfaces local uv bootstrap failure while rebuilding corrupted venv", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
     await writeVenvPython(dir.path)
@@ -688,16 +799,14 @@ describe("agency-swarm npx onboarding", () => {
 
     const commands: string[][] = []
     const replacementPython = process.platform === "win32" ? "C:\\Python312\\python.exe" : "/usr/bin/python3.12"
-    let uvVersionAttempts = 0
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
       const cmd = options?.cmd as string[] | undefined
       if (!cmd) throw new Error("Missing command")
       if (isUvVersionCommand(cmd)) {
-        uvVersionAttempts += 1
         return {
-          exited: Promise.resolve(1),
+          exited: Promise.resolve(0),
           stdout: "",
-          stderr: "uv: command not found",
+          stderr: "",
         } as never
       }
       commands.push(cmd)
@@ -725,6 +834,20 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "ModuleNotFoundError: No module named 'agency_swarm'",
         } as never
       }
+      if (isPythonVenvCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPythonPipInstallUvCommand(cmd)) {
+        return {
+          exited: Promise.resolve(1),
+          stdout: "",
+          stderr: "No matching distribution found for uv",
+        } as never
+      }
       throw new Error(`Unexpected command: ${cmd.join(" ")}`)
     })
 
@@ -733,14 +856,12 @@ describe("agency-swarm npx onboarding", () => {
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
       }),
-    ).rejects.toThrow("uv was not found. Install uv and rerun `npx @vrsen/agentswarm`")
+    ).rejects.toThrow("Project Python environment setup failed while installing uv")
 
     expect(confirm).not.toHaveBeenCalled()
-    expect(uvVersionAttempts).toBeGreaterThanOrEqual(2)
-    expect(await Bun.file(getTestVenvPython(dir.path)).exists()).toBe(true)
-    expect(await Bun.file(staleFile).exists()).toBe(true)
-    expect(commands.some(isUvVenvCommand)).toBe(false)
-    expect(commands.some(isUvPipInstallCommand)).toBe(false)
+    expect(await Bun.file(staleFile).exists()).toBe(false)
+    expect(commands.some(isPythonVenvCommand)).toBe(true)
+    expect(commands.some(isUvPipInstallCommand)).toBe(true)
   })
 
   test("prepareProjectLaunch recreates an incomplete `.venv` instead of overlaying it", async () => {
@@ -775,7 +896,7 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -801,7 +922,7 @@ describe("agency-swarm npx onboarding", () => {
 
     expect(confirm).not.toHaveBeenCalled()
     expect(await Bun.file(staleFile).exists()).toBe(false)
-    expect(commands.filter(isUvVenvCommand)).toEqual([["uv", "venv", "--python", "/usr/bin/python3.12", ".venv"]])
+    expect(commands.filter(isPythonVenvCommand)).toEqual([["/usr/bin/python3.12", "-m", "venv", ".venv"]])
   })
 
   test("prepareProjectLaunch recreates `.venv` when uv cannot refresh launcher-managed dependencies", async () => {
@@ -857,7 +978,7 @@ describe("agency-swarm npx onboarding", () => {
           } as never
         }
       }
-      if (cmd.includes("venv")) {
+      if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -902,7 +1023,7 @@ describe("agency-swarm npx onboarding", () => {
 
     expect(confirm).not.toHaveBeenCalled()
     expect(await Bun.file(staleFile).exists()).toBe(false)
-    expect(commands.filter(isUvVenvCommand)).toEqual([["uv", "venv", "--python", replacementPython, ".venv"]])
+    expect(commands.filter(isPythonVenvCommand)).toEqual([[replacementPython, "-m", "venv", ".venv"]])
     expect(uvInstallRuns).toBe(2)
     await launch?.cleanup?.()
   })
@@ -970,7 +1091,7 @@ describe("agency-swarm npx onboarding", () => {
           stderr: canaryStderr,
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -1046,7 +1167,7 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -1084,8 +1205,9 @@ describe("agency-swarm npx onboarding", () => {
       stop() {},
     } as never)
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    let timeoutCurrentInstall = false
     spyOn(globalThis, "setTimeout").mockImplementation(((fn: TimerHandler) => {
-      if (typeof fn === "function") fn()
+      if (timeoutCurrentInstall && typeof fn === "function") fn()
       return 1 as never
     }) as unknown as typeof setTimeout)
     spyOn(globalThis, "clearTimeout").mockImplementation(() => undefined as never)
@@ -1107,7 +1229,15 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonPipInstallUvCommand(cmd)) {
+        timeoutCurrentInstall = false
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPythonVenvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -1115,6 +1245,7 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isUvPipInstallCommand(cmd)) {
+        timeoutCurrentInstall = true
         let resolveExit!: (code: number) => void
         const exited = new Promise<number>((resolve) => {
           resolveExit = resolve
@@ -1160,8 +1291,9 @@ describe("agency-swarm npx onboarding", () => {
       stop() {},
     } as never)
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    let timeoutCurrentInstall = false
     spyOn(globalThis, "setTimeout").mockImplementation(((fn: TimerHandler) => {
-      if (typeof fn === "function") fn()
+      if (timeoutCurrentInstall && typeof fn === "function") fn()
       return 1 as never
     }) as unknown as typeof setTimeout)
     spyOn(globalThis, "clearTimeout").mockImplementation(() => undefined as never)
@@ -1183,7 +1315,15 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonPipInstallUvCommand(cmd)) {
+        timeoutCurrentInstall = false
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPythonVenvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -1191,6 +1331,7 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isUvPipInstallCommand(cmd)) {
+        timeoutCurrentInstall = true
         let resolveExit!: (code: number) => void
         const stderr = createTextOutputStream("still working...\n")
         return {
@@ -1240,8 +1381,9 @@ describe("agency-swarm npx onboarding", () => {
       stop() {},
     } as never)
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    let timeoutCurrentInstall = false
     spyOn(globalThis, "setTimeout").mockImplementation(((fn: TimerHandler) => {
-      if (typeof fn === "function") fn()
+      if (timeoutCurrentInstall && typeof fn === "function") fn()
       return 1 as never
     }) as unknown as typeof setTimeout)
     spyOn(globalThis, "clearTimeout").mockImplementation(() => undefined as never)
@@ -1263,7 +1405,15 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonPipInstallUvCommand(cmd)) {
+        timeoutCurrentInstall = false
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPythonVenvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -1271,6 +1421,7 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isUvPipInstallCommand(cmd)) {
+        timeoutCurrentInstall = true
         let resolveExit!: (code: number) => void
         const stderr = createTextOutputStream("still working...\n")
         return {
@@ -1343,7 +1494,7 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -1447,7 +1598,7 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "ERROR: No matching distribution found for agency-swarm[fastapi,litellm]",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -1483,7 +1634,7 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(info).toHaveBeenCalledWith(
-      expect.stringContaining("Refreshing project dependencies with uv. Streaming output to stderr."),
+      expect.stringContaining("Refreshing project dependencies with local uv. Streaming output to stderr."),
     )
     expect(stderrWrite.mock.calls.map((call) => call[0])).toContain("Collecting agency-swarm...\n")
     expect(stderrWrite.mock.calls.map((call) => call[0])).toContain(
@@ -1547,7 +1698,7 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -2383,7 +2534,7 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -2461,7 +2612,7 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -2502,8 +2653,9 @@ describe("agency-swarm npx onboarding", () => {
     } as never)
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     spyOn(Date.prototype, "toISOString").mockReturnValue(iso)
+    let timeoutCurrentInstall = false
     spyOn(globalThis, "setTimeout").mockImplementation(((fn: TimerHandler) => {
-      if (typeof fn === "function") fn()
+      if (timeoutCurrentInstall && typeof fn === "function") fn()
       return 1 as never
     }) as unknown as typeof setTimeout)
     spyOn(globalThis, "clearTimeout").mockImplementation(() => undefined as never)
@@ -2526,7 +2678,15 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (cmd.includes("venv")) {
+      if (isPythonPipInstallUvCommand(cmd)) {
+        timeoutCurrentInstall = false
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isPythonVenvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -2534,6 +2694,7 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isUvPipInstallCommand(cmd)) {
+        timeoutCurrentInstall = true
         let resolveExit!: (code: number) => void
         const exited = new Promise<number>((resolve) => {
           resolveExit = resolve
@@ -3293,7 +3454,7 @@ function mockPrepareProjectLaunchCanaryFailure(canaryStderr: string) {
         stderr: canaryStderr,
       } as never
     }
-    if (cmd.includes("venv")) {
+    if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd)) {
       return {
         exited: Promise.resolve(0),
         stdout: "",
@@ -3332,6 +3493,15 @@ function getTestVenvPython(directory: string) {
   )
 }
 
+function getTestVenvUv(directory: string) {
+  return path.join(
+    directory,
+    ".venv",
+    process.platform === "win32" ? "Scripts" : "bin",
+    process.platform === "win32" ? "uv.exe" : "uv",
+  )
+}
+
 function createTextOutputStream(initial?: string) {
   let controller!: ReadableStreamDefaultController<Uint8Array>
   const encoder = new TextEncoder()
@@ -3360,15 +3530,24 @@ function createTextOutputStream(initial?: string) {
 }
 
 function isUvPipInstallCommand(cmd: string[]) {
-  return cmd[0] === "uv" && cmd[1] === "pip" && cmd[2] === "install"
+  return isLocalUvCommand(cmd[0]) && cmd[1] === "pip" && cmd[2] === "install"
 }
 
-function isUvVenvCommand(cmd: string[]) {
-  return cmd[0] === "uv" && cmd[1] === "venv"
+function isPythonVenvCommand(cmd: string[]) {
+  return cmd[1] === "-m" && cmd[2] === "venv" && cmd[3] === ".venv"
 }
 
 function isUvVersionCommand(cmd: string[]) {
-  return cmd[0] === "uv" && cmd[1] === "--version"
+  return isLocalUvCommand(cmd[0]) && cmd[1] === "--version"
+}
+
+function isPythonPipInstallUvCommand(cmd: string[]) {
+  return cmd[1] === "-m" && cmd[2] === "pip" && cmd[3] === "install" && cmd[4] === "--upgrade" && cmd[5] === "uv"
+}
+
+function isLocalUvCommand(command: string | undefined) {
+  if (!command) return false
+  return path.basename(command) === (process.platform === "win32" ? "uv.exe" : "uv")
 }
 
 function isReplacementPythonProbe(cmd: string[]) {
