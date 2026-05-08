@@ -1879,6 +1879,90 @@ describe("agency-swarm npx onboarding", () => {
     await launch?.cleanup?.()
   })
 
+  test("prepareProjectLaunch explains agency.py import failures after packages are ready", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
+      recursive: true,
+    })
+    await Bun.write(
+      path.join(
+        dir.path,
+        ".venv",
+        process.platform === "win32" ? "Scripts" : "bin",
+        process.platform === "win32" ? "python.exe" : "python",
+      ),
+      "",
+    )
+
+    const info = spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    const success = spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+    const traceback = [
+      "Traceback (most recent call last):",
+      '  File "/tmp/agentswarm-npx-test/launch_agency.py", line 1, in <module>',
+      "    from agency import create_agency",
+      `  File "${path.join(dir.path, "agency.py")}", line 2, in <module>`,
+      "    import codex_missing_import_for_canary_test",
+      '  File "/site-packages/not_the_project/agency.py", line 99, in helper',
+      "    raise ModuleNotFoundError(\"No module named 'codex_missing_import_for_canary_test'\")",
+      "ModuleNotFoundError: No module named 'codex_missing_import_for_canary_test'",
+    ].join("\n")
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (isUvVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "uv 0.8.0\n",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        return {
+          exited: Promise.resolve(0),
+          stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (isUvPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        return {
+          exited: Promise.resolve(1),
+          stderr: traceback,
+          kill() {},
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const outcome = await prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+    }).catch((error) => error)
+
+    expect(outcome).toBeInstanceOf(Error)
+    if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
+    expect(outcome.message).toContain("Your agency project could not load.")
+    expect(outcome.message).toContain("ModuleNotFoundError: No module named 'codex_missing_import_for_canary_test'")
+    expect(outcome.message).toContain("At: agency.py:2")
+    expect(outcome.message).not.toContain("agency.py:99")
+    expect(outcome.message).toContain("import codex_missing_import_for_canary_test")
+    expect(outcome.message).toContain(
+      "Fix the missing import or dependency in this project, then run agentswarm again.",
+    )
+    expect(outcome.message).not.toContain("Agency Swarm server exited with code 1")
+    expect(success).toHaveBeenCalledWith("Agency Swarm packages ready")
+    expect(info).toHaveBeenCalledWith("Starting your agency project.")
+  })
+
   test("prepareProjectLaunch times out when the import canary hangs", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
