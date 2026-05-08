@@ -169,12 +169,11 @@ Why: technical back-and-forth wastes user time.
 - If the critical path is blocked on the user's answer or approval, add a sanitized record of the user-facing escalation and relevant artifacts to the ledger, surface the smallest ready-to-ship request right away, and re-raise it at each task boundary until it is resolved. Do not wait silently or drift to lower-priority work.
 - After negative feedback or a protocol breach, rerun evidence analysis, tighten approval handling, present the smallest viable option set, and wait for explicit approval before changing files unless the user already gave a clear corrective mandate.
 
-## Tests, Examples, And Docs Are Key Evidence
+## Test And QA Routing
 
-- Default to test-driven work.
-- For docs-only or formatting-only edits, use a linter or formatter instead of tests.
-- Update docs and examples when behavior or APIs change, and make sure they match the code.
-- When you judge correctness, run the smallest high-signal test or command first.
+- Use `.codex/skills/test-workflow` for test selection, test writing, automated E2E, manual QA, installed-build proof, release proof, live-service validation, and version/path-cache proof.
+- Tests, logs, screenshots, manual QA, and docs are evidence. Choose proof that exercises the changed boundary.
+- Do not claim closure until the relevant skill gate is satisfied.
 
 ## Guardianship Of The Codebase
 
@@ -240,17 +239,10 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - Know the real objective, planned change, reason, supporting evidence, and closing proof. If you cannot explain a safe plan, escalate before you continue.
 - Validate external assumptions, like servers, ports, tokens, dependency behavior, and current upstream state, with real probes when you can.
 - Share failures and root causes as soon as you find them. Do not do silent fixes.
-- Reproduce reported errors before fixing them; for bug fixes, add the report as a failing automated test before runtime code changes.
-- End-user proof closes bugs: rerun the exact failed flow against the same kind of build or artifact and starting state. TUI and visual bugs need a real screenshot from the installed release; CLI bugs need the exact command against the released build or a fresh install.
-- Do not claim a fix is done, and do not close a REQ, until end-user proof exists and is cited. Unit tests and pull-request checks are necessary but not sufficient.
+- Use `.codex/skills/test-workflow` for test strategy, commands, bug proof, user-flow coverage, TUI evidence, live-service credentials, installed binary/version proof, and release QA.
 - Edit in small steps and validate as you go. After data-flow or ordering changes, scan related patterns and remove obsolete ones when in scope.
 - After meaningful edits or dependent evidence-gathering, check the result before relying on it.
 - Ask for approval before workarounds or behavior changes. If a request adds mess, say so.
-- Run the most relevant tests first: `cd packages/<pkg> && bun test <target>`.
-- Format touched files before each commit: `bun x prettier --write <paths>`.
-- Type-check before staging or committing: `bun typecheck`.
-- Run `bun turbo test:ci` before pull requests, merges, or repo-wide health claims.
-- For docs-only or formatting-only edits, run a formatter or linter instead of tests.
 - Do not continue if a required command fails.
 
 ## Codebase Orientation
@@ -259,7 +251,7 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - `packages/app` is the shared Solid UI; `packages/desktop` and `packages/desktop-electron` wrap desktop surfaces around it.
 - `packages/sdk/js` and `packages/plugin` define generated client and extension surfaces that must stay aligned with server and transport contracts.
 - `packages/web`, `packages/docs`, and `specs/` carry public docs and protocol specs; use package-local scripts from `package.json` for validation.
-- Agent Swarm terminal QA lives in `e2e/agent-swarm-tui` and should map fork-owned behavior back to `FORK_CHANGELOG.md` or `USER_FLOWS.md` when those files are in scope.
+- Route Agent Swarm terminal QA through `.codex/skills/test-workflow`; the harness lives in `e2e/agent-swarm-tui`.
 
 ## Prohibited Practices
 
@@ -269,45 +261,6 @@ These rules apply to every file in the repo. Bullets that start with `In this do
 - Stopping while an outside workflow is still non-terminal and you can still observe or move it.
 - Sneaking functional changes into refactoring.
 - Adding silent fallbacks, legacy shims, or quiet workarounds.
-
-## API Keys
-
-- If planned validation uses a real LLM or another live service, first verify that the needed credentials and access actually work from the environment or the likely `.env` files.
-- This gate does not apply to docs-only changes, pure unit tests, or fully mocked integrations.
-- Before you ask the user for a key or permission, confirm that the blocker is real and not just local misconfiguration.
-
-## Common Commands
-
-`bun x prettier --write <paths>` Format touched files.
-`bun typecheck` Monorepo type-check.
-`bun turbo test:ci` Repo-wide CI test graph.
-
-### Execution Environment
-
-- Use Bun and repo package scripts. Do not use global interpreters or absolute paths.
-- For long-running commands, use timeouts that match the real wait window instead of stopping early.
-
-### Package Runs
-
-- Run commands from the touched package or its package script. Never run root `bun test`; it is meant to fail so you do not run tests from the repo root by mistake.
-- Run all related behavior you touched before you commit.
-- If you changed a package, run its tests or harnesses from that package.
-- If the change affects a user flow, integration, or runtime path, run the tests or manual harnesses that prove that path locally.
-- For provider-specific integrations or remote services, run the full related coverage when the needed keys exist. Key-based skips are not good enough proof.
-
-### Test Guidelines (Canonical)
-
-- Keep each test function to about 100 lines or less. Keep tests deterministic and small. Each test should prove one behavior clearly.
-- Test behavior, not private implementation details, unless you truly must.
-- Use real framework objects when practical.
-- When behavior changes, usually extend nearby tests instead of making a new test file by default. Do not add a new test unless nearby tests cannot cleanly cover the changed behavior.
-- Use focused test runs while debugging.
-- Do not duplicate the same proof across unit and integration levels.
-- Use precise assertions in one clear order. Avoid OR logic in assertions.
-- Use stable, descriptive names.
-- Remove dead code you find while testing when it is in scope.
-- Unit tests stay offline and use minimal realistic mocks.
-- Integration tests use real services only when needed and should not duplicate unit coverage.
 
 ## Fork Context
 
@@ -414,8 +367,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
   3. The user tests that local build by hand and gives explicit approval.
   4. Only then tag the release, create the GitHub Release, and publish to npm.
 - Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts changed.
-- Before release approval, prove the exact release commit satisfies the live repo gates and relevant workflow runs for its ref, or their local equivalents when GitHub cannot run them: `bun typecheck`, `bun turbo test:ci`, app e2e, Agent Swarm e2e when relevant, auth smoke when configured, and the repo-specific release or publish workflow requirements.
-- Before any release or safety claim, build and reinstall the CLI from the fresh local build, launch it against the maintainer's canonical local test agency, send a real first message through the connected conversation, and verify that a non-empty streaming assistant response renders; auth-smoke CI alone never passes this gate, and any launch failure blocks the release until you reproduce the root cause.
+- Before release approval or any release safety claim, satisfy `.codex/skills/test-workflow` release proof for the exact release commit.
 - No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit. Use `.codex/skills/codex-cli-review` with base `vrsen/dev`; if any review finding remains, stop and surface it to the user.
 
 ## Documentation Rules
@@ -427,6 +379,7 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 - Point to the code files that match the documented behavior.
 - Lead with the user benefit before the technical steps.
 - In the main user flow, prefer product words over implementation details unless those details are required.
+- Update docs and examples when behavior or APIs change, and make sure they match the code.
 - Spell out the real workflows or use cases the change unlocks. Group related information together so the full recipe is in one place. Cut filler and repetition. Keep the shortest path to value obvious.
 - Before you plan or edit a user-visible flow, read the TUI Product Doc. If the user asks to change user-visible behavior, update that doc in the same task or record it as an active artifact.
 - Before you edit docs, read the target page and any linked official references that matter, and review nearby docs so you place the change in the right spot.
@@ -444,7 +397,6 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 - No file may grow past 500 lines unless the user explicitly approves an exception.
 - Aim for methods under 100 lines, and prefer 10 to 40.
-- Aim for 90% test coverage or better.
 
 ### Large Files
 
@@ -487,32 +439,14 @@ These rules apply to managers. Workers follow the scoped mandate and return evid
 
 - In Drizzle schemas, use snake_case field names so you do not need to redefine column names as strings.
 
-## Test Quality
-
-- Follow the canonical test guidelines above. The rules here focus on layout and hygiene.
-- Aim for test functions under 100 lines.
-- Use the standard test tools and patterns already used here.
-- Use isolated file systems and temp directories.
-- Avoid slow or hanging tests. If you must skip one, leave a clear `FIXME`.
-- Follow existing package-local test structure and naming. Upstream tests still matter, but Agent Swarm-specific behavior needs named fork-owned coverage mapped to `FORK_CHANGELOG.md` or `USER_FLOWS.md`; keep that coverage separate from upstream tests when feasible so expected fork divergence or upstream test drift cannot mask fork regressions. Do not run tests from the repo root. Use package directories like `packages/opencode`.
-- Agent Swarm TUI fixes need real automated TUI evidence against a real Agency Swarm swarm when feasible; handoff fixes especially need proof that the handoff path works, or a recorded blocker explaining why that proof was not feasible.
-- When persisted state, queued work, history, fork-only metadata, SDK payloads, UI state, or similar internal state crosses a process, API, or transport boundary, validation must prove both local behavior and the exact serialized outbound payload or boundary contract.
-- Avoid tests that give false confidence. Startup auth, CLI/app wiring, streaming, persistence, and workspace flow need integration or end-to-end coverage plus direct inspection of the user path when practical, not unit-only proof.
-- Retire unit tests that hide gaps in real behavior.
-- Remove dead code when it is in scope.
-- Avoid mocks as much as you can.
-- Test the real implementation. Do not copy production logic into tests.
-
-### Strictness
+## Type Safety
 
 - Treat weak typing as a bug.
 - If you reach for `Any`, duck typing, or runtime field probing, stop and use proper types first.
 - Avoid `# type: ignore` in production code.
 - Use typed dependency models when they exist, and access their fields directly.
 - Before you change runtime code, explore the widest relevant type context first.
-- Avoid hardcoded temp paths or ad-hoc directories in code or tests.
 - Prefer top-level imports. If you need a local import, call it out.
-- Do not claim to fix flakiness unless you observed and documented the flake.
 
 ## During Refactoring: Avoid Functional Changes
 
@@ -581,4 +515,4 @@ Why: without a hardcoded source of truth, agents re-derive behavior from code ea
 - Fork Repo: `https://github.com/VRSEN/agentswarm-cli`
 - Upstream Repo: `https://github.com/anomalyco/opencode`
 - Repo skills are checked-in manager instructions under `.codex/skills/**`, not product/TUI skills and not automatic behavior by themselves. `AGENTS.md` may route work to them by path or name; agents must read the relevant `SKILL.md` on demand unless the environment exposes the skill directly.
-- Available repo skills: `.codex/skills/requirement-ledger`, `.codex/skills/policy-maintenance`, `.codex/skills/delegation-management`, `.codex/skills/codex-cli-review`, and `.codex/skills/claude-cli-review`.
+- Available repo skills: `.codex/skills/requirement-ledger`, `.codex/skills/policy-maintenance`, `.codex/skills/test-workflow`, `.codex/skills/delegation-management`, `.codex/skills/codex-cli-review`, and `.codex/skills/claude-cli-review`.

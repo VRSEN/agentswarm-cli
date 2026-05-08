@@ -318,13 +318,13 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 - **End-user proof gate for bug fixes**
   - Intent: stop bug fixes from being marked done without proof from the real user flow.
   - Behavior: bug-fix work is not complete until the same user-visible flow is rerun and checked.
-  - Implementation: the proof rules under `## Safety Protocols` in `AGENTS.md`.
+  - Implementation: `.codex/skills/test-workflow`.
   - Added by: `537df24c`
 
 - **Screenshot proof gate for TUI and visual fixes**
   - Intent: stop visual and TUI fixes from closing without a real image check.
   - Behavior: TUI and visual bug fixes need screenshot proof from the installed or user-visible build.
-  - Implementation: the TUI proof rule under `## Safety Protocols` in `AGENTS.md`.
+  - Implementation: `.codex/skills/test-workflow`.
   - Added by: `80f8fa36`
 
 - **Codex pre-release review gate**
