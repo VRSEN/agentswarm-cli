@@ -646,6 +646,7 @@ export async function prepareProjectLaunch(project: AgencyProject): Promise<Prep
   const python = await ensureProjectPython(project.directory)
   if (!python) return
 
+  prompts.log.info("Starting your agency project.")
   const server = await startProjectServer(project.directory, python)
   return {
     directory: project.directory,
@@ -699,7 +700,7 @@ async function ensureProjectPython(directory: string) {
           canary = { healthy: false, stderr: "", timedOut: false }
         }
         if (canary.healthy) {
-          prompts.log.success("Python environment ready")
+          prompts.log.success("Agency Swarm packages ready")
           return [venvPython]
         }
         if (canary.timedOut) {
@@ -795,7 +796,7 @@ async function ensureProjectPython(directory: string) {
       await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr, install.logFile),
     )
   }
-  prompts.log.success("Python environment ready")
+  prompts.log.success("Agency Swarm packages ready")
   return [venvPython]
 }
 
@@ -1099,6 +1100,7 @@ async function startProjectServer(directory: string, python: string[]) {
     await waitForServer({
       baseURL: `http://127.0.0.1:${port}`,
       child,
+      directory,
       stderr,
     })
   } catch (error) {
@@ -1115,6 +1117,7 @@ async function startProjectServer(directory: string, python: string[]) {
 async function waitForServer(input: {
   baseURL: string
   child: ReturnType<typeof Bun.spawn>
+  directory: string
   stderr: ServerStderrCollector
 }) {
   const deadline = Date.now() + SERVER_START_TIMEOUT_MS
@@ -1123,12 +1126,7 @@ async function waitForServer(input: {
     const exited = await Promise.race([input.child.exited.then((code: number) => code), sleep(200).then(() => null)])
     if (typeof exited === "number") {
       const stderr = await input.stderr.read(SERVER_STDERR_COLLECT_TIMEOUT_MS)
-      const summary = summarizeBridgeStderr(stderr)
-      throw new Error(
-        summary
-          ? `Agency Swarm server exited with code ${exited}: ${summary}`
-          : `Agency Swarm server exited with code ${exited}`,
-      )
+      throw new Error(formatAgencyServerExitFailure(exited, stderr, input.directory))
     }
 
     try {
@@ -1150,6 +1148,42 @@ async function waitForServer(input: {
         ? `Timed out waiting for the Agency Swarm server to start after ${formatInstallDuration(SERVER_START_TIMEOUT_MS)}. Bridge output only contained non-fatal startup warnings: ${warningSummary}`
         : `Timed out waiting for the Agency Swarm server to start after ${formatInstallDuration(SERVER_START_TIMEOUT_MS)}`,
   )
+}
+
+function formatAgencyServerExitFailure(exited: number, stderr: string, directory: string) {
+  const projectFailure = formatAgencyProjectStartupFailure(stderr, directory)
+  if (projectFailure) return projectFailure
+  const summary = summarizeBridgeStderr(stderr)
+  return summary
+    ? `Agency Swarm server exited with code ${exited}: ${summary}`
+    : `Agency Swarm server exited with code ${exited}`
+}
+
+function formatAgencyProjectStartupFailure(stderr: string, directory: string) {
+  const exception = summarizePythonTraceback(stderr)
+  if (!exception) return
+  const frame = findAgencyPyFrame(stderr, directory)
+  const importFailure = /^(?:[\w.]+\.)?(?:ImportError|ModuleNotFoundError):/.test(exception)
+  const title = importFailure ? "Your agency project could not load." : "Your agency project failed to start."
+  const location = frame ? `\nAt: agency.py:${frame.line}${frame.source ? `\n${frame.source}` : ""}` : ""
+  const recovery = importFailure
+    ? "Fix the missing import or dependency in this project, then run agentswarm again."
+    : "Fix the error above, then run agentswarm again."
+  return `${title}\n${exception}${location}\n${recovery}`
+}
+
+function findAgencyPyFrame(stderr: string, directory: string) {
+  const lines = stderr.split(/\r?\n/)
+  const agencyFile = path.resolve(directory, "agency.py")
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const match = lines[index]?.match(/^\s*File "([^"]*agency\.py)", line (\d+),/)
+    if (!match) continue
+    if (path.resolve(match[1] ?? "") !== agencyFile) continue
+    return {
+      line: match[2] ?? "?",
+      source: lines[index + 1]?.trim(),
+    }
+  }
 }
 
 function createServerStderrCollector(
