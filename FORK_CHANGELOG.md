@@ -239,8 +239,8 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 - **Launcher manages Python dependency setup with uv**
   - Intent: keep the project backend package ready for the launcher path without overriding user dependency manifests.
-  - Behavior: the launcher creates `.venv` with uv, re-runs `requirements.txt` or `pyproject.toml` installs with uv when present, and only installs or refreshes `agency-swarm[fastapi,litellm]` when no manifest exists.
-  - Implementation: `installProjectDependencies` and `ensureLatestAgencySwarm` in `packages/opencode/src/agency-swarm/npx.ts`.
+  - Behavior: the launcher creates or repairs `.venv` with Python, installs uv into that project `.venv` with pip, then uses launcher-managed local uv for fast `requirements.txt`, `pyproject.toml`, and fallback `agency-swarm[fastapi,litellm]` installs.
+  - Implementation: `ensureLocalUv`, `installProjectDependencies`, and `ensureLatestAgencySwarm` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `a77de00c`
 
 - **Run-mode attachments use structured Agency Swarm messages**
