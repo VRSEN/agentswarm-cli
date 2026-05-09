@@ -1,6 +1,7 @@
 export namespace AgencyProduct {
   export const name = "agent-swarm-cli"
   export const cmd = "agentswarm"
+  export const mdnsDomain = "agentswarm.local"
   export const docs = "https://agency-swarm.ai/core-framework/agencies/agent-swarm-cli"
   export const issue = "https://github.com/VRSEN/agentswarm-cli/issues/new?template=bug-report.yml"
   export const connect = "Authenticate providers"

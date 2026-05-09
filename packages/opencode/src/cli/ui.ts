@@ -3,13 +3,6 @@ import { EOL } from "os"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { logo as glyphs } from "./logo"
 
-const wordmark = [
-  `⠀                                ▄     `,
-  `█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█`,
-  `█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀`,
-  `▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀`,
-]
-
 export const CancelledError = NamedError.create("UICancelledError", z.void())
 
 export const Style = {
@@ -49,9 +42,9 @@ export function empty() {
 export function logo(pad?: string) {
   if (!process.stdout.isTTY && !process.stderr.isTTY) {
     const result = []
-    for (const row of wordmark) {
+    for (const [index, left] of glyphs.left.entries()) {
       if (pad) result.push(pad)
-      result.push(row)
+      result.push(`${left} ${glyphs.right[index] ?? ""}`.trimEnd())
       result.push(EOL)
     }
     return result.join("").trimEnd()

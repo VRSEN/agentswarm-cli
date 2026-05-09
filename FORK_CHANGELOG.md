@@ -29,8 +29,8 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 - **Agent Swarm CLI name and `agentswarm` command**
   - Intent: ship the fork under Agent Swarm branding instead of the upstream OpenCode product name.
-  - Behavior: users install `@agentswarm/agentswarm-cli` and run `agentswarm`.
-  - Implementation: `bin.agentswarm` in `packages/opencode/package.json` and `AgencyProduct.cmd` in `packages/opencode/src/agency-swarm/product.ts`.
+  - Behavior: users install `agentswarm-cli` or launch with `@vrsen/agentswarm` and run `agentswarm`; CLI help, mDNS defaults, mDNS service names, and uninstall copy use Agent Swarm naming. Uninstall does not invent Homebrew, Chocolatey, or Scoop commands because those fork channels are not published.
+  - Implementation: `bin.agentswarm` in `packages/opencode/package.json`, `AgencyProduct.cmd` and `AgencyProduct.mdnsDomain` in `packages/opencode/src/agency-swarm/product.ts`, CLI network/mDNS helpers, and `UninstallCommand`.
   - Added by: `95a39a7e`
 
 - **One-command launcher npm package**

@@ -1,6 +1,7 @@
 import type { Argv, InferredOptionTypes } from "yargs"
 import { Config } from "../config"
 import { AppRuntime } from "@/effect/app-runtime"
+import { AgencyProduct } from "@/agency-swarm/product"
 
 const options = {
   port: {
@@ -20,8 +21,8 @@ const options = {
   },
   "mdns-domain": {
     type: "string" as const,
-    describe: "custom domain name for mDNS service (default: opencode.local)",
-    default: "opencode.local",
+    describe: `custom domain name for mDNS service (default: ${AgencyProduct.mdnsDomain})`,
+    default: AgencyProduct.mdnsDomain,
   },
   cors: {
     type: "string" as const,
