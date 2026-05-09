@@ -227,7 +227,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 - **One-command launcher onboarding and project detection**
   - Intent: help `npx` users land in the right Agency Swarm project with less setup guesswork.
-  - Behavior: the launcher detects the target project and runs onboarding before starting the fork when needed.
+  - Behavior: the launcher runs onboarding for default starts; `--prompt`, `--agent`, and explicit `agency-swarm/...` model launches skip onboarding and auto-detect only with a detected Agency project, while non-Agency explicit models do not trigger fork auto-project setup.
   - Implementation: `shouldRunNpxOnboarding` and `resolveNpxAutoProject` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `772db106`
 
