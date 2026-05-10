@@ -44,7 +44,7 @@ from pathlib import Path
 
 TEMPLATE_URL = "https://github.com/agency-ai-solutions/agency-starter-template.git"
 # Pin the starter template to a known-good SHA so unrelated upstream changes cannot
-# flip this release gate red on agentswarm-cli pushes. Bump deliberately when a new
+# flip this release gate red on VRSEN/agentswarm-cli pushes. Bump deliberately when a new
 # template revision is required and re-run this workflow against it.
 TEMPLATE_REV = "c45541fb5ca182dbebca23ddc8bbc933acd83d32"
 DEFAULT_PORT_BASE = 59970

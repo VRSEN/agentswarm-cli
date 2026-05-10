@@ -1,6 +1,6 @@
 # Agent Swarm CLI User Flows
 
-This is the fork-specific release QA source for `agentswarm-cli`. Use it with `FORK_CHANGELOG.md`: the changelog records approved fork divergence, and this file turns that divergence into flows to test one by one before v1.4.32 and later releases.
+This is the fork-specific release QA source for the `VRSEN/agentswarm-cli` repository. Use it with `FORK_CHANGELOG.md`: the changelog records approved fork divergence, and this file turns that divergence into flows to test one by one before v1.4.32 and later releases.
 
 Do not document upstream-only OpenCode behavior here. Generic session navigation, prompt submission, PR checkout mechanics, native provider/model management, and ordinary `gh` behavior belong upstream unless the fork changes the user outcome.
 
