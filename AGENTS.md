@@ -16,6 +16,7 @@ If this file conflicts with the global policy, direct user words, or checked rem
 ## Fork Boundary
 
 - This repo is the maintained Agent Swarm CLI fork of OpenCode.
+- Upstream OpenCode source is `https://github.com/anomalyco/opencode`; verify the live remote or URL before using it for comparisons.
 - Keep fork delta limited to Agency Swarm integration, required fork packaging or release work, and approved branding.
 - Before non-trivial edits to files that also exist upstream, read the upstream version when a verified upstream source is available and keep the change easy to rebase.
 - Treat unexplained fork-only lines as expensive. If a line is not required by `FORK_CHANGELOG.md`, `USER_FLOWS.md`, checked code, or direct user mandate, remove it or escalate before expanding it.
