@@ -224,12 +224,6 @@ export function packageManagerUninstallCommand(method: Installation.Method): str
   switch (method) {
     case "npm":
       return ["npm", "uninstall", "-g", InstallationDistribution.packageName]
-    case "pnpm":
-      return ["pnpm", "uninstall", "-g", InstallationDistribution.packageName]
-    case "bun":
-      return ["bun", "remove", "-g", InstallationDistribution.packageName]
-    case "yarn":
-      return ["yarn", "global", "remove", InstallationDistribution.packageName]
     default:
       return undefined
   }

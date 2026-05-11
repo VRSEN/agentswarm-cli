@@ -255,9 +255,9 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `AgencySwarmRunSession.get` in `packages/opencode/src/agency-swarm/run-session.ts` and `resolveRunProject` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `f5ff56b0`
 
-- **Upgrade only supports published `agentswarm-cli` package channels**
-  - Intent: prevent upgrade flows from claiming support for package-manager channels where the fork is not published.
-  - Behavior: upgrade supports npm, pnpm, bun, and curl; Yarn, Homebrew, Chocolatey, and Scoop return a clear unsupported-channel message.
+- **Upgrade only supports npm for `agentswarm-cli`**
+  - Intent: prevent upgrade flows from claiming support for unsupported upgrade methods.
+  - Behavior: upgrade supports npm only; Yarn, pnpm, Bun, Homebrew, Chocolatey, Scoop, and curl return a clear unsupported upgrade method message.
   - Implementation: `latestImpl` and `upgradeImpl` in `packages/opencode/src/installation/index.ts` with `UpgradeCommand` in `packages/opencode/src/cli/cmd/upgrade.ts`.
   - Added by: `9d86d959`
 

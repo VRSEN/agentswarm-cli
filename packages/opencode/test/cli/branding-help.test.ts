@@ -35,10 +35,17 @@ describe("CLI branding help", () => {
     expect(help).not.toContain("uninstall opencode")
   })
 
-  test("accepts yarn as an upgrade method so unsupported-channel handling can run", async () => {
+  test("shows npm-only upgrade method help without unsupported methods", async () => {
     const help = await commandHelp(UpgradeCommand)
 
-    expect(help).toContain('"yarn"')
+    expect(help).toContain("upgrade method to use; only npm is supported")
+    expect(help).not.toContain('"curl"')
+    expect(help).not.toContain('"yarn"')
+    expect(help).not.toContain('"pnpm"')
+    expect(help).not.toContain('"bun"')
+    expect(help).not.toContain('"brew"')
+    expect(help).not.toContain('"choco"')
+    expect(help).not.toContain('"scoop"')
   })
 
   test("uses the Agent Swarm mDNS domain by default", () => {
@@ -81,5 +88,8 @@ describe("CLI branding help", () => {
     expect(packageManagerUninstallCommand("brew")).toBeUndefined()
     expect(packageManagerUninstallCommand("choco")).toBeUndefined()
     expect(packageManagerUninstallCommand("scoop")).toBeUndefined()
+    expect(packageManagerUninstallCommand("yarn")).toBeUndefined()
+    expect(packageManagerUninstallCommand("pnpm")).toBeUndefined()
+    expect(packageManagerUninstallCommand("bun")).toBeUndefined()
   })
 })
