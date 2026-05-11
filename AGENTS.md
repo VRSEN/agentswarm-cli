@@ -7,8 +7,9 @@ If this file conflicts with the global policy, direct user words, or checked rem
 ## Repo Baseline
 
 - `CLAUDE.md` must stay a symlink to `AGENTS.md`.
-- The default branch for this repo is `origin/dev` from `https://github.com/VRSEN/agentswarm-cli`.
-- Treat fetched `origin/dev` as the baseline for new Agent Swarm CLI work in this repo.
+- The default fork branch is `dev` in `https://github.com/VRSEN/agentswarm-cli`.
+- If `origin` points to that VRSEN fork, treat fetched `origin/dev` as the baseline for new Agent Swarm CLI work.
+- If `origin` points elsewhere, verify the VRSEN fork remote and its `dev` branch before reset or edit.
 - Do not edit dirty user worktrees. Any task that edits files must use a fresh or owned isolated worktree outside dirty user checkouts, following the global worktree placement rule.
 - Hard-reset only fresh or owned isolated worktrees or branches to fetched `origin/dev`, and only when they contain no user work.
 - Never hard-reset, checkout-overwrite, rebase, stash, or clean dirty user-owned trees without explicit approval for that exact target and action.
