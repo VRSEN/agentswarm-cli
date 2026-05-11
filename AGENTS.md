@@ -11,7 +11,7 @@ If this file conflicts with the global policy, direct user words, or checked rem
 - If `origin` points to that VRSEN fork, treat fetched `origin/dev` as the baseline for new Agent Swarm CLI work.
 - If `origin` points elsewhere, verify the VRSEN fork remote and its `dev` branch before reset or edit.
 - Do not edit dirty user worktrees. Any task that edits files must use a fresh or owned isolated worktree outside dirty user checkouts, following the global worktree placement rule.
-- Hard-reset only fresh or owned isolated worktrees or branches to fetched `origin/dev`, and only when they contain no user work.
+- Hard-reset only fresh or owned isolated worktrees or branches to the verified VRSEN fork `dev` baseline, using fetched `origin/dev` only when `origin` points to that fork, and only when they contain no user work.
 - Never hard-reset, checkout-overwrite, rebase, stash, or clean dirty user-owned trees without explicit approval for that exact target and action.
 - Do not assume local remote aliases beyond checked `git remote -v` output. If upstream OpenCode comparison is needed, verify the actual upstream remote or URL first.
 
