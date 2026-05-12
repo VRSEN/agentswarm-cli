@@ -85,11 +85,21 @@ describe("CLI branding help", () => {
       "-g",
       InstallationDistribution.packageName,
     ])
+    expect(packageManagerUninstallCommand("pnpm")).toEqual([
+      "pnpm",
+      "uninstall",
+      "-g",
+      InstallationDistribution.packageName,
+    ])
+    expect(packageManagerUninstallCommand("bun")).toEqual(["bun", "remove", "-g", InstallationDistribution.packageName])
+    expect(packageManagerUninstallCommand("yarn")).toEqual([
+      "yarn",
+      "global",
+      "remove",
+      InstallationDistribution.packageName,
+    ])
     expect(packageManagerUninstallCommand("brew")).toBeUndefined()
     expect(packageManagerUninstallCommand("choco")).toBeUndefined()
     expect(packageManagerUninstallCommand("scoop")).toBeUndefined()
-    expect(packageManagerUninstallCommand("yarn")).toBeUndefined()
-    expect(packageManagerUninstallCommand("pnpm")).toBeUndefined()
-    expect(packageManagerUninstallCommand("bun")).toBeUndefined()
   })
 })
