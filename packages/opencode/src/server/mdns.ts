@@ -1,3 +1,4 @@
+import { AgencyProduct } from "@/agency-swarm/product"
 import { Log } from "@/util"
 import { Bonjour } from "bonjour-service"
 
@@ -6,13 +7,17 @@ const log = Log.create({ service: "mdns" })
 let bonjour: Bonjour | undefined
 let currentPort: number | undefined
 
+export function serviceName(port: number) {
+  return `${AgencyProduct.cmd}-${port}`
+}
+
 export function publish(port: number, domain?: string) {
   if (currentPort === port) return
   if (bonjour) unpublish()
 
   try {
-    const host = domain ?? "opencode.local"
-    const name = `opencode-${port}`
+    const host = domain ?? AgencyProduct.mdnsDomain
+    const name = serviceName(port)
     bonjour = new Bonjour()
     const service = bonjour.publish({
       name,

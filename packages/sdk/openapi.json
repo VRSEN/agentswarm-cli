@@ -10966,7 +10966,7 @@
             "type": "boolean"
           },
           "mdnsDomain": {
-            "description": "Custom domain name for mDNS service (default: opencode.local)",
+            "description": "Custom domain name for mDNS service (default: agentswarm.local)",
             "type": "string"
           },
           "cors": {

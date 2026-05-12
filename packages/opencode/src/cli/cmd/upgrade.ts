@@ -17,9 +17,8 @@ export const UpgradeCommand = {
       })
       .option("method", {
         alias: "m",
-        describe: "installation method to use",
+        describe: "upgrade method to use; only npm is supported",
         type: "string",
-        choices: ["curl", "npm", "pnpm", "bun", "brew", "choco", "scoop"],
       })
   },
   handler: async (args: { target?: string; method?: string }) => {

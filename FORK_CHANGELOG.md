@@ -29,8 +29,12 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 - **Agent Swarm CLI name and `agentswarm` command**
   - Intent: ship the fork under Agent Swarm branding instead of the upstream OpenCode product name.
-  - Behavior: users install `@agentswarm/agentswarm-cli` and run `agentswarm`.
-  - Implementation: `bin.agentswarm` in `packages/opencode/package.json` and `AgencyProduct.cmd` in `packages/opencode/src/agency-swarm/product.ts`.
+  - Behavior: the command is `agentswarm`.
+  - Behavior: the npx launcher is `npx @vrsen/agentswarm`.
+  - Behavior: CLI help and uninstall copy use Agent Swarm naming.
+  - Behavior: mDNS defaults and service names use Agent Swarm naming.
+  - Behavior: uninstall copy does not invent unsupported package-manager commands.
+  - Implementation: `bin.agentswarm` in `packages/opencode/package.json`, `AgencyProduct.cmd` and `AgencyProduct.mdnsDomain` in `packages/opencode/src/agency-swarm/product.ts`, CLI network/mDNS helpers, and `UninstallCommand`.
   - Added by: `95a39a7e`
 
 - **One-command launcher npm package**
@@ -227,7 +231,10 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 - **One-command launcher onboarding and project detection**
   - Intent: help `npx` users land in the right Agency Swarm project with less setup guesswork.
-  - Behavior: the launcher detects the target project and runs onboarding before starting the fork when needed.
+  - Behavior: the launcher runs onboarding for default starts.
+  - Behavior: `--prompt`, `--agent`, and explicit `agency-swarm/...` model launches skip onboarding.
+  - Behavior: auto-project launch requires a detected Agency project.
+  - Behavior: non-Agency explicit models do not trigger fork auto-project setup.
   - Implementation: `shouldRunNpxOnboarding` and `resolveNpxAutoProject` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `772db106`
 
@@ -255,10 +262,12 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `AgencySwarmRunSession.get` in `packages/opencode/src/agency-swarm/run-session.ts` and `resolveRunProject` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `f5ff56b0`
 
-- **Upgrade only supports published `agentswarm-cli` channels**
-  - Intent: prevent upgrade flows from claiming support for package-manager channels where the fork is not published.
-  - Behavior: upgrade supports npm, pnpm, bun, and curl; Yarn, Homebrew, Chocolatey, and Scoop return a clear unsupported-channel message.
+- **Upgrade only supports npm for `agentswarm-cli`**
+  - Intent: prevent upgrade flows from claiming support for unsupported upgrade methods.
+  - Behavior: upgrade supports npm only.
+  - Behavior: Yarn, pnpm, Bun, Homebrew, Chocolatey, Scoop, and curl return a clear unsupported upgrade method message.
   - Implementation: `latestImpl` and `upgradeImpl` in `packages/opencode/src/installation/index.ts` with `UpgradeCommand` in `packages/opencode/src/cli/cmd/upgrade.ts`.
+  - Implementation: `/global/upgrade` error handling in `packages/opencode/src/server/routes/global.ts`.
   - Added by: `9d86d959`
 
 ## Web/App Surface

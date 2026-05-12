@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { AgencyProduct } from "@/agency-swarm/product"
 import { zod } from "@/util/effect-zod"
 import { PositiveInt, withStatics } from "@/util/schema"
 
@@ -9,7 +10,7 @@ export const Server = Schema.Struct({
   hostname: Schema.optional(Schema.String).annotate({ description: "Hostname to listen on" }),
   mdns: Schema.optional(Schema.Boolean).annotate({ description: "Enable mDNS service discovery" }),
   mdnsDomain: Schema.optional(Schema.String).annotate({
-    description: "Custom domain name for mDNS service (default: opencode.local)",
+    description: `Custom domain name for mDNS service (default: ${AgencyProduct.mdnsDomain})`,
   }),
   cors: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Additional domains to allow for CORS",

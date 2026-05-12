@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono"
 import { describeRoute, resolver, validator } from "hono-openapi"
 import { streamSSE } from "hono/streaming"
-import { Effect, Schema } from "effect"
+import { Cause, Effect, Schema } from "effect"
 import z from "zod"
 import { BusEvent } from "@/bus/bus-event"
 import { SyncEvent } from "@/sync"
@@ -19,6 +19,37 @@ import { errors } from "../error"
 const log = Log.create({ service: "server" })
 
 export const GlobalDisposedEvent = BusEvent.define("global.disposed", Schema.Struct({}))
+
+type UpgradeResult =
+  | { success: true; status: 200; version: string }
+  | { success: false; status: 400 | 500; error: string }
+
+function upgradeErrorMessage(error: unknown) {
+  if (error && typeof error === "object" && "stderr" in error && typeof error.stderr === "string") return error.stderr
+  if (error instanceof Error && error.message) return error.message
+  return String(error)
+}
+
+export function resolveGlobalUpgrade(svc: Installation.Interface, target?: string): Effect.Effect<UpgradeResult> {
+  return Effect.gen(function* () {
+    const method = yield* svc.method()
+    if (method === "unknown") {
+      return { success: false as const, status: 400 as const, error: "Unknown installation method" }
+    }
+
+    const next = target || (yield* svc.latest(method))
+    yield* svc.upgrade(method, next)
+    return { success: true as const, status: 200 as const, version: next }
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.succeed({
+        success: false as const,
+        status: 500 as const,
+        error: upgradeErrorMessage(Cause.squash(cause)),
+      }),
+    ),
+  )
+}
 
 async function streamEvents(c: Context, subscribe: (q: AsyncQueue<string | null>) => () => void) {
   return streamSSE(c, async (stream) => {
@@ -248,27 +279,7 @@ export const GlobalRoutes = lazy(() =>
       ),
       async (c) => {
         const result = await AppRuntime.runPromise(
-          Installation.Service.use((svc) =>
-            Effect.gen(function* () {
-              const method = yield* svc.method()
-              if (method === "unknown") {
-                return { success: false as const, status: 400 as const, error: "Unknown installation method" }
-              }
-
-              const target = c.req.valid("json").target || (yield* svc.latest(method))
-              const result = yield* Effect.catch(
-                svc.upgrade(method, target).pipe(Effect.as({ success: true as const, version: target })),
-                (err) =>
-                  Effect.succeed({
-                    success: false as const,
-                    status: 500 as const,
-                    error: err instanceof Error ? err.message : String(err),
-                  }),
-              )
-              if (!result.success) return result
-              return { ...result, status: 200 as const }
-            }),
-          ),
+          Installation.Service.use((svc) => resolveGlobalUpgrade(svc, c.req.valid("json").target)),
         )
         if (!result.success) {
           return c.json({ success: false, error: result.error }, result.status)

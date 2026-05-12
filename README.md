@@ -12,12 +12,10 @@ npm install -g agentswarm-cli
 agentswarm --version
 ```
 
-Other package managers can run the same published npm package:
+Or run it without installing:
 
 ```bash
-bun install -g agentswarm-cli
-pnpm add -g agentswarm-cli
-yarn global add agentswarm-cli
+npx @vrsen/agentswarm
 ```
 
 ## Start

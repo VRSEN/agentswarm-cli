@@ -9,6 +9,7 @@ import * as Timeout from "../../../src/util/timeout"
 import * as Network from "../../../src/cli/network"
 import * as Win32 from "../../../src/cli/cmd/tui/win32"
 import { TuiConfig } from "../../../src/cli/cmd/tui/config/tui"
+import { AgencyProduct } from "../../../src/agency-swarm/product"
 
 const stop = new Error("stop")
 const seen = {
@@ -35,7 +36,7 @@ function setup() {
     mdns: false,
     port: 0,
     hostname: "127.0.0.1",
-    mdnsDomain: "opencode.local",
+    mdnsDomain: AgencyProduct.mdnsDomain,
     cors: [],
   })
   spyOn(Win32, "win32DisableProcessedInput").mockImplementation(() => {})
@@ -62,8 +63,8 @@ describe("tui thread", () => {
       port: 0,
       hostname: "127.0.0.1",
       mdns: false,
-      "mdns-domain": "opencode.local",
-      mdnsDomain: "opencode.local",
+      "mdns-domain": AgencyProduct.mdnsDomain,
+      mdnsDomain: AgencyProduct.mdnsDomain,
       cors: [],
     }
     return TuiThreadCommand.handler(args)
