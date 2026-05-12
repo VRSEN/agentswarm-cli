@@ -31,7 +31,8 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Intent: ship the fork under Agent Swarm branding instead of the upstream OpenCode product name.
   - Behavior: the command is `agentswarm`.
   - Behavior: the npx launcher is `npx @vrsen/agentswarm`.
-  - Behavior: CLI help, mDNS defaults, mDNS service names, and uninstall copy use Agent Swarm naming.
+  - Behavior: CLI help and uninstall copy use Agent Swarm naming.
+  - Behavior: mDNS defaults and service names use Agent Swarm naming.
   - Behavior: uninstall copy does not invent unsupported package-manager commands.
   - Implementation: `bin.agentswarm` in `packages/opencode/package.json`, `AgencyProduct.cmd` and `AgencyProduct.mdnsDomain` in `packages/opencode/src/agency-swarm/product.ts`, CLI network/mDNS helpers, and `UninstallCommand`.
   - Added by: `95a39a7e`
@@ -230,7 +231,10 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 - **One-command launcher onboarding and project detection**
   - Intent: help `npx` users land in the right Agency Swarm project with less setup guesswork.
-  - Behavior: the launcher runs onboarding for default starts; `--prompt`, `--agent`, and explicit `agency-swarm/...` model launches skip onboarding and auto-detect only with a detected Agency project, while non-Agency explicit models do not trigger fork auto-project setup.
+  - Behavior: the launcher runs onboarding for default starts.
+  - Behavior: `--prompt`, `--agent`, and explicit `agency-swarm/...` model launches skip onboarding.
+  - Behavior: auto-project launch requires a detected Agency project.
+  - Behavior: non-Agency explicit models do not trigger fork auto-project setup.
   - Implementation: `shouldRunNpxOnboarding` and `resolveNpxAutoProject` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `772db106`
 
@@ -260,7 +264,8 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 - **Upgrade only supports npm for `agentswarm-cli`**
   - Intent: prevent upgrade flows from claiming support for unsupported upgrade methods.
-  - Behavior: upgrade supports npm only; Yarn, pnpm, Bun, Homebrew, Chocolatey, Scoop, and curl return a clear unsupported upgrade method message.
+  - Behavior: upgrade supports npm only.
+  - Behavior: Yarn, pnpm, Bun, Homebrew, Chocolatey, Scoop, and curl return a clear unsupported upgrade method message.
   - Implementation: `latestImpl` and `upgradeImpl` in `packages/opencode/src/installation/index.ts` with `UpgradeCommand` in `packages/opencode/src/cli/cmd/upgrade.ts`.
   - Added by: `9d86d959`
 
