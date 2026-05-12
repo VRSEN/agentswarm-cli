@@ -23,6 +23,7 @@ For each failure scenario, capture the visible user result and cite the source p
 #### Launcher bootstrap
 
 - **Trigger:** Start from `npx @vrsen/agentswarm`, an installed `agentswarm`, or the direct fork binary.
+- **Happy-path proof:** Launcher mode can be inferred from the `agentswarm` command shape or `AGENTSWARM_LAUNCHER=1`.
 - **Happy-path proof:** The wrapper finds the fork package or platform binary, sets or preserves `AGENTSWARM_LAUNCHER=1`, and opens the default TUI command with Agent Swarm branding.
 - **Failure scenarios to test:** Missing fork package or platform binary fails before the TUI opens.
 - **Failure scenarios to test:** The end-user path does not rely on the unapproved local `dist/` fallback.
@@ -38,6 +39,7 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** `requirements.txt` or `pyproject.toml` pins are respected with local uv.
 - **Happy-path proof:** No second unpinned `agency-swarm` upgrade runs after manifest install.
 - **Happy-path proof:** Launcher-managed `agency-swarm[fastapi,litellm]` is used only when no manifest exists.
+- **Happy-path proof:** Local `.venv` uv is used for launcher-managed fallback installs into `.venv`.
 - **Failure scenarios to test:** Missing Python 3.12+ produces a visible launcher failure.
 - **Failure scenarios to test:** Failed imports produce a visible launcher failure.
 - **Failure scenarios to test:** uv install or repair failure produces a visible launcher failure.
@@ -49,7 +51,7 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Trigger:** Launch from a detected Agency project with `--prompt`, `--agent`, or an explicit `agency-swarm/...` model.
 - **Boundary:** Generic upstream prompt submission stays upstream.
 - **Boundary:** This row covers only fork-owned project detection and Run-mode setup before that prompt runs.
-- **Happy-path proof:** Interactive onboarding is skipped.
+- **Happy-path proof:** Prompt, agent, and `agency-swarm/...` model starts use the auto-project path rather than interactive onboarding.
 - **Happy-path proof:** The detected project is prepared before the TUI opens.
 - **Happy-path proof:** The local bridge and session-scoped Agency config are ready before the TUI opens.
 - **Happy-path proof:** `--agent` and `agency-swarm/...` model args are applied.
@@ -74,6 +76,7 @@ For each failure scenario, capture the visible user result and cite the source p
 #### Resume local Agency session
 
 - **Trigger:** Start the fork with an upstream-owned resume or continue entry that references an Agency run session.
+- **Happy-path proof:** Upstream-owned session or continue entries skip onboarding.
 - **Happy-path proof:** The saved local Agency project is recovered only when the run-session directory still matches the session directory.
 - **Happy-path proof:** Legacy local Agency history is recovered only for loopback local-agency sessions.
 - **Happy-path proof:** The recovered project is prepared before the TUI opens.

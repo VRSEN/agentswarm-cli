@@ -267,6 +267,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Behavior: upgrade supports npm only.
   - Behavior: Yarn, pnpm, Bun, Homebrew, Chocolatey, Scoop, and curl return a clear unsupported upgrade method message.
   - Implementation: `latestImpl` and `upgradeImpl` in `packages/opencode/src/installation/index.ts` with `UpgradeCommand` in `packages/opencode/src/cli/cmd/upgrade.ts`.
+  - Implementation: `/global/upgrade` error handling in `packages/opencode/src/server/routes/global.ts`.
   - Added by: `9d86d959`
 
 ## Web/App Surface
