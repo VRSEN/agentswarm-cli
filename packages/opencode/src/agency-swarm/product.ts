@@ -1,9 +1,29 @@
+declare const AGENTSWARM_PRODUCT: string | undefined
+
 export namespace AgencyProduct {
-  export const name = "agent-swarm-cli"
-  export const cmd = "agentswarm"
-  export const mdnsDomain = "agentswarm.local"
-  export const docs = "https://agency-swarm.ai/core-framework/agencies/agent-swarm-cli"
-  export const issue = "https://github.com/VRSEN/agentswarm-cli/issues/new?template=bug-report.yml"
+  const configuredProduct =
+    process.env.AGENTSWARM_PRODUCT === "openswarm" ||
+    (typeof AGENTSWARM_PRODUCT !== "undefined" && AGENTSWARM_PRODUCT === "openswarm")
+      ? "openswarm"
+      : "agentswarm"
+  export const profile = configuredProduct
+  export const name = profile === "openswarm" ? "OpenSwarm" : "Agent Swarm"
+  export const packageName = profile === "openswarm" ? "@vrsen/openswarm" : "@vrsen/agentswarm"
+  export const cmd = profile === "openswarm" ? "openswarm" : "agentswarm"
+  export const mdnsDomain = profile === "openswarm" ? "openswarm.local" : "agentswarm.local"
+  export const releaseRepo = profile === "openswarm" ? "VRSEN/OpenSwarm" : "VRSEN/agentswarm-cli"
+  export const docs =
+    profile === "openswarm"
+      ? "https://github.com/VRSEN/OpenSwarm"
+      : "https://agency-swarm.ai/core-framework/agencies/agent-swarm-cli"
+  export const issue =
+    profile === "openswarm"
+      ? "https://github.com/VRSEN/OpenSwarm/issues/new?template=bug-report.yml"
+      : "https://github.com/VRSEN/agentswarm-cli/issues/new?template=bug-report.yml"
+  export const starterTemplateRepo =
+    profile === "openswarm" ? "VRSEN/OpenSwarm" : "agency-ai-solutions/agency-starter-template"
+  export const starterProjectName = profile === "openswarm" ? "openswarm" : "my-agency"
+  export const agencyEntryFiles = profile === "openswarm" ? ["swarm.py", "agency.py"] : ["agency.py"]
   export const connect = "Authenticate providers"
   export const start = [
     "Authenticate providers and connect to a local agency-swarm server before sending prompts.",
@@ -62,7 +82,7 @@ export namespace AgencyProduct {
           next = next.replace("long sessions near context limits", "long agency-swarm sessions near context limits")
         }
         if (next.includes("{highlight}opencode auth list{/highlight}")) {
-          next = "Run {highlight}agentswarm auth list{/highlight} to see configured provider credentials"
+          next = `Run {highlight}${cmd} auth list{/highlight} to see configured provider credentials`
         }
         return next
       })

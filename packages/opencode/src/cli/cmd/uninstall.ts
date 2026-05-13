@@ -4,6 +4,7 @@ import * as prompts from "@clack/prompts"
 import { AppRuntime } from "@/effect/app-runtime"
 import { Installation } from "../../installation"
 import { InstallationDistribution } from "@/installation/distribution"
+import { AgencyProduct } from "@/agency-swarm/product"
 import { Global } from "@opencode-ai/core/global"
 import fs from "fs/promises"
 import path from "path"
@@ -26,7 +27,7 @@ interface RemovalTargets {
 
 export const UninstallCommand = {
   command: "uninstall",
-  describe: "uninstall Agent Swarm CLI and remove all related files",
+  describe: `uninstall ${AgencyProduct.name} and remove all related files`,
   builder: (yargs: Argv) =>
     yargs
       .option("keep-config", {
@@ -57,7 +58,7 @@ export const UninstallCommand = {
     UI.empty()
     UI.println(UI.logo("  "))
     UI.empty()
-    prompts.intro("Uninstall Agent Swarm CLI")
+    prompts.intro(`Uninstall ${AgencyProduct.name}`)
 
     const method = await AppRuntime.runPromise(Installation.Service.use((svc) => svc.method()))
     prompts.log.info(`Installation method: ${method}`)
@@ -217,7 +218,7 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
   }
 
   UI.empty()
-  prompts.log.success("Thank you for using Agent Swarm CLI!")
+  prompts.log.success(`Thank you for using ${AgencyProduct.name}!`)
 }
 
 export function packageManagerUninstallCommand(method: Installation.Method): string[] | undefined {

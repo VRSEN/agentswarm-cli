@@ -8,6 +8,7 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
 ## Scope
 
 - Launcher and install behavior for `npx @vrsen/agentswarm`, installed `agentswarm`, the direct fork binary, and `agentswarm pr`.
+- OpenSwarm package builds that reuse this TUI foundation through the OpenSwarm product profile.
 - Local Agency Swarm project detection, starter creation, Python environment repair, uv setup, bridge startup, resume recovery, and external Agency server connection.
 - TUI Run mode routing, `/auth`, `/connect`, run-target selection, attachments, history, handoffs, dead-server recovery, and hidden upstream-native commands.
 - Fork branding, tips, theme, config precedence, upgrade channel limits, share carry-forward, and developer/debug `agentswarm agency` commands.
@@ -28,6 +29,16 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Failure scenarios to test:** Missing fork package or platform binary fails before the TUI opens.
 - **Failure scenarios to test:** The end-user path does not rely on the unapproved local `dist/` fallback.
 - **Owner/source:** `packages/opencode/bin/agentswarm-npx`, `packages/opencode/bin/agentswarm`, `packages/opencode/package.json`, `packages/opencode/script/postinstall.mjs`, `packages/opencode/script/publish.ts`.
+
+#### OpenSwarm package profile
+
+- **Trigger:** Start from `npx @vrsen/openswarm` or an OpenSwarm release binary that sets `AGENTSWARM_PRODUCT=openswarm`.
+- **Happy-path proof:** Help, upgrade, mDNS, release repository, and package copy use OpenSwarm naming.
+- **Happy-path proof:** The launcher detects `swarm.py` before `agency.py`; the default Agent Swarm profile does not detect `swarm.py`.
+- **Happy-path proof:** A missing local project creates the `VRSEN/OpenSwarm` starter in `openswarm/`.
+- **Happy-path proof:** A release-built binary reports the OpenSwarm package version.
+- **Failure scenarios to test:** A missing custom OpenSwarm binary fallback still runs with OpenSwarm product identity.
+- **Owner/source:** `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/agency-swarm/server-launcher.ts`, `packages/opencode/src/installation/distribution.ts`, `packages/opencode/script/build.ts`, and `VRSEN/OpenSwarm/bin/openswarm`.
 
 #### Detected local project, venv, and uv
 

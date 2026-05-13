@@ -11,9 +11,10 @@ import { Storage } from "@/storage/storage"
 import { Filesystem } from "@/util/filesystem"
 import type { Session } from "@/session"
 import { SessionID } from "@/session/schema"
+import { AgencyProduct } from "./product"
 
 export const LAUNCHER_ENTRY_ENV = "AGENTSWARM_LAUNCHER"
-export const STARTER_TEMPLATE_REPO = "agency-ai-solutions/agency-starter-template"
+export const STARTER_TEMPLATE_REPO = AgencyProduct.starterTemplateRepo
 export const STARTER_TEMPLATE_URL = `https://github.com/${STARTER_TEMPLATE_REPO}.git`
 export const LOCAL_AGENCY_ID = "local-agency"
 
@@ -30,6 +31,7 @@ export interface PreparedNpxLaunch {
 export interface AgencyProject {
   directory: string
   agencyFile: string
+  moduleName: string
 }
 
 interface CommandResult {
@@ -357,15 +359,18 @@ export function buildPythonEnv(directory: string, env: NodeJS.ProcessEnv = proce
 
 export async function detectAgencyProject(directory: string) {
   const dir = path.resolve(directory)
-  const agencyFile = path.join(dir, "agency.py")
-  if (!(await Filesystem.exists(agencyFile))) return
-  const source = await Filesystem.readText(agencyFile).catch(() => "")
-  if (!source.includes("def create_agency")) return
-  if (!source.includes("agency_swarm")) return
-  return {
-    directory: dir,
-    agencyFile,
-  } satisfies AgencyProject
+  for (const entryFile of AgencyProduct.agencyEntryFiles) {
+    const agencyFile = path.join(dir, entryFile)
+    if (!(await Filesystem.exists(agencyFile))) continue
+    const source = await Filesystem.readText(agencyFile).catch(() => "")
+    if (!source.includes("def create_agency")) continue
+    if (!source.includes("agency_swarm")) continue
+    return {
+      directory: dir,
+      agencyFile,
+      moduleName: path.basename(entryFile, ".py"),
+    } satisfies AgencyProject
+  }
 }
 
 export function formatProjectLabel(project: AgencyProject) {
@@ -380,7 +385,26 @@ export function validateStarterName(base: string, value?: string) {
 }
 
 export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLaunch | undefined> {
-  prompts.intro("Agent Swarm")
+  prompts.intro(AgencyProduct.name)
+
+  if (AgencyProduct.profile === "openswarm") {
+    const targetProject =
+      (await detectAgencyProject(directory)) ??
+      (await detectAgencyProject(path.join(directory, AgencyProduct.starterProjectName))) ??
+      (await createStarterProject({ baseDirectory: directory }))
+    if (!targetProject) {
+      prompts.outro("Cancelled")
+      return
+    }
+
+    const launch = await prepareProjectLaunch(targetProject)
+    if (!launch) {
+      prompts.outro("Cancelled")
+      return
+    }
+    prompts.outro(`Opening ${AgencyProduct.name} in ${targetProject.directory}`)
+    return launch
+  }
 
   const project = await detectAgencyProject(directory)
   const choice = await chooseLaunchChoice(project)
@@ -395,7 +419,7 @@ export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLa
       prompts.outro("Cancelled")
       return
     }
-    prompts.outro("Opening Agent Swarm")
+    prompts.outro(`Opening ${AgencyProduct.name}`)
     return launch
   }
 
@@ -415,7 +439,7 @@ export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLa
     prompts.outro("Cancelled")
     return
   }
-  prompts.outro(`Opening Agent Swarm in ${targetProject.directory}`)
+  prompts.outro(`Opening ${AgencyProduct.name} in ${targetProject.directory}`)
   return launch
 }
 
@@ -539,11 +563,34 @@ async function prepareRemoteLaunch(directory: string): Promise<PreparedNpxLaunch
 
 async function createStarterProject(input: { baseDirectory: string }): Promise<AgencyProject | undefined> {
   prompts.log.info("2. Create the starter project.")
-  prompts.log.info("   This gives the terminal UI a ready-to-run Agency Swarm project to launch.")
+  prompts.log.info(`   This gives the terminal UI a ready-to-run ${AgencyProduct.name} project to launch.`)
+
+  if (AgencyProduct.profile === "openswarm") {
+    const name = AgencyProduct.starterProjectName
+    const targetDirectory = path.join(input.baseDirectory, name)
+    if (await Filesystem.exists(targetDirectory)) {
+      throw new Error(`Target directory already exists: ${targetDirectory}`)
+    }
+    prompts.log.step(`Creating starter project in \`${name}/\``)
+    const clone = await runCommand(["git", "clone", "--depth=1", STARTER_TEMPLATE_URL, targetDirectory])
+    if (clone.code !== 0) {
+      throw new Error(clone.stderr.trim() || clone.stdout.trim() || "Starter template clone failed")
+    }
+    await rm(path.join(targetDirectory, ".git"), {
+      recursive: true,
+      force: true,
+    }).catch(() => undefined)
+    await runCommand(["git", "init", "-b", "main"], { cwd: targetDirectory })
+    return {
+      directory: targetDirectory,
+      agencyFile: path.join(targetDirectory, AgencyProduct.agencyEntryFiles[0]),
+      moduleName: path.basename(AgencyProduct.agencyEntryFiles[0], ".py"),
+    }
+  }
 
   const repoName = await prompts.text({
     message: "Project or repository name",
-    placeholder: "my-agency",
+    placeholder: AgencyProduct.starterProjectName,
     validate(value) {
       return validateStarterName(input.baseDirectory, value)
     },
@@ -629,12 +676,13 @@ async function createStarterProject(input: { baseDirectory: string }): Promise<A
 
   return {
     directory: targetDirectory,
-    agencyFile: path.join(targetDirectory, "agency.py"),
+    agencyFile: path.join(targetDirectory, AgencyProduct.agencyEntryFiles[0]),
+    moduleName: path.basename(AgencyProduct.agencyEntryFiles[0], ".py"),
   }
 }
 
 export async function prepareProjectLaunch(project: AgencyProject): Promise<PreparedNpxLaunch | undefined> {
-  prompts.log.info("3. Start the Agency Swarm project.")
+  prompts.log.info(`3. Start the ${AgencyProduct.name} project.`)
   prompts.log.info(
     "   The launcher will reuse a project `.venv`, start a local FastAPI server, and connect the terminal UI to it.",
   )
@@ -643,7 +691,7 @@ export async function prepareProjectLaunch(project: AgencyProject): Promise<Prep
   if (!python) return
 
   prompts.log.info("Starting your agency project.")
-  const server = await startProjectServer(project.directory, python)
+  const server = await startProjectServer(project.directory, python, project.moduleName, project.agencyFile)
   return {
     directory: project.directory,
     runProjectDirectory: project.directory,
@@ -729,7 +777,9 @@ async function ensureProjectPython(directory: string) {
         "Project `.venv` appears corrupted, and no replacement Python 3.12+ was found on PATH to rebuild it. Install Python 3.12+ and rerun.",
       )
     }
-    throw new Error("Python 3.12 or newer was not found. Install Python, then rerun `npx @vrsen/agentswarm`.")
+    throw new Error(
+      `Python 3.12 or newer was not found. Install Python, then rerun \`npx ${AgencyProduct.packageName}\`.`,
+    )
   }
   // During self-heal, invoke the resolved interpreter by its absolute path. The alias
   // (python3 etc.) resolves via PATH and, in an activated broken venv, still points at
@@ -1104,7 +1154,7 @@ function formatInstallDuration(ms: number) {
   return `${ms}ms`
 }
 
-async function startProjectServer(directory: string, python: string[]) {
+async function startProjectServer(directory: string, python: string[], moduleName: string, entryFile: string) {
   const port = await getFreePort()
   const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "agentswarm-npx-"))
   const scriptPath = path.join(tempDirectory, "launch_agency.py")
@@ -1124,7 +1174,7 @@ async function startProjectServer(directory: string, python: string[]) {
   let child
   try {
     child = Bun.spawn({
-      cmd: [...python, scriptPath, String(port), LOCAL_AGENCY_ID],
+      cmd: [...python, scriptPath, String(port), LOCAL_AGENCY_ID, moduleName],
       cwd: directory,
       stdout: "ignore",
       stderr: "pipe",
@@ -1147,7 +1197,7 @@ async function startProjectServer(directory: string, python: string[]) {
     await waitForServer({
       baseURL: `http://127.0.0.1:${port}`,
       child,
-      directory,
+      entryFile,
       stderr,
     })
   } catch (error) {
@@ -1164,7 +1214,7 @@ async function startProjectServer(directory: string, python: string[]) {
 async function waitForServer(input: {
   baseURL: string
   child: ReturnType<typeof Bun.spawn>
-  directory: string
+  entryFile: string
   stderr: ServerStderrCollector
 }) {
   const deadline = Date.now() + SERVER_START_TIMEOUT_MS
@@ -1173,7 +1223,7 @@ async function waitForServer(input: {
     const exited = await Promise.race([input.child.exited.then((code: number) => code), sleep(200).then(() => null)])
     if (typeof exited === "number") {
       const stderr = await input.stderr.read(SERVER_STDERR_COLLECT_TIMEOUT_MS)
-      throw new Error(formatAgencyServerExitFailure(exited, stderr, input.directory))
+      throw new Error(formatAgencyServerExitFailure(exited, stderr, input.entryFile))
     }
 
     try {
@@ -1197,8 +1247,8 @@ async function waitForServer(input: {
   )
 }
 
-function formatAgencyServerExitFailure(exited: number, stderr: string, directory: string) {
-  const projectFailure = formatAgencyProjectStartupFailure(stderr, directory)
+function formatAgencyServerExitFailure(exited: number, stderr: string, entryFile: string) {
+  const projectFailure = formatAgencyProjectStartupFailure(stderr, entryFile)
   if (projectFailure) return projectFailure
   const summary = summarizeBridgeStderr(stderr)
   return summary
@@ -1206,31 +1256,37 @@ function formatAgencyServerExitFailure(exited: number, stderr: string, directory
     : `Agency Swarm server exited with code ${exited}`
 }
 
-function formatAgencyProjectStartupFailure(stderr: string, directory: string) {
+function formatAgencyProjectStartupFailure(stderr: string, entryFile: string) {
   const exception = summarizePythonTraceback(stderr)
   if (!exception) return
-  const frame = findAgencyPyFrame(stderr, directory)
+  const frame = findProjectEntryFrame(stderr, entryFile)
   const importFailure = /^(?:[\w.]+\.)?(?:ImportError|ModuleNotFoundError):/.test(exception)
   const title = importFailure ? "Your agency project could not load." : "Your agency project failed to start."
-  const location = frame ? `\nAt: agency.py:${frame.line}${frame.source ? `\n${frame.source}` : ""}` : ""
+  const entryName = path.basename(entryFile)
+  const location = frame ? `\nAt: ${entryName}:${frame.line}${frame.source ? `\n${frame.source}` : ""}` : ""
   const recovery = importFailure
-    ? "Fix the missing import or dependency in this project, then run agentswarm again."
-    : "Fix the error above, then run agentswarm again."
+    ? `Fix the missing import or dependency in this project, then run ${AgencyProduct.cmd} again.`
+    : `Fix the error above, then run ${AgencyProduct.cmd} again.`
   return `${title}\n${exception}${location}\n${recovery}`
 }
 
-function findAgencyPyFrame(stderr: string, directory: string) {
+function findProjectEntryFrame(stderr: string, entryFile: string) {
   const lines = stderr.split(/\r?\n/)
-  const agencyFile = path.resolve(directory, "agency.py")
+  const resolvedEntryFile = path.resolve(entryFile)
+  const entryName = escapeRegExp(path.basename(entryFile))
   for (let index = lines.length - 1; index >= 0; index--) {
-    const match = lines[index]?.match(/^\s*File "([^"]*agency\.py)", line (\d+),/)
+    const match = lines[index]?.match(new RegExp(`^\\s*File "([^"]*${entryName})", line (\\d+),`))
     if (!match) continue
-    if (path.resolve(match[1] ?? "") !== agencyFile) continue
+    if (path.resolve(match[1] ?? "") !== resolvedEntryFile) continue
     return {
       line: match[2] ?? "?",
       source: lines[index + 1]?.trim(),
     }
   }
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 function createServerStderrCollector(

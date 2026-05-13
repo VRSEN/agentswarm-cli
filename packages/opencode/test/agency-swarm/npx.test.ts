@@ -256,6 +256,7 @@ describe("agency-swarm npx onboarding", () => {
       prepareProjectLaunch({
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
+        moduleName: "agency",
       }),
     ).rejects.toThrow("fallback install failed")
 
@@ -314,6 +315,7 @@ describe("agency-swarm npx onboarding", () => {
       prepareProjectLaunch({
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
+        moduleName: "agency",
       }),
     ).rejects.toThrow("Project Python environment setup failed while installing uv")
 
@@ -398,6 +400,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     const venvPython = getTestVenvPython(dir.path)
@@ -472,6 +475,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     const uvInstallCommands = commands.filter(isUvPipInstallCommand)
@@ -538,6 +542,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     const uvInstallCommands = commands.filter(isUvPipInstallCommand)
@@ -615,6 +620,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     const uvInstallCommands = commands.filter(isUvPipInstallCommand)
@@ -699,6 +705,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     expect(warn).not.toHaveBeenCalled()
@@ -772,6 +779,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     expect(warn).toHaveBeenCalledWith(
@@ -855,6 +863,7 @@ describe("agency-swarm npx onboarding", () => {
       prepareProjectLaunch({
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
+        moduleName: "agency",
       }),
     ).rejects.toThrow("Project Python environment setup failed while installing uv")
 
@@ -917,6 +926,7 @@ describe("agency-swarm npx onboarding", () => {
       prepareProjectLaunch({
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
+        moduleName: "agency",
       }),
     ).rejects.toThrow("Dependency install failed")
 
@@ -1019,6 +1029,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     expect(confirm).not.toHaveBeenCalled()
@@ -1113,6 +1124,7 @@ describe("agency-swarm npx onboarding", () => {
       await prepareProjectLaunch({
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
+        moduleName: "agency",
       })
     } catch (caught) {
       error = caught as Error
@@ -1187,6 +1199,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     resolveInstall(1)
@@ -1267,6 +1280,7 @@ describe("agency-swarm npx onboarding", () => {
       await prepareProjectLaunch({
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
+        moduleName: "agency",
       })
     } catch (caught) {
       error = caught as Error
@@ -1352,6 +1366,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
     const pending = Symbol("pending")
     const outcome = await Promise.race([
@@ -1444,6 +1459,7 @@ describe("agency-swarm npx onboarding", () => {
       prepareProjectLaunch({
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
+        moduleName: "agency",
       }),
     ).rejects.toThrow("Dependency install timed out after 10 minutes")
 
@@ -1535,6 +1551,7 @@ describe("agency-swarm npx onboarding", () => {
     const launchPromise = prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     await new Promise((resolve) => realSetTimeout(resolve, 20))
@@ -1631,6 +1648,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     expect(info).toHaveBeenCalledWith(
@@ -1739,6 +1757,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     const mirroredOutput = stderrWrite.mock.calls.map((call) => call[0]).join("")
@@ -1847,6 +1866,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     const mirroredOutput = stderrWrite.mock.calls.map((call) => call[0]).join("")
@@ -1946,6 +1966,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     expect(warn).toHaveBeenCalledWith(
@@ -2019,13 +2040,16 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     const canaryScripts = commands.filter(isCanaryCommand).map((cmd) => cmd.at(-1) ?? "")
+    const launcherCommand = commands.find((cmd) => cmd[1]?.endsWith("launch_agency.py"))
     expect(canaryScripts.length).toBeGreaterThan(0)
     expect(
       canaryScripts.every((script) => script.includes("from agency_swarm.integrations.fastapi import run_fastapi")),
     ).toBe(true)
+    expect(launcherCommand?.at(-1)).toBe("agency")
 
     await launch?.cleanup?.()
   })
@@ -2097,6 +2121,7 @@ describe("agency-swarm npx onboarding", () => {
     const outcome = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     }).catch((error) => error)
 
     expect(outcome).toBeInstanceOf(Error)
@@ -2112,6 +2137,80 @@ describe("agency-swarm npx onboarding", () => {
     expect(outcome.message).not.toContain("Agency Swarm server exited with code 1")
     expect(success).toHaveBeenCalledWith("Agency Swarm packages ready")
     expect(info).toHaveBeenCalledWith("Starting your agency project.")
+  })
+
+  test("prepareProjectLaunch points startup import failures at the active entry file", async () => {
+    await using dir = await tmpdir()
+    await Bun.write(
+      path.join(dir.path, "swarm.py"),
+      [
+        "from agency_swarm import Agency",
+        "",
+        "def create_agency(load_threads_callback=None):",
+        "    return Agency()",
+      ].join("\n"),
+    )
+    await writeVenvPython(dir.path)
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+    const traceback = [
+      "Traceback (most recent call last):",
+      '  File "/tmp/agentswarm-npx-test/launch_agency.py", line 1, in <module>',
+      "    from swarm import create_agency",
+      `  File "${path.join(dir.path, "swarm.py")}", line 3, in <module>`,
+      "    import codex_missing_import_for_canary_test",
+      '  File "/site-packages/not_the_project/agency.py", line 99, in helper',
+      "    raise ModuleNotFoundError(\"No module named 'codex_missing_import_for_canary_test'\")",
+      "ModuleNotFoundError: No module named 'codex_missing_import_for_canary_test'",
+    ].join("\n")
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (isUvVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "uv 0.8.0\n",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        return {
+          exited: Promise.resolve(0),
+          stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (isUvPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        return {
+          exited: Promise.resolve(1),
+          stderr: traceback,
+          kill() {},
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const outcome = await prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "swarm.py"),
+      moduleName: "swarm",
+    }).catch((error) => error)
+
+    expect(outcome).toBeInstanceOf(Error)
+    if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
+    expect(outcome.message).toContain("At: swarm.py:3")
+    expect(outcome.message).not.toContain("At: agency.py:")
+    expect(outcome.message).not.toContain("agency.py:99")
   })
 
   test("prepareProjectLaunch times out when the import canary hangs", async () => {
@@ -2204,6 +2303,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
     const pending = Symbol("pending")
     const outcome = await Promise.race([
@@ -2300,6 +2400,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
     const pending = Symbol("pending")
     const outcome = await Promise.race([
@@ -2402,6 +2503,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
     const pending = Symbol("pending")
     const outcome = await Promise.race([
@@ -2493,6 +2595,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("Could not create launcher refresh log file"))
@@ -2574,6 +2677,7 @@ describe("agency-swarm npx onboarding", () => {
     const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
     })
 
     expect(stderrWrite).toHaveBeenCalled()
@@ -2633,6 +2737,7 @@ describe("agency-swarm npx onboarding", () => {
       prepareProjectLaunch({
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
+        moduleName: "agency",
       }),
     ).rejects.toThrow(`Dependency install failed: ${installStderr}`)
   })
@@ -2715,6 +2820,7 @@ describe("agency-swarm npx onboarding", () => {
       await prepareProjectLaunch({
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
+        moduleName: "agency",
       })
     } catch (caught) {
       error = caught as Error
@@ -2746,6 +2852,7 @@ describe("agency-swarm npx onboarding", () => {
       prepareProjectLaunch({
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
+        moduleName: "agency",
       }),
     ).rejects.toThrow(
       "The launcher recreated the local Python environment, but it still could not import required Agency Swarm packages. Check for project-local fastapi.py/agency_swarm.py files that may shadow installed packages.",
@@ -2776,6 +2883,7 @@ describe("agency-swarm npx onboarding", () => {
       prepareProjectLaunch({
         directory: dir.path,
         agencyFile: path.join(dir.path, "agency.py"),
+        moduleName: "agency",
       }),
     ).rejects.toThrow("Detected project-local fastapi.py, agency_swarm.py that may shadow installed packages.")
   })
@@ -2788,6 +2896,24 @@ describe("agency-swarm npx onboarding", () => {
 
     expect(project?.directory).toBe(dir.path)
     expect(project?.agencyFile).toBe(path.join(dir.path, "agency.py"))
+    expect(project?.moduleName).toBe("agency")
+  })
+
+  test("detectAgencyProject does not detect swarm.py in the default Agent Swarm profile", async () => {
+    await using dir = await tmpdir()
+    await Bun.write(
+      path.join(dir.path, "swarm.py"),
+      [
+        "from agency_swarm import Agency",
+        "",
+        "def create_agency(load_threads_callback=None):",
+        "    return Agency()",
+      ].join("\n"),
+    )
+
+    const project = await detectAgencyProject(dir.path)
+
+    expect(project).toBeUndefined()
   })
 
   test("detectAgencyProject only checks the selected directory", async () => {
@@ -2828,6 +2954,7 @@ describe("agency-swarm npx onboarding", () => {
       formatProjectLabel({
         directory: root,
         agencyFile: path.join(root, "agency.py"),
+        moduleName: "agency",
       }),
     ).toBe(`Use detected Agency Swarm project (${root})`)
   })
