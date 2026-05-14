@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
+import { mkdirSync, writeFileSync } from "node:fs"
 import { mkdir } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -11,8 +12,10 @@ import {
   formatProjectLabel,
   LAUNCHER_ENTRY_ENV,
   prepareProjectLaunch,
+  prepareNpxLaunch,
   resolveNpxAutoProject,
   shouldRunNpxOnboarding,
+  starterTemplateUrl,
   summarizeBridgeStderr,
   validateStarterName,
 } from "../../src/agency-swarm/npx"
@@ -24,6 +27,14 @@ import { tmpdir } from "../fixture/fixture"
 
 describe("agency-swarm npx onboarding", () => {
   const originalEnv = process.env[LAUNCHER_ENTRY_ENV]
+  const downstreamProfile = {
+    custom: true,
+    name: "Example Product",
+    customStarter: true,
+    starterTemplateRepo: "example/downstream-starter",
+    starterProjectName: "example-project",
+    agencyEntryFiles: ["main.py"],
+  }
 
   afterEach(() => {
     mock.restore()
@@ -2899,6 +2910,25 @@ describe("agency-swarm npx onboarding", () => {
     expect(project?.moduleName).toBe("agency")
   })
 
+  test("detectAgencyProject uses configured generic entry files", async () => {
+    await using dir = await tmpdir()
+    await Bun.write(
+      path.join(dir.path, "main.py"),
+      [
+        "from agency_swarm import Agency",
+        "",
+        "def create_agency(load_threads_callback=None):",
+        "    return Agency()",
+      ].join("\n"),
+    )
+
+    const project = await detectAgencyProject(dir.path, downstreamProfile)
+
+    expect(project?.directory).toBe(dir.path)
+    expect(project?.agencyFile).toBe(path.join(dir.path, "main.py"))
+    expect(project?.moduleName).toBe("main")
+  })
+
   test("detectAgencyProject does not detect swarm.py in the default Agent Swarm profile", async () => {
     await using dir = await tmpdir()
     await Bun.write(
@@ -2914,6 +2944,75 @@ describe("agency-swarm npx onboarding", () => {
     const project = await detectAgencyProject(dir.path)
 
     expect(project).toBeUndefined()
+  })
+
+  test("prepareNpxLaunch clones the configured starter folder and launches the configured entry file", async () => {
+    await using dir = await tmpdir()
+    const target = path.join(dir.path, downstreamProfile.starterProjectName)
+    const commands: string[][] = []
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "step").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+    spyOn(prompts, "outro").mockImplementation(() => undefined as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+
+      if (cmd[0] === "git" && cmd[1] === "clone") {
+        mkdirSync(path.join(target, ".venv", process.platform === "win32" ? "Scripts" : "bin"), { recursive: true })
+        writeFileSync(
+          path.join(target, "main.py"),
+          "from agency_swarm import Agency\n\ndef create_agency():\n    return Agency()\n",
+        )
+        writeFileSync(getTestVenvPython(target), "")
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (cmd[0] === "git" && cmd[1] === "init") {
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (isUvVersionCommand(cmd)) {
+        return { exited: Promise.resolve(0), stdout: "uv 0.8.0\n", stderr: "" } as never
+      }
+
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        return { exited: Promise.resolve(0), stdout: `${cmd[0]}\n3.12.7\n`, stderr: "" } as never
+      }
+
+      if (isPythonPipInstallUvCommand(cmd) || isUvPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareNpxLaunch(dir.path, downstreamProfile)
+
+    expect(commands).toContainEqual(["git", "clone", "--depth=1", starterTemplateUrl(downstreamProfile), target])
+    expect(launch?.directory).toBe(target)
+    expect(launch?.runProjectDirectory).toBe(target)
+    expect(commands.find((cmd) => cmd[1]?.endsWith("launch_agency.py"))?.at(-1)).toBe("main")
+    expect(launch?.configContent).toContain("agency-swarm/default")
+
+    await launch?.cleanup?.()
   })
 
   test("detectAgencyProject only checks the selected directory", async () => {
@@ -2949,14 +3048,53 @@ describe("agency-swarm npx onboarding", () => {
 
   test("formatProjectLabel includes the full project path", () => {
     const root = path.join("/tmp", "workspace", "agency")
+    const project = {
+      directory: root,
+      agencyFile: path.join(root, "agency.py"),
+      moduleName: "agency",
+    }
 
-    expect(
-      formatProjectLabel({
+    expect(formatProjectLabel(project)).toBe(`Use detected Agency Swarm project (${root})`)
+    expect(formatProjectLabel(project, downstreamProfile)).toBe(`Use detected Example Product project (${root})`)
+  })
+
+  test("formatProjectLabel uses env-resolved downstream product names", async () => {
+    const root = path.join("/tmp", "workspace", "agency")
+    const script = `
+      const path = await import("node:path")
+      const { AgencyProduct } = await import("./src/agency-swarm/product")
+      const { formatProjectLabel } = await import("./src/agency-swarm/npx")
+      const root = ${JSON.stringify(root)}
+      const project = {
         directory: root,
         agencyFile: path.join(root, "agency.py"),
         moduleName: "agency",
-      }),
-    ).toBe(`Use detected Agency Swarm project (${root})`)
+      }
+      const profile = AgencyProduct.resolve(process.env)
+      if (AgencyProduct.name !== "Example Product") {
+        throw new Error("expected AgencyProduct to resolve from AGENTSWARM_PRODUCT_DISPLAY_NAME")
+      }
+      console.log(formatProjectLabel(project, profile))
+    `
+    const child = Bun.spawn([process.execPath, "--eval", script], {
+      cwd: path.resolve(import.meta.dir, "../.."),
+      env: {
+        ...process.env,
+        AGENTSWARM_PRODUCT_DISPLAY_NAME: "Example Product",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ])
+
+    expect(stderr).toBe("")
+    expect(exitCode).toBe(0)
+    expect(stdout.trim()).toBe(`Use detected Example Product project (${root})`)
   })
 
   test("validateStarterName rejects existing target folders", async () => {

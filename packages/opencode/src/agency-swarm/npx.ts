@@ -15,8 +15,18 @@ import { AgencyProduct } from "./product"
 
 export const LAUNCHER_ENTRY_ENV = "AGENTSWARM_LAUNCHER"
 export const STARTER_TEMPLATE_REPO = AgencyProduct.starterTemplateRepo
-export const STARTER_TEMPLATE_URL = `https://github.com/${STARTER_TEMPLATE_REPO}.git`
 export const LOCAL_AGENCY_ID = "local-agency"
+
+type ProductProfile = Pick<
+  AgencyProduct.Profile,
+  "custom" | "name" | "customStarter" | "starterTemplateRepo" | "starterProjectName" | "agencyEntryFiles"
+>
+
+export function starterTemplateUrl(profile: Pick<AgencyProduct.Profile, "starterTemplateRepo"> = AgencyProduct) {
+  return `https://github.com/${profile.starterTemplateRepo}.git`
+}
+
+export const STARTER_TEMPLATE_URL = starterTemplateUrl()
 
 type LaunchChoice = "project" | "starter" | "connect"
 type StarterMode = "github" | "local"
@@ -357,9 +367,12 @@ export function buildPythonEnv(directory: string, env: NodeJS.ProcessEnv = proce
   }
 }
 
-export async function detectAgencyProject(directory: string) {
+export async function detectAgencyProject(
+  directory: string,
+  profile: Pick<ProductProfile, "agencyEntryFiles"> = AgencyProduct,
+) {
   const dir = path.resolve(directory)
-  for (const entryFile of AgencyProduct.agencyEntryFiles) {
+  for (const entryFile of profile.agencyEntryFiles) {
     const agencyFile = path.join(dir, entryFile)
     if (!(await Filesystem.exists(agencyFile))) continue
     const source = await Filesystem.readText(agencyFile).catch(() => "")
@@ -373,8 +386,12 @@ export async function detectAgencyProject(directory: string) {
   }
 }
 
-export function formatProjectLabel(project: AgencyProject) {
-  return `Use detected Agency Swarm project (${project.directory})`
+export function formatProjectLabel(
+  project: AgencyProject,
+  profile: Pick<ProductProfile, "custom" | "name"> = AgencyProduct,
+) {
+  const label = profile.custom ? profile.name : "Agency Swarm"
+  return `Use detected ${label} project (${project.directory})`
 }
 
 export function validateStarterName(base: string, value?: string) {
@@ -384,14 +401,17 @@ export function validateStarterName(base: string, value?: string) {
   if (existsSync(path.join(base, name))) return "A folder with this name already exists"
 }
 
-export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLaunch | undefined> {
-  prompts.intro(AgencyProduct.name)
+export async function prepareNpxLaunch(
+  directory: string,
+  profile: ProductProfile = AgencyProduct,
+): Promise<PreparedNpxLaunch | undefined> {
+  prompts.intro(profile.name)
 
-  if (AgencyProduct.profile === "openswarm") {
+  if (profile.customStarter) {
     const targetProject =
-      (await detectAgencyProject(directory)) ??
-      (await detectAgencyProject(path.join(directory, AgencyProduct.starterProjectName))) ??
-      (await createStarterProject({ baseDirectory: directory }))
+      (await detectAgencyProject(directory, profile)) ??
+      (await detectAgencyProject(path.join(directory, profile.starterProjectName), profile)) ??
+      (await createStarterProject({ baseDirectory: directory, profile }))
     if (!targetProject) {
       prompts.outro("Cancelled")
       return
@@ -402,12 +422,12 @@ export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLa
       prompts.outro("Cancelled")
       return
     }
-    prompts.outro(`Opening ${AgencyProduct.name} in ${targetProject.directory}`)
+    prompts.outro(`Opening ${profile.name} in ${targetProject.directory}`)
     return launch
   }
 
-  const project = await detectAgencyProject(directory)
-  const choice = await chooseLaunchChoice(project)
+  const project = await detectAgencyProject(directory, profile)
+  const choice = await chooseLaunchChoice(project, profile)
   if (!choice) {
     prompts.outro("Cancelled")
     return
@@ -419,7 +439,7 @@ export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLa
       prompts.outro("Cancelled")
       return
     }
-    prompts.outro(`Opening ${AgencyProduct.name}`)
+    prompts.outro(`Opening ${profile.name}`)
     return launch
   }
 
@@ -428,6 +448,7 @@ export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLa
       ? project
       : await createStarterProject({
           baseDirectory: directory,
+          profile,
         })
   if (!targetProject) {
     prompts.outro("Cancelled")
@@ -439,11 +460,14 @@ export async function prepareNpxLaunch(directory: string): Promise<PreparedNpxLa
     prompts.outro("Cancelled")
     return
   }
-  prompts.outro(`Opening ${AgencyProduct.name} in ${targetProject.directory}`)
+  prompts.outro(`Opening ${profile.name} in ${targetProject.directory}`)
   return launch
 }
 
-async function chooseLaunchChoice(project: AgencyProject | undefined) {
+async function chooseLaunchChoice(
+  project: AgencyProject | undefined,
+  profile: Pick<ProductProfile, "custom" | "name"> = AgencyProduct,
+) {
   prompts.log.info("1. Choose how to start the terminal UI.")
   prompts.log.info(
     "   The launcher can use a detected project, create a starter project, or connect to an existing server.",
@@ -456,7 +480,7 @@ async function chooseLaunchChoice(project: AgencyProject | undefined) {
         ? [
             {
               value: "project" as const,
-              label: formatProjectLabel(project),
+              label: formatProjectLabel(project, profile),
             },
           ]
         : []),
@@ -561,18 +585,21 @@ async function prepareRemoteLaunch(directory: string): Promise<PreparedNpxLaunch
   }
 }
 
-async function createStarterProject(input: { baseDirectory: string }): Promise<AgencyProject | undefined> {
+async function createStarterProject(input: {
+  baseDirectory: string
+  profile: ProductProfile
+}): Promise<AgencyProject | undefined> {
   prompts.log.info("2. Create the starter project.")
-  prompts.log.info(`   This gives the terminal UI a ready-to-run ${AgencyProduct.name} project to launch.`)
+  prompts.log.info(`   This gives the terminal UI a ready-to-run ${input.profile.name} project to launch.`)
 
-  if (AgencyProduct.profile === "openswarm") {
-    const name = AgencyProduct.starterProjectName
+  if (input.profile.customStarter) {
+    const name = input.profile.starterProjectName
     const targetDirectory = path.join(input.baseDirectory, name)
     if (await Filesystem.exists(targetDirectory)) {
       throw new Error(`Target directory already exists: ${targetDirectory}`)
     }
     prompts.log.step(`Creating starter project in \`${name}/\``)
-    const clone = await runCommand(["git", "clone", "--depth=1", STARTER_TEMPLATE_URL, targetDirectory])
+    const clone = await runCommand(["git", "clone", "--depth=1", starterTemplateUrl(input.profile), targetDirectory])
     if (clone.code !== 0) {
       throw new Error(clone.stderr.trim() || clone.stdout.trim() || "Starter template clone failed")
     }
@@ -583,14 +610,14 @@ async function createStarterProject(input: { baseDirectory: string }): Promise<A
     await runCommand(["git", "init", "-b", "main"], { cwd: targetDirectory })
     return {
       directory: targetDirectory,
-      agencyFile: path.join(targetDirectory, AgencyProduct.agencyEntryFiles[0]),
-      moduleName: path.basename(AgencyProduct.agencyEntryFiles[0], ".py"),
+      agencyFile: path.join(targetDirectory, input.profile.agencyEntryFiles[0]),
+      moduleName: path.basename(input.profile.agencyEntryFiles[0], ".py"),
     }
   }
 
   const repoName = await prompts.text({
     message: "Project or repository name",
-    placeholder: AgencyProduct.starterProjectName,
+    placeholder: input.profile.starterProjectName,
     validate(value) {
       return validateStarterName(input.baseDirectory, value)
     },
@@ -649,7 +676,7 @@ async function createStarterProject(input: { baseDirectory: string }): Promise<A
       }
 
       const result = await runCommand(
-        ["gh", "repo", "create", name, "--template", STARTER_TEMPLATE_REPO, "--clone", `--${visibility}`],
+        ["gh", "repo", "create", name, "--template", input.profile.starterTemplateRepo, "--clone", `--${visibility}`],
         {
           cwd: input.baseDirectory,
         },
@@ -658,7 +685,7 @@ async function createStarterProject(input: { baseDirectory: string }): Promise<A
         throw new Error(result.stderr.trim() || result.stdout.trim() || "GitHub template creation failed")
       }
     } else {
-      const clone = await runCommand(["git", "clone", "--depth=1", STARTER_TEMPLATE_URL, targetDirectory])
+      const clone = await runCommand(["git", "clone", "--depth=1", starterTemplateUrl(input.profile), targetDirectory])
       if (clone.code !== 0) {
         throw new Error(clone.stderr.trim() || clone.stdout.trim() || "Starter template clone failed")
       }
@@ -676,8 +703,8 @@ async function createStarterProject(input: { baseDirectory: string }): Promise<A
 
   return {
     directory: targetDirectory,
-    agencyFile: path.join(targetDirectory, AgencyProduct.agencyEntryFiles[0]),
-    moduleName: path.basename(AgencyProduct.agencyEntryFiles[0], ".py"),
+    agencyFile: path.join(targetDirectory, input.profile.agencyEntryFiles[0]),
+    moduleName: path.basename(input.profile.agencyEntryFiles[0], ".py"),
   }
 }
 
@@ -778,7 +805,7 @@ async function ensureProjectPython(directory: string) {
       )
     }
     throw new Error(
-      `Python 3.12 or newer was not found. Install Python, then rerun \`npx ${AgencyProduct.packageName}\`.`,
+      `Python 3.12 or newer was not found. Install Python, then rerun \`npx ${AgencyProduct.launcherPackageName}\`.`,
     )
   }
   // During self-heal, invoke the resolved interpreter by its absolute path. The alias

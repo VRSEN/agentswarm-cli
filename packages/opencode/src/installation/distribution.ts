@@ -1,7 +1,7 @@
 import { AgencyProduct } from "@/agency-swarm/product"
 
 export namespace InstallationDistribution {
-  export const packageName = AgencyProduct.profile === "openswarm" ? AgencyProduct.packageName : "agentswarm-cli"
+  export const packageName = AgencyProduct.packageName
   export const releaseRepo = AgencyProduct.releaseRepo
   export const installDir = ".opencode"
   export const installURL = `https://raw.githubusercontent.com/${releaseRepo}/dev/install`
