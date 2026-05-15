@@ -381,9 +381,28 @@ export async function detectAgencyProject(
     return {
       directory: dir,
       agencyFile,
-      moduleName: path.basename(entryFile, ".py"),
+      moduleName: agencyEntryModuleName(entryFile),
     } satisfies AgencyProject
   }
+}
+
+function agencyEntryModuleName(entryFile: string) {
+  return entryFile
+    .replace(/\\/g, "/")
+    .replace(/\.py$/, "")
+    .split("/")
+    .filter((part) => part && part !== ".")
+    .join(".")
+}
+
+async function requireDetectedStarterProject(directory: string, profile: Pick<ProductProfile, "agencyEntryFiles">) {
+  const project = await detectAgencyProject(directory, profile)
+  if (!project) {
+    throw new Error(
+      `Starter template did not contain a configured Agency Swarm entry file: ${profile.agencyEntryFiles.join(", ")}`,
+    )
+  }
+  return project
 }
 
 export function formatProjectLabel(
@@ -592,6 +611,8 @@ async function createStarterProject(input: {
   prompts.log.info("2. Create the starter project.")
   prompts.log.info(`   This gives the terminal UI a ready-to-run ${input.profile.name} project to launch.`)
 
+  const starterProfile = input.profile.customStarter ? input.profile : AgencyProduct
+
   if (input.profile.customStarter) {
     const name = input.profile.starterProjectName
     const targetDirectory = path.join(input.baseDirectory, name)
@@ -608,11 +629,7 @@ async function createStarterProject(input: {
       force: true,
     }).catch(() => undefined)
     await runCommand(["git", "init", "-b", "main"], { cwd: targetDirectory })
-    return {
-      directory: targetDirectory,
-      agencyFile: path.join(targetDirectory, input.profile.agencyEntryFiles[0]),
-      moduleName: path.basename(input.profile.agencyEntryFiles[0], ".py"),
-    }
+    return requireDetectedStarterProject(targetDirectory, starterProfile)
   }
 
   const repoName = await prompts.text({
@@ -701,11 +718,7 @@ async function createStarterProject(input: {
     throw error
   }
 
-  return {
-    directory: targetDirectory,
-    agencyFile: path.join(targetDirectory, input.profile.agencyEntryFiles[0]),
-    moduleName: path.basename(input.profile.agencyEntryFiles[0], ".py"),
-  }
+  return requireDetectedStarterProject(targetDirectory, starterProfile)
 }
 
 export async function prepareProjectLaunch(project: AgencyProject): Promise<PreparedNpxLaunch | undefined> {
