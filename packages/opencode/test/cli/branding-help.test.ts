@@ -31,7 +31,7 @@ describe("CLI branding help", () => {
     const help = await commandHelp(UninstallCommand)
 
     expect(help).toContain("agentswarm uninstall")
-    expect(help).toContain("uninstall Agent Swarm CLI and remove all related files")
+    expect(help).toContain("uninstall Agent Swarm and remove all related files")
     expect(help).not.toContain("uninstall opencode")
   })
 

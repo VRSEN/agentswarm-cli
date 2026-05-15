@@ -37,6 +37,13 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `bin.agentswarm` in `packages/opencode/package.json`, `AgencyProduct.cmd` and `AgencyProduct.mdnsDomain` in `packages/opencode/src/agency-swarm/product.ts`, CLI network/mDNS helpers, and `UninstallCommand`.
   - Added by: `95a39a7e`
 
+- **Downstream product profile inputs**
+  - Intent: let downstream wrappers and release workflows build on this TUI foundation without hard-coding downstream product values into the Agent Swarm fork.
+  - Behavior: `AGENTSWARM_PRODUCT_*` inputs can override command copy, package metadata, release repository, mDNS default, docs and issue links, starter template, starter folder, and detected entry files.
+  - Behavior: Agent Swarm defaults remain unchanged when no downstream product inputs are set.
+  - Behavior: release builds can use `AGENTSWARM_PRODUCT_VERSION` so direct downstream binaries report the downstream package version.
+  - Implementation: `AgencyProduct` in `packages/opencode/src/agency-swarm/product.ts`, launcher detection in `packages/opencode/src/agency-swarm/npx.ts`, the FastAPI server launcher module argument, installation distribution metadata, and `packages/opencode/script/build.ts`.
+
 - **One-command launcher npm package**
   - Intent: let users start the fork through one npm package instead of setting up the Python side first.
   - Behavior: the published fork package set includes the launcher entry that starts the fork-specific Agency Swarm flow.
@@ -232,6 +239,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 - **One-command launcher onboarding and project detection**
   - Intent: help `npx` users land in the right Agency Swarm project with less setup guesswork.
   - Behavior: the launcher runs onboarding for default starts.
+  - Behavior: a downstream starter profile can detect configured entry files and create the configured starter repository in the configured starter folder.
   - Behavior: `--prompt`, `--agent`, and explicit `agency-swarm/...` model launches skip onboarding.
   - Behavior: auto-project launch requires a detected Agency project.
   - Behavior: non-Agency explicit models do not trigger fork auto-project setup.

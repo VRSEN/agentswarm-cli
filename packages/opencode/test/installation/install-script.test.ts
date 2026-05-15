@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { InstallationDistribution } from "../../src/installation/distribution"
 
 const testDir = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(testDir, "../../../..")
@@ -36,6 +37,7 @@ test("install script expects the release archive binary name", () => {
 
 test("install script and installation package source point at the fork package and repo", () => {
   expect(packageJson.name).toBe(expectedPackageName)
+  expect(InstallationDistribution.packageName).toBe(expectedPackageName)
   expect(readInstallVar("APP")).toBe(expectedPackageName)
   expect(readInstallVar("REPO")).toBe(expectedReleaseRepo)
   expect(readResolvedInstallVar("INSTALL_URL")).toBe(expectedInstallURL)

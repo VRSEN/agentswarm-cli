@@ -35,6 +35,25 @@ function testLayer(spawnHandler?: (cmd: string, args: readonly string[]) => stri
 }
 
 describe("installation", () => {
+  test("uses agentswarm-cli as the default standalone package", () => {
+    expect(InstallationDistribution.packageName).toBe("agentswarm-cli")
+  })
+
+  describe("method", () => {
+    test("detects existing direct agentswarm-cli npm installs", async () => {
+      const layer = testLayer((cmd, args) => {
+        if (cmd === "npm" && args[0] === "list") return "/usr/local/lib\n└── agentswarm-cli@1.2.3\n"
+        return ""
+      })
+
+      const method = await Effect.runPromise(
+        Installation.Service.use((svc) => svc.method()).pipe(Effect.provide(layer)),
+      )
+
+      expect(method).toBe("npm")
+    })
+  })
+
   describe("latest", () => {
     test("rejects unknown latest lookup", async () => {
       const layer = testLayer()

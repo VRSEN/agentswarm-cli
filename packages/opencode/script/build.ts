@@ -16,9 +16,29 @@ await import("./generate.ts")
 
 import { Script } from "@opencode-ai/script"
 import pkg from "../package.json"
+import { createPlatformPackageMetadata, createReleaseVersionValues, resolveBuildVersion } from "./version"
 
 const binary = "agentswarm"
 const scope = pkg.platformScope
+const productEnvNames = [
+  "AGENTSWARM_PRODUCT_DISPLAY_NAME",
+  "AGENTSWARM_PRODUCT_COMMAND",
+  "AGENTSWARM_PRODUCT_PACKAGE_NAME",
+  "AGENTSWARM_PRODUCT_LAUNCHER_PACKAGE_NAME",
+  "AGENTSWARM_PRODUCT_RELEASE_REPO",
+  "AGENTSWARM_PRODUCT_DOCS_URL",
+  "AGENTSWARM_PRODUCT_ISSUE_URL",
+  "AGENTSWARM_PRODUCT_MDNS_DOMAIN",
+  "AGENTSWARM_PRODUCT_STARTER_REPO",
+  "AGENTSWARM_PRODUCT_STARTER_FOLDER",
+  "AGENTSWARM_PRODUCT_ENTRY_FILES",
+] as const
+const productDefines = Object.fromEntries(
+  productEnvNames.map((name) => [name, process.env[name] ? JSON.stringify(process.env[name]) : "undefined"]),
+)
+const buildVersion = resolveBuildVersion(process.env, Script.version)
+const versionValues = createReleaseVersionValues(buildVersion)
+const userAgentPackage = process.env.AGENTSWARM_PRODUCT_PACKAGE_NAME || "agentswarm-cli"
 // Load migrations from migration directories
 const migrationDirs = (
   await fs.promises.readdir(path.join(dir, "migration"), {
@@ -210,13 +230,14 @@ for (const item of targets) {
       autoloadPackageJson: true,
       target: target.replace(pkg.name, "bun") as any,
       outfile: `dist/${target}/bin/${binary}`,
-      execArgv: [`--user-agent=agentswarm-cli/${Script.version}`, "--use-system-ca", "--"],
+      execArgv: [`--user-agent=${userAgentPackage}/${buildVersion}`, "--use-system-ca", "--"],
       windows: {},
     },
     files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
     entrypoints: ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])],
     define: {
-      OPENCODE_VERSION: `'${Script.version}'`,
+      OPENCODE_VERSION: `'${buildVersion}'`,
+      ...productDefines,
       OPENCODE_MIGRATIONS: JSON.stringify(migrations),
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
       OPENCODE_WORKER_PATH: workerPath,
@@ -241,17 +262,17 @@ for (const item of targets) {
   await $`rm -rf ./dist/${target}/bin/tui`
   await Bun.file(`dist/${target}/package.json`).write(
     JSON.stringify(
-      {
+      createPlatformPackageMetadata({
         name,
-        version: Script.version,
-        os: [item.os],
-        cpu: [item.arch],
-      },
+        buildVersion,
+        os: item.os,
+        arch: item.arch,
+      }),
       null,
       2,
     ),
   )
-  binaries[target] = Script.version
+  binaries[target] = versionValues.binaryVersion
 }
 
 if (Script.release) {
@@ -262,7 +283,7 @@ if (Script.release) {
       await $`zip -r ../../${key}.zip *`.cwd(`dist/${key}/bin`)
     }
   }
-  await $`gh release upload v${Script.version} ./dist/*.zip ./dist/*.tar.gz --clobber --repo ${process.env.GH_REPO}`
+  await $`gh release upload ${versionValues.releaseTag} ./dist/*.zip ./dist/*.tar.gz --clobber --repo ${process.env.GH_REPO}`
 }
 
 export { binaries }
