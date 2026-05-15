@@ -2,6 +2,7 @@ import { TextAttributes, RGBA } from "@opentui/core"
 import { For, type JSX } from "solid-js"
 import { useTheme, tint } from "@tui/context/theme"
 import { logo, marks } from "@/cli/logo"
+import { AgencyProduct } from "@/agency-swarm/product"
 
 // Shadow markers (rendered chars in parens):
 // _ = full shadow cell (space with bg=shadow)
@@ -9,8 +10,13 @@ import { logo, marks } from "@/cli/logo"
 // ~ = shadow top only (▀ with fg=shadow)
 const SHADOW_MARKER = new RegExp(`[${marks}]`)
 
+export function textLogo(product = AgencyProduct.resolve()) {
+  return product.customBranding ? product.name : undefined
+}
+
 export function Logo() {
   const { theme } = useTheme()
+  const custom = textLogo()
 
   const renderLine = (line: string, fg: RGBA, bold: boolean): JSX.Element[] => {
     const shadow = tint(theme.background, fg, 0.25)
@@ -68,6 +74,16 @@ export function Logo() {
     }
 
     return elements
+  }
+
+  if (custom) {
+    return (
+      <box>
+        <text fg={theme.primary} attributes={TextAttributes.BOLD} selectable={false}>
+          {custom}
+        </text>
+      </box>
+    )
   }
 
   return (

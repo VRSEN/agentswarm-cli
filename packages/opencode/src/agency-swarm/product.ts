@@ -13,6 +13,7 @@ declare const AGENTSWARM_PRODUCT_ENTRY_FILES: string | undefined
 export namespace AgencyProduct {
   export interface Profile {
     custom: boolean
+    customBranding: boolean
     customStarter: boolean
     name: string
     cmd: string
@@ -29,6 +30,7 @@ export namespace AgencyProduct {
 
   const defaults: Profile = {
     custom: false,
+    customBranding: false,
     customStarter: false,
     name: "Agent Swarm",
     cmd: "agentswarm",
@@ -102,10 +104,12 @@ export namespace AgencyProduct {
       agencyEntryFiles: readEntryFiles(readValue(env, "AGENTSWARM_PRODUCT_ENTRY_FILES")),
     }
     const custom = Object.values(overrides).some((value) => value !== undefined)
+    const customBranding = overrides.name !== undefined
     const customStarter = overrides.starterTemplateRepo !== undefined || overrides.starterProjectName !== undefined
 
     return {
       custom,
+      customBranding,
       customStarter,
       name: overrides.name ?? defaults.name,
       cmd: overrides.cmd ?? defaults.cmd,
@@ -124,6 +128,7 @@ export namespace AgencyProduct {
   const current = resolve()
 
   export const custom = current.custom
+  export const customBranding = current.customBranding
   export const customStarter = current.customStarter
   export const name = current.name
   export const packageName = current.packageName

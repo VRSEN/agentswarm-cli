@@ -78,6 +78,29 @@ describe("CLI branding help", () => {
     expect(plain).not.toContain("█▀▀█ █▀▀█ █▀▀█ █▀▀▄")
   })
 
+  test("uses text branding instead of the Agent Swarm wordmark for downstream product profiles", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_DISPLAY_NAME: "Example Product",
+      AGENTSWARM_PRODUCT_COMMAND: "example",
+    })
+    const plain = UI.logo("  ", profile)
+    const row = `${glyphs.left[1]} ${glyphs.right[1]}`.trimEnd()
+
+    expect(plain).toBe("  Example Product")
+    expect(plain).not.toContain(row)
+  })
+
+  test("keeps the Agent Swarm wordmark when only the downstream command is customized", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_COMMAND: "example",
+    })
+    const plain = UI.logo("  ", profile)
+    const row = `${glyphs.left[1]} ${glyphs.right[1]}`.trimEnd()
+
+    expect(plain).toContain(`  ${row}`)
+    expect(plain).not.toBe("  Agent Swarm")
+  })
+
   test("does not invent uninstall commands for unpublished package-manager channels", () => {
     expect(packageManagerUninstallCommand("npm")).toEqual([
       "npm",
