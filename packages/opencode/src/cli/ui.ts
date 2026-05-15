@@ -2,6 +2,7 @@ import z from "zod"
 import { EOL } from "os"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { logo as glyphs } from "./logo"
+import { AgencyProduct } from "../agency-swarm/product"
 
 export const CancelledError = NamedError.create("UICancelledError", z.void())
 
@@ -39,7 +40,11 @@ export function empty() {
   blank = true
 }
 
-export function logo(pad?: string) {
+export function logo(pad?: string, product = AgencyProduct.resolve()) {
+  if (product.customBranding) {
+    return [pad, product.name].filter(Boolean).join("")
+  }
+
   if (!process.stdout.isTTY && !process.stderr.isTTY) {
     const result = []
     for (const [index, left] of glyphs.left.entries()) {

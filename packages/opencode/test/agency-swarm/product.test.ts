@@ -6,6 +6,7 @@ describe("AgencyProduct profile", () => {
     const profile = AgencyProduct.resolve({})
 
     expect(profile.custom).toBe(false)
+    expect(profile.customBranding).toBe(false)
     expect(profile.name).toBe("Agent Swarm")
     expect(profile.cmd).toBe("agentswarm")
     expect(profile.packageName).toBe("agentswarm-cli")
@@ -35,6 +36,7 @@ describe("AgencyProduct profile", () => {
     })
 
     expect(profile.custom).toBe(true)
+    expect(profile.customBranding).toBe(true)
     expect(profile.customStarter).toBe(true)
     expect(profile.name).toBe("Example Product")
     expect(profile.cmd).toBe("example")
@@ -55,12 +57,24 @@ describe("AgencyProduct profile", () => {
     })
 
     expect(profile.custom).toBe(true)
+    expect(profile.customBranding).toBe(false)
     expect(profile.customStarter).toBe(false)
     expect(profile.name).toBe("Agent Swarm")
     expect(profile.cmd).toBe("agentswarm")
     expect(profile.packageName).toBe("agentswarm-cli")
     expect(profile.launcherPackageName).toBe("@vrsen/agentswarm")
     expect(profile.agencyEntryFiles).toEqual(["main.py"])
+  })
+
+  test("custom command alone does not force text branding", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_COMMAND: "example",
+    })
+
+    expect(profile.custom).toBe(true)
+    expect(profile.customBranding).toBe(false)
+    expect(profile.name).toBe("Agent Swarm")
+    expect(profile.cmd).toBe("example")
   })
 })
 
