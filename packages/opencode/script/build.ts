@@ -16,7 +16,13 @@ await import("./generate.ts")
 
 import { Script } from "@opencode-ai/script"
 import pkg from "../package.json"
-import { createPlatformPackageMetadata, createReleaseVersionValues, resolveBuildVersion } from "./version"
+import {
+  createAgentSwarmPlatformOptionalDependencyTarget,
+  createPlatformPackageMetadata,
+  createReleaseVersionValues,
+  resolveReleaseRepo,
+  resolveBuildVersion,
+} from "./version"
 
 const binary = "agentswarm"
 const scope = pkg.platformScope
@@ -38,7 +44,10 @@ const productDefines = Object.fromEntries(
 )
 const buildVersion = resolveBuildVersion(process.env, Script.version)
 const versionValues = createReleaseVersionValues(buildVersion)
-const userAgentPackage = process.env.AGENTSWARM_PRODUCT_PACKAGE_NAME || "agentswarm-cli"
+const releaseRepo = resolveReleaseRepo(process.env)
+// Product package overrides are for compiled runtime copy and the user agent;
+// generated platform optional-dependency package names stay fixed below.
+const runtimePackageName = process.env.AGENTSWARM_PRODUCT_PACKAGE_NAME || "agentswarm-cli"
 // Load migrations from migration directories
 const migrationDirs = (
   await fs.promises.readdir(path.join(dir, "migration"), {
@@ -192,17 +201,14 @@ if (!skipInstall) {
   await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
 }
 for (const item of targets) {
-  const target = [
-    pkg.name,
-    // changing to win32 flags npm for some reason
-    item.os === "win32" ? "windows" : item.os,
-    item.arch,
-    item.avx2 === false ? "baseline" : undefined,
-    item.abi === undefined ? undefined : item.abi,
-  ]
-    .filter(Boolean)
-    .join("-")
-  const name = scope ? `${scope}/${target}` : target
+  const { target, name } = createAgentSwarmPlatformOptionalDependencyTarget({
+    platformScope: scope,
+    os: item.os,
+    arch: item.arch,
+    abi: item.abi,
+    avx2: item.avx2,
+  })
+  const bunTarget = target.replace(pkg.name, "bun")
   console.log(`building ${target}`)
   await $`mkdir -p dist/${target}/bin`
 
@@ -228,9 +234,9 @@ for (const item of targets) {
       autoloadDotenv: false,
       autoloadTsconfig: true,
       autoloadPackageJson: true,
-      target: target.replace(pkg.name, "bun") as any,
+      target: bunTarget as any,
       outfile: `dist/${target}/bin/${binary}`,
-      execArgv: [`--user-agent=${userAgentPackage}/${buildVersion}`, "--use-system-ca", "--"],
+      execArgv: [`--user-agent=${runtimePackageName}/${buildVersion}`, "--use-system-ca", "--"],
       windows: {},
     },
     files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
@@ -283,7 +289,10 @@ if (Script.release) {
       await $`zip -r ../../${key}.zip *`.cwd(`dist/${key}/bin`)
     }
   }
-  await $`gh release upload ${versionValues.releaseTag} ./dist/*.zip ./dist/*.tar.gz --clobber --repo ${process.env.GH_REPO}`
+  if (!releaseRepo) {
+    throw new Error("Release upload requires AGENTSWARM_PRODUCT_RELEASE_REPO or GH_REPO")
+  }
+  await $`gh release upload ${versionValues.releaseTag} ./dist/*.zip ./dist/*.tar.gz --clobber --repo ${releaseRepo}`
 }
 
 export { binaries }

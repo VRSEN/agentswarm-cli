@@ -2910,10 +2910,11 @@ describe("agency-swarm npx onboarding", () => {
     expect(project?.moduleName).toBe("agency")
   })
 
-  test("detectAgencyProject uses configured generic entry files", async () => {
+  test("detectAgencyProject uses configured nested entry files", async () => {
     await using dir = await tmpdir()
+    await mkdir(path.join(dir.path, "src"))
     await Bun.write(
-      path.join(dir.path, "main.py"),
+      path.join(dir.path, "src", "main.py"),
       [
         "from agency_swarm import Agency",
         "",
@@ -2922,11 +2923,14 @@ describe("agency-swarm npx onboarding", () => {
       ].join("\n"),
     )
 
-    const project = await detectAgencyProject(dir.path, downstreamProfile)
+    const project = await detectAgencyProject(dir.path, {
+      ...downstreamProfile,
+      agencyEntryFiles: ["src/main.py"],
+    })
 
     expect(project?.directory).toBe(dir.path)
-    expect(project?.agencyFile).toBe(path.join(dir.path, "main.py"))
-    expect(project?.moduleName).toBe("main")
+    expect(project?.agencyFile).toBe(path.join(dir.path, "src", "main.py"))
+    expect(project?.moduleName).toBe("src.main")
   })
 
   test("detectAgencyProject does not detect swarm.py in the default Agent Swarm profile", async () => {
@@ -3011,6 +3015,164 @@ describe("agency-swarm npx onboarding", () => {
     expect(launch?.runProjectDirectory).toBe(target)
     expect(commands.find((cmd) => cmd[1]?.endsWith("launch_agency.py"))?.at(-1)).toBe("main")
     expect(launch?.configContent).toContain("agency-swarm/default")
+
+    await launch?.cleanup?.()
+  })
+
+  test("prepareNpxLaunch uses the default starter entry for entry-file-only profiles", async () => {
+    await using dir = await tmpdir()
+    const profile = {
+      custom: true,
+      name: "Example Product",
+      customStarter: false,
+      starterTemplateRepo: "agency-ai-solutions/agency-starter-template",
+      starterProjectName: "my-agency",
+      agencyEntryFiles: ["main.py"],
+    }
+    const name = "entry-only-starter"
+    const target = path.join(dir.path, name)
+    const commands: string[][] = []
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "step").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+    spyOn(prompts, "outro").mockImplementation(() => undefined as never)
+    spyOn(prompts, "select").mockResolvedValue("starter" as never)
+    spyOn(prompts, "text").mockResolvedValue(name as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+
+      if (cmd[0] === "gh") {
+        return { exited: Promise.resolve(1), stdout: "", stderr: "gh unavailable" } as never
+      }
+
+      if (cmd[0] === "git" && cmd[1] === "clone") {
+        mkdirSync(path.join(target, ".venv", process.platform === "win32" ? "Scripts" : "bin"), { recursive: true })
+        writeFileSync(
+          path.join(target, "agency.py"),
+          "from agency_swarm import Agency\n\ndef create_agency():\n    return Agency()\n",
+        )
+        writeFileSync(getTestVenvPython(target), "")
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (cmd[0] === "git" && cmd[1] === "init") {
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (isUvVersionCommand(cmd)) {
+        return { exited: Promise.resolve(0), stdout: "uv 0.8.0\n", stderr: "" } as never
+      }
+
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        return { exited: Promise.resolve(0), stdout: `${cmd[0]}\n3.12.7\n`, stderr: "" } as never
+      }
+
+      if (isPythonPipInstallUvCommand(cmd) || isUvPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareNpxLaunch(dir.path, profile)
+
+    expect(commands).toContainEqual(["git", "clone", "--depth=1", starterTemplateUrl(), target])
+    expect(launch?.runProjectDirectory).toBe(target)
+    expect(commands.find((cmd) => cmd[1]?.endsWith("launch_agency.py"))?.at(-1)).toBe("agency")
+
+    await launch?.cleanup?.()
+  })
+
+  test("prepareNpxLaunch launches the cloned starter entry that exists", async () => {
+    await using dir = await tmpdir()
+    const profile = {
+      ...downstreamProfile,
+      agencyEntryFiles: ["missing.py", "src/main.py"],
+    }
+    const target = path.join(dir.path, profile.starterProjectName)
+    const commands: string[][] = []
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "step").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+    spyOn(prompts, "outro").mockImplementation(() => undefined as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      commands.push(cmd)
+
+      if (cmd[0] === "git" && cmd[1] === "clone") {
+        mkdirSync(path.join(target, "src"), { recursive: true })
+        mkdirSync(path.join(target, ".venv", process.platform === "win32" ? "Scripts" : "bin"), { recursive: true })
+        writeFileSync(
+          path.join(target, "src", "main.py"),
+          "from agency_swarm import Agency\n\ndef create_agency():\n    return Agency()\n",
+        )
+        writeFileSync(getTestVenvPython(target), "")
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (cmd[0] === "git" && cmd[1] === "init") {
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (isUvVersionCommand(cmd)) {
+        return { exited: Promise.resolve(0), stdout: "uv 0.8.0\n", stderr: "" } as never
+      }
+
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        return { exited: Promise.resolve(0), stdout: `${cmd[0]}\n3.12.7\n`, stderr: "" } as never
+      }
+
+      if (isPythonPipInstallUvCommand(cmd) || isUvPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareNpxLaunch(dir.path, profile)
+
+    expect(commands).toContainEqual(["git", "clone", "--depth=1", starterTemplateUrl(profile), target])
+    expect(launch?.runProjectDirectory).toBe(target)
+    expect(commands.find((cmd) => cmd[1]?.endsWith("launch_agency.py"))?.at(-1)).toBe("src.main")
 
     await launch?.cleanup?.()
   })
