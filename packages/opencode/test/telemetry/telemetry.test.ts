@@ -121,6 +121,25 @@ describe("Telemetry", () => {
     })
   })
 
+  test("flush waits for fire-and-forget capture setup", async () => {
+    await using tmp = await tmpdir()
+    const requests: { body: any }[] = []
+    enableTelemetry({ stateDir: tmp.path })
+    Telemetry.setFetchForTests(
+      asFetch(async (_url, init) => {
+        requests.push({ body: JSON.parse(String(init?.body)) })
+        return new Response(null, { status: 200 })
+      }),
+    )
+
+    const capture = Telemetry.capture("app_started", { entrypoint: "tui" })
+    await Telemetry.flush()
+    await capture
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0].body.event).toBe("app_started")
+  })
+
   test("captures provider auth setup without credential material", async () => {
     await using tmp = await tmpdir()
     const requests: { body: any }[] = []

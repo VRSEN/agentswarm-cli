@@ -12,6 +12,7 @@ declare const AGENTSWARM_POSTHOG_HOST: string | undefined
 const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com"
 const STATE_FILE = "telemetry.json"
 const FALSE_VALUES = new Set(["0", "false", "off", "no"])
+const REQUEST_TIMEOUT_MS = 2_000
 const sessionID = crypto.randomUUID()
 
 const allowedEvents = new Set([
@@ -160,24 +161,32 @@ export async function capture(event: TelemetryEvent, properties?: Record<string,
   const { apiKey, host } = config()
   if (!apiKey) return false
 
-  const body = {
-    api_key: apiKey,
-    distinct_id: await anonymousInstallID(),
-    event,
-    properties: sanitize(properties),
-  }
-
-  const fetcher = fetchOverride ?? fetch
   const url = `${host.replace(/\/+$/, "")}/i/v0/e/`
-  const task = fetcher(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  })
-    .then(() => {})
-    .catch(() => {})
+  const task = (async () => {
+    const body = {
+      api_key: apiKey,
+      distinct_id: await anonymousInstallID(),
+      event,
+      properties: sanitize(properties),
+    }
+
+    const fetcher = fetchOverride ?? fetch
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    try {
+      await fetcher(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
+    } catch {
+    } finally {
+      clearTimeout(timeout)
+    }
+  })()
 
   pending.add(task)
   task.finally(() => pending.delete(task))

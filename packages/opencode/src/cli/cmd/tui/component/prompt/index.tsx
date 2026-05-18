@@ -1146,7 +1146,6 @@ export function Prompt(props: PromptProps) {
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
 
       void Telemetry.capture("ui_prompt_submitted", {
-        command: command.slice(1),
         framework_mode: frameworkMode(),
         has_agent_parts: nonTextParts.some((part) => part.type === "agent"),
         has_editor_selection: !!editorSelection,

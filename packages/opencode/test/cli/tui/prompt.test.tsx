@@ -26,6 +26,7 @@ import * as TextareaKeybindingsModule from "../../../src/cli/cmd/tui/component/t
 import { DialogProvider, useDialog } from "../../../src/cli/cmd/tui/ui/dialog"
 import * as ToastModule from "../../../src/cli/cmd/tui/ui/toast"
 import { AgencySwarmRunSession } from "../../../src/agency-swarm/run-session"
+import { Telemetry } from "../../../src/telemetry/telemetry"
 
 function flushEffects() {
   return Promise.resolve().then(() => Promise.resolve())
@@ -312,6 +313,7 @@ describe("prompt auth rejection handling", () => {
       },
       "command",
     )
+    const telemetryCapture = spyOn(Telemetry, "capture").mockResolvedValue(false)
     const promptSession = spyOn(
       {
         prompt: () => Promise.resolve(),
@@ -530,6 +532,11 @@ describe("prompt auth rejection handling", () => {
 
     expect(commandSession).toHaveBeenCalledTimes(1)
     expect(promptSession).not.toHaveBeenCalled()
+    const telemetryCall = telemetryCapture.mock.calls.find(
+      ([event, properties]) => event === "ui_prompt_submitted" && (properties as any)?.type === "server_command",
+    )
+    expect(telemetryCall).toBeTruthy()
+    expect((telemetryCall?.[1] as any)?.command).toBeUndefined()
     expect(appendHistory).toHaveBeenCalledWith({
       input: "/auth refresh\nsecond line",
       parts: [],
