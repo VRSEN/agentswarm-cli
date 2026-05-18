@@ -54,10 +54,8 @@ jobs:
       - name: Validate telemetry secrets
         env:
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
-          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
         run: |
           test -n "$POSTHOG_API_KEY" || { echo "POSTHOG_API_KEY is required for release telemetry" >&2; exit 1; }
-          test -n "$POSTHOG_HOST" || { echo "POSTHOG_HOST is required for release telemetry" >&2; exit 1; }
 
       - name: Build CLI packages
         env:
