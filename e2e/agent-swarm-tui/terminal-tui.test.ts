@@ -166,6 +166,89 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(screen).toContain("Composio")
   })
 
+  test("run-mode /auth emits telemetry by default when PostHog config is present", async () => {
+    currentServer = await startAgencyProtocolServer()
+    currentTelemetryServer = startTelemetryServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      env: {
+        AGENTSWARM_POSTHOG_API_KEY: "ph_test",
+        AGENTSWARM_POSTHOG_HOST: currentTelemetryServer.url,
+        AGENTSWARM_TELEMETRY: undefined,
+        AGENTSWARM_TELEMETRY_ALLOW_TEST: undefined,
+        CI: undefined,
+        OPENCODE_PURE: undefined,
+      },
+    })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitFor(
+      () => currentTelemetryServer!.events.some((event) => event.event === "app_started"),
+      "app_started telemetry event",
+      tuiInteractionTimeoutMs,
+    )
+
+    await driveOpenAIAPIKeyAuth(currentTui, "sk-test-telemetry")
+
+    await currentTui.waitFor(
+      () => currentTelemetryServer!.events.some((event) => event.event === "provider_auth_configured"),
+      "provider_auth_configured telemetry event",
+      tuiInteractionTimeoutMs,
+    )
+
+    const authEvent = currentTelemetryServer.events.find((event) => event.event === "provider_auth_configured")
+    expect(authEvent?.api_key).toBe("ph_test")
+    expect(authEvent?.properties).toMatchObject({
+      app: "Agent Swarm",
+      auth_method: "api",
+      framework_mode: true,
+      provider_id: "openai",
+      source: "auth_dialog",
+    })
+    expect(JSON.stringify(currentTelemetryServer.events)).not.toContain("sk-test-telemetry")
+  })
+
+  livePostHogTest("run-mode /auth telemetry reaches live PostHog ingestion", async () => {
+    const postHogKey = process.env.AGENTSWARM_POSTHOG_API_KEY
+    const postHogHost = process.env.AGENTSWARM_POSTHOG_HOST
+    if (!postHogKey || !postHogHost) {
+      throw new Error("AGENTSWARM_POSTHOG_API_KEY and AGENTSWARM_POSTHOG_HOST are required")
+    }
+
+    currentServer = await startAgencyProtocolServer()
+    currentTelemetryServer = startTelemetryServer({ forwardHost: postHogHost })
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      env: {
+        AGENTSWARM_POSTHOG_API_KEY: postHogKey,
+        AGENTSWARM_POSTHOG_HOST: currentTelemetryServer.url,
+        AGENTSWARM_TELEMETRY: undefined,
+        AGENTSWARM_TELEMETRY_ALLOW_TEST: undefined,
+        CI: undefined,
+        OPENCODE_PURE: undefined,
+      },
+    })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await driveOpenAIAPIKeyAuth(currentTui, "sk-live-telemetry-test")
+    await currentTui.waitFor(
+      () =>
+        currentTelemetryServer!.events.some(
+          (event) => event.event === "provider_auth_configured" && event.forwardStatus !== undefined,
+        ),
+      "live PostHog provider_auth_configured response",
+      tuiInteractionTimeoutMs,
+    )
+
+    const authEvent = currentTelemetryServer.events.find((event) => event.event === "provider_auth_configured")
+    if (!authEvent || authEvent.forwardStatus === undefined || authEvent.forwardStatus >= 300) {
+      throw new Error("Live PostHog ingestion did not accept provider_auth_configured")
+    }
+    if (JSON.stringify(currentTelemetryServer.events).includes("sk-live-telemetry-test")) {
+      throw new Error("Provider API key leaked into telemetry")
+    }
+  })
+
   test("run-mode slash command filtering hides native commands by query", async () => {
     for (const [hiddenCommand, query] of [
       ["/editor", "/edi"],
@@ -811,5 +894,55 @@ async function startAuthFailureAgencyServer(): Promise<AgencyProtocolServer> {
     stop() {
       server.stop(true)
     },
+  }
+}
+
+async function driveOpenAIAPIKeyAuth(tui: TuiProcess, apiKey: string) {
+  tui.write("/")
+  await tui.waitForText("/auth", tuiInteractionTimeoutMs)
+  await tui.waitForText("/connect", tuiInteractionTimeoutMs)
+  tui.write("\x1b[B\r")
+  await tui.waitForText("Manage Agent Swarm auth", tuiInteractionTimeoutMs)
+  tui.write("openai\r")
+  await tui.waitForText("Select OpenAI auth method", tuiInteractionTimeoutMs)
+  tui.write("api\r")
+  await tui.waitForText("API key", tuiInteractionTimeoutMs)
+  await tui.waitForText("enter submit", tuiInteractionTimeoutMs)
+  await Bun.sleep(100)
+  tui.write(`${apiKey}\r`)
+}
+
+function startTelemetryServer(input: { forwardHost?: string } = {}) {
+  const events: Array<{
+    api_key?: unknown
+    event?: unknown
+    forwardStatus?: number
+    properties?: Record<string, unknown>
+  }> = []
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      if (new URL(request.url).pathname === "/i/v0/e/") {
+        const body = (await request.json()) as (typeof events)[number]
+        if (input.forwardHost) {
+          const response = await fetch(`${input.forwardHost.replace(/\/+$/, "")}/i/v0/e/`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+          })
+          body.forwardStatus = response.status
+        }
+        events.push(body)
+        return Response.json({ status: 1 })
+      }
+      return new Response("not found", { status: 404 })
+    },
+  })
+  return {
+    events,
+    url: `http://${server.hostname}:${server.port}`,
+    stop: () => server.stop(true),
   }
 }
