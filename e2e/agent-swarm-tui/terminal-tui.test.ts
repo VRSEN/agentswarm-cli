@@ -176,8 +176,10 @@ describe("Agent Swarm terminal TUI e2e", () => {
         AGENTSWARM_POSTHOG_HOST: currentTelemetryServer.url,
         AGENTSWARM_TELEMETRY: undefined,
         AGENTSWARM_TELEMETRY_ALLOW_TEST: undefined,
-        CI: undefined,
-        OPENCODE_PURE: undefined,
+        BUN_TEST: "",
+        CI: "",
+        NODE_ENV: "",
+        OPENCODE_PURE: "",
       },
     })
 
@@ -224,8 +226,10 @@ describe("Agent Swarm terminal TUI e2e", () => {
         AGENTSWARM_POSTHOG_HOST: currentTelemetryServer.url,
         AGENTSWARM_TELEMETRY: undefined,
         AGENTSWARM_TELEMETRY_ALLOW_TEST: undefined,
-        CI: undefined,
-        OPENCODE_PURE: undefined,
+        BUN_TEST: "",
+        CI: "",
+        NODE_ENV: "",
+        OPENCODE_PURE: "",
       },
     })
 
@@ -942,7 +946,7 @@ function startTelemetryServer(input: { forwardHost?: string } = {}) {
   })
   return {
     events,
-    url: `http://${server.hostname}:${server.port}`,
+    url: `http://127.0.0.1:${server.port}`,
     stop: () => server.stop(true),
   }
 }
