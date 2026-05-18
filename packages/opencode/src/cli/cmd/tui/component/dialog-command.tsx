@@ -13,6 +13,7 @@ import {
 } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import { useKeybind } from "@tui/context/keybind"
+import { Telemetry } from "@/telemetry/telemetry"
 
 type Context = ReturnType<typeof init>
 const ctx = createContext<Context>()
@@ -47,16 +48,43 @@ function init() {
 
   const isEnabled = (option: CommandOption) => option.enabled !== false
   const isVisible = (option: CommandOption) => isEnabled(option) && !option.hidden
+  const track = (
+    option: CommandOption,
+    source: "keybind" | "palette" | "programmatic" | "slash" | "suggested",
+    slash?: string,
+  ) => {
+    void Telemetry.capture("ui_command_executed", {
+      category: option.category,
+      command: option.value,
+      keybind: option.keybind,
+      slash,
+      source,
+    })
+  }
+  const tracked = (option: CommandOption, source: "palette" | "suggested", trackedOption = option) => ({
+    ...option,
+    onSelect: (dialog: Parameters<NonNullable<CommandOption["onSelect"]>>[0]) => {
+      track(trackedOption, source)
+      option.onSelect?.(dialog)
+    },
+  })
 
-  const visibleOptions = createMemo(() => entries().filter((option) => isVisible(option)))
+  const visibleRawOptions = createMemo(() => entries().filter((option) => isVisible(option)))
+  const visibleOptions = createMemo(() => visibleRawOptions().map((option) => tracked(option, "palette")))
   const suggestedOptions = createMemo(() =>
-    visibleOptions()
+    visibleRawOptions()
       .filter((option) => option.suggested)
-      .map((option) => ({
-        ...option,
-        value: `suggested:${option.value}`,
-        category: "Suggested",
-      })),
+      .map((option) =>
+        tracked(
+          {
+            ...option,
+            value: `suggested:${option.value}`,
+            category: "Suggested",
+          },
+          "suggested",
+          option,
+        ),
+      ),
   )
   const suspended = () => suspendCount() > 0
 
@@ -68,6 +96,7 @@ function init() {
       if (!isEnabled(option)) continue
       if (option.keybind && keybind.match(option.keybind, evt)) {
         evt.preventDefault()
+        track(option, "keybind")
         option.onSelect?.(dialog)
         return
       }
@@ -75,10 +104,11 @@ function init() {
   })
 
   const result = {
-    trigger(name: string) {
+    trigger(name: string, source: "programmatic" | "slash" = "programmatic", slash?: string) {
       for (const option of entries()) {
         if (option.value === name) {
           if (!isEnabled(option)) return
+          track(option, source, slash)
           option.onSelect?.(dialog)
           return
         }
@@ -92,7 +122,7 @@ function init() {
           display: "/" + slash.name,
           description: option.description ?? option.title,
           aliases: slash.aliases?.map((alias) => "/" + alias),
-          onSelect: () => result.trigger(option.value),
+          onSelect: () => result.trigger(option.value, "slash", slash.name),
         }
       })
     },

@@ -86,6 +86,7 @@ import { hasAgencyHandoffEvidence } from "@/session/agency-swarm-utils"
 import { DialogWorkspaceCreate, restoreWorkspaceSession } from "../dialog-workspace-create"
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
 import { useArgs } from "@tui/context/args"
+import { Telemetry } from "@/telemetry/telemetry"
 
 export type PromptProps = {
   sessionID?: string
@@ -1119,6 +1120,15 @@ export function Prompt(props: PromptProps) {
       : []
 
     if (store.mode === "shell") {
+      void Telemetry.capture("ui_prompt_submitted", {
+        framework_mode: frameworkMode(),
+        has_agent_parts: nonTextParts.some((part) => part.type === "agent"),
+        has_editor_selection: !!editorSelection,
+        has_file_parts: nonTextParts.some((part) => part.type === "file"),
+        mode: "shell",
+        provider_id: selectedModel.providerID,
+        type: "shell",
+      })
       void sdk.client.session.shell({
         sessionID,
         agent: effectiveAgentName(),
@@ -1135,6 +1145,16 @@ export function Prompt(props: PromptProps) {
       const restOfInput = firstLineEnd === -1 ? "" : inputText.slice(firstLineEnd + 1)
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
 
+      void Telemetry.capture("ui_prompt_submitted", {
+        command: command.slice(1),
+        framework_mode: frameworkMode(),
+        has_agent_parts: nonTextParts.some((part) => part.type === "agent"),
+        has_editor_selection: !!editorSelection,
+        has_file_parts: nonTextParts.some((part) => part.type === "file"),
+        mode: currentMode,
+        provider_id: selectedModel.providerID,
+        type: "server_command",
+      })
       void sdk.client.session.command({
         sessionID,
         command: command.slice(1),
@@ -1176,6 +1196,15 @@ export function Prompt(props: PromptProps) {
           ...nonTextParts.map(assign),
         ],
       }
+      void Telemetry.capture("ui_prompt_submitted", {
+        framework_mode: frameworkMode(),
+        has_agent_parts: nonTextParts.some((part) => part.type === "agent"),
+        has_editor_selection: !!editorSelection,
+        has_file_parts: nonTextParts.some((part) => part.type === "file"),
+        mode: currentMode,
+        provider_id: selectedModel.providerID,
+        type: "prompt",
+      })
       sdk.client.session.prompt(promptPayload).catch((error) => {
         setStore("prompt", savedPrompt)
         input.setText(savedPrompt.input)

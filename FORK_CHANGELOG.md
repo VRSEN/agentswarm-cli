@@ -239,6 +239,12 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `logo` in `packages/opencode/src/cli/logo.ts` and `Logo` in `packages/opencode/src/cli/cmd/tui/component/logo.tsx`.
   - Added by: `fd2f678b`
 
+- **Privacy-safe product telemetry for TUI feature usage**
+  - Intent: learn which Agent Swarm TUI features users use without collecting prompts, command arguments, file paths, session content, or raw workspace data.
+  - Behavior: npm release builds can send PostHog events for app start, provider auth setup, command use, route changes, and prompt submission shape when the release build includes the PostHog capture key. Users can disable this with `AGENTSWARM_TELEMETRY=0`.
+  - Implementation: `Telemetry` in `packages/opencode/src/telemetry/telemetry.ts`, TUI command/prompt/app hooks, and release-time `POSTHOG_API_KEY`/`POSTHOG_HOST` injection in `.github/workflows/publish-npm-on-release.yml`.
+  - Added by: `codex/posthog-telemetry`
+
 ## Install/Upgrade
 
 - **One-command launcher onboarding and project detection**
