@@ -511,7 +511,7 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
 
 Why: without a hardcoded source of truth, agents re-derive behavior from code each task.
 
-- TUI Product Doc: `USER_FLOWS.md` for fork-owned user flows.
+- TUI Product Doc: `https://github.com/VRSEN/agency-swarm/blob/main/docs/core-framework/agencies/agent-swarm-cli.mdx`
 - Fork Repo: `https://github.com/VRSEN/agentswarm-cli`
 - Upstream Repo: `https://github.com/anomalyco/opencode`
 - Repo skills are checked-in manager instructions under `.codex/skills/**`, not product/TUI skills and not automatic behavior by themselves. `AGENTS.md` may route work to them by path or name; agents must read the relevant `SKILL.md` on demand unless the environment exposes the skill directly.
