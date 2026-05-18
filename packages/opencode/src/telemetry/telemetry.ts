@@ -14,6 +14,24 @@ const STATE_FILE = "telemetry.json"
 const FALSE_VALUES = new Set(["0", "false", "off", "no"])
 const REQUEST_TIMEOUT_MS = 2_000
 const sessionID = crypto.randomUUID()
+const publicProviderIDs = new Set([
+  "agency-swarm",
+  "amazon-bedrock",
+  "anthropic",
+  "azure",
+  "deepseek",
+  "github-copilot",
+  "google",
+  "google-vertex",
+  "groq",
+  "litellm",
+  "lmstudio",
+  "ollama",
+  "opencode",
+  "opencode-go",
+  "openai",
+  "xai",
+])
 
 const allowedEvents = new Set([
   "app_started",
@@ -132,7 +150,11 @@ function safeValue(key: string, value: unknown): SafeValue | undefined {
   if (!allowedProperties.has(key)) return undefined
   if (typeof value === "boolean") return value
   if (typeof value === "number") return Number.isFinite(value) ? value : undefined
-  if (typeof value === "string") return safeString(value)
+  if (typeof value === "string") {
+    const safe = safeString(value)
+    if (key === "provider_id") return safe ? (publicProviderIDs.has(safe) ? safe : "custom") : undefined
+    return safe
+  }
   return undefined
 }
 

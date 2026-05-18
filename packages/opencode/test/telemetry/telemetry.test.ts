@@ -169,4 +169,26 @@ describe("Telemetry", () => {
     })
     expect(JSON.stringify(requests[0].body)).not.toContain("sk-secret")
   })
+
+  test("buckets custom provider ids", async () => {
+    await using tmp = await tmpdir()
+    const requests: { body: any }[] = []
+    enableTelemetry({ stateDir: tmp.path })
+    Telemetry.setFetchForTests(
+      asFetch(async (_url, init) => {
+        requests.push({ body: JSON.parse(String(init?.body)) })
+        return new Response(null, { status: 200 })
+      }),
+    )
+
+    await Telemetry.capture("provider_auth_configured", {
+      auth_method: "api",
+      provider_id: "internal-client-gateway",
+      source: "auth_dialog",
+    })
+    await Telemetry.flush()
+
+    expect(requests[0].body.properties.provider_id).toBe("custom")
+    expect(JSON.stringify(requests[0].body)).not.toContain("internal-client-gateway")
+  })
 })
