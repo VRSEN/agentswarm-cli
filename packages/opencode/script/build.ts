@@ -38,6 +38,7 @@ const productEnvNames = [
   "AGENTSWARM_PRODUCT_STARTER_REPO",
   "AGENTSWARM_PRODUCT_STARTER_FOLDER",
   "AGENTSWARM_PRODUCT_ENTRY_FILES",
+  "AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION",
 ] as const
 const productDefines = Object.fromEntries(
   productEnvNames.map((name) => [name, process.env[name] ? JSON.stringify(process.env[name]) : "undefined"]),

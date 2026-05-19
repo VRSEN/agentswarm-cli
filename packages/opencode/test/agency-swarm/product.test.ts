@@ -7,6 +7,8 @@ describe("AgencyProduct profile", () => {
 
     expect(profile.custom).toBe(false)
     expect(profile.customBranding).toBe(false)
+    expect(profile.lockModelSelection).toBe(false)
+    expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(true)
     expect(profile.name).toBe("Agent Swarm")
     expect(profile.cmd).toBe("agentswarm")
     expect(profile.packageName).toBe("agentswarm-cli")
@@ -33,11 +35,14 @@ describe("AgencyProduct profile", () => {
       AGENTSWARM_PRODUCT_STARTER_REPO: "example/starter",
       AGENTSWARM_PRODUCT_STARTER_FOLDER: "example-project",
       AGENTSWARM_PRODUCT_ENTRY_FILES: "main.py, agency.py",
+      AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION: "true",
     })
 
     expect(profile.custom).toBe(true)
     expect(profile.customBranding).toBe(true)
     expect(profile.customStarter).toBe(true)
+    expect(profile.lockModelSelection).toBe(true)
+    expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(false)
     expect(profile.name).toBe("Example Product")
     expect(profile.cmd).toBe("example")
     expect(profile.packageName).toBe("example-cli")
@@ -75,6 +80,16 @@ describe("AgencyProduct profile", () => {
     expect(profile.customBranding).toBe(false)
     expect(profile.name).toBe("Agent Swarm")
     expect(profile.cmd).toBe("example")
+  })
+
+  test("ignores invalid model-selection lock values", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION: "maybe",
+    })
+
+    expect(profile.custom).toBe(false)
+    expect(profile.lockModelSelection).toBe(false)
+    expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(true)
   })
 })
 

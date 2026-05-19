@@ -9,12 +9,14 @@ declare const AGENTSWARM_PRODUCT_MDNS_DOMAIN: string | undefined
 declare const AGENTSWARM_PRODUCT_STARTER_REPO: string | undefined
 declare const AGENTSWARM_PRODUCT_STARTER_FOLDER: string | undefined
 declare const AGENTSWARM_PRODUCT_ENTRY_FILES: string | undefined
+declare const AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION: string | undefined
 
 export namespace AgencyProduct {
   export interface Profile {
     custom: boolean
     customBranding: boolean
     customStarter: boolean
+    lockModelSelection: boolean
     name: string
     cmd: string
     packageName: string
@@ -32,6 +34,7 @@ export namespace AgencyProduct {
     custom: false,
     customBranding: false,
     customStarter: false,
+    lockModelSelection: false,
     name: "Agent Swarm",
     cmd: "agentswarm",
     packageName: "agentswarm-cli",
@@ -70,6 +73,10 @@ export namespace AgencyProduct {
       typeof AGENTSWARM_PRODUCT_STARTER_FOLDER === "undefined" ? undefined : AGENTSWARM_PRODUCT_STARTER_FOLDER,
     AGENTSWARM_PRODUCT_ENTRY_FILES:
       typeof AGENTSWARM_PRODUCT_ENTRY_FILES === "undefined" ? undefined : AGENTSWARM_PRODUCT_ENTRY_FILES,
+    AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION:
+      typeof AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION === "undefined"
+        ? undefined
+        : AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION,
   } satisfies Record<string, string | undefined>
 
   function clean(value: string | undefined) {
@@ -89,6 +96,14 @@ export namespace AgencyProduct {
     return files && files.length > 0 ? files : undefined
   }
 
+  function readBoolean(value: string | undefined) {
+    const normalized = clean(value)?.toLowerCase()
+    if (!normalized) return undefined
+    if (["1", "true", "yes", "on"].includes(normalized)) return true
+    if (["0", "false", "no", "off"].includes(normalized)) return false
+    return undefined
+  }
+
   export function resolve(env: Record<string, string | undefined> = process.env): Profile {
     const overrides = {
       name: readValue(env, "AGENTSWARM_PRODUCT_DISPLAY_NAME"),
@@ -102,6 +117,7 @@ export namespace AgencyProduct {
       starterTemplateRepo: readValue(env, "AGENTSWARM_PRODUCT_STARTER_REPO"),
       starterProjectName: readValue(env, "AGENTSWARM_PRODUCT_STARTER_FOLDER"),
       agencyEntryFiles: readEntryFiles(readValue(env, "AGENTSWARM_PRODUCT_ENTRY_FILES")),
+      lockModelSelection: readBoolean(readValue(env, "AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION")),
     }
     const custom = Object.values(overrides).some((value) => value !== undefined)
     const customBranding = overrides.name !== undefined
@@ -111,6 +127,7 @@ export namespace AgencyProduct {
       custom,
       customBranding,
       customStarter,
+      lockModelSelection: overrides.lockModelSelection ?? defaults.lockModelSelection,
       name: overrides.name ?? defaults.name,
       cmd: overrides.cmd ?? defaults.cmd,
       packageName: overrides.packageName ?? defaults.packageName,
@@ -130,6 +147,7 @@ export namespace AgencyProduct {
   export const custom = current.custom
   export const customBranding = current.customBranding
   export const customStarter = current.customStarter
+  export const lockModelSelection = current.lockModelSelection
   export const name = current.name
   export const packageName = current.packageName
   export const launcherPackageName = current.launcherPackageName
@@ -146,6 +164,10 @@ export namespace AgencyProduct {
     "Authenticate providers and connect to a local agency-swarm server before sending prompts.",
     "Use /auth for provider credentials, then /connect to choose the server and store a token.",
   ]
+
+  export function shouldShowModelSelection(profile: Pick<Profile, "lockModelSelection"> = current) {
+    return !profile.lockModelSelection
+  }
 
   const skip = [
     "Run {highlight}/share{/highlight}",

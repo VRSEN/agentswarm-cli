@@ -142,6 +142,7 @@ describe("agency-swarm npx onboarding", () => {
       baseURL: "http://127.0.0.1:8123",
       agency: "local-agency",
       discoveryTimeoutMs: 2000,
+      timeout: false,
       token: "server-token",
     })
   })
@@ -2335,7 +2336,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(outcome).toBeInstanceOf(Error)
     if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
     expect(killSignals).toEqual([undefined, "SIGKILL"])
-    expect(outcome.message).toContain("Agency Swarm import canary timed out after 1 minute")
+    expect(outcome.message).toContain("Agency Swarm import canary timed out after 3 minutes")
   })
 
   test("prepareProjectLaunch returns when server readiness timeout stderr does not close", async () => {

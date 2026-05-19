@@ -1094,6 +1094,7 @@ function createAgencySwarmProvider(): Info {
     options: {
       baseURL: AgencySwarmAdapter.DEFAULT_BASE_URL,
       discoveryTimeoutMs: AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS,
+      timeout: false,
     },
     models: {
       [modelID]: {

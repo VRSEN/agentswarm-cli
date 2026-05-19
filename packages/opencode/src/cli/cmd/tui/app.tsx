@@ -536,6 +536,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       keybind: "model_list",
       suggested: true,
       category: "Agent",
+      enabled: AgencyProduct.shouldShowModelSelection(),
+      hidden: !AgencyProduct.shouldShowModelSelection(),
       slash: {
         name: "models",
       },

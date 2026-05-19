@@ -42,6 +42,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Behavior: `AGENTSWARM_PRODUCT_*` inputs can override command copy, package metadata, release repository, mDNS default, docs and issue links, starter template, starter folder, and detected entry files.
   - Behavior: Agent Swarm defaults remain unchanged when no downstream product inputs are set.
   - Behavior: release builds can use `AGENTSWARM_PRODUCT_VERSION` so direct downstream binaries report the downstream package version.
+  - Behavior: downstream profiles can set `AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION` to keep users on the configured provider/model path after auth and hide `/models`.
   - Implementation: `AgencyProduct` in `packages/opencode/src/agency-swarm/product.ts`, launcher detection in `packages/opencode/src/agency-swarm/npx.ts`, the FastAPI server launcher module argument, installation distribution metadata, and `packages/opencode/script/build.ts`.
 
 - **One-command launcher npm package**
