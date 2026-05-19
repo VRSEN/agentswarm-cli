@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { EOL } from "node:os"
 import yargs from "yargs"
 import { AgencyProduct } from "../../src/agency-swarm/product"
 import { logo as glyphs } from "../../src/cli/logo"
@@ -87,6 +88,18 @@ describe("CLI branding help", () => {
     const row = `${glyphs.left[1]} ${glyphs.right[1]}`.trimEnd()
 
     expect(plain).toBe("  Example Product")
+    expect(plain).not.toContain(row)
+  })
+
+  test("uses downstream plain wordmark lines when configured", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_DISPLAY_NAME: "Example Product",
+      AGENTSWARM_PRODUCT_WORDMARK_LINES: "EXAMPLE\\n PRODUCT",
+    })
+    const plain = UI.logo("  ", profile)
+    const row = `${glyphs.left[1]} ${glyphs.right[1]}`.trimEnd()
+
+    expect(plain).toBe(["  EXAMPLE", "   PRODUCT"].join(EOL))
     expect(plain).not.toContain(row)
   })
 

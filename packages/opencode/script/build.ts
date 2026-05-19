@@ -39,6 +39,10 @@ const productEnvNames = [
   "AGENTSWARM_PRODUCT_STARTER_FOLDER",
   "AGENTSWARM_PRODUCT_ENTRY_FILES",
   "AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION",
+  "AGENTSWARM_PRODUCT_ADDONS_SETUP_FLAG_ENV",
+  "AGENTSWARM_PRODUCT_TUI_LOGO_LEFT",
+  "AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT",
+  "AGENTSWARM_PRODUCT_WORDMARK_LINES",
 ] as const
 const productDefines = Object.fromEntries(
   productEnvNames.map((name) => [name, process.env[name] ? JSON.stringify(process.env[name]) : "undefined"]),

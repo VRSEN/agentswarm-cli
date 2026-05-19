@@ -1,7 +1,7 @@
 import { TextAttributes, RGBA } from "@opentui/core"
 import { For, type JSX } from "solid-js"
 import { useTheme, tint } from "@tui/context/theme"
-import { logo, marks } from "@/cli/logo"
+import { logo as defaultLogo, marks } from "@/cli/logo"
 import { AgencyProduct } from "@/agency-swarm/product"
 
 // Shadow markers (rendered chars in parens):
@@ -11,12 +11,22 @@ import { AgencyProduct } from "@/agency-swarm/product"
 const SHADOW_MARKER = new RegExp(`[${marks}]`)
 
 export function textLogo(product = AgencyProduct.resolve()) {
-  return product.customBranding ? product.name : undefined
+  return product.customBranding && !AgencyProduct.tuiLogo(product) ? product.name : undefined
+}
+
+export function tuiLogo(product = AgencyProduct.resolve()) {
+  return AgencyProduct.tuiLogo(product)
 }
 
 export function Logo() {
   const { theme } = useTheme()
-  const custom = textLogo()
+  const product = AgencyProduct.resolve()
+  const custom = textLogo(product)
+  const glyphLogo = tuiLogo(product) ?? defaultLogo
+  const rows = Array.from({ length: Math.max(glyphLogo.left.length, glyphLogo.right.length) }, (_, index) => ({
+    left: glyphLogo.left[index] ?? "",
+    right: glyphLogo.right[index] ?? "",
+  }))
 
   const renderLine = (line: string, fg: RGBA, bold: boolean): JSX.Element[] => {
     const shadow = tint(theme.background, fg, 0.25)
@@ -88,11 +98,11 @@ export function Logo() {
 
   return (
     <box>
-      <For each={logo.left}>
-        {(line, index) => (
+      <For each={rows}>
+        {(line) => (
           <box flexDirection="row" gap={1}>
-            <box flexDirection="row">{renderLine(line, theme.secondary, false)}</box>
-            <box flexDirection="row">{renderLine(logo.right[index()], theme.primary, true)}</box>
+            <box flexDirection="row">{renderLine(line.left, theme.secondary, false)}</box>
+            <box flexDirection="row">{renderLine(line.right, theme.primary, true)}</box>
           </box>
         )}
       </For>

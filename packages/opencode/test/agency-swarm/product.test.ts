@@ -20,6 +20,12 @@ describe("AgencyProduct profile", () => {
     expect(profile.starterTemplateRepo).toBe("agency-ai-solutions/agency-starter-template")
     expect(profile.starterProjectName).toBe("my-agency")
     expect(profile.agencyEntryFiles).toEqual(["agency.py"])
+    expect(profile.addonsSetupFlagEnv).toBeUndefined()
+    expect(profile.tuiLogoLeft).toBeUndefined()
+    expect(profile.tuiLogoRight).toBeUndefined()
+    expect(profile.wordmarkLines).toBeUndefined()
+    expect(AgencyProduct.hasAddonsSetup(profile)).toBe(false)
+    expect(AgencyProduct.tuiLogo(profile)).toBeUndefined()
   })
 
   test("selects a generic downstream profile from product env", () => {
@@ -36,6 +42,10 @@ describe("AgencyProduct profile", () => {
       AGENTSWARM_PRODUCT_STARTER_FOLDER: "example-project",
       AGENTSWARM_PRODUCT_ENTRY_FILES: "main.py, agency.py",
       AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION: "true",
+      AGENTSWARM_PRODUCT_ADDONS_SETUP_FLAG_ENV: "EXAMPLE_ADDONS_FLAG",
+      AGENTSWARM_PRODUCT_TUI_LOGO_LEFT: JSON.stringify([" LEFT", "LEFT2"]),
+      AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: "RIGHT\\nRIGHT2",
+      AGENTSWARM_PRODUCT_WORDMARK_LINES: "WORD\\n MARK",
     })
 
     expect(profile.custom).toBe(true)
@@ -54,6 +64,27 @@ describe("AgencyProduct profile", () => {
     expect(profile.starterTemplateRepo).toBe("example/starter")
     expect(profile.starterProjectName).toBe("example-project")
     expect(profile.agencyEntryFiles).toEqual(["main.py", "agency.py"])
+    expect(profile.addonsSetupFlagEnv).toBe("EXAMPLE_ADDONS_FLAG")
+    expect(profile.tuiLogoLeft).toEqual([" LEFT", "LEFT2"])
+    expect(profile.tuiLogoRight).toEqual(["RIGHT", "RIGHT2"])
+    expect(profile.wordmarkLines).toEqual(["WORD", " MARK"])
+    expect(AgencyProduct.hasAddonsSetup(profile)).toBe(true)
+    expect(AgencyProduct.addonsSetupFlagPath({ EXAMPLE_ADDONS_FLAG: "/tmp/example.flag" }, profile)).toBe(
+      "/tmp/example.flag",
+    )
+    expect(AgencyProduct.tuiLogo(profile)).toEqual({
+      left: [" LEFT", "LEFT2"],
+      right: ["RIGHT", "RIGHT2"],
+    })
+  })
+
+  test("ignores missing downstream add-ons flag paths", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_ADDONS_SETUP_FLAG_ENV: "EXAMPLE_ADDONS_FLAG",
+    })
+
+    expect(AgencyProduct.hasAddonsSetup(profile)).toBe(true)
+    expect(AgencyProduct.addonsSetupFlagPath({}, profile)).toBeUndefined()
   })
 
   test("custom entry files alone do not force starter creation", () => {

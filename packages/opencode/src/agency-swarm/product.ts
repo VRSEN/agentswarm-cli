@@ -10,6 +10,10 @@ declare const AGENTSWARM_PRODUCT_STARTER_REPO: string | undefined
 declare const AGENTSWARM_PRODUCT_STARTER_FOLDER: string | undefined
 declare const AGENTSWARM_PRODUCT_ENTRY_FILES: string | undefined
 declare const AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION: string | undefined
+declare const AGENTSWARM_PRODUCT_ADDONS_SETUP_FLAG_ENV: string | undefined
+declare const AGENTSWARM_PRODUCT_TUI_LOGO_LEFT: string | undefined
+declare const AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: string | undefined
+declare const AGENTSWARM_PRODUCT_WORDMARK_LINES: string | undefined
 
 export namespace AgencyProduct {
   export interface Profile {
@@ -28,6 +32,10 @@ export namespace AgencyProduct {
     starterTemplateRepo: string
     starterProjectName: string
     agencyEntryFiles: string[]
+    addonsSetupFlagEnv?: string
+    tuiLogoLeft?: string[]
+    tuiLogoRight?: string[]
+    wordmarkLines?: string[]
   }
 
   const defaults: Profile = {
@@ -77,6 +85,16 @@ export namespace AgencyProduct {
       typeof AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION === "undefined"
         ? undefined
         : AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION,
+    AGENTSWARM_PRODUCT_ADDONS_SETUP_FLAG_ENV:
+      typeof AGENTSWARM_PRODUCT_ADDONS_SETUP_FLAG_ENV === "undefined"
+        ? undefined
+        : AGENTSWARM_PRODUCT_ADDONS_SETUP_FLAG_ENV,
+    AGENTSWARM_PRODUCT_TUI_LOGO_LEFT:
+      typeof AGENTSWARM_PRODUCT_TUI_LOGO_LEFT === "undefined" ? undefined : AGENTSWARM_PRODUCT_TUI_LOGO_LEFT,
+    AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT:
+      typeof AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT === "undefined" ? undefined : AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT,
+    AGENTSWARM_PRODUCT_WORDMARK_LINES:
+      typeof AGENTSWARM_PRODUCT_WORDMARK_LINES === "undefined" ? undefined : AGENTSWARM_PRODUCT_WORDMARK_LINES,
   } satisfies Record<string, string | undefined>
 
   function clean(value: string | undefined) {
@@ -88,12 +106,33 @@ export namespace AgencyProduct {
     return clean(env[name]) ?? clean(defineValues[name])
   }
 
+  function readRawValue(env: Record<string, string | undefined>, name: keyof typeof defineValues) {
+    return env[name] ?? defineValues[name]
+  }
+
   function readEntryFiles(value: string | undefined) {
     const files = value
       ?.split(",")
       .map((item) => item.trim())
       .filter(Boolean)
     return files && files.length > 0 ? files : undefined
+  }
+
+  function readLines(value: string | undefined) {
+    if (value === undefined || value.trim() === "") return undefined
+    const trimmed = value.trim()
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string") && parsed.length > 0) {
+          return parsed
+        }
+      } catch {
+        // Fall through to newline parsing for non-JSON line blocks.
+      }
+    }
+    const lines = value.replaceAll("\\n", "\n").split(/\r?\n/)
+    return lines.length > 0 ? lines : undefined
   }
 
   function readBoolean(value: string | undefined) {
@@ -118,9 +157,17 @@ export namespace AgencyProduct {
       starterProjectName: readValue(env, "AGENTSWARM_PRODUCT_STARTER_FOLDER"),
       agencyEntryFiles: readEntryFiles(readValue(env, "AGENTSWARM_PRODUCT_ENTRY_FILES")),
       lockModelSelection: readBoolean(readValue(env, "AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION")),
+      addonsSetupFlagEnv: readValue(env, "AGENTSWARM_PRODUCT_ADDONS_SETUP_FLAG_ENV"),
+      tuiLogoLeft: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_TUI_LOGO_LEFT")),
+      tuiLogoRight: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT")),
+      wordmarkLines: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_WORDMARK_LINES")),
     }
     const custom = Object.values(overrides).some((value) => value !== undefined)
-    const customBranding = overrides.name !== undefined
+    const customBranding =
+      overrides.name !== undefined ||
+      overrides.tuiLogoLeft !== undefined ||
+      overrides.tuiLogoRight !== undefined ||
+      overrides.wordmarkLines !== undefined
     const customStarter = overrides.starterTemplateRepo !== undefined || overrides.starterProjectName !== undefined
 
     return {
@@ -139,6 +186,10 @@ export namespace AgencyProduct {
       starterTemplateRepo: overrides.starterTemplateRepo ?? defaults.starterTemplateRepo,
       starterProjectName: overrides.starterProjectName ?? defaults.starterProjectName,
       agencyEntryFiles: overrides.agencyEntryFiles ?? defaults.agencyEntryFiles,
+      addonsSetupFlagEnv: overrides.addonsSetupFlagEnv,
+      tuiLogoLeft: overrides.tuiLogoLeft,
+      tuiLogoRight: overrides.tuiLogoRight,
+      wordmarkLines: overrides.wordmarkLines,
     }
   }
 
@@ -159,6 +210,10 @@ export namespace AgencyProduct {
   export const starterTemplateRepo = current.starterTemplateRepo
   export const starterProjectName = current.starterProjectName
   export const agencyEntryFiles = current.agencyEntryFiles
+  export const addonsSetupFlagEnv = current.addonsSetupFlagEnv
+  export const tuiLogoLeft = current.tuiLogoLeft
+  export const tuiLogoRight = current.tuiLogoRight
+  export const wordmarkLines = current.wordmarkLines
   export const connect = "Authenticate providers"
   export const start = [
     "Authenticate providers and connect to a local agency-swarm server before sending prompts.",
@@ -167,6 +222,26 @@ export namespace AgencyProduct {
 
   export function shouldShowModelSelection(profile: Pick<Profile, "lockModelSelection"> = current) {
     return !profile.lockModelSelection
+  }
+
+  export function hasAddonsSetup(profile: Pick<Profile, "addonsSetupFlagEnv"> = current) {
+    return profile.addonsSetupFlagEnv !== undefined
+  }
+
+  export function addonsSetupFlagPath(
+    env: Record<string, string | undefined> = process.env,
+    profile: Pick<Profile, "addonsSetupFlagEnv"> = current,
+  ) {
+    if (!profile.addonsSetupFlagEnv) return undefined
+    return clean(env[profile.addonsSetupFlagEnv])
+  }
+
+  export function tuiLogo(profile: Pick<Profile, "tuiLogoLeft" | "tuiLogoRight"> = current) {
+    if (!profile.tuiLogoLeft && !profile.tuiLogoRight) return undefined
+    return {
+      left: profile.tuiLogoLeft ?? [],
+      right: profile.tuiLogoRight ?? [],
+    }
   }
 
   const skip = [
