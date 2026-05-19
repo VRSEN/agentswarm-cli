@@ -91,7 +91,7 @@ const VENV_CANARY_SCRIPT = ["import agency_swarm", "from agency_swarm.integratio
   "\n",
 )
 const VENV_CANARY_TIMEOUT_MS = 3 * 60 * 1000
-const SERVER_START_TIMEOUT_MS = 90 * 1000
+const SERVER_START_TIMEOUT_MS = 2 * 60 * 1000
 const SERVER_STDERR_COLLECT_TIMEOUT_MS = 1000
 const REBUILD_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 const PROCESS_KILL_GRACE_MS = 5000
@@ -670,8 +670,7 @@ async function createStarterProject(input: {
     throw new Error(`Target directory already exists: ${targetDirectory}`)
   }
 
-  const spinner = prompts.spinner()
-  spinner.start(mode === "github" ? "Creating repository from the starter template" : "Cloning the starter template")
+  prompts.log.step(mode === "github" ? "Creating repository from the starter template" : "Cloning the starter template")
   try {
     if (mode === "github") {
       const visibility = await prompts.select<"private" | "public">({
@@ -689,7 +688,6 @@ async function createStarterProject(input: {
         ],
       })
       if (prompts.isCancel(visibility)) {
-        spinner.stop("Cancelled")
         return
       }
 
@@ -713,9 +711,9 @@ async function createStarterProject(input: {
       }).catch(() => undefined)
       await runCommand(["git", "init", "-b", "main"], { cwd: targetDirectory })
     }
-    spinner.stop("Starter project ready")
+    prompts.log.step("Starter project ready")
   } catch (error) {
-    spinner.stop("Starter project setup failed")
+    prompts.log.error("Starter project setup failed")
     throw error
   }
 
@@ -723,9 +721,9 @@ async function createStarterProject(input: {
 }
 
 export async function prepareProjectLaunch(project: AgencyProject): Promise<PreparedNpxLaunch | undefined> {
-  prompts.log.info(`3. Start the ${AgencyProduct.name} project.`)
+  prompts.log.info(`Starting the ${AgencyProduct.name} project.`)
   prompts.log.info(
-    "   The launcher will reuse a project `.venv`, start a local FastAPI server, and connect the terminal UI to it.",
+    "The launcher will reuse a project `.venv`, start a local FastAPI server, and connect the terminal UI to it.",
   )
 
   const python = await ensureProjectPython(project.directory)
@@ -853,17 +851,16 @@ async function ensureProjectPython(directory: string) {
     }
   }
 
-  const spinner = prompts.spinner()
-  spinner.start("Creating `.venv`")
+  prompts.log.step("Creating `.venv`")
   const created = await runCommand([...rebuildCmd, "-m", "venv", ".venv"], {
     cwd: directory,
   })
   if (created.code !== 0) {
-    spinner.stop("Failed to create `.venv`")
+    prompts.log.error("Failed to create `.venv`")
     throw new Error(created.stderr.trim() || created.stdout.trim() || "Virtual environment creation failed")
   }
 
-  spinner.stop("`.venv` created")
+  prompts.log.step("`.venv` created")
   const installLogFile = await tryCreateProjectCommandLogFile(directory, "launcher-rebuild", "launcher rebuild")
   prompts.log.info(
     installLogFile
@@ -1548,6 +1545,13 @@ function getVenvUvPath(directory: string) {
   return path.join(directory, ".venv", "bin", "uv")
 }
 
+export function resolveLauncherCommand(cmd: string[], platform: NodeJS.Platform = process.platform) {
+  if (platform !== "win32") return cmd
+  const executable = cmd[0]?.toLowerCase()
+  if (executable === "npm" || executable === "npx" || executable === "git") return ["cmd.exe", "/c", ...cmd]
+  return cmd
+}
+
 async function getFreePort() {
   return new Promise<number>((resolve, reject) => {
     const server = net.createServer()
@@ -1586,7 +1590,7 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
   })
   try {
     const proc = Bun.spawn({
-      cmd,
+      cmd: resolveLauncherCommand(cmd),
       cwd: options?.cwd,
       stdout: "pipe",
       stderr: "pipe",

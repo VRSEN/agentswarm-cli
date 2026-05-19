@@ -14,6 +14,31 @@ function service(overrides: Partial<Installation.Interface> = {}): Installation.
 }
 
 describe("global upgrade route helper", () => {
+  test("upgrades unknown installs through the npm fallback", async () => {
+    const calls: string[][] = []
+    const result = await Effect.runPromise(
+      resolveGlobalUpgrade(
+        service({
+          method: () => Effect.succeed("unknown"),
+          latest: (method) => {
+            calls.push(["latest", method ?? ""])
+            return Effect.succeed("1.2.3")
+          },
+          upgrade: (method, target) => {
+            calls.push(["upgrade", method, target])
+            return Effect.void
+          },
+        }),
+      ),
+    )
+
+    expect(result).toEqual({ success: true, status: 200, version: "1.2.3" })
+    expect(calls).toEqual([
+      ["latest", "npm"],
+      ["upgrade", "unknown", "1.2.3"],
+    ])
+  })
+
   test("returns structured errors when latest lookup fails", async () => {
     const result = await Effect.runPromise(
       resolveGlobalUpgrade(

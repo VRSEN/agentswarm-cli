@@ -13,6 +13,7 @@ import {
   LAUNCHER_ENTRY_ENV,
   prepareProjectLaunch,
   prepareNpxLaunch,
+  resolveLauncherCommand,
   resolveNpxAutoProject,
   shouldRunNpxOnboarding,
   starterTemplateUrl,
@@ -85,6 +86,14 @@ describe("agency-swarm npx onboarding", () => {
         argv: ["/usr/local/bin/opencode"],
       }),
     ).toBe(false)
+  })
+
+  test("resolveLauncherCommand routes Windows shell commands through cmd.exe", () => {
+    expect(resolveLauncherCommand(["npm", "install"], "win32")).toEqual(["cmd.exe", "/c", "npm", "install"])
+    expect(resolveLauncherCommand(["npx", "playwright"], "win32")).toEqual(["cmd.exe", "/c", "npx", "playwright"])
+    expect(resolveLauncherCommand(["git", "clone"], "win32")).toEqual(["cmd.exe", "/c", "git", "clone"])
+    expect(resolveLauncherCommand(["python", "-V"], "win32")).toEqual(["python", "-V"])
+    expect(resolveLauncherCommand(["npm", "install"], "darwin")).toEqual(["npm", "install"])
   })
 
   test("launcher mode treats bare project directories as positional args under rewritten argv", async () => {
@@ -2364,7 +2373,7 @@ describe("agency-swarm npx onboarding", () => {
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     spyOn(Date, "now").mockImplementation(() => {
       const value = now
-      now = 90001
+      now = 120001
       return value
     })
     spyOn(globalThis, "fetch").mockRejectedValue(new Error("not ready") as never)
@@ -2433,7 +2442,7 @@ describe("agency-swarm npx onboarding", () => {
     if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
     expect(killSignals).toEqual([undefined, undefined])
     expect(outcome.message).toContain(
-      "Timed out waiting for the Agency Swarm server to start after 90 seconds. Last bridge output: bridge still starting",
+      "Timed out waiting for the Agency Swarm server to start after 2 minutes. Last bridge output: bridge still starting",
     )
   })
 
@@ -2467,7 +2476,7 @@ describe("agency-swarm npx onboarding", () => {
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     spyOn(Date, "now").mockImplementation(() => {
       const value = now
-      now = 90001
+      now = 120001
       return value
     })
     spyOn(globalThis, "fetch").mockRejectedValue(new Error("not ready") as never)
@@ -2535,7 +2544,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(outcome).toBeInstanceOf(Error)
     if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
     expect(killSignals).toEqual([undefined, undefined])
-    expect(outcome.message).toContain("Timed out waiting for the Agency Swarm server to start after 90 seconds.")
+    expect(outcome.message).toContain("Timed out waiting for the Agency Swarm server to start after 2 minutes.")
     expect(outcome.message).toContain("Bridge output only contained non-fatal startup warnings")
     expect(outcome.message).not.toContain("Last bridge output")
   })

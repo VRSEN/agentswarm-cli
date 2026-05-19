@@ -33,11 +33,8 @@ function upgradeErrorMessage(error: unknown) {
 export function resolveGlobalUpgrade(svc: Installation.Interface, target?: string): Effect.Effect<UpgradeResult> {
   return Effect.gen(function* () {
     const method = yield* svc.method()
-    if (method === "unknown") {
-      return { success: false as const, status: 400 as const, error: "Unknown installation method" }
-    }
 
-    const next = target || (yield* svc.latest(method))
+    const next = target || (yield* svc.latest(method === "unknown" ? "npm" : method))
     yield* svc.upgrade(method, next)
     return { success: true as const, status: 200 as const, version: next }
   }).pipe(
