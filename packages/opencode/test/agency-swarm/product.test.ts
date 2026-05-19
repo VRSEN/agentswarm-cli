@@ -122,6 +122,17 @@ describe("AgencyProduct profile", () => {
     expect(profile.lockModelSelection).toBe(false)
     expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(true)
   })
+
+  test("disables model switching commands when model selection is locked", () => {
+    expect(AgencyProduct.modelSwitchCommandState({ lockModelSelection: false })).toEqual({
+      enabled: true,
+      hidden: false,
+    })
+    expect(AgencyProduct.modelSwitchCommandState({ lockModelSelection: true })).toEqual({
+      enabled: false,
+      hidden: true,
+    })
+  })
 })
 
 describe("AgencyProduct.tips", () => {

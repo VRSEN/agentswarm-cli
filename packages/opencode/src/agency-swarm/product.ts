@@ -224,6 +224,14 @@ export namespace AgencyProduct {
     return !profile.lockModelSelection
   }
 
+  export function modelSwitchCommandState(profile: Pick<Profile, "lockModelSelection"> = current) {
+    const enabled = shouldShowModelSelection(profile)
+    return {
+      enabled,
+      hidden: !enabled,
+    }
+  }
+
   export function hasAddonsSetup(profile: Pick<Profile, "addonsSetupFlagEnv"> = current) {
     return profile.addonsSetupFlagEnv !== undefined
   }

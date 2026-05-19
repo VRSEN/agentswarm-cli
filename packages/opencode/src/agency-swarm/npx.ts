@@ -17,6 +17,8 @@ export const LAUNCHER_ENTRY_ENV = "AGENTSWARM_LAUNCHER"
 export const STARTER_TEMPLATE_REPO = AgencyProduct.starterTemplateRepo
 export const LOCAL_AGENCY_ID = "local-agency"
 
+const nativeSetTimeout = globalThis.setTimeout.bind(globalThis)
+
 type ProductProfile = Pick<
   AgencyProduct.Profile,
   "custom" | "name" | "customStarter" | "starterTemplateRepo" | "starterProjectName" | "agencyEntryFiles"
@@ -1809,5 +1811,5 @@ async function readCommandOutput(
 }
 
 function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise((resolve) => nativeSetTimeout(resolve, ms))
 }

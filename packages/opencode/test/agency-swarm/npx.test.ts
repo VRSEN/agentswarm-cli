@@ -2368,14 +2368,10 @@ describe("agency-swarm npx onboarding", () => {
     const serverStderr = createTextOutputStream("bridge still starting\n")
     const killSignals: Array<string | undefined> = []
     let resolveServerExit!: (code: number) => void
-    let now = 0
+    using dateNow = mockReadinessDeadlineElapsed()
+    void dateNow
 
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
-    spyOn(Date, "now").mockImplementation(() => {
-      const value = now
-      now = 120001
-      return value
-    })
     spyOn(globalThis, "fetch").mockRejectedValue(new Error("not ready") as never)
 
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
@@ -2471,14 +2467,10 @@ describe("agency-swarm npx onboarding", () => {
     )
     const killSignals: Array<string | undefined> = []
     let resolveServerExit!: (code: number) => void
-    let now = 0
+    using dateNow = mockReadinessDeadlineElapsed()
+    void dateNow
 
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
-    spyOn(Date, "now").mockImplementation(() => {
-      const value = now
-      now = 120001
-      return value
-    })
     spyOn(globalThis, "fetch").mockRejectedValue(new Error("not ready") as never)
 
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
@@ -3962,6 +3954,21 @@ function createTextOutputStream(initial?: string) {
           throw error
         }
       }
+    },
+  }
+}
+
+function mockReadinessDeadlineElapsed() {
+  const realDateNow = Date.now
+  let now = 0
+  Date.now = (() => {
+    const value = now
+    now = 120001
+    return value
+  }) as typeof Date.now
+  return {
+    [Symbol.dispose]() {
+      Date.now = realDateNow
     },
   }
 }
