@@ -117,6 +117,7 @@ export async function startTui(input: {
   agency?: string
   recipientAgent?: string
   configSource?: "env" | "file"
+  includeOpenAIProvider?: boolean
 }): Promise<TuiProcess> {
   const root = await mkdtemp(path.join(os.tmpdir(), "agentswarm-tui-e2e-"))
   await mkdir(path.join(root, "home"), { recursive: true })
@@ -131,6 +132,7 @@ export async function startTui(input: {
   const configContent = input.baseURL
     ? JSON.stringify({
         $schema: "https://opencode.ai/config.json",
+        enabled_providers: input.includeOpenAIProvider ? ["agency-swarm", "openai"] : undefined,
         model: "agency-swarm/default",
         provider: {
           "agency-swarm": {
@@ -147,6 +149,15 @@ export async function startTui(input: {
               },
             },
           },
+          ...(input.includeOpenAIProvider
+            ? {
+                openai: {
+                  options: {
+                    apiKey: "test-openai-key",
+                  },
+                },
+              }
+            : {}),
         },
       })
     : undefined

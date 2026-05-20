@@ -171,7 +171,7 @@ describe("tui local model selection", () => {
     })
   })
 
-  test("keeps explicit stored model overrides over configured agency-swarm", () => {
+  test("prefers configured agency-swarm over stale stored model state", () => {
     expect(
       selectCurrentModel({
         storedModel: {
@@ -205,12 +205,12 @@ describe("tui local model selection", () => {
         },
       }),
     ).toEqual({
-      providerID: "openai",
-      modelID: "gpt-5",
+      providerID: "agency-swarm",
+      modelID: "default",
     })
   })
 
-  test("keeps explicit stored model overrides over launcher agency-swarm args", () => {
+  test("prefers launcher agency-swarm args over stale stored model state", () => {
     expect(
       selectCurrentModel({
         storedModel: {
@@ -226,6 +226,66 @@ describe("tui local model selection", () => {
           },
         ],
         argModel: "agency-swarm/default",
+        configuredProviders: {
+          "agency-swarm": {
+            name: "Agency Swarm",
+            options: {},
+          },
+        },
+      }),
+    ).toEqual({
+      providerID: "agency-swarm",
+      modelID: "default",
+    })
+  })
+
+  test("keeps explicit current user model overrides over launcher agency-swarm args", () => {
+    expect(
+      selectCurrentModel({
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+          explicit: true,
+        },
+        providers: [
+          {
+            id: "openai",
+            models: {
+              "gpt-5": {},
+            },
+          },
+        ],
+        argModel: "agency-swarm/default",
+        configuredProviders: {
+          "agency-swarm": {
+            name: "Agency Swarm",
+            options: {},
+          },
+        },
+      }),
+    ).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5",
+    })
+  })
+
+  test("keeps explicit saved Run-mode session model over configured agency-swarm", () => {
+    expect(
+      selectCurrentModel({
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+          explicit: true,
+        },
+        providers: [
+          {
+            id: "openai",
+            models: {
+              "gpt-5": {},
+            },
+          },
+        ],
+        configModel: "agency-swarm/default",
         configuredProviders: {
           "agency-swarm": {
             name: "Agency Swarm",

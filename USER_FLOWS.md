@@ -171,17 +171,20 @@ For each failure scenario, capture the visible user result and cite the source p
 
 #### Run-mode routing and command limits
 
-- **Trigger:** The current provider, model, config, or agent defaults resolve to Agency Swarm framework mode.
+- **Trigger:** The user starts an Agent Swarm Run-mode session, including sessions whose config or agent default still points at `agency-swarm/...`.
 - **Happy-path proof:** Prompts route through the Agency Swarm adapter.
 - **Happy-path proof:** Swarms and agents are discovered from the backend.
 - **Happy-path proof:** Selecting a swarm routes through the default agency path without a stale explicit recipient.
 - **Happy-path proof:** Selecting an agent routes the next prompt to that agent.
 - **Happy-path proof:** Compatible configured provider credentials pass through the credential bridge.
+- **Happy-path proof:** Provider auth stays a credential flow and does not act as a Run-mode switch.
+- **Happy-path proof:** `/models` selects the LLM config passed to Agency Swarm and does not act as a product mode switch.
 - **Happy-path proof:** In-flight Agency runs cancel through the bridge.
 - **Happy-path proof:** Codex OAuth is stripped from non-OpenAI LiteLLM agency runs.
 - **Happy-path proof:** Run mode hides Builder, Plan, `/editor`, `/variants`, `/init`, `/review`, and other disabled upstream-native surfaces.
 - **Happy-path proof:** `/models` and `/auth` are limited to Agency-supported providers.
-- **Happy-path proof:** `agency-swarm/default` stays active over stale stored model state until the user changes it.
+- **Happy-path proof:** Upstream provider/model state used for auth or LLM choice does not pull the user out of Run mode by accident.
+- **Happy-path proof:** `agency-swarm/default` stays active over stale stored model state until the user explicitly chooses another model.
 - **Happy-path proof:** Live agency names appear in run-target labels.
 - **Happy-path proof:** Tab cycles run targets.
 - **Failure scenarios to test:** Agent discovery failure offers `/connect`.
@@ -262,4 +265,4 @@ For each failure scenario, capture the visible user result and cite the source p
 
 ## Tracked Gaps
 
-- `agency.tui()` is an external Python-side trigger. This repo owns the TUI behavior after Agency Swarm framework mode is selected, but Python invocation details must be verified in the Python package before this file promises them.
+- `agency.tui()` is an external Python-side trigger. This repo owns the TUI behavior after control reaches an Agent Swarm Run-mode session, but Python invocation details must be verified in the Python package before this file promises them.

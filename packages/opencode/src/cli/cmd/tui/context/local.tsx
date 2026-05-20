@@ -6,6 +6,7 @@ import { useTheme } from "@tui/context/theme"
 import { uniqueBy } from "remeda"
 import path from "path"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { isAgencySwarmModel } from "@/agency-swarm/run-mode"
 import { Global } from "@opencode-ai/core/global"
 import { iife } from "@/util/iife"
 import { useToast } from "../ui/toast"
@@ -23,11 +24,17 @@ export function parseModel(model: string) {
   }
 }
 
+type ModelSelection = {
+  providerID: string
+  modelID: string
+}
+
+type StoredModelSelection = ModelSelection & {
+  explicit?: boolean
+}
+
 export function isUsableModel(input: {
-  model: {
-    providerID: string
-    modelID: string
-  }
+  model: ModelSelection
   providers: {
     id: string
     models: Record<string, unknown>
@@ -52,18 +59,9 @@ export function isUsableModel(input: {
 }
 
 export function selectCurrentModel(input: {
-  storedModel?: {
-    providerID: string
-    modelID: string
-  }
-  agentModel?: {
-    providerID: string
-    modelID: string
-  }
-  recentModels?: {
-    providerID: string
-    modelID: string
-  }[]
+  storedModel?: StoredModelSelection
+  agentModel?: ModelSelection
+  recentModels?: ModelSelection[]
   providers: {
     id: string
     models: Record<string, unknown>
@@ -73,7 +71,7 @@ export function selectCurrentModel(input: {
   configModel?: string
   configuredProviders?: Record<string, unknown>
 }) {
-  function isModelValid(model: { providerID: string; modelID: string }) {
+  function isModelValid(model: ModelSelection) {
     return isUsableModel({
       model,
       providers: input.providers,
@@ -83,11 +81,11 @@ export function selectCurrentModel(input: {
     })
   }
 
-  function getFirstValidModel(...modelFns: (() => { providerID: string; modelID: string } | undefined)[]) {
+  function getFirstValidModel(...modelFns: (() => ModelSelection | undefined)[]) {
     for (const modelFn of modelFns) {
       const model = modelFn()
       if (!model) continue
-      if (isModelValid(model)) return model
+      if (isModelValid(model)) return { providerID: model.providerID, modelID: model.modelID }
     }
   }
 
@@ -130,7 +128,16 @@ export function selectCurrentModel(input: {
     }
   }
 
-  if (shouldPreferConfiguredAgencySwarmModel(input) && !input.storedModel) {
+  const explicitArgModel = input.argModel ? Provider.parseModel(input.argModel) : undefined
+  if (
+    explicitArgModel &&
+    explicitArgModel.providerID !== AgencySwarmAdapter.PROVIDER_ID &&
+    isModelValid(explicitArgModel)
+  ) {
+    return explicitArgModel
+  }
+
+  if (shouldPreferConfiguredAgencySwarmModel(input) && !input.storedModel?.explicit) {
     return getFirstValidModel(fallbackModel, () => input.agentModel)
   }
 
@@ -142,10 +149,7 @@ export function selectCurrentModel(input: {
 }
 
 export function shouldSyncAgentModel(input: {
-  storedModel?: {
-    providerID: string
-    modelID: string
-  }
+  storedModel?: StoredModelSelection
   argModel?: string
   configModel?: string
 }) {
@@ -162,7 +166,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const toast = useToast()
     const args = useArgs()
 
-    function isModelValid(model: { providerID: string; modelID: string }) {
+    function isModelValid(model: ModelSelection) {
       return isUsableModel({
         model,
         providers: sync.data.provider.map((item) => ({
@@ -239,21 +243,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const model = iife(() => {
       const [modelStore, setModelStore] = createStore<{
         ready: boolean
-        model: Record<
-          string,
-          {
-            providerID: string
-            modelID: string
-          }
-        >
-        recent: {
-          providerID: string
-          modelID: string
-        }[]
-        favorite: {
-          providerID: string
-          modelID: string
-        }[]
+        model: Record<string, StoredModelSelection>
+        recent: ModelSelection[]
+        favorite: ModelSelection[]
         variant: Record<string, string | undefined>
       }>({
         ready: false,
@@ -355,7 +347,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (!val) return
           const a = agent.current()
           if (!a) return
-          setModelStore("model", a.name, { ...val })
+          setModelStore("model", a.name, { ...val, explicit: true })
         },
         cycleFavorite(direction: 1 | -1) {
           const favorites = modelStore.favorite.filter((item) => isModelValid(item))
@@ -383,7 +375,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (!next) return
           const a = agent.current()
           if (!a) return
-          setModelStore("model", a.name, { ...next })
+          setModelStore("model", a.name, { ...next, explicit: true })
           const uniq = uniqueBy([next, ...modelStore.recent], (x) => `${x.providerID}/${x.modelID}`)
           if (uniq.length > 10) uniq.pop()
           setModelStore(
@@ -392,7 +384,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           )
           save()
         },
-        set(model: { providerID: string; modelID: string }, options?: { recent?: boolean }) {
+        set(model: ModelSelection, options?: { recent?: boolean; explicit?: boolean }) {
           batch(() => {
             if (!isModelValid(model)) {
               toast.show({
@@ -404,7 +396,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             }
             const a = agent.current()
             if (!a) return
-            setModelStore("model", a.name, model)
+            setModelStore("model", a.name, { ...model, explicit: options?.explicit })
             if (options?.recent) {
               const uniq = uniqueBy([model, ...modelStore.recent], (x) => `${x.providerID}/${x.modelID}`)
               if (uniq.length > 10) uniq.pop()
@@ -416,7 +408,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             }
           })
         },
-        toggleFavorite(model: { providerID: string; modelID: string }) {
+        toggleFavorite(model: ModelSelection) {
           batch(() => {
             if (!isModelValid(model)) {
               toast.show({
@@ -537,5 +529,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
 function shouldPreferConfiguredAgencySwarmModel(input: { argModel?: string; configModel?: string }) {
   const model = input.argModel ?? input.configModel
-  return model === `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`
+  return (
+    isAgencySwarmModel(model) && model === `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`
+  )
 }

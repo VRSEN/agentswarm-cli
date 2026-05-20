@@ -54,6 +54,7 @@ import { SessionRunState } from "./run-state"
 import { EffectBridge } from "@/effect"
 import { SessionAgencySwarm } from "./agency-swarm"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { isAgencySwarmRunMode } from "@/agency-swarm/run-mode"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -77,14 +78,24 @@ type RunLoopInput = LoopInput & {
 
 export function shouldUseAgencySwarmBridge(input: {
   resolvedProviderID: string
+  configuredModel?: string
   agentProviderID?: string
   lastAssistantProviderID?: string
 }) {
-  return (
-    input.resolvedProviderID === SessionAgencySwarm.PROVIDER_ID ||
-    input.agentProviderID === SessionAgencySwarm.PROVIDER_ID ||
-    input.lastAssistantProviderID === SessionAgencySwarm.PROVIDER_ID
-  )
+  return isAgencySwarmRunMode({
+    currentProviderID:
+      input.resolvedProviderID === SessionAgencySwarm.PROVIDER_ID ||
+      input.lastAssistantProviderID === SessionAgencySwarm.PROVIDER_ID
+        ? SessionAgencySwarm.PROVIDER_ID
+        : undefined,
+    configuredModel: input.configuredModel,
+    agentModel: input.agentProviderID
+      ? {
+          providerID: input.agentProviderID,
+          modelID: "",
+        }
+      : undefined,
+  })
 }
 
 export interface Interface {
@@ -1388,8 +1399,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
           throw error
         }
+        const cfg = yield* config.get()
         const useAgencySwarmBridge = shouldUseAgencySwarmBridge({
           resolvedProviderID: model.providerID,
+          configuredModel: cfg.model,
           agentProviderID: agent.model?.providerID,
           lastAssistantProviderID: lastAssistant?.providerID,
         })

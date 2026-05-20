@@ -352,7 +352,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
             message: `Invalid model format: ${args.model}`,
             duration: 3000,
           })
-        local.model.set({ providerID, modelID }, { recent: true })
+        local.model.set({ providerID, modelID }, { recent: true, explicit: true })
       }
       if (args.sessionID && !args.fork) {
         route.navigate({
@@ -703,8 +703,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         name: "connect",
       },
       onSelect: () => {
-        const agency = local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID
-        dialog.replace(() => (agency ? <DialogAgencySwarmConnect /> : <DialogProviderConnect />))
+        dialog.replace(() => (frameworkMode() ? <DialogAgencySwarmConnect /> : <DialogProviderConnect />))
       },
       category: "Provider",
     },
