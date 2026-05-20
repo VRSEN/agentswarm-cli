@@ -3,6 +3,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import {
+  agencyClientConfigModel,
+  latestOpenAITestModel,
+  latestOpenAITestModelLabel,
+  openAIProviderTestConfig,
   startAgencyProtocolServer,
   startTui,
   startTuiDemoAgencyServer,
@@ -182,15 +186,15 @@ describe("Agent Swarm terminal TUI e2e", () => {
       baseURL: currentServer.baseURL,
       agency: "tui-demo-agency",
       recipientAgent: "UserSupportAgent",
-      args: ["--model", "openai/gpt-5"],
+      args: ["--model", latestOpenAITestModel],
       env: {
         AGENTSWARM_RUN_PROJECT: runProject,
         XDG_STATE_HOME: stateHome,
       },
-      includeOpenAIProvider: true,
+      config: openAIProviderTestConfig,
     })
 
-    await currentTui.waitForText("GPT-5 OpenAI", tuiReadyTimeoutMs)
+    await currentTui.waitForText(latestOpenAITestModelLabel, tuiReadyTimeoutMs)
     currentTui.write("run through agency despite visible openai model state\r")
     await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
     await currentTui.waitFor(
@@ -218,11 +222,11 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({
       baseURL: currentServer.baseURL,
-      args: ["--model", "openai/gpt-5"],
-      includeOpenAIProvider: true,
+      args: ["--model", latestOpenAITestModel],
+      config: openAIProviderTestConfig,
     })
 
-    await currentTui.waitForText("GPT-5 OpenAI", tuiReadyTimeoutMs)
+    await currentTui.waitForText(latestOpenAITestModelLabel, tuiReadyTimeoutMs)
     currentTui.write("/con")
     await currentTui.waitFor(
       () => currentTui!.screen().includes("/connect") && currentTui!.screen().includes("/con"),
@@ -251,11 +255,11 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentServer = await startAuthFailureAgencyServer()
     currentTui = await startTui({
       baseURL: currentServer.baseURL,
-      args: ["--model", "openai/gpt-5"],
-      includeOpenAIProvider: true,
+      args: ["--model", latestOpenAITestModel],
+      config: openAIProviderTestConfig,
     })
 
-    await currentTui.waitForText("GPT-5 OpenAI", tuiReadyTimeoutMs)
+    await currentTui.waitForText(latestOpenAITestModelLabel, tuiReadyTimeoutMs)
     currentTui.write("trigger upstream auth failure\r")
     const screen = await currentTui.waitForText("Manage Agent Swarm auth", tuiInteractionTimeoutMs)
 
@@ -269,11 +273,11 @@ describe("Agent Swarm terminal TUI e2e", () => {
       baseURL: currentServer.baseURL,
       agency: "tui-demo-agency",
       recipientAgent: "UserSupportAgent",
-      args: ["--model", "openai/gpt-5"],
-      includeOpenAIProvider: true,
+      args: ["--model", latestOpenAITestModel],
+      config: openAIProviderTestConfig,
     })
 
-    await currentTui.waitForText("GPT-5 OpenAI", tuiReadyTimeoutMs)
+    await currentTui.waitForText(latestOpenAITestModelLabel, tuiReadyTimeoutMs)
     currentTui.write("first run mode turn before new\r")
     await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
     await currentTui.waitFor(
@@ -672,7 +676,7 @@ async function startAuthFailureAgencyServer(): Promise<AgencyProtocolServer> {
               data: {
                 label: "Entry Agent",
                 isEntryPoint: true,
-                model: "gpt-4o-mini",
+                model: agencyClientConfigModel,
               },
             },
           ],
