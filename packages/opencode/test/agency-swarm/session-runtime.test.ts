@@ -2,8 +2,11 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
 import { CODEX_API_BASE_URL } from "../../src/plugin/codex"
+import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Session } from "../../src/session"
 import { SessionAgencySwarm } from "../../src/session/agency-swarm"
+import { MessageV2 } from "../../src/session/message-v2"
+import { MessageID, PartID, SessionID } from "../../src/session/schema"
 
 describe("session.agency-swarm runtime history", () => {
   const originalStreamRun = AgencySwarmAdapter.streamRun
@@ -124,6 +127,32 @@ describe("session.agency-swarm runtime history", () => {
     expect(sentHistory?.map((item) => (item.type === "message" ? item.content : item.type))).toEqual([
       [{ type: "input_text", text: "first question" }],
       [{ type: "output_text", text: "first answer" }],
+      [{ type: "input_text", text: "queued follow up" }],
+      [{ type: "output_text", text: "queued answer" }],
+    ])
+  })
+
+  test("stream rebuilds local history when stored history has only tool items", async () => {
+    const localMessages: MessageV2.WithParts[] = [
+      typedUserMessage("msg_user_1", "queued follow up", 1),
+      typedAssistantMessage("msg_assistant_1", "msg_user_1", "queued answer", 2),
+      typedUserMessage("msg_current", "next prompt", 3),
+    ]
+    let sentHistory: Array<Record<string, unknown>> | undefined
+
+    stubSessionMessages(localMessages)
+    mockHistory([
+      { type: "function_call", name: "search_docs", call_id: "call_1", arguments: '{"q":"docs"}' },
+      { type: "function_call_output", call_id: "call_1", output: "found docs" },
+    ])
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      sentHistory = args.chatHistory as Array<Record<string, unknown>>
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    await consumeStream(makeInput("msg_current", "next prompt").input)
+
+    expect(sentHistory?.map((item) => (item.type === "message" ? item.content : item.type))).toEqual([
       [{ type: "input_text", text: "queued follow up" }],
       [{ type: "output_text", text: "queued answer" }],
     ])
@@ -356,6 +385,57 @@ describe("session.agency-swarm runtime history", () => {
       updated_at: Date.now(),
     })) as typeof AgencySwarmHistory.setLastRunID
     return appended
+  }
+
+  function typedUserMessage(id: string, text: string, created: number): MessageV2.WithParts {
+    const messageID = MessageID.ascending(id)
+    return {
+      info: {
+        id: messageID,
+        sessionID: typedSessionID(),
+        role: "user",
+        agent: "build",
+        model: { providerID: ProviderID.make(AgencySwarmAdapter.PROVIDER_ID), modelID: ModelID.make("default") },
+        time: { created },
+      },
+      parts: [typedTextPart(messageID, text)],
+    }
+  }
+
+  function typedAssistantMessage(id: string, parentID: string, text: string, created: number): MessageV2.WithParts {
+    const messageID = MessageID.ascending(id)
+    return {
+      info: {
+        id: messageID,
+        sessionID: typedSessionID(),
+        role: "assistant",
+        parentID: MessageID.ascending(parentID),
+        providerID: ProviderID.make(AgencySwarmAdapter.PROVIDER_ID),
+        modelID: ModelID.make("default"),
+        mode: "Default",
+        agent: "Reviewer",
+        path: { cwd: "/", root: "/" },
+        cost: 0,
+        tokens: { total: 0, input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        time: { created },
+      },
+      parts: [typedTextPart(messageID, text)],
+    }
+  }
+
+  function typedTextPart(messageID: MessageID, text: string): MessageV2.TextPart {
+    return {
+      id: PartID.ascending(),
+      sessionID: typedSessionID(),
+      messageID,
+      type: "text",
+      text,
+      ignored: false,
+    }
+  }
+
+  function typedSessionID() {
+    return SessionID.descending("ses_session_1")
   }
 
   async function consumeStream(input: Parameters<typeof SessionAgencySwarm.stream>[0]) {

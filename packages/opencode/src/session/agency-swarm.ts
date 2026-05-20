@@ -2422,10 +2422,12 @@ export namespace SessionAgencySwarm {
     rebuilt: Array<Record<string, unknown>>,
   ) {
     const storedUserTexts = stored.map(historyUserText).filter(Boolean)
-    if (storedUserTexts.length === 0) return false
+    const rebuiltUserTexts = rebuilt.map(historyUserText).filter(Boolean)
+    if (rebuiltUserTexts.length === 0) return false
+    if (storedUserTexts.length === 0) return true
 
     let storedIndex = 0
-    for (const rebuiltText of rebuilt.map(historyUserText).filter(Boolean)) {
+    for (const rebuiltText of rebuiltUserTexts) {
       while (storedIndex < storedUserTexts.length && storedUserTexts[storedIndex] !== rebuiltText) {
         storedIndex++
       }
