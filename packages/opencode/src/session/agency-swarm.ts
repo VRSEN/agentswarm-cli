@@ -51,6 +51,7 @@ export namespace SessionAgencySwarm {
   export const PROVIDER_ID = AgencySwarmAdapter.PROVIDER_ID
 
   const CANCEL_BEFORE_META_ABORT_MS = 3000
+  const CANCEL_FINALIZE_TIMEOUT_MS = 3000
   const STRUCTURED_ATTACHMENT_MESSAGE_MIN_VERSION = "1.9.6"
   const MAX_UI_TOOL_OUTPUT_CHARS = 60_000
   const MAX_HISTORY_TOOL_OUTPUT_CHARS = 20_000
@@ -655,7 +656,7 @@ export namespace SessionAgencySwarm {
     let lastReasoningItemID: string | undefined
     let cancelRequested = false
     let cancelInFlight = false
-    let cancelPromise: Promise<void> | undefined
+    let cancelPromise: Promise<AgencySwarmAdapter.CancelResult | undefined> | undefined
     let cancelBeforeMetaTimer: ReturnType<typeof setTimeout> | undefined
     let streamAborted = false
     let hadDanglingTool = false
@@ -664,6 +665,12 @@ export namespace SessionAgencySwarm {
 
     const streamAbort = new AbortController()
     const streamSignal = AbortSignal.any([input.abort, streamAbort.signal])
+
+    const abortStreamForCancel = () => {
+      if (!streamAbort.signal.aborted) {
+        streamAbort.abort(new DOMException("Aborted", "AbortError"))
+      }
+    }
 
     const mergeMeta = (meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
       return {
@@ -1255,7 +1262,8 @@ export namespace SessionAgencySwarm {
         }
         await AgencySwarmHistory.setLastRunID(scope, runID)
         if (cancelRequested) {
-          await sendCancel()
+          void sendCancel()
+          abortStreamForCancel()
         }
       }
 
@@ -1549,20 +1557,60 @@ export namespace SessionAgencySwarm {
           })
         }
 
-        const newMessages = Array.isArray(result.data?.["new_messages"]) ? result.data["new_messages"] : []
-        if (newMessages.length > 0) {
-          await persistHistoryMessages(newMessages)
-        }
-
-        streamAbort.abort(new DOMException("Aborted", "AbortError"))
+        return result
       })()
       return cancelPromise
+    }
+
+    const waitForCancelFinalize = async (promise: Promise<AgencySwarmAdapter.CancelResult | undefined>) => {
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      const result = await Promise.race<
+        | { type: "completed"; result: AgencySwarmAdapter.CancelResult | undefined }
+        | { type: "failed"; error: unknown }
+        | { type: "timeout" }
+      >([
+        promise.then(
+          (result) => ({ type: "completed" as const, result }),
+          (error) => ({ type: "failed" as const, error }),
+        ),
+        new Promise<{ type: "timeout" }>((resolve) => {
+          timeout = setTimeout(() => resolve({ type: "timeout" }), CANCEL_FINALIZE_TIMEOUT_MS)
+        }),
+      ])
+      if (timeout) clearTimeout(timeout)
+
+      if (result.type === "completed") {
+        if (result.result) {
+          const newMessages = Array.isArray(result.result.data?.["new_messages"])
+            ? result.result.data["new_messages"]
+            : []
+          if (newMessages.length > 0) {
+            await persistHistoryMessages(newMessages)
+          }
+        }
+        abortStreamForCancel()
+        return
+      }
+
+      if (result.type === "timeout") {
+        log.warn("cancel finalization timed out", {
+          runID,
+          timeoutMs: CANCEL_FINALIZE_TIMEOUT_MS,
+        })
+        return
+      }
+
+      log.warn("cancel finalization failed", {
+        runID,
+        error: result.error instanceof Error ? result.error.message : String(result.error),
+      })
     }
 
     const onAbort = () => {
       cancelRequested = true
       if (runID) {
         void sendCancel()
+        abortStreamForCancel()
         return
       }
       if (!cancelBeforeMetaTimer) {
@@ -1749,7 +1797,8 @@ export namespace SessionAgencySwarm {
             }
             await AgencySwarmHistory.setLastRunID(scope, runID)
             if (cancelRequested) {
-              await sendCancel()
+              void sendCancel()
+              abortStreamForCancel()
             }
             continue
           }
@@ -2038,7 +2087,7 @@ export namespace SessionAgencySwarm {
         }
         input.abort.removeEventListener("abort", onAbort)
         if (cancelPromise) {
-          await cancelPromise
+          await waitForCancelFinalize(cancelPromise)
         }
       }
 

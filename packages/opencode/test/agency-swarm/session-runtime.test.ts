@@ -264,7 +264,7 @@ describe("session.agency-swarm runtime history", () => {
     AgencySwarmAdapter.streamRun = async function* (args) {
       yield { type: "meta", runID: "run_cancel" }
       acceptMeta()
-      await new Promise<void>((resolve) => args.abort?.addEventListener("abort", () => resolve(), { once: true }))
+      await waitForAbort(args.abort)
       yield { type: "end" }
     } as typeof AgencySwarmAdapter.streamRun
     AgencySwarmAdapter.cancel = (async () => ({
@@ -297,6 +297,202 @@ describe("session.agency-swarm runtime history", () => {
       },
     ])
   })
+
+  test("stream waits for cancel response history before finishing", async () => {
+    const { input, triggerCancel } = makeInput("current", "cancel me")
+    const appended: unknown[][] = []
+    const chatHistory: unknown[] = []
+    let acceptMeta = () => {}
+    const metaAccepted = new Promise<void>((resolve) => {
+      acceptMeta = resolve
+    })
+    let releaseAppend = () => {}
+    const appendStarted = new Promise<void>((resolve) => {
+      AgencySwarmHistory.appendMessages = (async (_scope, newMessages) => {
+        resolve()
+        await new Promise<void>((release) => {
+          releaseAppend = release
+        })
+        const messages = Array.isArray(newMessages) ? newMessages : []
+        appended.push(messages)
+        chatHistory.push(...messages)
+        return { scope: "scope", chat_history: chatHistory, updated_at: Date.now() }
+      }) as typeof AgencySwarmHistory.appendMessages
+    })
+
+    stubSessionMessages([userMessage("current", "cancel me", 1)] as any)
+    AgencySwarmHistory.load = (async () => ({
+      scope: "scope",
+      chat_history: chatHistory,
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.load
+    AgencySwarmHistory.setLastRunID = (async (_scope, runID) => ({
+      scope: "scope",
+      chat_history: chatHistory,
+      last_run_id: runID,
+      updated_at: Date.now(),
+    })) as typeof AgencySwarmHistory.setLastRunID
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      yield { type: "meta", runID: "run_cancel" }
+      acceptMeta()
+      await waitForAbort(args.abort)
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+    AgencySwarmAdapter.cancel = (async () => ({
+      ok: true,
+      status: 200,
+      cancelled: true,
+      notFound: false,
+      data: {
+        new_messages: [
+          {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "cancelled on backend" }],
+          },
+        ],
+      },
+    })) as typeof AgencySwarmAdapter.cancel
+
+    const stream = await SessionAgencySwarm.stream(input)
+    const consume = consumeStreamFromResult(stream)
+    await metaAccepted
+    triggerCancel()
+    await appendStarted
+
+    const early = await Promise.race([
+      consume.then(() => "finished" as const),
+      delay(50).then(() => "pending" as const),
+    ])
+    expect(early).toBe("pending")
+
+    releaseAppend()
+    const events = await consume
+
+    expect(events.at(-1)).toEqual({ type: "finish" })
+    expect(appended).toContainEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "cancelled on backend" }],
+      },
+    ])
+  })
+
+  test("stream finishes cancelled when cancel finalization after meta does not resolve", async () => {
+    const { input, triggerCancel } = makeInput("current", "cancel me")
+    let acceptMeta = () => {}
+    const metaAccepted = new Promise<void>((resolve) => {
+      acceptMeta = resolve
+    })
+
+    stubSessionMessages([userMessage("current", "cancel me", 1)] as any)
+    mockHistory([])
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      yield { type: "meta", runID: "run_cancel" }
+      acceptMeta()
+      await waitForAbort(args.abort)
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+    AgencySwarmAdapter.cancel = (() =>
+      new Promise<AgencySwarmAdapter.CancelResult>(() => {})) as typeof AgencySwarmAdapter.cancel
+
+    const stream = await SessionAgencySwarm.stream(input)
+    const consume = consumeStreamFromResult(stream)
+    await metaAccepted
+    triggerCancel()
+    const events = await Promise.race([
+      consume,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("stream did not finish")), 4500)),
+    ])
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "finish-step",
+        finishReason: "cancelled",
+      }),
+    )
+    expect(events.at(-1)).toEqual({ type: "finish" })
+  }, 6000)
+
+  test("stream finishes cancelled when cancel was requested before meta and finalization does not resolve", async () => {
+    const { input, triggerCancel } = makeInput("current", "cancel me")
+
+    stubSessionMessages([userMessage("current", "cancel me", 1)] as any)
+    mockHistory([])
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      yield { type: "meta", runID: "run_cancel" }
+      await waitForAbort(args.abort)
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+    AgencySwarmAdapter.cancel = (() =>
+      new Promise<AgencySwarmAdapter.CancelResult>(() => {})) as typeof AgencySwarmAdapter.cancel
+
+    const stream = await SessionAgencySwarm.stream(input)
+    triggerCancel()
+    const events = await Promise.race([
+      consumeStreamFromResult(stream),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("stream did not finish")), 4500)),
+    ])
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "finish-step",
+        finishReason: "cancelled",
+      }),
+    )
+    expect(events.at(-1)).toEqual({ type: "finish" })
+  }, 6000)
+
+  test("stream ignores cancel response messages that arrive after finalization times out", async () => {
+    const { input, triggerCancel } = makeInput("current", "cancel me")
+    const appended = mockHistory([])
+    let acceptMeta = () => {}
+    const metaAccepted = new Promise<void>((resolve) => {
+      acceptMeta = resolve
+    })
+    let finishCancel: (result: AgencySwarmAdapter.CancelResult) => void = () => {}
+
+    stubSessionMessages([userMessage("current", "cancel me", 1)] as any)
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      yield { type: "meta", runID: "run_cancel" }
+      acceptMeta()
+      await waitForAbort(args.abort)
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+    AgencySwarmAdapter.cancel = (() =>
+      new Promise<AgencySwarmAdapter.CancelResult>((resolve) => {
+        finishCancel = resolve
+      })) as typeof AgencySwarmAdapter.cancel
+
+    const stream = await SessionAgencySwarm.stream(input)
+    const consume = consumeStreamFromResult(stream)
+    await metaAccepted
+    triggerCancel()
+    const events = await Promise.race([
+      consume,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("stream did not finish")), 4500)),
+    ])
+    finishCancel({
+      ok: true,
+      status: 200,
+      cancelled: true,
+      notFound: false,
+      data: {
+        new_messages: [
+          {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "late cancel response" }],
+          },
+        ],
+      },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(events.at(-1)).toEqual({ type: "finish" })
+    expect(appended).toEqual([])
+  }, 6000)
 
   function makeInput(currentID: string, text: string) {
     const abort = new AbortController()
@@ -448,5 +644,14 @@ describe("session.agency-swarm runtime history", () => {
       events.push(event)
     }
     return events
+  }
+
+  function waitForAbort(abort: AbortSignal | undefined) {
+    if (!abort || abort.aborted) return Promise.resolve()
+    return new Promise<void>((resolve) => abort.addEventListener("abort", () => resolve(), { once: true }))
+  }
+
+  function delay(ms: number) {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms))
   }
 })
