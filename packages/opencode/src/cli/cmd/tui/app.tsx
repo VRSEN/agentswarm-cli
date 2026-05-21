@@ -8,7 +8,11 @@ import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import semver from "semver"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
-import { DialogAgencySwarmConnect, DialogAuth } from "@tui/component/dialog-provider"
+import {
+  DialogAgencySwarmConnect,
+  DialogAuth,
+  DialogProvider as DialogProviderConnect,
+} from "@tui/component/dialog-provider"
 import { ErrorComponent } from "@tui/component/error-component"
 import { PluginRouteMissing } from "@tui/component/plugin-route-missing"
 import { ProjectProvider } from "@tui/context/project"
@@ -347,7 +351,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
             message: `Invalid model format: ${args.model}`,
             duration: 3000,
           })
-        local.model.set({ providerID, modelID }, { recent: true })
+        local.model.set({ providerID, modelID }, { recent: true, explicit: true })
       }
       if (args.sessionID && !args.fork) {
         route.navigate({
@@ -498,6 +502,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     await setAgencyRunTarget(next)
   }
 
+  const modelSwitchCommandState = AgencyProduct.modelSwitchCommandState()
   command.register(() => [
     {
       title: "Switch session",
@@ -536,6 +541,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       keybind: "model_list",
       suggested: true,
       category: "Agent",
+      ...modelSwitchCommandState,
       slash: {
         name: "models",
       },
@@ -548,6 +554,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       value: "model.cycle_recent",
       keybind: "model_cycle_recent",
       category: "Agent",
+      enabled: modelSwitchCommandState.enabled,
       hidden: true,
       onSelect: () => {
         local.model.cycle(1)
@@ -558,6 +565,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       value: "model.cycle_recent_reverse",
       keybind: "model_cycle_recent_reverse",
       category: "Agent",
+      enabled: modelSwitchCommandState.enabled,
       hidden: true,
       onSelect: () => {
         local.model.cycle(-1)
@@ -568,6 +576,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       value: "model.cycle_favorite",
       keybind: "model_cycle_favorite",
       category: "Agent",
+      enabled: modelSwitchCommandState.enabled,
       hidden: true,
       onSelect: () => {
         local.model.cycleFavorite(1)
@@ -578,6 +587,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       value: "model.cycle_favorite_reverse",
       keybind: "model_cycle_favorite_reverse",
       category: "Agent",
+      enabled: modelSwitchCommandState.enabled,
       hidden: true,
       onSelect: () => {
         local.model.cycleFavorite(-1)
@@ -692,7 +702,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         name: "connect",
       },
       onSelect: () => {
-        dialog.replace(() => <DialogAgencySwarmConnect />)
+        dialog.replace(() => (frameworkMode() ? <DialogAgencySwarmConnect /> : <DialogProviderConnect />))
       },
       category: "Provider",
     },

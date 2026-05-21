@@ -142,6 +142,19 @@ describe("installation", () => {
       expect(calls).toContainEqual(["npm", "install", "-g", `${InstallationDistribution.packageName}@1.2.3`])
     })
 
+    test("falls back to npm for unknown install methods", async () => {
+      const calls: string[][] = []
+      const layer = testLayer((cmd, args) => {
+        calls.push([cmd, ...args])
+        return ""
+      })
+
+      await Effect.runPromise(
+        Installation.Service.use((svc) => svc.upgrade("unknown", "1.2.3")).pipe(Effect.provide(layer)),
+      )
+      expect(calls).toContainEqual(["npm", "install", "-g", `${InstallationDistribution.packageName}@1.2.3`])
+    })
+
     test("rejects unsupported upgrade methods", async () => {
       const layer = testLayer()
       const methods: Installation.Method[] = ["yarn", "pnpm", "bun", "curl", "brew", "choco", "scoop"]

@@ -41,6 +41,10 @@ export function empty() {
 }
 
 export function logo(pad?: string, product = AgencyProduct.resolve()) {
+  if (product.wordmarkLines) {
+    return product.wordmarkLines.map((line) => [pad, line].filter(Boolean).join("")).join(EOL)
+  }
+
   if (product.customBranding) {
     return [pad, product.name].filter(Boolean).join("")
   }

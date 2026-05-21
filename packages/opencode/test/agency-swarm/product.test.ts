@@ -7,6 +7,10 @@ describe("AgencyProduct profile", () => {
 
     expect(profile.custom).toBe(false)
     expect(profile.customBranding).toBe(false)
+    expect(profile.skipPostAuthModelSelection).toBe(false)
+    expect(profile.hideModelSelection).toBe(false)
+    expect(AgencyProduct.shouldShowPostAuthModelSelection(profile)).toBe(true)
+    expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(true)
     expect(profile.name).toBe("Agent Swarm")
     expect(profile.cmd).toBe("agentswarm")
     expect(profile.packageName).toBe("agentswarm-cli")
@@ -18,6 +22,10 @@ describe("AgencyProduct profile", () => {
     expect(profile.starterTemplateRepo).toBe("agency-ai-solutions/agency-starter-template")
     expect(profile.starterProjectName).toBe("my-agency")
     expect(profile.agencyEntryFiles).toEqual(["agency.py"])
+    expect(profile.tuiLogoLeft).toBeUndefined()
+    expect(profile.tuiLogoRight).toBeUndefined()
+    expect(profile.wordmarkLines).toBeUndefined()
+    expect(AgencyProduct.tuiLogo(profile)).toBeUndefined()
   })
 
   test("selects a generic downstream profile from product env", () => {
@@ -33,11 +41,20 @@ describe("AgencyProduct profile", () => {
       AGENTSWARM_PRODUCT_STARTER_REPO: "example/starter",
       AGENTSWARM_PRODUCT_STARTER_FOLDER: "example-project",
       AGENTSWARM_PRODUCT_ENTRY_FILES: "main.py, agency.py",
+      AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION: "true",
+      AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION: "true",
+      AGENTSWARM_PRODUCT_TUI_LOGO_LEFT: JSON.stringify([" LEFT", "LEFT2"]),
+      AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: "RIGHT\\nRIGHT2",
+      AGENTSWARM_PRODUCT_WORDMARK_LINES: "WORD\\n MARK",
     })
 
     expect(profile.custom).toBe(true)
     expect(profile.customBranding).toBe(true)
     expect(profile.customStarter).toBe(true)
+    expect(profile.skipPostAuthModelSelection).toBe(true)
+    expect(profile.hideModelSelection).toBe(true)
+    expect(AgencyProduct.shouldShowPostAuthModelSelection(profile)).toBe(false)
+    expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(false)
     expect(profile.name).toBe("Example Product")
     expect(profile.cmd).toBe("example")
     expect(profile.packageName).toBe("example-cli")
@@ -49,6 +66,13 @@ describe("AgencyProduct profile", () => {
     expect(profile.starterTemplateRepo).toBe("example/starter")
     expect(profile.starterProjectName).toBe("example-project")
     expect(profile.agencyEntryFiles).toEqual(["main.py", "agency.py"])
+    expect(profile.tuiLogoLeft).toEqual([" LEFT", "LEFT2"])
+    expect(profile.tuiLogoRight).toEqual(["RIGHT", "RIGHT2"])
+    expect(profile.wordmarkLines).toEqual(["WORD", " MARK"])
+    expect(AgencyProduct.tuiLogo(profile)).toEqual({
+      left: [" LEFT", "LEFT2"],
+      right: ["RIGHT", "RIGHT2"],
+    })
   })
 
   test("custom entry files alone do not force starter creation", () => {
@@ -75,6 +99,43 @@ describe("AgencyProduct profile", () => {
     expect(profile.customBranding).toBe(false)
     expect(profile.name).toBe("Agent Swarm")
     expect(profile.cmd).toBe("example")
+  })
+
+  test("ignores invalid post-auth model selection skip values", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION: "maybe",
+    })
+
+    expect(profile.custom).toBe(false)
+    expect(profile.skipPostAuthModelSelection).toBe(false)
+    expect(profile.hideModelSelection).toBe(false)
+    expect(AgencyProduct.shouldShowPostAuthModelSelection(profile)).toBe(true)
+    expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(true)
+  })
+
+  test("keeps model switching commands available when only post-auth model selection is skipped", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION: "true",
+    })
+
+    expect(profile.skipPostAuthModelSelection).toBe(true)
+    expect(profile.hideModelSelection).toBe(false)
+    expect(AgencyProduct.shouldShowPostAuthModelSelection(profile)).toBe(false)
+    expect(AgencyProduct.modelSwitchCommandState(profile)).toEqual({
+      enabled: true,
+      hidden: false,
+    })
+  })
+
+  test("disables model switching commands only when model selection is explicitly hidden", () => {
+    expect(AgencyProduct.modelSwitchCommandState({ hideModelSelection: false })).toEqual({
+      enabled: true,
+      hidden: false,
+    })
+    expect(AgencyProduct.modelSwitchCommandState({ hideModelSelection: true })).toEqual({
+      enabled: false,
+      hidden: true,
+    })
   })
 })
 

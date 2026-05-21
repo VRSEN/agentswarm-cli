@@ -14,6 +14,7 @@ import { Env } from "../../src/env"
 import { Effect } from "effect"
 import { AppRuntime } from "../../src/effect/app-runtime"
 import { makeRuntime } from "../../src/effect/run-service"
+import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 
 const env = makeRuntime(Env.Service, Env.defaultLayer)
 const set = (k: string, v: string) => env.runSync((svc) => svc.set(k, v))
@@ -1075,6 +1076,66 @@ test("multiple providers can be configured simultaneously", async () => {
       expect(providers[ProviderID.openai]).toBeDefined()
       expect(providers[ProviderID.anthropic].options.timeout).toBe(30000)
       expect(providers[ProviderID.openai].options.timeout).toBe(60000)
+    },
+  })
+})
+
+test("agency-swarm provider defaults timeout off when config omits it", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "opencode.json"),
+        JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          model: "agency-swarm/default",
+          provider: {
+            "agency-swarm": {
+              options: {
+                baseURL: "http://127.0.0.1:8123",
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const providers = await list()
+      expect(providers[ProviderID.make("agency-swarm")].options).toMatchObject({
+        baseURL: "http://127.0.0.1:8123",
+        discoveryTimeoutMs: AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS,
+        timeout: false,
+      })
+    },
+  })
+})
+
+test("agency-swarm provider respects explicit timeout config", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "opencode.json"),
+        JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          model: "agency-swarm/default",
+          provider: {
+            "agency-swarm": {
+              options: {
+                timeout: 30000,
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const providers = await list()
+      expect(providers[ProviderID.make("agency-swarm")].options.timeout).toBe(30000)
     },
   })
 })

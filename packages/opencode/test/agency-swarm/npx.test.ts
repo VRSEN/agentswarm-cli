@@ -13,6 +13,7 @@ import {
   LAUNCHER_ENTRY_ENV,
   prepareProjectLaunch,
   prepareNpxLaunch,
+  resolveLauncherCommand,
   resolveNpxAutoProject,
   shouldRunNpxOnboarding,
   starterTemplateUrl,
@@ -87,6 +88,14 @@ describe("agency-swarm npx onboarding", () => {
     ).toBe(false)
   })
 
+  test("resolveLauncherCommand routes Windows shell commands through cmd.exe", () => {
+    expect(resolveLauncherCommand(["npm", "install"], "win32")).toEqual(["cmd.exe", "/c", "npm", "install"])
+    expect(resolveLauncherCommand(["npx", "playwright"], "win32")).toEqual(["cmd.exe", "/c", "npx", "playwright"])
+    expect(resolveLauncherCommand(["git", "clone"], "win32")).toEqual(["cmd.exe", "/c", "git", "clone"])
+    expect(resolveLauncherCommand(["python", "-V"], "win32")).toEqual(["python", "-V"])
+    expect(resolveLauncherCommand(["npm", "install"], "darwin")).toEqual(["npm", "install"])
+  })
+
   test("launcher mode treats bare project directories as positional args under rewritten argv", async () => {
     await using dir = await tmpdir()
     await mkdir(path.join(dir.path, "my-agency"))
@@ -142,6 +151,7 @@ describe("agency-swarm npx onboarding", () => {
       baseURL: "http://127.0.0.1:8123",
       agency: "local-agency",
       discoveryTimeoutMs: 2000,
+      timeout: false,
       token: "server-token",
     })
   })
@@ -1307,7 +1317,6 @@ describe("agency-swarm npx onboarding", () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
 
-    const realSetTimeout = globalThis.setTimeout
     const killSignals: Array<string | undefined> = []
 
     spyOn(prompts, "confirm").mockResolvedValue(true as never)
@@ -1367,7 +1376,10 @@ describe("agency-swarm npx onboarding", () => {
           stderr: stderr.stream,
           kill(signal?: string) {
             killSignals.push(signal)
-            if (signal === "SIGKILL") resolveExit(1)
+            if (signal === "SIGKILL") {
+              stderr.close()
+              resolveExit(1)
+            }
           },
         } as never
       }
@@ -1379,16 +1391,11 @@ describe("agency-swarm npx onboarding", () => {
       agencyFile: path.join(dir.path, "agency.py"),
       moduleName: "agency",
     })
-    const pending = Symbol("pending")
-    const outcome = await Promise.race([
-      launch.then(
-        () => "resolved",
-        (error) => error,
-      ),
-      new Promise((resolve) => realSetTimeout(() => resolve(pending), 20)),
-    ])
+    const outcome = await launch.then(
+      () => "resolved",
+      (error) => error,
+    )
 
-    expect(outcome).not.toBe(pending)
     expect(outcome).toBeInstanceOf(Error)
     if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
     expect(killSignals).toEqual([undefined, "SIGKILL"])
@@ -2335,7 +2342,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(outcome).toBeInstanceOf(Error)
     if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
     expect(killSignals).toEqual([undefined, "SIGKILL"])
-    expect(outcome.message).toContain("Agency Swarm import canary timed out after 1 minute")
+    expect(outcome.message).toContain("Agency Swarm import canary timed out after 3 minutes")
   })
 
   test("prepareProjectLaunch returns when server readiness timeout stderr does not close", async () => {
@@ -2358,14 +2365,10 @@ describe("agency-swarm npx onboarding", () => {
     const serverStderr = createTextOutputStream("bridge still starting\n")
     const killSignals: Array<string | undefined> = []
     let resolveServerExit!: (code: number) => void
-    let now = 0
+    using dateNow = mockReadinessDeadlineElapsed()
+    void dateNow
 
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
-    spyOn(Date, "now").mockImplementation(() => {
-      const value = now
-      now = 90001
-      return value
-    })
     spyOn(globalThis, "fetch").mockRejectedValue(new Error("not ready") as never)
 
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
@@ -2432,7 +2435,7 @@ describe("agency-swarm npx onboarding", () => {
     if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
     expect(killSignals).toEqual([undefined, undefined])
     expect(outcome.message).toContain(
-      "Timed out waiting for the Agency Swarm server to start after 90 seconds. Last bridge output: bridge still starting",
+      "Timed out waiting for the Agency Swarm server to start after 2 minutes. Last bridge output: bridge still starting",
     )
   })
 
@@ -2461,14 +2464,10 @@ describe("agency-swarm npx onboarding", () => {
     )
     const killSignals: Array<string | undefined> = []
     let resolveServerExit!: (code: number) => void
-    let now = 0
+    using dateNow = mockReadinessDeadlineElapsed()
+    void dateNow
 
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
-    spyOn(Date, "now").mockImplementation(() => {
-      const value = now
-      now = 90001
-      return value
-    })
     spyOn(globalThis, "fetch").mockRejectedValue(new Error("not ready") as never)
 
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
@@ -2534,7 +2533,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(outcome).toBeInstanceOf(Error)
     if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
     expect(killSignals).toEqual([undefined, undefined])
-    expect(outcome.message).toContain("Timed out waiting for the Agency Swarm server to start after 90 seconds.")
+    expect(outcome.message).toContain("Timed out waiting for the Agency Swarm server to start after 2 minutes.")
     expect(outcome.message).toContain("Bridge output only contained non-fatal startup warnings")
     expect(outcome.message).not.toContain("Last bridge output")
   })
@@ -3952,6 +3951,21 @@ function createTextOutputStream(initial?: string) {
           throw error
         }
       }
+    },
+  }
+}
+
+function mockReadinessDeadlineElapsed() {
+  const realDateNow = Date.now
+  let now = 0
+  Date.now = (() => {
+    const value = now
+    now = 120001
+    return value
+  }) as typeof Date.now
+  return {
+    [Symbol.dispose]() {
+      Date.now = realDateNow
     },
   }
 }

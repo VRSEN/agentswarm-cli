@@ -361,7 +361,7 @@ export function Prompt(props: PromptProps) {
   const hasRightContent = createMemo(() => Boolean(props.right))
 
   function promptModelWarning() {
-    const agency = local.model.current()?.providerID === AgencySwarmAdapter.PROVIDER_ID
+    const agency = frameworkMode()
     toast.show({
       variant: "warning",
       message: agency ? "Connect to an agency-swarm server to send prompts" : "Connect a provider to send prompts",
@@ -466,7 +466,7 @@ export function Prompt(props: PromptProps) {
         // Keep command line --agent if specified.
         if (!args.agent) local.agent.set(msg.agent)
         if (msg.model) {
-          local.model.set(msg.model)
+          local.model.set(msg.model, { explicit: frameworkMode() })
           local.model.variant.set(msg.model.variant)
         }
       }
@@ -976,6 +976,7 @@ export function Prompt(props: PromptProps) {
       promptModelWarning()
       return
     }
+    const productProviderID = frameworkMode() ? AgencySwarmAdapter.PROVIDER_ID : selectedModel.providerID
 
     // Capture mode before it gets reset
     const currentMode = store.mode
@@ -1007,7 +1008,7 @@ export function Prompt(props: PromptProps) {
 
     if (
       shouldBlockAgencyPromptSubmit({
-        currentProviderID: selectedModel.providerID,
+        currentProviderID: productProviderID,
         configuredModel: sync.data.config.model,
         agentModel: local.agent.current()?.model,
         providers: sync.data.provider,
@@ -1091,7 +1092,7 @@ export function Prompt(props: PromptProps) {
     const messageID = MessageID.ascending()
     void AgencySwarmRunSession.sync({
       sessionID,
-      providerID: selectedModel.providerID,
+      providerID: productProviderID,
       directory: process.env[AgencySwarmRunSession.LOCAL_PROJECT_ENV],
     })
 
@@ -1181,7 +1182,7 @@ export function Prompt(props: PromptProps) {
         restoreExtmarksFromParts(savedPrompt.parts)
         const message = toErrorMessage(error)
         const shouldReopenAuth = shouldOpenAgencyAuthDialog({
-          providerID: selectedModel.providerID,
+          providerID: productProviderID,
           message,
         })
         if (navigateTimer) {

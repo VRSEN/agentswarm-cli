@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import {
+  agencyClientConfigModel,
+  latestOpenAITestModel,
+  latestOpenAITestModelLabel,
+  openAIProviderTestConfig,
   startAgencyProtocolServer,
   startTui,
   startTuiDemoAgencyServer,
@@ -66,7 +70,9 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     expect(screen).toContain("/auth")
     expect(screen).toContain("/connect")
+    expect(screen).toContain("/models")
     expect(screen).toContain("/agents")
+    expect(screen).not.toContain("/addons")
   })
 
   test("run-mode slash command filtering hides native commands by query", async () => {
@@ -171,6 +177,154 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(body).toMatchObject({
       recipient_agent: "MathAgent",
     })
+  })
+
+  test("visible OpenAI model state still routes Run-mode prompts to Agency Swarm", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    const runProject = await mkdtemp(path.join(os.tmpdir(), "agentswarm-visible-model-run-project-"))
+    const stateHome = await mkdtemp(path.join(os.tmpdir(), "agentswarm-visible-model-state-"))
+    tempDirs.push(runProject, stateHome)
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      args: ["--model", latestOpenAITestModel],
+      env: {
+        AGENTSWARM_RUN_PROJECT: runProject,
+        XDG_STATE_HOME: stateHome,
+      },
+      config: openAIProviderTestConfig,
+    })
+
+    await currentTui.waitForText(latestOpenAITestModelLabel, tuiReadyTimeoutMs)
+    currentTui.write("run through agency despite visible openai model state\r")
+    await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "agency request with visible openai model state",
+      tuiInteractionTimeoutMs,
+    )
+
+    const body = currentServer.requests[0]?.body
+    expect(body?.message).toContain("run through agency despite visible openai model state")
+    expect(body).toMatchObject({
+      recipient_agent: "UserSupportAgent",
+    })
+
+    const runSessionState = JSON.parse(
+      await readFile(path.join(stateHome, "agentswarm", "agency-swarm-run-sessions.json"), "utf8"),
+    ) as Record<string, { mode?: string; directory?: string }>
+    expect(Object.values(runSessionState)).toContainEqual({
+      mode: "local-project",
+      directory: runProject,
+    })
+  })
+
+  test("/connect opens the Agency Swarm server dialog with visible OpenAI model state", async () => {
+    currentServer = await startAgencyProtocolServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      args: ["--model", latestOpenAITestModel],
+      config: openAIProviderTestConfig,
+    })
+
+    await currentTui.waitForText(latestOpenAITestModelLabel, tuiReadyTimeoutMs)
+    currentTui.write("/con")
+    await currentTui.waitFor(
+      () => currentTui!.screen().includes("/connect") && currentTui!.screen().includes("/con"),
+      "filtered /connect slash command",
+      tuiInteractionTimeoutMs,
+    )
+    currentTui.write("\r")
+    await currentTui.waitFor(
+      () => {
+        const screen = currentTui!.screen()
+        return (
+          screen.includes(currentServer!.baseURL) &&
+          screen.includes("Add local port") &&
+          screen.includes("Authentication") &&
+          !screen.includes("Connect a provider")
+        )
+      },
+      "Agency Swarm connect dialog with local server controls",
+      tuiInteractionTimeoutMs,
+    )
+    const screen = currentTui.screen()
+
+    expect(screen).toContain("Local servers")
+    expect(screen).toContain(currentServer.baseURL)
+    expect(screen).toContain("http://127.0.0.1:8000")
+    expect(screen).toContain("http://127.0.0.1:8080")
+    expect(screen).toContain("Add local port")
+    expect(screen).toContain("Authentication")
+    expect(screen).not.toContain("Connect a provider")
+
+    currentTui.write("\x1b[B\x1b[B")
+    const tokenScreen = await currentTui.waitForText("Update token", tuiInteractionTimeoutMs)
+
+    expect(tokenScreen).toContain("Authentication")
+    expect(tokenScreen).toContain("Update token")
+    expect(tokenScreen).toContain("Clear token")
+    expect(tokenScreen).not.toContain("Connect a provider")
+  })
+
+  test("Run-mode auth failures open /auth with visible OpenAI model state", async () => {
+    currentServer = await startAuthFailureAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      args: ["--model", latestOpenAITestModel],
+      config: openAIProviderTestConfig,
+    })
+
+    await currentTui.waitForText(latestOpenAITestModelLabel, tuiReadyTimeoutMs)
+    currentTui.write("trigger upstream auth failure\r")
+    const screen = await currentTui.waitForText("Manage Agent Swarm auth", tuiInteractionTimeoutMs)
+
+    expect(screen).toContain("OpenAI")
+    expect(screen).not.toContain("Connect a provider")
+  })
+
+  test("/new keeps Run mode usable and starts the next Agency request without old chat history", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      args: ["--model", latestOpenAITestModel],
+      config: openAIProviderTestConfig,
+    })
+
+    await currentTui.waitForText(latestOpenAITestModelLabel, tuiReadyTimeoutMs)
+    currentTui.write("first run mode turn before new\r")
+    await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "first run-mode request",
+      tuiInteractionTimeoutMs,
+    )
+
+    currentTui.write("/new")
+    await currentTui.waitFor(
+      () => currentTui!.screen().includes("/new"),
+      "visible /new slash command",
+      tuiInteractionTimeoutMs,
+    )
+    currentTui.write("\r")
+    await currentTui.waitFor(
+      () => !currentTui!.screen().includes("first run mode turn before new"),
+      "new empty prompt after session.new",
+      tuiInteractionTimeoutMs,
+    )
+    currentTui.write("second run mode turn after new\r")
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 2,
+      "second run-mode request after /new",
+      tuiInteractionTimeoutMs,
+    )
+
+    const nextBody = currentServer.requests[1]?.body
+    expect(nextBody?.message).toContain("second run mode turn after new")
+    expect(JSON.stringify(nextBody?.chat_history ?? [])).not.toContain("first run mode turn before new")
   })
 
   test("SendMessage delegation does not switch control to the delegated agent", async () => {
@@ -503,4 +657,68 @@ async function selectCurrentSwarm(tui: TuiProcess) {
   await tui.waitForText("TuiDemoAgency")
   tui.write("\x1b[A\x1b[A\r")
   await tui.waitForText("Selected swarm TuiDemoAgency", tuiInteractionTimeoutMs)
+}
+
+async function startAuthFailureAgencyServer(): Promise<AgencyProtocolServer> {
+  const requests: AgencyProtocolServer["requests"] = []
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url)
+
+      if (url.pathname === "/openapi.json") {
+        return Response.json({
+          openapi: "3.1.0",
+          paths: {
+            "/local-agency/get_metadata": { get: {} },
+            "/local-agency/get_response_stream": { post: {} },
+            "/local-agency/cancel_response_stream": { post: {} },
+          },
+        })
+      }
+
+      if (url.pathname === "/local-agency/get_metadata") {
+        return Response.json({
+          agency_swarm_version: "1.9.6",
+          metadata: {
+            agencyName: "Auth Failure Agency",
+            agents: ["entry-agent"],
+            entryPoints: ["entry-agent"],
+          },
+          nodes: [
+            {
+              id: "entry-agent",
+              type: "agent",
+              data: {
+                label: "Entry Agent",
+                isEntryPoint: true,
+                model: agencyClientConfigModel,
+              },
+            },
+          ],
+        })
+      }
+
+      if (url.pathname === "/local-agency/get_response_stream") {
+        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+        requests.push({ path: url.pathname, body })
+        return new Response("Invalid API key for OpenAI", { status: 403 })
+      }
+
+      if (url.pathname === "/local-agency/cancel_response_stream") {
+        return Response.json({ cancelled: true })
+      }
+
+      return new Response("not found", { status: 404 })
+    },
+  })
+
+  return {
+    baseURL: `http://${server.hostname}:${server.port}`,
+    requests,
+    stop() {
+      server.stop(true)
+    },
+  }
 }

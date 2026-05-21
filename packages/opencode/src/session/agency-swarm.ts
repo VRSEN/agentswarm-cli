@@ -51,7 +51,13 @@ export namespace SessionAgencySwarm {
   export const PROVIDER_ID = AgencySwarmAdapter.PROVIDER_ID
 
   const CANCEL_BEFORE_META_ABORT_MS = 3000
+  const CANCEL_FINALIZE_TIMEOUT_MS = 3000
   const STRUCTURED_ATTACHMENT_MESSAGE_MIN_VERSION = "1.9.6"
+  const MAX_UI_TOOL_OUTPUT_CHARS = 60_000
+  const MAX_HISTORY_TOOL_OUTPUT_CHARS = 20_000
+  const MAX_TRANSPORT_TOOL_OUTPUT_CHARS = 12_000
+  const MAX_TRANSPORT_MESSAGE_TEXT_CHARS = 80_000
+  const HOSTED_TOOL_PRESERVATION_ORIGINS = new Set(["file_search_preservation", "web_search_preservation"])
 
   export type RuntimeOptions = {
     baseURL: string
@@ -650,6 +656,7 @@ export namespace SessionAgencySwarm {
     let lastReasoningItemID: string | undefined
     let cancelRequested = false
     let cancelInFlight = false
+    let cancelPromise: Promise<AgencySwarmAdapter.CancelResult | undefined> | undefined
     let cancelBeforeMetaTimer: ReturnType<typeof setTimeout> | undefined
     let streamAborted = false
     let hadDanglingTool = false
@@ -658,6 +665,12 @@ export namespace SessionAgencySwarm {
 
     const streamAbort = new AbortController()
     const streamSignal = AbortSignal.any([input.abort, streamAbort.signal])
+
+    const abortStreamForCancel = () => {
+      if (!streamAbort.signal.aborted) {
+        streamAbort.abort(new DOMException("Aborted", "AbortError"))
+      }
+    }
 
     const mergeMeta = (meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
       return {
@@ -1155,7 +1168,7 @@ export namespace SessionAgencySwarm {
         toolCallId: callID,
         input: parseToolInput(tool.raw),
         output: {
-          output,
+          output: truncateLargeText(output, MAX_UI_TOOL_OUTPUT_CHARS, "tool output"),
           title: "",
           metadata: mergeMeta(meta, {
             call_id: callID,
@@ -1226,13 +1239,17 @@ export namespace SessionAgencySwarm {
       }
     }
 
-    const handleMessagesPayload = async function* (payload: Record<string, unknown>) {
-      const newMessages = Array.isArray(payload["new_messages"]) ? payload["new_messages"] : []
+    const persistHistoryMessages = async (newMessages: unknown[]) => {
       const historyMessages =
         replayedAttachmentKeys.size > 0
           ? stripReplayedAttachmentsFromMessages(newMessages, replayedAttachmentKeys)
           : newMessages
-      await AgencySwarmHistory.appendMessages(scope, historyMessages)
+      await AgencySwarmHistory.appendMessages(scope, normalizeAgencyHistoryForStorage(historyMessages))
+    }
+
+    const handleMessagesPayload = async function* (payload: Record<string, unknown>) {
+      const newMessages = Array.isArray(payload["new_messages"]) ? payload["new_messages"] : []
+      await persistHistoryMessages(newMessages)
       setUsage(asRecord(payload["usage"]))
 
       const runFromMessages = asString(payload["run_id"])
@@ -1245,7 +1262,8 @@ export namespace SessionAgencySwarm {
         }
         await AgencySwarmHistory.setLastRunID(scope, runID)
         if (cancelRequested) {
-          await sendCancel()
+          void sendCancel()
+          abortStreamForCancel()
         }
       }
 
@@ -1507,43 +1525,92 @@ export namespace SessionAgencySwarm {
     }
 
     const sendCancel = async () => {
-      if (!runID || cancelInFlight) return
+      if (!runID) return
+      if (cancelInFlight) return cancelPromise
       cancelInFlight = true
 
-      const result = await AgencySwarmAdapter.cancel({
-        baseURL: input.options.baseURL,
-        agency,
-        runID,
-        cancelMode: "immediate",
-        token: input.options.token,
-      }).catch((error) => {
-        log.error("cancel request failed", {
-          error: error instanceof Error ? error.message : String(error),
-        })
-        return {
-          ok: false,
-          status: 0,
-          cancelled: false,
-          notFound: false,
-          error: error instanceof Error ? error.message : String(error),
-        } satisfies AgencySwarmAdapter.CancelResult
-      })
-
-      if (!result.ok && !result.notFound) {
-        log.warn("cancel did not complete cleanly", {
+      cancelPromise = (async () => {
+        const result: AgencySwarmAdapter.CancelResult = await AgencySwarmAdapter.cancel({
+          baseURL: input.options.baseURL,
+          agency,
           runID,
-          status: result.status,
-          error: result.error,
+          cancelMode: "immediate",
+          token: input.options.token,
+        }).catch((error) => {
+          log.error("cancel request failed", {
+            error: error instanceof Error ? error.message : String(error),
+          })
+          return {
+            ok: false,
+            status: 0,
+            cancelled: false,
+            notFound: false,
+            error: error instanceof Error ? error.message : String(error),
+          } satisfies AgencySwarmAdapter.CancelResult
         })
+
+        if (!result.ok && !result.notFound) {
+          log.warn("cancel did not complete cleanly", {
+            runID,
+            status: result.status,
+            error: result.error,
+          })
+        }
+
+        return result
+      })()
+      return cancelPromise
+    }
+
+    const waitForCancelFinalize = async (promise: Promise<AgencySwarmAdapter.CancelResult | undefined>) => {
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      const result = await Promise.race<
+        | { type: "completed"; result: AgencySwarmAdapter.CancelResult | undefined }
+        | { type: "failed"; error: unknown }
+        | { type: "timeout" }
+      >([
+        promise.then(
+          (result) => ({ type: "completed" as const, result }),
+          (error) => ({ type: "failed" as const, error }),
+        ),
+        new Promise<{ type: "timeout" }>((resolve) => {
+          timeout = setTimeout(() => resolve({ type: "timeout" }), CANCEL_FINALIZE_TIMEOUT_MS)
+        }),
+      ])
+      if (timeout) clearTimeout(timeout)
+
+      if (result.type === "completed") {
+        if (result.result) {
+          const newMessages = Array.isArray(result.result.data?.["new_messages"])
+            ? result.result.data["new_messages"]
+            : []
+          if (newMessages.length > 0) {
+            await persistHistoryMessages(newMessages)
+          }
+        }
+        abortStreamForCancel()
+        return
       }
 
-      streamAbort.abort(new DOMException("Aborted", "AbortError"))
+      if (result.type === "timeout") {
+        log.warn("cancel finalization timed out", {
+          runID,
+          timeoutMs: CANCEL_FINALIZE_TIMEOUT_MS,
+        })
+        return
+      }
+
+      log.warn("cancel finalization failed", {
+        runID,
+        error: result.error instanceof Error ? result.error.message : String(result.error),
+      })
     }
 
     const onAbort = () => {
       cancelRequested = true
       if (runID) {
         void sendCancel()
+        abortStreamForCancel()
         return
       }
       if (!cancelBeforeMetaTimer) {
@@ -1566,6 +1633,7 @@ export namespace SessionAgencySwarm {
       let compactedHistoryFromMessages: Array<Record<string, unknown>> | undefined
       let compactedHistoryHasFileAttachments = false
       let rebuiltHistoryFromMessages: Array<Record<string, unknown>> | undefined
+      let persistRebuiltHistoryFromMessages = false
       let sessionMessages: MessageV2.WithParts[] | undefined
 
       const history = await AgencySwarmHistory.load(scope)
@@ -1582,14 +1650,23 @@ export namespace SessionAgencySwarm {
             return compacted
           }
           // Forked sessions clone local messages but get a fresh AgencySwarmHistory key, so the bridge
-          // would otherwise start with no context. Rebuild from the cloned messages when stored history
-          // is empty and prior messages are all agency-swarm.
-          if (history.chat_history.length === 0) {
-            const rebuilt = buildAgencyHistoryFromMessages({ msgs, currentID: input.userMessage.info.id })
-            if (rebuilt && rebuilt.length > 0) {
-              rebuiltHistoryFromMessages = rebuilt
-              return rebuilt
-            }
+          // would otherwise start with no context. Rebuild from cloned messages when stored history is
+          // empty and prior messages are all agency-swarm.
+          //
+          // Queued prompts can also be saved locally while an Agency Swarm stream is still running.
+          // In that window, streamed tool events are visible in local TUI state before backend
+          // `new_messages` are finalized, so stored AgencySwarmHistory can lag behind the visible chat.
+          const rebuilt = buildAgencyHistoryFromMessages({ msgs, currentID: input.userMessage.info.id })
+          if (
+            rebuilt &&
+            rebuilt.length > 0 &&
+            (history.chat_history.length === 0 ||
+              hasErroredPriorAgencyAssistant(msgs, input.userMessage.info.id) ||
+              historyMissingLocalUserMessages(history.chat_history, rebuilt))
+          ) {
+            rebuiltHistoryFromMessages = rebuilt
+            persistRebuiltHistoryFromMessages = history.chat_history.length === 0
+            return rebuilt
           }
           return history.chat_history
         })
@@ -1631,7 +1708,8 @@ export namespace SessionAgencySwarm {
         !!rebuiltHistoryFromMessages &&
         !!sessionMessages &&
         hasPriorFileParts(sessionMessages, input.userMessage.info.id)
-      const sanitizedChatHistory = sanitizeAgencyHistoryForTransport(chatHistory)
+      const codexTransport = isCodexClientConfig(clientConfig)
+      const sanitizedChatHistory = sanitizeAgencyHistoryForTransport(chatHistory, { codexTransport })
       const replayOnlyOutgoing = replayStoredAttachmentsInOutgoingMessage(outgoingMessage, sanitizedChatHistory)
       const attachmentMessage =
         hasCurrentFileAttachments ||
@@ -1671,10 +1749,10 @@ export namespace SessionAgencySwarm {
         }
       }
 
-      if (rebuiltHistoryFromMessages) {
-        await AgencySwarmHistory.appendMessages(scope, rebuiltHistoryFromMessages)
+      if (persistRebuiltHistoryFromMessages && rebuiltHistoryFromMessages) {
+        await AgencySwarmHistory.appendMessages(scope, normalizeAgencyHistoryForStorage(rebuiltHistoryFromMessages))
       }
-      const transportChatHistory = sanitizeAgencyHistoryForTransport(effectiveChatHistory)
+      const transportChatHistory = sanitizeAgencyHistoryForTransport(effectiveChatHistory, { codexTransport })
       let requestMessage: AgencyMessageInput = outgoingMessage
       let fileURLs: Record<string, string> | undefined
       if (structuredAttachmentsSupported) {
@@ -1719,7 +1797,8 @@ export namespace SessionAgencySwarm {
             }
             await AgencySwarmHistory.setLastRunID(scope, runID)
             if (cancelRequested) {
-              await sendCancel()
+              void sendCancel()
+              abortStreamForCancel()
             }
             continue
           }
@@ -2007,6 +2086,9 @@ export namespace SessionAgencySwarm {
           clearTimeout(cancelBeforeMetaTimer)
         }
         input.abort.removeEventListener("abort", onAbort)
+        if (cancelPromise) {
+          await waitForCancelFinalize(cancelPromise)
+        }
       }
 
       yield* flushOpen()
@@ -2362,7 +2444,66 @@ export namespace SessionAgencySwarm {
   }): Array<Record<string, unknown>> | undefined {
     if (input.msgs.length <= 1) return undefined
     if (input.msgs.some((msg) => msg.info.id !== input.currentID && !isAgencySwarmMessage(msg))) return undefined
+    if (
+      !input.msgs.some(
+        (msg) =>
+          msg.info.id !== input.currentID &&
+          msg.info.role === "assistant" &&
+          msg.info.providerID === AgencySwarmAdapter.PROVIDER_ID,
+      )
+    ) {
+      return undefined
+    }
     return input.msgs.flatMap((msg) => messageToHistoryItem(msg, input.currentID, !!input.structuredAttachments))
+  }
+
+  function hasErroredPriorAgencyAssistant(msgs: MessageV2.WithParts[], currentID: string) {
+    const currentIndex = msgs.findIndex((msg) => msg.info.id === currentID)
+    const prior = currentIndex >= 0 ? msgs.slice(0, currentIndex) : msgs.filter((msg) => msg.info.id !== currentID)
+    return prior.some(
+      (msg) =>
+        msg.info.role === "assistant" && msg.info.providerID === AgencySwarmAdapter.PROVIDER_ID && !!msg.info.error,
+    )
+  }
+
+  function historyMissingLocalUserMessages(
+    stored: Array<Record<string, unknown>>,
+    rebuilt: Array<Record<string, unknown>>,
+  ) {
+    const storedUserTexts = stored.map(historyUserText).filter(Boolean)
+    const rebuiltUserTexts = rebuilt.map(historyUserText).filter(Boolean)
+    if (rebuiltUserTexts.length === 0) return false
+    if (storedUserTexts.length === 0) return true
+
+    let storedIndex = 0
+    for (const rebuiltText of rebuiltUserTexts) {
+      while (storedIndex < storedUserTexts.length && storedUserTexts[storedIndex] !== rebuiltText) {
+        storedIndex++
+      }
+      if (storedIndex >= storedUserTexts.length) return true
+      storedIndex++
+    }
+    return false
+  }
+
+  function historyUserText(item: Record<string, unknown>) {
+    if (asString(item["type"]) !== "message" || asString(item["role"]) !== "user") return ""
+    return historyContentText(item["content"]).trim()
+  }
+
+  function historyContentText(content: unknown) {
+    if (typeof content === "string") return content
+    if (!Array.isArray(content)) return ""
+    return content
+      .map((entry) => {
+        const part = asRecord(entry)
+        if (!part) return ""
+        const type = asString(part["type"])
+        if (type === "input_text" || type === "text") return asString(part["text"]) || ""
+        return ""
+      })
+      .filter(Boolean)
+      .join("\n\n")
   }
 
   function messageToHistoryItem(
@@ -2387,23 +2528,82 @@ export namespace SessionAgencySwarm {
       ]
     }
 
-    const text = msg.parts
-      .filter((part): part is MessageV2.TextPart => part.type === "text")
-      .filter((part) => !part.ignored)
-      .map((part) => part.text.trim())
-      .filter(Boolean)
-      .join("\n\n")
-    if (!text) return []
-    return [
+    const callerAgent = extractCallerAgent(msg)
+    const items: Array<Record<string, unknown>> = []
+    for (const part of msg.parts) {
+      if (part.type === "text") {
+        if (part.ignored) continue
+        const text = part.text.trim()
+        if (!text) continue
+        items.push({
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text }],
+          agent: msg.info.agent,
+          callerAgent,
+          timestamp: msg.info.time.created,
+        })
+        continue
+      }
+      if (part.type === "tool") {
+        items.push(...toolPartToHistoryItems(part, msg, callerAgent))
+      }
+    }
+    return items
+  }
+
+  function toolPartToHistoryItems(
+    part: MessageV2.ToolPart,
+    msg: MessageV2.WithParts,
+    callerAgent: string | null,
+  ): Array<Record<string, unknown>> {
+    const state = part.state
+    const metadata = state.status === "completed" || state.status === "error" ? asRecord(state.metadata) : undefined
+    const base = {
+      agent: msg.info.agent,
+      callerAgent,
+      timestamp: msg.info.time.created,
+      metadata: {
+        ...(metadata ?? {}),
+        ...(asRecord(part.metadata) ?? {}),
+      },
+    }
+    const input =
+      state.status === "completed" || state.status === "error" || state.status === "running" ? state.input : {}
+    const items: Array<Record<string, unknown>> = [
       {
-        type: "message",
-        role: "assistant",
-        content: [{ type: "output_text", text }],
-        agent: msg.info.agent,
-        callerAgent: extractCallerAgent(msg),
-        timestamp: msg.info.time.created,
+        type: "function_call",
+        name: part.tool,
+        call_id: part.callID,
+        arguments: stringifyToolOutput(input),
+        ...base,
       },
     ]
+
+    if (state.status === "completed") {
+      items.push({
+        type: "function_call_output",
+        call_id: part.callID,
+        output: state.output,
+        ...base,
+      })
+    } else if (state.status === "error") {
+      items.push({
+        type: "function_call_output",
+        call_id: part.callID,
+        output: state.error,
+        ...base,
+      })
+    } else {
+      items.push({
+        type: "function_call_output",
+        call_id: part.callID,
+        output: "Tool execution was interrupted before output was received.",
+        ...base,
+      })
+    }
+
+    return items
   }
 
   function userMessageHistoryContent(
@@ -2465,7 +2665,15 @@ export namespace SessionAgencySwarm {
     return msgs.some((msg) => msg.info.id !== currentID && hasFileParts(msg))
   }
 
-  function sanitizeAgencyHistoryForTransport(history: Array<Record<string, unknown>>) {
+  function isCodexClientConfig(config: Record<string, unknown> | undefined) {
+    const baseURL = readConfiguredBaseURL(config)
+    return !!baseURL && isCodexAPIBaseURL(baseURL)
+  }
+
+  function sanitizeAgencyHistoryForTransport(
+    history: Array<Record<string, unknown>>,
+    options: { codexTransport?: boolean } = {},
+  ) {
     return history.flatMap((item) => {
       const type = asString(item["type"])
       if (type === "handoff_output_item" || type === "item_reference") return []
@@ -2476,8 +2684,104 @@ export namespace SessionAgencySwarm {
       ) {
         return []
       }
-      return [stripOpenAIResponseItemID(item)]
+      const transportItem =
+        options.codexTransport && isHostedToolPreservationSystemMessage(item) ? { ...item, role: "developer" } : item
+      return [normalizeAgencyHistoryItem(stripOpenAIResponseItemID(transportItem), "transport")]
     })
+  }
+
+  function isHostedToolPreservationSystemMessage(item: Record<string, unknown>) {
+    return (
+      asString(item["type"]) === "message" &&
+      asString(item["role"]) === "system" &&
+      HOSTED_TOOL_PRESERVATION_ORIGINS.has(asString(item["message_origin"]) || "")
+    )
+  }
+
+  function normalizeAgencyHistoryForStorage(input: unknown) {
+    if (!Array.isArray(input)) return []
+    return input.flatMap((item) => {
+      const record = asRecord(item)
+      return record ? [normalizeAgencyHistoryItem(record, "storage")] : []
+    })
+  }
+
+  function normalizeAgencyHistoryItem(
+    item: Record<string, unknown>,
+    mode: "storage" | "transport",
+  ): Record<string, unknown> {
+    const type = asString(item["type"])
+    const maxToolOutput = mode === "transport" ? MAX_TRANSPORT_TOOL_OUTPUT_CHARS : MAX_HISTORY_TOOL_OUTPUT_CHARS
+
+    if (mode === "transport" && type === "function_call") {
+      return {
+        type,
+        name: item["name"],
+        call_id: item["call_id"],
+        arguments: item["arguments"],
+      }
+    }
+
+    if (mode === "transport" && type === "function_call_output") {
+      return {
+        type,
+        call_id: item["call_id"],
+        output: normalizeHistoryValue(item["output"], maxToolOutput, "tool output"),
+      }
+    }
+
+    if (isAgencyToolOutputType(type)) {
+      return {
+        ...item,
+        output: normalizeHistoryValue(item["output"], maxToolOutput, "tool output"),
+      }
+    }
+
+    if (type === "message") {
+      return {
+        ...item,
+        content: normalizeMessageContentForHistory(item["content"], mode),
+      }
+    }
+
+    return item
+  }
+
+  function normalizeMessageContentForHistory(value: unknown, mode: "storage" | "transport") {
+    if (!Array.isArray(value)) return value
+    if (mode === "storage") return value
+
+    return value.map((part) => {
+      const record = asRecord(part)
+      if (!record) return part
+      const type = asString(record["type"])
+      if (type === "input_text" || type === "output_text") {
+        return {
+          ...record,
+          text: normalizeHistoryValue(record["text"], MAX_TRANSPORT_MESSAGE_TEXT_CHARS, `${type} text`),
+        }
+      }
+      return record
+    })
+  }
+
+  function normalizeHistoryValue(value: unknown, maxChars: number, label: string): unknown {
+    if (typeof value === "string") return truncateLargeText(value, maxChars, label)
+    if (value === undefined || value === null) return value
+
+    try {
+      const serialized = JSON.stringify(value)
+      if (!serialized || serialized.length <= maxChars) return value
+      return truncateLargeText(serialized, maxChars, label)
+    } catch {
+      return value
+    }
+  }
+
+  function truncateLargeText(value: string, maxChars: number, label: string) {
+    if (value.length <= maxChars) return value
+    const omitted = value.length - maxChars
+    return `${value.slice(0, maxChars)}\n\n[${label} truncated: omitted ${omitted} characters to keep the agency-swarm bridge payload bounded.]`
   }
 
   function replayStoredAttachmentsInOutgoingMessage(
@@ -2641,7 +2945,10 @@ export namespace SessionAgencySwarm {
     if (msg.info.role === "assistant") {
       return msg.info.providerID === AgencySwarmAdapter.PROVIDER_ID
     }
-    return msg.info.model.providerID === AgencySwarmAdapter.PROVIDER_ID
+    // User messages keep the user's selected model provider. In Agency Swarm sessions the
+    // bridge provider is only reflected on assistant messages, so user turns must be allowed
+    // when rebuilding visible local history after an interrupted or lagging backend stream.
+    return true
   }
 
   function extractRecipientMap(metadata: AgencySwarmAdapter.AgencyMetadata): Map<string, string> {

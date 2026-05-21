@@ -8,9 +8,11 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 ## Fork Product Frame
 
 - OpenCode naming and branding should be removed from user-facing surfaces. Source paths, package structure, and repository layout stay only where needed for upstream merge compatibility.
-- Run mode means connected Agent Swarm / Agency Swarm mode. The TUI starts its own Agency Swarm server by default and connects to it.
+- Run mode is the Agent Swarm user-facing mode for Agency Swarm-backed work. The TUI starts its own Agency Swarm server by default and connects to it.
 - `/connect` is the flow for connecting to an external FastAPI / Agency Swarm server.
-- `/auth` is the credentials flow.
+- `/auth` is the credentials flow, not a product mode switch.
+- `/models` chooses the LLM config passed to Agency Swarm, not a product mode switch.
+- Upstream OpenCode provider/model state may still exist internally for auth and LLM choice, but it must not pull the user out of Run mode by accident.
 - Agent Builder and Plan still exist conceptually, but they are currently hidden or disabled in Run mode and continue to rely on the native OpenCode backbone plus fork-specific instructions.
 - Bug-like changes are not product features. Compare them against upstream, find the root cause, reduce divergence, and avoid fork-only workarounds.
 - Install, launcher, and package behavior count as user experience and belong in this file when they are intentional fork behavior.
@@ -42,6 +44,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Behavior: `AGENTSWARM_PRODUCT_*` inputs can override command copy, package metadata, release repository, mDNS default, docs and issue links, starter template, starter folder, and detected entry files.
   - Behavior: Agent Swarm defaults remain unchanged when no downstream product inputs are set.
   - Behavior: release builds can use `AGENTSWARM_PRODUCT_VERSION` so direct downstream binaries report the downstream package version.
+  - Behavior: downstream profiles can set `AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION` to skip the model prompt after auth. `/models` stays available unless `AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION` explicitly hides it.
   - Implementation: `AgencyProduct` in `packages/opencode/src/agency-swarm/product.ts`, launcher detection in `packages/opencode/src/agency-swarm/npx.ts`, the FastAPI server launcher module argument, installation distribution metadata, and `packages/opencode/script/build.ts`.
 
 - **One-command launcher npm package**
@@ -198,21 +201,21 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Implementation: `cycleAgencyRunTarget` in `packages/opencode/src/cli/cmd/tui/app.tsx` and `cycleAgencyTargetSelection` in `packages/opencode/src/cli/cmd/tui/util/agency-target.ts`.
   - Added by: `d6b9ed38`
 
-- **Run-mode `/models` is limited to Agency-supported providers**
-  - Intent: keep Run mode on the provider set that the Agency Swarm path actually supports.
-  - Behavior: `/models` in Run mode shows Agency-supported providers only; Builder and Plan should keep native model support when those modes are re-enabled.
+- **Run-mode `/models` is limited to Agency-supported LLM choices**
+  - Intent: let users choose the LLM config passed to Agency Swarm without treating provider/model selection as a product mode switch.
+  - Behavior: `/models` in Run mode shows Agency-supported providers only; choosing one updates the LLM config for Agency Swarm and keeps the user in Run mode.
   - Implementation: `DialogModel` in `packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx`.
   - Added by: `828986fb`
 
 - **Configured `agency-swarm/default` beats stale stored model state in Run mode**
-  - Intent: stop stale remembered model state from pulling a Run mode session out of Agent Swarm behavior by accident.
-  - Behavior: `agency-swarm/default` stays active in Run mode until the user explicitly chooses another intended model.
+  - Intent: stop stale remembered provider/model state from pulling a Run mode session out of Agent Swarm behavior by accident.
+  - Behavior: `agency-swarm/default` stays active in Run mode until the user explicitly chooses another LLM model.
   - Implementation: model selection logic in `packages/opencode/src/cli/cmd/tui/context/local.tsx`.
   - Added by: `PR #51`
 
 - **Run mode hides native OpenCode menus and limits model selection**
   - Intent: keep Run mode on the connected Agency Swarm surface while preserving native OpenCode menus for Builder and Plan when those modes are available again.
-  - Behavior: Run mode hides native `/editor`, `/variants`, `/init`, and `/review`; model-selection and provider-auth surfaces remain but are limited to intended Agent Swarm / Agency Swarm providers.
+  - Behavior: Run mode hides native `/editor`, `/variants`, `/init`, and `/review`; model-selection and provider-auth surfaces remain as support flows for LLM choice and credentials, and are limited to intended Agent Swarm / Agency Swarm providers.
   - Implementation: framework-mode command gating in `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/component/prompt/autocomplete.tsx`, `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`, and `packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx`.
   - Added by: `PR #81`
 

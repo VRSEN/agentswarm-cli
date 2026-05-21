@@ -22,6 +22,7 @@ import {
 } from "@tui/util/provider-auth"
 import { refreshAfterProviderAuth } from "@tui/util/provider-auth-refresh"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { AgencyProduct } from "@/agency-swarm/product"
 import { isAgencySwarmFrameworkMode, isSupportedAgencyAuthProvider } from "../session-error"
 import { errorMessage as toErrorMessage } from "@/util/error"
 import { Log } from "@/util"
@@ -833,6 +834,10 @@ function AutoMethod(props: AutoMethodProps) {
         dispose: () => sdk.client.instance.dispose(),
         bootstrap: () => sync.bootstrap(),
       })
+      if (!AgencyProduct.shouldShowPostAuthModelSelection()) {
+        dialog.clear()
+        return
+      }
       if (frameworkMode()) {
         dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
         return
@@ -920,6 +925,10 @@ function CodeMethod(props: CodeMethodProps) {
               dispose: () => sdk.client.instance.dispose(),
               bootstrap: () => sync.bootstrap(),
             })
+            if (!AgencyProduct.shouldShowPostAuthModelSelection()) {
+              dialog.clear()
+              return
+            }
             if (frameworkMode()) {
               dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
               return
@@ -1055,6 +1064,10 @@ function ApiMethod(props: ApiMethodProps) {
             dispose: () => sdk.client.instance.dispose(),
             bootstrap: () => sync.bootstrap(),
           })
+          if (!AgencyProduct.shouldShowPostAuthModelSelection()) {
+            dialog.clear()
+            return
+          }
           if (frameworkMode()) {
             dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
             return

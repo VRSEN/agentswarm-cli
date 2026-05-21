@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import type { Config } from "../../packages/opencode/src/config"
 import { spawn, type Proc } from "../../packages/opencode/src/pty/pty.bun"
 
 const repoRoot = path.resolve(import.meta.dir, "../..")
@@ -10,6 +11,27 @@ const discoveryTimeoutMs = process.env.CI ? 5_000 : 500
 const initialOutputAttemptCount = process.env.CI ? 3 : 2
 const initialOutputTimeoutMs = process.env.CI ? 45_000 : 5_000
 const initialOutputRetryDelayMs = process.env.CI ? 500 : 250
+const configSchema = "https://opencode.ai/config.json"
+export const latestOpenAITestModel = "openai/gpt-5.4-mini"
+export const latestOpenAITestModelLabel = "GPT-5.4 mini OpenAI"
+export const agencyClientConfigModel = "gpt-4o-mini"
+const tuiDemoAgentModel = "gpt-5.4-mini"
+
+type TuiManagedConfig = Pick<Config.Info, "$schema" | "enabled_providers" | "model" | "provider">
+export type TuiConfigOverride = Pick<Config.Info, "enabled_providers" | "model" | "provider">
+type ProviderConfigMap = NonNullable<TuiManagedConfig["provider"]>
+type ProviderConfig = ProviderConfigMap[string]
+
+export const openAIProviderTestConfig = {
+  enabled_providers: ["agency-swarm", "openai"],
+  provider: {
+    openai: {
+      options: {
+        apiKey: "test-openai-key",
+      },
+    },
+  },
+} satisfies TuiConfigOverride
 
 export type AgencyProtocolServer = {
   baseURL: string
@@ -109,6 +131,65 @@ export type TuiProcess = {
   close(): Promise<void>
 }
 
+function buildTuiConfig(input: {
+  baseURL: string
+  agency?: string
+  recipientAgent?: string
+  config?: TuiConfigOverride
+}): TuiManagedConfig {
+  const defaultConfig: TuiManagedConfig = {
+    $schema: configSchema,
+    model: "agency-swarm/default",
+    provider: {
+      "agency-swarm": {
+        name: "Agency Swarm",
+        options: {
+          baseURL: input.baseURL,
+          agency: input.agency ?? "local-agency",
+          recipientAgent: input.recipientAgent ?? "entry-agent",
+          discoveryTimeoutMs,
+          token: "bridge-token",
+          clientConfig: {
+            apiKey: "not-a-live-key",
+            model: agencyClientConfigModel,
+          },
+        },
+      },
+    },
+  }
+
+  return {
+    ...defaultConfig,
+    ...input.config,
+    provider: mergeProviderConfig(defaultConfig.provider ?? {}, input.config?.provider),
+  }
+}
+
+function mergeProviderConfig(base: ProviderConfigMap, override: ProviderConfigMap | undefined): ProviderConfigMap {
+  if (!override) return base
+  const result: ProviderConfigMap = { ...base }
+  for (const [id, next] of Object.entries(override)) {
+    result[id] = mergeSingleProviderConfig(base[id], next)
+  }
+  return result
+}
+
+function mergeSingleProviderConfig(base: ProviderConfig | undefined, override: ProviderConfig): ProviderConfig {
+  if (!base) return override
+  return {
+    ...base,
+    ...override,
+    options: {
+      ...(base.options ?? {}),
+      ...(override.options ?? {}),
+    },
+    models: {
+      ...(base.models ?? {}),
+      ...(override.models ?? {}),
+    },
+  }
+}
+
 export async function startTui(input: {
   args?: string[]
   cwd?: string
@@ -117,6 +198,7 @@ export async function startTui(input: {
   agency?: string
   recipientAgent?: string
   configSource?: "env" | "file"
+  config?: TuiConfigOverride
 }): Promise<TuiProcess> {
   const root = await mkdtemp(path.join(os.tmpdir(), "agentswarm-tui-e2e-"))
   await mkdir(path.join(root, "home"), { recursive: true })
@@ -128,28 +210,7 @@ export async function startTui(input: {
   const screen = new TerminalScreen(100, 30)
   let raw = ""
   let exitCode: number | undefined
-  const configContent = input.baseURL
-    ? JSON.stringify({
-        $schema: "https://opencode.ai/config.json",
-        model: "agency-swarm/default",
-        provider: {
-          "agency-swarm": {
-            name: "Agency Swarm",
-            options: {
-              baseURL: input.baseURL,
-              agency: input.agency ?? "local-agency",
-              recipientAgent: input.recipientAgent ?? "entry-agent",
-              discoveryTimeoutMs,
-              token: "bridge-token",
-              clientConfig: {
-                apiKey: "not-a-live-key",
-                model: "gpt-4o-mini",
-              },
-            },
-          },
-        },
-      })
-    : undefined
+  const configContent = input.baseURL ? JSON.stringify(buildTuiConfig(input)) : undefined
 
   if (configContent && input.configSource === "file") {
     const globalConfig = path.join(root, "config", "agentswarm")
@@ -309,7 +370,7 @@ const qaAgencyFixture: AgencyFixture = {
           label: "Entry Agent",
           description: "Primary QA route",
           isEntryPoint: true,
-          model: "gpt-4o-mini",
+          model: agencyClientConfigModel,
         },
       },
       {
@@ -318,7 +379,7 @@ const qaAgencyFixture: AgencyFixture = {
         data: {
           label: "Review Agent",
           description: "Review QA route",
-          model: "gpt-4o-mini",
+          model: agencyClientConfigModel,
         },
       },
     ],
@@ -375,7 +436,7 @@ const tuiDemoAgencyFixture: AgencyFixture = {
           label: "UserSupportAgent",
           description: "Receives user requests and coordinates reasoning, search, and file work.",
           isEntryPoint: true,
-          model: "gpt-5.4-mini",
+          model: tuiDemoAgentModel,
         },
       },
       {
@@ -384,7 +445,7 @@ const tuiDemoAgencyFixture: AgencyFixture = {
         data: {
           label: "MathAgent",
           description: "Handles arithmetic and calculation-heavy requests.",
-          model: "gpt-5.4-mini",
+          model: tuiDemoAgentModel,
         },
       },
     ],

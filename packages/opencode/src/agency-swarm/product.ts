@@ -9,12 +9,19 @@ declare const AGENTSWARM_PRODUCT_MDNS_DOMAIN: string | undefined
 declare const AGENTSWARM_PRODUCT_STARTER_REPO: string | undefined
 declare const AGENTSWARM_PRODUCT_STARTER_FOLDER: string | undefined
 declare const AGENTSWARM_PRODUCT_ENTRY_FILES: string | undefined
+declare const AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION: string | undefined
+declare const AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION: string | undefined
+declare const AGENTSWARM_PRODUCT_TUI_LOGO_LEFT: string | undefined
+declare const AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: string | undefined
+declare const AGENTSWARM_PRODUCT_WORDMARK_LINES: string | undefined
 
 export namespace AgencyProduct {
   export interface Profile {
     custom: boolean
     customBranding: boolean
     customStarter: boolean
+    skipPostAuthModelSelection: boolean
+    hideModelSelection: boolean
     name: string
     cmd: string
     packageName: string
@@ -26,12 +33,17 @@ export namespace AgencyProduct {
     starterTemplateRepo: string
     starterProjectName: string
     agencyEntryFiles: string[]
+    tuiLogoLeft?: string[]
+    tuiLogoRight?: string[]
+    wordmarkLines?: string[]
   }
 
   const defaults: Profile = {
     custom: false,
     customBranding: false,
     customStarter: false,
+    skipPostAuthModelSelection: false,
+    hideModelSelection: false,
     name: "Agent Swarm",
     cmd: "agentswarm",
     packageName: "agentswarm-cli",
@@ -70,6 +82,20 @@ export namespace AgencyProduct {
       typeof AGENTSWARM_PRODUCT_STARTER_FOLDER === "undefined" ? undefined : AGENTSWARM_PRODUCT_STARTER_FOLDER,
     AGENTSWARM_PRODUCT_ENTRY_FILES:
       typeof AGENTSWARM_PRODUCT_ENTRY_FILES === "undefined" ? undefined : AGENTSWARM_PRODUCT_ENTRY_FILES,
+    AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION:
+      typeof AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION === "undefined"
+        ? undefined
+        : AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION,
+    AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION:
+      typeof AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION === "undefined"
+        ? undefined
+        : AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION,
+    AGENTSWARM_PRODUCT_TUI_LOGO_LEFT:
+      typeof AGENTSWARM_PRODUCT_TUI_LOGO_LEFT === "undefined" ? undefined : AGENTSWARM_PRODUCT_TUI_LOGO_LEFT,
+    AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT:
+      typeof AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT === "undefined" ? undefined : AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT,
+    AGENTSWARM_PRODUCT_WORDMARK_LINES:
+      typeof AGENTSWARM_PRODUCT_WORDMARK_LINES === "undefined" ? undefined : AGENTSWARM_PRODUCT_WORDMARK_LINES,
   } satisfies Record<string, string | undefined>
 
   function clean(value: string | undefined) {
@@ -81,12 +107,41 @@ export namespace AgencyProduct {
     return clean(env[name]) ?? clean(defineValues[name])
   }
 
+  function readRawValue(env: Record<string, string | undefined>, name: keyof typeof defineValues) {
+    return env[name] ?? defineValues[name]
+  }
+
   function readEntryFiles(value: string | undefined) {
     const files = value
       ?.split(",")
       .map((item) => item.trim())
       .filter(Boolean)
     return files && files.length > 0 ? files : undefined
+  }
+
+  function readLines(value: string | undefined) {
+    if (value === undefined || value.trim() === "") return undefined
+    const trimmed = value.trim()
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string") && parsed.length > 0) {
+          return parsed
+        }
+      } catch {
+        // Fall through to newline parsing for non-JSON line blocks.
+      }
+    }
+    const lines = value.replaceAll("\\n", "\n").split(/\r?\n/)
+    return lines.length > 0 ? lines : undefined
+  }
+
+  function readBoolean(value: string | undefined) {
+    const normalized = clean(value)?.toLowerCase()
+    if (!normalized) return undefined
+    if (["1", "true", "yes", "on"].includes(normalized)) return true
+    if (["0", "false", "no", "off"].includes(normalized)) return false
+    return undefined
   }
 
   export function resolve(env: Record<string, string | undefined> = process.env): Profile {
@@ -102,15 +157,26 @@ export namespace AgencyProduct {
       starterTemplateRepo: readValue(env, "AGENTSWARM_PRODUCT_STARTER_REPO"),
       starterProjectName: readValue(env, "AGENTSWARM_PRODUCT_STARTER_FOLDER"),
       agencyEntryFiles: readEntryFiles(readValue(env, "AGENTSWARM_PRODUCT_ENTRY_FILES")),
+      skipPostAuthModelSelection: readBoolean(readValue(env, "AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION")),
+      hideModelSelection: readBoolean(readValue(env, "AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION")),
+      tuiLogoLeft: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_TUI_LOGO_LEFT")),
+      tuiLogoRight: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT")),
+      wordmarkLines: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_WORDMARK_LINES")),
     }
     const custom = Object.values(overrides).some((value) => value !== undefined)
-    const customBranding = overrides.name !== undefined
+    const customBranding =
+      overrides.name !== undefined ||
+      overrides.tuiLogoLeft !== undefined ||
+      overrides.tuiLogoRight !== undefined ||
+      overrides.wordmarkLines !== undefined
     const customStarter = overrides.starterTemplateRepo !== undefined || overrides.starterProjectName !== undefined
 
     return {
       custom,
       customBranding,
       customStarter,
+      skipPostAuthModelSelection: overrides.skipPostAuthModelSelection ?? defaults.skipPostAuthModelSelection,
+      hideModelSelection: overrides.hideModelSelection ?? defaults.hideModelSelection,
       name: overrides.name ?? defaults.name,
       cmd: overrides.cmd ?? defaults.cmd,
       packageName: overrides.packageName ?? defaults.packageName,
@@ -122,6 +188,9 @@ export namespace AgencyProduct {
       starterTemplateRepo: overrides.starterTemplateRepo ?? defaults.starterTemplateRepo,
       starterProjectName: overrides.starterProjectName ?? defaults.starterProjectName,
       agencyEntryFiles: overrides.agencyEntryFiles ?? defaults.agencyEntryFiles,
+      tuiLogoLeft: overrides.tuiLogoLeft,
+      tuiLogoRight: overrides.tuiLogoRight,
+      wordmarkLines: overrides.wordmarkLines,
     }
   }
 
@@ -130,6 +199,8 @@ export namespace AgencyProduct {
   export const custom = current.custom
   export const customBranding = current.customBranding
   export const customStarter = current.customStarter
+  export const skipPostAuthModelSelection = current.skipPostAuthModelSelection
+  export const hideModelSelection = current.hideModelSelection
   export const name = current.name
   export const packageName = current.packageName
   export const launcherPackageName = current.launcherPackageName
@@ -141,11 +212,38 @@ export namespace AgencyProduct {
   export const starterTemplateRepo = current.starterTemplateRepo
   export const starterProjectName = current.starterProjectName
   export const agencyEntryFiles = current.agencyEntryFiles
+  export const tuiLogoLeft = current.tuiLogoLeft
+  export const tuiLogoRight = current.tuiLogoRight
+  export const wordmarkLines = current.wordmarkLines
   export const connect = "Authenticate providers"
   export const start = [
     "Authenticate providers and connect to a local agency-swarm server before sending prompts.",
     "Use /auth for provider credentials, then /connect to choose the server and store a token.",
   ]
+
+  export function shouldShowPostAuthModelSelection(profile: Pick<Profile, "skipPostAuthModelSelection"> = current) {
+    return !profile.skipPostAuthModelSelection
+  }
+
+  export function shouldShowModelSelection(profile: Pick<Profile, "hideModelSelection"> = current) {
+    return !profile.hideModelSelection
+  }
+
+  export function modelSwitchCommandState(profile: Pick<Profile, "hideModelSelection"> = current) {
+    const enabled = shouldShowModelSelection(profile)
+    return {
+      enabled,
+      hidden: !enabled,
+    }
+  }
+
+  export function tuiLogo(profile: Pick<Profile, "tuiLogoLeft" | "tuiLogoRight"> = current) {
+    if (!profile.tuiLogoLeft && !profile.tuiLogoRight) return undefined
+    return {
+      left: profile.tuiLogoLeft ?? [],
+      right: profile.tuiLogoRight ?? [],
+    }
+  }
 
   const skip = [
     "Run {highlight}/share{/highlight}",

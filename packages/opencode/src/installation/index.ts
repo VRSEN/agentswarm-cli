@@ -212,6 +212,9 @@ export const layer: Layer.Layer<Service, never, ChildProcessSpawner.ChildProcess
               stderr: unsupportedUpgradeMethod("scoop"),
             })
             break
+          case "unknown":
+            upgradeResult = yield* run(["npm", "install", "-g", `${InstallationDistribution.packageName}@${target}`])
+            break
           default:
             return yield* new UpgradeFailedError({ stderr: `Unknown method: ${m}` })
         }
