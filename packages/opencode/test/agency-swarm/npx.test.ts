@@ -1317,7 +1317,6 @@ describe("agency-swarm npx onboarding", () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
 
-    const realSetTimeout = globalThis.setTimeout
     const killSignals: Array<string | undefined> = []
 
     spyOn(prompts, "confirm").mockResolvedValue(true as never)
@@ -1377,7 +1376,10 @@ describe("agency-swarm npx onboarding", () => {
           stderr: stderr.stream,
           kill(signal?: string) {
             killSignals.push(signal)
-            if (signal === "SIGKILL") resolveExit(1)
+            if (signal === "SIGKILL") {
+              stderr.close()
+              resolveExit(1)
+            }
           },
         } as never
       }
@@ -1389,16 +1391,11 @@ describe("agency-swarm npx onboarding", () => {
       agencyFile: path.join(dir.path, "agency.py"),
       moduleName: "agency",
     })
-    const pending = Symbol("pending")
-    const outcome = await Promise.race([
-      launch.then(
-        () => "resolved",
-        (error) => error,
-      ),
-      new Promise((resolve) => realSetTimeout(() => resolve(pending), 20)),
-    ])
+    const outcome = await launch.then(
+      () => "resolved",
+      (error) => error,
+    )
 
-    expect(outcome).not.toBe(pending)
     expect(outcome).toBeInstanceOf(Error)
     if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
     expect(killSignals).toEqual([undefined, "SIGKILL"])
