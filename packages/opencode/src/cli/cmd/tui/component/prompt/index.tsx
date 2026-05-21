@@ -1118,17 +1118,20 @@ export function Prompt(props: PromptProps) {
           },
         ]
       : []
-
-    if (store.mode === "shell") {
+    const capturePromptSubmitted = (type: "prompt" | "server_command" | "shell", mode: typeof currentMode) => {
       void Telemetry.capture("ui_prompt_submitted", {
         framework_mode: frameworkMode(),
         has_agent_parts: nonTextParts.some((part) => part.type === "agent"),
         has_editor_selection: !!editorSelection,
         has_file_parts: nonTextParts.some((part) => part.type === "file"),
-        mode: "shell",
-        provider_id: selectedModel.providerID,
-        type: "shell",
+        mode,
+        provider_id: productProviderID,
+        type,
       })
+    }
+
+    if (store.mode === "shell") {
+      capturePromptSubmitted("shell", "shell")
       void sdk.client.session.shell({
         sessionID,
         agent: effectiveAgentName(),
@@ -1145,15 +1148,7 @@ export function Prompt(props: PromptProps) {
       const restOfInput = firstLineEnd === -1 ? "" : inputText.slice(firstLineEnd + 1)
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
 
-      void Telemetry.capture("ui_prompt_submitted", {
-        framework_mode: frameworkMode(),
-        has_agent_parts: nonTextParts.some((part) => part.type === "agent"),
-        has_editor_selection: !!editorSelection,
-        has_file_parts: nonTextParts.some((part) => part.type === "file"),
-        mode: currentMode,
-        provider_id: selectedModel.providerID,
-        type: "server_command",
-      })
+      capturePromptSubmitted("server_command", currentMode)
       void sdk.client.session.command({
         sessionID,
         command: command.slice(1),
@@ -1195,15 +1190,7 @@ export function Prompt(props: PromptProps) {
           ...nonTextParts.map(assign),
         ],
       }
-      void Telemetry.capture("ui_prompt_submitted", {
-        framework_mode: frameworkMode(),
-        has_agent_parts: nonTextParts.some((part) => part.type === "agent"),
-        has_editor_selection: !!editorSelection,
-        has_file_parts: nonTextParts.some((part) => part.type === "file"),
-        mode: currentMode,
-        provider_id: selectedModel.providerID,
-        type: "prompt",
-      })
+      capturePromptSubmitted("prompt", currentMode)
       sdk.client.session.prompt(promptPayload).catch((error) => {
         setStore("prompt", savedPrompt)
         input.setText(savedPrompt.input)

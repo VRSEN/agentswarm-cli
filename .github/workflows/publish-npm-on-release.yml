@@ -51,11 +51,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Validate telemetry secrets
+      - name: Validate release telemetry key
         env:
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
-        run: |
-          test -n "$POSTHOG_API_KEY" || { echo "POSTHOG_API_KEY is required for release telemetry" >&2; exit 1; }
+        run: test -n "$POSTHOG_API_KEY"
 
       - name: Build CLI packages
         env:

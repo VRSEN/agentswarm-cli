@@ -17,9 +17,12 @@ import {
 
 let currentTui: TuiProcess | undefined
 let currentServer: AgencyProtocolServer | undefined
+let currentTelemetryServer: ReturnType<typeof startTelemetryServer> | undefined
 const tempDirs: string[] = []
 const tuiReadyTimeoutMs = process.env.CI ? 120_000 : 30_000
 const tuiInteractionTimeoutMs = process.env.CI ? 60_000 : 45_000
+const livePostHogTest = process.env.AGENTSWARM_LIVE_POSTHOG_E2E === "1" ? test : test.skip
+const fakePostHogKeyFragments = ["dummy", "example", "fake", "not-a-live-key", "ph_test"]
 
 async function waitForConfiguredDemoRecipient(tui: TuiProcess) {
   await tui.waitFor(
@@ -34,6 +37,8 @@ afterEach(async () => {
   currentTui = undefined
   currentServer?.stop()
   currentServer = undefined
+  currentTelemetryServer?.stop()
+  currentTelemetryServer = undefined
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
@@ -215,6 +220,9 @@ describe("Agent Swarm terminal TUI e2e", () => {
     const postHogHost = process.env.AGENTSWARM_POSTHOG_HOST
     if (!postHogKey || !postHogHost) {
       throw new Error("AGENTSWARM_POSTHOG_API_KEY and AGENTSWARM_POSTHOG_HOST are required")
+    }
+    if (looksFakePostHogKey(postHogKey)) {
+      throw new Error("AGENTSWARM_POSTHOG_API_KEY must be a dedicated live PostHog key, not a fake or test key")
     }
 
     currentServer = await startAgencyProtocolServer()
@@ -902,10 +910,10 @@ async function startAuthFailureAgencyServer(): Promise<AgencyProtocolServer> {
 }
 
 async function driveOpenAIAPIKeyAuth(tui: TuiProcess, apiKey: string) {
-  tui.write("/")
+  // Wait before Enter so the TUI submits the rendered slash command, not stale input.
+  tui.write("/auth")
   await tui.waitForText("/auth", tuiInteractionTimeoutMs)
-  await tui.waitForText("/connect", tuiInteractionTimeoutMs)
-  tui.write("\x1b[B\r")
+  tui.write("\r")
   await tui.waitForText("Manage Agent Swarm auth", tuiInteractionTimeoutMs)
   tui.write("openai\r")
   await tui.waitForText("Select OpenAI auth method", tuiInteractionTimeoutMs)
@@ -914,6 +922,15 @@ async function driveOpenAIAPIKeyAuth(tui: TuiProcess, apiKey: string) {
   await tui.waitForText("enter submit", tuiInteractionTimeoutMs)
   await Bun.sleep(100)
   tui.write(`${apiKey}\r`)
+}
+
+function looksFakePostHogKey(value: string) {
+  const lower = value.toLowerCase()
+  return (
+    lower === "test" ||
+    lower.startsWith("test_") ||
+    fakePostHogKeyFragments.some((fragment) => lower.includes(fragment))
+  )
 }
 
 function startTelemetryServer(input: { forwardHost?: string } = {}) {

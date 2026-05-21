@@ -2,6 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test"
 import path from "path"
 import { tmpdir } from "../fixture/fixture"
 import { Telemetry } from "../../src/telemetry/telemetry"
+import { captureCommand } from "../../src/telemetry/command"
+
+const originalClient = process.env.OPENCODE_CLIENT
+
+type Captured = {
+  api_key?: unknown
+  distinct_id?: unknown
+  event?: unknown
+  properties?: Record<string, unknown>
+}
 
 function enableTelemetry(input: { key?: string; host?: string; stateDir: string }) {
   process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST = "1"
@@ -17,6 +27,8 @@ function resetEnv() {
   delete process.env.AGENTSWARM_TELEMETRY
   delete process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST
   delete process.env.AGENTSWARM_TELEMETRY_STATE_DIR
+  if (originalClient === undefined) delete process.env.OPENCODE_CLIENT
+  else process.env.OPENCODE_CLIENT = originalClient
 }
 
 function asFetch(fn: (url: string | URL | Request, init?: RequestInit) => Promise<Response>) {
@@ -31,13 +43,13 @@ describe("Telemetry", () => {
 
   test("sends allowlisted product analytics without prompt content", async () => {
     await using tmp = await tmpdir()
-    const requests: { url: string; body: any }[] = []
+    const requests: { url: string; body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
     Telemetry.setFetchForTests(
       asFetch(async (url, init) => {
         requests.push({
           url: String(url),
-          body: JSON.parse(String(init?.body)),
+          body: JSON.parse(String(init?.body)) as Captured,
         })
         return new Response(null, { status: 200 })
       }),
@@ -92,11 +104,11 @@ describe("Telemetry", () => {
 
   test("reuses the anonymous install id from state", async () => {
     await using tmp = await tmpdir()
-    const requests: { body: any }[] = []
+    const requests: { body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
     Telemetry.setFetchForTests(
       asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) })
+        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
         return new Response(null, { status: 200 })
       }),
     )
@@ -107,7 +119,7 @@ describe("Telemetry", () => {
     enableTelemetry({ stateDir: tmp.path })
     Telemetry.setFetchForTests(
       asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) })
+        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
         return new Response(null, { status: 200 })
       }),
     )
@@ -123,11 +135,11 @@ describe("Telemetry", () => {
 
   test("flush waits for fire-and-forget capture setup", async () => {
     await using tmp = await tmpdir()
-    const requests: { body: any }[] = []
+    const requests: { body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
     Telemetry.setFetchForTests(
       asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) })
+        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
         return new Response(null, { status: 200 })
       }),
     )
@@ -140,13 +152,57 @@ describe("Telemetry", () => {
     expect(requests[0].body.event).toBe("app_started")
   })
 
+  test("flush can be bounded for shutdown", async () => {
+    await using tmp = await tmpdir()
+    enableTelemetry({ stateDir: tmp.path })
+    Telemetry.setFetchForTests(
+      asFetch(
+        () =>
+          new Promise<Response>((resolve) => {
+            setTimeout(() => resolve(new Response(null, { status: 200 })), 50)
+          }),
+      ),
+    )
+
+    await Telemetry.capture("app_started", { entrypoint: "tui" })
+    const started = Date.now()
+    await Telemetry.flush({ timeoutMs: 1 })
+
+    expect(Date.now() - started).toBeLessThan(40)
+  })
+
+  test("bounded flush aborts pending telemetry requests", async () => {
+    await using tmp = await tmpdir()
+    enableTelemetry({ stateDir: tmp.path })
+    let aborted = false
+    Telemetry.setFetchForTests(
+      asFetch((_url, init) => {
+        return new Promise<Response>((resolve) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              aborted = true
+              resolve(new Response(null, { status: 499 }))
+            },
+            { once: true },
+          )
+        })
+      }),
+    )
+
+    await Telemetry.capture("app_started", { entrypoint: "tui" })
+    await Telemetry.flush({ timeoutMs: 1 })
+
+    expect(aborted).toBe(true)
+  })
+
   test("captures provider auth setup without credential material", async () => {
     await using tmp = await tmpdir()
-    const requests: { body: any }[] = []
+    const requests: { body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
     Telemetry.setFetchForTests(
       asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) })
+        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
         return new Response(null, { status: 200 })
       }),
     )
@@ -172,11 +228,11 @@ describe("Telemetry", () => {
 
   test("buckets custom provider ids", async () => {
     await using tmp = await tmpdir()
-    const requests: { body: any }[] = []
+    const requests: { body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
     Telemetry.setFetchForTests(
       asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) })
+        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
         return new Response(null, { status: 200 })
       }),
     )
@@ -188,7 +244,53 @@ describe("Telemetry", () => {
     })
     await Telemetry.flush()
 
-    expect(requests[0].body.properties.provider_id).toBe("custom")
+    expect(requests[0].body.properties?.provider_id).toBe("custom")
     expect(JSON.stringify(requests[0].body)).not.toContain("internal-client-gateway")
+  })
+
+  test("does not send custom command names", async () => {
+    await using tmp = await tmpdir()
+    const requests: { body: Captured }[] = []
+    enableTelemetry({ stateDir: tmp.path })
+    Telemetry.setFetchForTests(
+      asFetch(async (_url, init) => {
+        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
+        return new Response(null, { status: 200 })
+      }),
+    )
+
+    captureCommand({
+      category: "Plugin",
+      keybind: "ctrl+x",
+      source: "palette",
+      value: "private.plugin.command",
+    })
+    await Telemetry.flush()
+
+    expect(requests[0].body.properties).toMatchObject({
+      source: "palette",
+    })
+    expect(requests[0].body.properties?.command).toBeUndefined()
+    expect(requests[0].body.properties?.category).toBeUndefined()
+    expect(requests[0].body.properties?.keybind).toBeUndefined()
+    expect(JSON.stringify(requests[0].body)).not.toContain("private.plugin.command")
+  })
+
+  test("sanitizes built-in properties through the privacy boundary", async () => {
+    await using tmp = await tmpdir()
+    const requests: { body: Captured }[] = []
+    enableTelemetry({ stateDir: tmp.path })
+    process.env.OPENCODE_CLIENT = "bad\nterminal"
+    Telemetry.setFetchForTests(
+      asFetch(async (_url, init) => {
+        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
+        return new Response(null, { status: 200 })
+      }),
+    )
+
+    await Telemetry.capture("app_started", { entrypoint: "tui" })
+    await Telemetry.flush()
+
+    expect(requests[0].body.properties?.terminal).toBeUndefined()
   })
 })

@@ -75,10 +75,14 @@ type TelemetryEvent =
   | "ui_route_changed"
 type SafeValue = string | number | boolean
 type Fetch = typeof fetch
+type Pending = {
+  abort: () => void
+  promise: Promise<void>
+}
 
 let installID: Promise<string> | undefined
 let fetchOverride: Fetch | undefined
-let pending = new Set<Promise<void>>()
+let pending = new Set<Pending>()
 
 function definedValue(name: "AGENTSWARM_POSTHOG_API_KEY" | "AGENTSWARM_POSTHOG_HOST") {
   try {
@@ -158,20 +162,23 @@ function safeValue(key: string, value: unknown): SafeValue | undefined {
   return undefined
 }
 
+function assignSafe(output: Record<string, SafeValue>, key: string, value: unknown) {
+  const safe = safeValue(key, value)
+  if (safe !== undefined) output[key] = safe
+}
+
 function sanitize(input: Record<string, unknown> | undefined) {
-  const output: Record<string, SafeValue> = {
-    app: AgencyProduct.name,
-    arch: os.arch(),
-    channel: InstallationChannel,
-    platform: os.platform(),
-    telemetry_session_id: sessionID,
-    version: InstallationVersion,
-  }
-  if (Flag.OPENCODE_CLIENT) output.terminal = Flag.OPENCODE_CLIENT
+  const output: Record<string, SafeValue> = {}
+  assignSafe(output, "app", AgencyProduct.name)
+  assignSafe(output, "arch", os.arch())
+  assignSafe(output, "channel", InstallationChannel)
+  assignSafe(output, "platform", os.platform())
+  assignSafe(output, "telemetry_session_id", sessionID)
+  assignSafe(output, "version", InstallationVersion)
+  assignSafe(output, "terminal", Flag.OPENCODE_CLIENT)
 
   for (const [key, value] of Object.entries(input ?? {})) {
-    const safe = safeValue(key, value)
-    if (safe !== undefined) output[key] = safe
+    assignSafe(output, key, value)
   }
   return output
 }
@@ -183,8 +190,10 @@ export async function capture(event: TelemetryEvent, properties?: Record<string,
   const { apiKey, host } = config()
   if (!apiKey) return false
 
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   const url = `${host.replace(/\/+$/, "")}/i/v0/e/`
-  const task = (async () => {
+  const promise = (async () => {
     const body = {
       api_key: apiKey,
       distinct_id: await anonymousInstallID(),
@@ -193,8 +202,6 @@ export async function capture(event: TelemetryEvent, properties?: Record<string,
     }
 
     const fetcher = fetchOverride ?? fetch
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     try {
       await fetcher(url, {
         method: "POST",
@@ -209,14 +216,39 @@ export async function capture(event: TelemetryEvent, properties?: Record<string,
       clearTimeout(timeout)
     }
   })()
+  const task = {
+    abort: () => controller.abort(),
+    promise,
+  }
 
   pending.add(task)
-  task.finally(() => pending.delete(task))
+  promise.finally(() => pending.delete(task))
   return true
 }
 
-export async function flush() {
-  await Promise.all([...pending])
+export async function flush(options: { timeoutMs?: number } = {}) {
+  const tasks = [...pending]
+  if (tasks.length === 0) return
+  const wait = Promise.all(tasks.map((task) => task.promise)).then(() => undefined)
+  if (options.timeoutMs === undefined) {
+    await wait
+    return
+  }
+  if (options.timeoutMs <= 0) {
+    tasks.forEach((task) => task.abort())
+    return
+  }
+  let timeout: Timer | undefined
+  await Promise.race([
+    wait,
+    new Promise<void>((resolve) => {
+      timeout = setTimeout(() => {
+        tasks.forEach((task) => task.abort())
+        resolve()
+      }, options.timeoutMs)
+    }),
+  ])
+  if (timeout) clearTimeout(timeout)
 }
 
 export function isEnabled() {

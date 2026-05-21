@@ -391,12 +391,12 @@ describe("prompt auth rejection handling", () => {
       },
       model: {
         current: () => ({
-          providerID: "agency-swarm",
-          modelID: "default",
+          providerID: "openai",
+          modelID: "gpt-4.1",
         }),
         parsed: () => ({
-          provider: "Agency Swarm",
-          model: "default",
+          provider: "OpenAI",
+          model: "gpt-4.1",
         }),
         set: () => {},
         variant: {
@@ -537,6 +537,7 @@ describe("prompt auth rejection handling", () => {
     )
     expect(telemetryCall).toBeTruthy()
     expect((telemetryCall?.[1] as any)?.command).toBeUndefined()
+    expect((telemetryCall?.[1] as any)?.provider_id).toBe("agency-swarm")
     expect(appendHistory).toHaveBeenCalledWith({
       input: "/auth refresh\nsecond line",
       parts: [],
