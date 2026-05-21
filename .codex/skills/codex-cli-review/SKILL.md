@@ -27,7 +27,7 @@ Use this skill for local Codex review artifacts and pull-request review loops.
 ## Base Selection
 
 - Use the base explicitly requested by the user or policy.
-- Use `origin/dev` for upstream-alignment or fork-delta code review.
+- Use `upstream/dev` for upstream-alignment or fork-delta code review.
 - Use `vrsen/dev` for release-gate review or fork publish-state review.
 
 ## Canonical Review
