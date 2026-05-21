@@ -70,7 +70,9 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     expect(screen).toContain("/auth")
     expect(screen).toContain("/connect")
+    expect(screen).toContain("/models")
     expect(screen).toContain("/agents")
+    expect(screen).not.toContain("/addons")
   })
 
   test("run-mode slash command filtering hides native commands by query", async () => {

@@ -9,8 +9,8 @@ declare const AGENTSWARM_PRODUCT_MDNS_DOMAIN: string | undefined
 declare const AGENTSWARM_PRODUCT_STARTER_REPO: string | undefined
 declare const AGENTSWARM_PRODUCT_STARTER_FOLDER: string | undefined
 declare const AGENTSWARM_PRODUCT_ENTRY_FILES: string | undefined
-declare const AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION: string | undefined
-declare const AGENTSWARM_PRODUCT_ADDONS_SETUP_FLAG_ENV: string | undefined
+declare const AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION: string | undefined
+declare const AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION: string | undefined
 declare const AGENTSWARM_PRODUCT_TUI_LOGO_LEFT: string | undefined
 declare const AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: string | undefined
 declare const AGENTSWARM_PRODUCT_WORDMARK_LINES: string | undefined
@@ -20,7 +20,8 @@ export namespace AgencyProduct {
     custom: boolean
     customBranding: boolean
     customStarter: boolean
-    lockModelSelection: boolean
+    skipPostAuthModelSelection: boolean
+    hideModelSelection: boolean
     name: string
     cmd: string
     packageName: string
@@ -32,7 +33,6 @@ export namespace AgencyProduct {
     starterTemplateRepo: string
     starterProjectName: string
     agencyEntryFiles: string[]
-    addonsSetupFlagEnv?: string
     tuiLogoLeft?: string[]
     tuiLogoRight?: string[]
     wordmarkLines?: string[]
@@ -42,7 +42,8 @@ export namespace AgencyProduct {
     custom: false,
     customBranding: false,
     customStarter: false,
-    lockModelSelection: false,
+    skipPostAuthModelSelection: false,
+    hideModelSelection: false,
     name: "Agent Swarm",
     cmd: "agentswarm",
     packageName: "agentswarm-cli",
@@ -81,14 +82,14 @@ export namespace AgencyProduct {
       typeof AGENTSWARM_PRODUCT_STARTER_FOLDER === "undefined" ? undefined : AGENTSWARM_PRODUCT_STARTER_FOLDER,
     AGENTSWARM_PRODUCT_ENTRY_FILES:
       typeof AGENTSWARM_PRODUCT_ENTRY_FILES === "undefined" ? undefined : AGENTSWARM_PRODUCT_ENTRY_FILES,
-    AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION:
-      typeof AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION === "undefined"
+    AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION:
+      typeof AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION === "undefined"
         ? undefined
-        : AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION,
-    AGENTSWARM_PRODUCT_ADDONS_SETUP_FLAG_ENV:
-      typeof AGENTSWARM_PRODUCT_ADDONS_SETUP_FLAG_ENV === "undefined"
+        : AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION,
+    AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION:
+      typeof AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION === "undefined"
         ? undefined
-        : AGENTSWARM_PRODUCT_ADDONS_SETUP_FLAG_ENV,
+        : AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION,
     AGENTSWARM_PRODUCT_TUI_LOGO_LEFT:
       typeof AGENTSWARM_PRODUCT_TUI_LOGO_LEFT === "undefined" ? undefined : AGENTSWARM_PRODUCT_TUI_LOGO_LEFT,
     AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT:
@@ -156,8 +157,8 @@ export namespace AgencyProduct {
       starterTemplateRepo: readValue(env, "AGENTSWARM_PRODUCT_STARTER_REPO"),
       starterProjectName: readValue(env, "AGENTSWARM_PRODUCT_STARTER_FOLDER"),
       agencyEntryFiles: readEntryFiles(readValue(env, "AGENTSWARM_PRODUCT_ENTRY_FILES")),
-      lockModelSelection: readBoolean(readValue(env, "AGENTSWARM_PRODUCT_LOCK_MODEL_SELECTION")),
-      addonsSetupFlagEnv: readValue(env, "AGENTSWARM_PRODUCT_ADDONS_SETUP_FLAG_ENV"),
+      skipPostAuthModelSelection: readBoolean(readValue(env, "AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION")),
+      hideModelSelection: readBoolean(readValue(env, "AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION")),
       tuiLogoLeft: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_TUI_LOGO_LEFT")),
       tuiLogoRight: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT")),
       wordmarkLines: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_WORDMARK_LINES")),
@@ -174,7 +175,8 @@ export namespace AgencyProduct {
       custom,
       customBranding,
       customStarter,
-      lockModelSelection: overrides.lockModelSelection ?? defaults.lockModelSelection,
+      skipPostAuthModelSelection: overrides.skipPostAuthModelSelection ?? defaults.skipPostAuthModelSelection,
+      hideModelSelection: overrides.hideModelSelection ?? defaults.hideModelSelection,
       name: overrides.name ?? defaults.name,
       cmd: overrides.cmd ?? defaults.cmd,
       packageName: overrides.packageName ?? defaults.packageName,
@@ -186,7 +188,6 @@ export namespace AgencyProduct {
       starterTemplateRepo: overrides.starterTemplateRepo ?? defaults.starterTemplateRepo,
       starterProjectName: overrides.starterProjectName ?? defaults.starterProjectName,
       agencyEntryFiles: overrides.agencyEntryFiles ?? defaults.agencyEntryFiles,
-      addonsSetupFlagEnv: overrides.addonsSetupFlagEnv,
       tuiLogoLeft: overrides.tuiLogoLeft,
       tuiLogoRight: overrides.tuiLogoRight,
       wordmarkLines: overrides.wordmarkLines,
@@ -198,7 +199,8 @@ export namespace AgencyProduct {
   export const custom = current.custom
   export const customBranding = current.customBranding
   export const customStarter = current.customStarter
-  export const lockModelSelection = current.lockModelSelection
+  export const skipPostAuthModelSelection = current.skipPostAuthModelSelection
+  export const hideModelSelection = current.hideModelSelection
   export const name = current.name
   export const packageName = current.packageName
   export const launcherPackageName = current.launcherPackageName
@@ -210,7 +212,6 @@ export namespace AgencyProduct {
   export const starterTemplateRepo = current.starterTemplateRepo
   export const starterProjectName = current.starterProjectName
   export const agencyEntryFiles = current.agencyEntryFiles
-  export const addonsSetupFlagEnv = current.addonsSetupFlagEnv
   export const tuiLogoLeft = current.tuiLogoLeft
   export const tuiLogoRight = current.tuiLogoRight
   export const wordmarkLines = current.wordmarkLines
@@ -220,28 +221,20 @@ export namespace AgencyProduct {
     "Use /auth for provider credentials, then /connect to choose the server and store a token.",
   ]
 
-  export function shouldShowModelSelection(profile: Pick<Profile, "lockModelSelection"> = current) {
-    return !profile.lockModelSelection
+  export function shouldShowPostAuthModelSelection(profile: Pick<Profile, "skipPostAuthModelSelection"> = current) {
+    return !profile.skipPostAuthModelSelection
   }
 
-  export function modelSwitchCommandState(profile: Pick<Profile, "lockModelSelection"> = current) {
+  export function shouldShowModelSelection(profile: Pick<Profile, "hideModelSelection"> = current) {
+    return !profile.hideModelSelection
+  }
+
+  export function modelSwitchCommandState(profile: Pick<Profile, "hideModelSelection"> = current) {
     const enabled = shouldShowModelSelection(profile)
     return {
       enabled,
       hidden: !enabled,
     }
-  }
-
-  export function hasAddonsSetup(profile: Pick<Profile, "addonsSetupFlagEnv"> = current) {
-    return profile.addonsSetupFlagEnv !== undefined
-  }
-
-  export function addonsSetupFlagPath(
-    env: Record<string, string | undefined> = process.env,
-    profile: Pick<Profile, "addonsSetupFlagEnv"> = current,
-  ) {
-    if (!profile.addonsSetupFlagEnv) return undefined
-    return clean(env[profile.addonsSetupFlagEnv])
   }
 
   export function tuiLogo(profile: Pick<Profile, "tuiLogoLeft" | "tuiLogoRight"> = current) {

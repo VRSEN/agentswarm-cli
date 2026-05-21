@@ -64,7 +64,6 @@ import {
   shouldOpenStartupAuthDialog,
 } from "./session-error"
 import { buildAgencyTargetOptions, cycleAgencyTargetSelection, readAgencyProviderOptions } from "./util/agency-target"
-import { requestProductAddonsSetup } from "./util/addons"
 
 import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
@@ -704,27 +703,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       onSelect: () => {
         dialog.replace(() => (frameworkMode() ? <DialogAgencySwarmConnect /> : <DialogProviderConnect />))
-      },
-      category: "Provider",
-    },
-    {
-      title: "Configure add-ons",
-      value: "provider.addons",
-      enabled: AgencyProduct.hasAddonsSetup(),
-      hidden: !AgencyProduct.hasAddonsSetup(),
-      slash: {
-        name: "addons",
-      },
-      onSelect: () => {
-        void requestProductAddonsSetup()
-          .then(() => exit())
-          .catch((error) => {
-            toast.show({
-              variant: "error",
-              message: error instanceof Error ? error.message : String(error),
-              duration: 4000,
-            })
-          })
       },
       category: "Provider",
     },

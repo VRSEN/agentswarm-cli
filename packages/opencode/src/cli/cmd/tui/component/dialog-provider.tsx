@@ -834,7 +834,7 @@ function AutoMethod(props: AutoMethodProps) {
         dispose: () => sdk.client.instance.dispose(),
         bootstrap: () => sync.bootstrap(),
       })
-      if (!AgencyProduct.shouldShowModelSelection()) {
+      if (!AgencyProduct.shouldShowPostAuthModelSelection()) {
         dialog.clear()
         return
       }
@@ -925,7 +925,7 @@ function CodeMethod(props: CodeMethodProps) {
               dispose: () => sdk.client.instance.dispose(),
               bootstrap: () => sync.bootstrap(),
             })
-            if (!AgencyProduct.shouldShowModelSelection()) {
+            if (!AgencyProduct.shouldShowPostAuthModelSelection()) {
               dialog.clear()
               return
             }
@@ -1064,7 +1064,7 @@ function ApiMethod(props: ApiMethodProps) {
             dispose: () => sdk.client.instance.dispose(),
             bootstrap: () => sync.bootstrap(),
           })
-          if (!AgencyProduct.shouldShowModelSelection()) {
+          if (!AgencyProduct.shouldShowPostAuthModelSelection()) {
             dialog.clear()
             return
           }
