@@ -974,7 +974,8 @@ describe("agency-swarm npx onboarding", () => {
       pythonEnvironment: "standalone" as const,
     }
     const commands: string[][] = []
-    const replacementPython = process.platform === "win32" ? "C:\\Python312\\python.exe" : "/opt/homebrew/bin/python3.12"
+    const replacementPython =
+      process.platform === "win32" ? "C:\\Python312\\python.exe" : "/opt/homebrew/bin/python3.12"
 
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
@@ -1009,7 +1010,12 @@ describe("agency-swarm npx onboarding", () => {
           } as never
         }
       }
-      if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd) || isUvPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+      if (
+        isPythonVenvCommand(cmd) ||
+        isPythonPipInstallUvCommand(cmd) ||
+        isUvPipInstallCommand(cmd) ||
+        isCanaryCommand(cmd)
+      ) {
         return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
       }
       if (cmd[1]?.endsWith("launch_agency.py")) {
@@ -1044,7 +1050,7 @@ describe("agency-swarm npx onboarding", () => {
   })
 
   test.skipIf(process.platform === "win32")(
-    "prepareProjectLaunch skips plain Conda candidates for standalone products",
+    "prepareProjectLaunch skips Conda metadata candidates for standalone products",
     async () => {
       await using dir = await tmpdir()
       await using conda = await tmpdir()
@@ -1082,14 +1088,14 @@ describe("agency-swarm npx onboarding", () => {
           if (target === path.join(conda.path, "python3.12")) {
             return {
               exited: Promise.resolve(0),
-              stdout: "/opt/conda/bin/python\n3.12.7\n/opt/conda\n",
+              stdout: "/opt/py312/bin/python\n3.12.7\n/opt/py312\n1\n",
               stderr: "",
             } as never
           }
           if (target === "python3") {
             return {
               exited: Promise.resolve(0),
-              stdout: "/usr/bin/python3.12\n3.12.7\n/usr\n",
+              stdout: "/usr/bin/python3.12\n3.12.7\n/usr\n0\n",
               stderr: "",
             } as never
           }
@@ -1128,6 +1134,9 @@ describe("agency-swarm npx onboarding", () => {
           profile,
         )
 
+        expect(commands.some((cmd) => isPythonProbeCommand(cmd) && (cmd.at(-1) ?? "").includes("conda-meta"))).toBe(
+          true,
+        )
         expect(commands.filter(isPythonVenvCommand)).toEqual([["python3", "-m", "venv", ".venv"]])
 
         await launch?.cleanup?.()

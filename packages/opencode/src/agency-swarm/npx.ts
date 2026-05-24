@@ -60,6 +60,7 @@ interface PythonInfo {
   executable: string
   version: string
   basePrefix?: string
+  condaMetadata?: boolean
 }
 
 interface VenvCanaryResult {
@@ -1493,10 +1494,7 @@ export async function collectUnixPythonCandidates(): Promise<string[][]> {
   return [...versioned, ["python3"], ["python"]]
 }
 
-async function findPythonExecutable(
-  excludeUnder?: string,
-  pythonEnvironment: AgencyProduct.PythonEnvironment = "any",
-) {
+async function findPythonExecutable(excludeUnder?: string, pythonEnvironment: AgencyProduct.PythonEnvironment = "any") {
   const candidates: string[][] =
     process.platform === "win32"
       ? [["py", "-3.13"], ["py", "-3.12"], ["python"], ["python3"]]
@@ -1557,24 +1555,31 @@ async function inspectPython(
   options?: { includeBasePrefix?: boolean },
 ): Promise<PythonInfo | undefined> {
   const script = options?.includeBasePrefix
-    ? "import sys; print(sys.executable); print(sys.version.split()[0]); print(getattr(sys, 'base_prefix', sys.prefix))"
+    ? [
+        "import os, sys",
+        "print(sys.executable)",
+        "print(sys.version.split()[0])",
+        "base_prefix = getattr(sys, 'base_prefix', sys.prefix)",
+        "print(base_prefix)",
+        "prefixes = {sys.prefix, base_prefix}",
+        "print('1' if any(os.path.isdir(os.path.join(prefix, 'conda-meta')) for prefix in prefixes if prefix) else '0')",
+      ].join("; ")
     : "import sys; print(sys.executable); print(sys.version.split()[0])"
-  const result = await runCommand(
-    [...cmd, "-c", script],
-    env ? { env } : undefined,
-  )
+  const result = await runCommand([...cmd, "-c", script], env ? { env } : undefined)
   if (result.code !== 0) return
-  const [executable, version, basePrefix] = result.stdout.trim().split(/\r?\n/)
+  const [executable, version, basePrefix, condaMetadata] = result.stdout.trim().split(/\r?\n/)
   if (!executable || !version) return
   return {
     cmd,
     executable,
     version,
     basePrefix,
+    condaMetadata: condaMetadata === "1",
   }
 }
 
 function isCondaPython(info: PythonInfo) {
+  if (info.condaMetadata) return true
   return [info.executable, info.basePrefix].some((value) => (value ? CONDA_PATH_COMPONENT.test(value) : false))
 }
 
