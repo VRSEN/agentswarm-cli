@@ -1050,6 +1050,78 @@ describe("agency-swarm npx onboarding", () => {
   })
 
   test.skipIf(process.platform === "win32")(
+    "prepareProjectLaunch keeps standalone venvs when only the project path contains conda",
+    async () => {
+      await using root = await tmpdir()
+      const project = path.join(root.path, "work", "conda", "my-agency")
+      await mkdir(project, { recursive: true })
+      await writeAgency(project)
+      await writeVenvPython(project)
+
+      const profile = {
+        ...AgencyProduct.resolve({}),
+        name: "Example Product",
+        pythonEnvironment: "standalone" as const,
+      }
+      const commands: string[][] = []
+
+      spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+      spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+      spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+      spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+      spyOn(Bun, "spawn").mockImplementation((options: any) => {
+        const cmd = options?.cmd as string[] | undefined
+        if (!cmd) throw new Error("Missing command")
+        if (isUvVersionCommand(cmd)) {
+          return { exited: Promise.resolve(0), stdout: "uv 0.8.0\n", stderr: "" } as never
+        }
+        commands.push(cmd)
+        if (isPythonProbeCommand(cmd)) {
+          const target = cmd[0] ?? ""
+          return {
+            exited: Promise.resolve(0),
+            stdout: `${target}\n3.12.7\n/opt/homebrew/opt/python@3.12\n0\n`,
+            stderr: "",
+          } as never
+        }
+        if (isPythonPipInstallUvCommand(cmd) || isUvPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+          return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+        }
+        if (cmd[1]?.endsWith("launch_agency.py")) {
+          let resolveExit!: (code: number) => void
+          const exited = new Promise<number>((resolve) => {
+            resolveExit = resolve
+          })
+          return {
+            exited,
+            stderr: "",
+            kill() {
+              resolveExit(0)
+            },
+          } as never
+        }
+        throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+      })
+
+      const launch = await prepareProjectLaunch(
+        {
+          directory: project,
+          agencyFile: path.join(project, "agency.py"),
+          moduleName: "agency",
+        },
+        profile,
+      )
+
+      expect(getTestVenvPython(project)).toContain(`${path.sep}conda${path.sep}`)
+      expect(commands.some((cmd) => isPythonProbeCommand(cmd) && (cmd.at(-1) ?? "").includes("conda-meta"))).toBe(true)
+      expect(commands.some(isPythonVenvCommand)).toBe(false)
+
+      await launch?.cleanup?.()
+    },
+  )
+
+  test.skipIf(process.platform === "win32")(
     "prepareProjectLaunch skips Conda metadata candidates for standalone products",
     async () => {
       await using dir = await tmpdir()

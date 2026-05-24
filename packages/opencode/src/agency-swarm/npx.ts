@@ -3,7 +3,7 @@ import net from "node:net"
 import os from "node:os"
 import path from "node:path"
 import { createWriteStream, existsSync, statSync } from "node:fs"
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { AgencySwarmRunSession } from "./run-session"
 import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
@@ -12,6 +12,16 @@ import { Filesystem } from "@/util/filesystem"
 import type { Session } from "@/session"
 import { SessionID } from "@/session/schema"
 import { AgencyProduct } from "./product"
+import {
+  collectUnixPythonCandidates,
+  findPythonExecutable,
+  formatPython,
+  inspectPython,
+  isCondaPython,
+  type PythonInfo,
+} from "./python-runtime"
+
+export { collectUnixPythonCandidates }
 
 export const LAUNCHER_ENTRY_ENV = "AGENTSWARM_LAUNCHER"
 export const STARTER_TEMPLATE_REPO = AgencyProduct.starterTemplateRepo
@@ -55,14 +65,6 @@ interface CommandResult {
   logFile?: string
 }
 
-interface PythonInfo {
-  cmd: string[]
-  executable: string
-  version: string
-  basePrefix?: string
-  condaMetadata?: boolean
-}
-
 interface VenvCanaryResult {
   healthy: boolean
   stderr: string
@@ -101,8 +103,6 @@ const SERVER_STDERR_COLLECT_TIMEOUT_MS = 1000
 const REBUILD_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 const PROCESS_KILL_GRACE_MS = 5000
 const FALLBACK_AGENCY_SWARM_REQUIREMENT = "agency-swarm[fastapi,litellm]>=1.9.6"
-const CONDA_PATH_COMPONENT =
-  /(?:^|[/\\])(?:anaconda\d*|miniconda\d*|miniforge\d*|mambaforge|micromamba|conda\d*)(?:[/\\]|$)/i
 
 export function shouldRunNpxOnboarding(input: {
   env: NodeJS.ProcessEnv
@@ -777,7 +777,7 @@ async function ensureProjectPython(
     // the self-heal path rebuilds instead of the launcher aborting.
     let info: PythonInfo | undefined
     try {
-      info = await inspectPython([venvPython], undefined, {
+      info = await inspectPython(runCommand, [venvPython], undefined, {
         includeBasePrefix: profile.pythonEnvironment === "standalone",
       })
     } catch (error) {
@@ -836,7 +836,11 @@ async function ensureProjectPython(
     corruptedVenv = true
   }
 
-  const detected = await findPythonExecutable(corruptedVenv ? venvDir : undefined, profile.pythonEnvironment)
+  const detected = await findPythonExecutable(
+    runCommand,
+    corruptedVenv ? venvDir : undefined,
+    profile.pythonEnvironment,
+  )
   if (!detected) {
     if (corruptedVenv) {
       throw new Error(
@@ -1462,130 +1466,6 @@ async function hasGitHubTemplateFlow() {
   if (gh.code !== 0) return false
   const auth = await runCommand(["gh", "auth", "status"])
   return auth.code === 0
-}
-
-// Walk $PATH for python3.<minor> binaries before trying unqualified names. Some
-// installers leave `python3` pointed at an older system interpreter while exposing
-// supported versions only through their fully qualified names, such as python3.14.
-// Prefer the oldest supported version when several are installed.
-export async function collectUnixPythonCandidates(): Promise<string[][]> {
-  const found = new Map<string, { minor: number; order: number }>()
-  let order = 0
-  for (const dir of (process.env.PATH ?? "").split(":")) {
-    if (!dir) continue
-    let entries: string[]
-    try {
-      entries = await readdir(dir)
-    } catch {
-      continue
-    }
-    for (const entry of entries) {
-      const match = entry.match(/^python3\.(\d+)$/)
-      if (!match) continue
-      const minor = Number(match[1])
-      if (minor < 12) continue
-      const candidate = path.join(dir, entry)
-      if (!found.has(candidate)) found.set(candidate, { minor, order: order++ })
-    }
-  }
-  const versioned = [...found.entries()]
-    .sort(([, a], [, b]) => a.minor - b.minor || a.order - b.order)
-    .map(([name]) => [name])
-  return [...versioned, ["python3"], ["python"]]
-}
-
-async function findPythonExecutable(excludeUnder?: string, pythonEnvironment: AgencyProduct.PythonEnvironment = "any") {
-  const candidates: string[][] =
-    process.platform === "win32"
-      ? [["py", "-3.13"], ["py", "-3.12"], ["python"], ["python3"]]
-      : await collectUnixPythonCandidates()
-
-  const excludeRoot = excludeUnder ? path.resolve(excludeUnder) : undefined
-  const excludePrefix = excludeRoot ? excludeRoot + path.sep : undefined
-  const spawnEnv = excludeRoot ? stripVenvFromEnv(process.env, excludeRoot) : undefined
-
-  for (const candidate of candidates) {
-    const info = await inspectPython(candidate, spawnEnv, {
-      includeBasePrefix: pythonEnvironment === "standalone",
-    })
-    if (!info) continue
-    if (excludeRoot && excludePrefix) {
-      const resolved = path.resolve(info.executable)
-      if (resolved === excludeRoot || resolved.startsWith(excludePrefix)) continue
-    }
-    const match = info.version.match(/^(\d+)\.(\d+)/)
-    if (!match) continue
-    const major = Number(match[1])
-    const minor = Number(match[2])
-    if (pythonEnvironment === "standalone" && isCondaPython(info)) continue
-    if (major > 3 || (major === 3 && minor >= 12)) return info
-  }
-}
-
-function stripVenvFromEnv(env: NodeJS.ProcessEnv, venvRoot: string): NodeJS.ProcessEnv {
-  const venvBin = path.join(venvRoot, process.platform === "win32" ? "Scripts" : "bin")
-  const venvBinResolved = path.resolve(venvBin)
-  const pathKey = process.platform === "win32" ? "Path" : "PATH"
-  const rawPath = env[pathKey] ?? env.PATH ?? ""
-  const sep = process.platform === "win32" ? ";" : ":"
-  const filtered = rawPath
-    .split(sep)
-    .filter((entry) => {
-      if (!entry) return false
-      try {
-        const resolved = path.resolve(entry)
-        return resolved !== venvBinResolved && !resolved.startsWith(venvBinResolved + path.sep)
-      } catch {
-        return true
-      }
-    })
-    .join(sep)
-  const next = { ...env, [pathKey]: filtered }
-  delete next.VIRTUAL_ENV
-  // macOS's python3 honors __PYVENV_LAUNCHER__ when reporting sys.executable,
-  // so leaving it in would make a healthy system Python lie and report itself
-  // as the broken .venv interpreter, hiding the only valid recovery candidate.
-  delete next.__PYVENV_LAUNCHER__
-  return next
-}
-
-async function inspectPython(
-  cmd: string[],
-  env?: NodeJS.ProcessEnv,
-  options?: { includeBasePrefix?: boolean },
-): Promise<PythonInfo | undefined> {
-  const script = options?.includeBasePrefix
-    ? [
-        "import os, sys",
-        "print(sys.executable)",
-        "print(sys.version.split()[0])",
-        "base_prefix = getattr(sys, 'base_prefix', sys.prefix)",
-        "print(base_prefix)",
-        "prefixes = {sys.prefix, base_prefix}",
-        "print('1' if any(os.path.isdir(os.path.join(prefix, 'conda-meta')) for prefix in prefixes if prefix) else '0')",
-      ].join("; ")
-    : "import sys; print(sys.executable); print(sys.version.split()[0])"
-  const result = await runCommand([...cmd, "-c", script], env ? { env } : undefined)
-  if (result.code !== 0) return
-  const [executable, version, basePrefix, condaMetadata] = result.stdout.trim().split(/\r?\n/)
-  if (!executable || !version) return
-  return {
-    cmd,
-    executable,
-    version,
-    basePrefix,
-    condaMetadata: condaMetadata === "1",
-  }
-}
-
-function isCondaPython(info: PythonInfo) {
-  if (info.condaMetadata) return true
-  return [info.executable, info.basePrefix].some((value) => (value ? CONDA_PATH_COMPONENT.test(value) : false))
-}
-
-function formatPython(info: PythonInfo | undefined, cmd: string[]) {
-  if (!info) return cmd.join(" ")
-  return `${info.executable} (Python ${info.version})`
 }
 
 function getVenvPythonPath(directory: string) {
