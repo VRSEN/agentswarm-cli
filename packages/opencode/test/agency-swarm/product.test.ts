@@ -25,6 +25,7 @@ describe("AgencyProduct profile", () => {
     expect(profile.tuiLogoLeft).toBeUndefined()
     expect(profile.tuiLogoRight).toBeUndefined()
     expect(profile.wordmarkLines).toBeUndefined()
+    expect(profile.pythonEnvironment).toBe("any")
     expect(AgencyProduct.tuiLogo(profile)).toBeUndefined()
   })
 
@@ -46,6 +47,7 @@ describe("AgencyProduct profile", () => {
       AGENTSWARM_PRODUCT_TUI_LOGO_LEFT: JSON.stringify([" LEFT", "LEFT2"]),
       AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: "RIGHT\\nRIGHT2",
       AGENTSWARM_PRODUCT_WORDMARK_LINES: "WORD\\n MARK",
+      AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT: "standalone",
     })
 
     expect(profile.custom).toBe(true)
@@ -69,10 +71,20 @@ describe("AgencyProduct profile", () => {
     expect(profile.tuiLogoLeft).toEqual([" LEFT", "LEFT2"])
     expect(profile.tuiLogoRight).toEqual(["RIGHT", "RIGHT2"])
     expect(profile.wordmarkLines).toEqual(["WORD", " MARK"])
+    expect(profile.pythonEnvironment).toBe("standalone")
     expect(AgencyProduct.tuiLogo(profile)).toEqual({
       left: [" LEFT", "LEFT2"],
       right: ["RIGHT", "RIGHT2"],
     })
+  })
+
+  test("ignores invalid downstream Python environment values", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT: "conda",
+    })
+
+    expect(profile.custom).toBe(false)
+    expect(profile.pythonEnvironment).toBe("any")
   })
 
   test("custom entry files alone do not force starter creation", () => {

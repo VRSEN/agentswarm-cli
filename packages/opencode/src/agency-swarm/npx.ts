@@ -23,6 +23,7 @@ type ProductProfile = Pick<
   AgencyProduct.Profile,
   "custom" | "name" | "customStarter" | "starterTemplateRepo" | "starterProjectName" | "agencyEntryFiles"
 >
+type LaunchProfile = Pick<AgencyProduct.Profile, "name" | "launcherPackageName" | "pythonEnvironment">
 
 export function starterTemplateUrl(profile: Pick<AgencyProduct.Profile, "starterTemplateRepo"> = AgencyProduct) {
   return `https://github.com/${profile.starterTemplateRepo}.git`
@@ -58,6 +59,7 @@ interface PythonInfo {
   cmd: string[]
   executable: string
   version: string
+  basePrefix?: string
 }
 
 interface VenvCanaryResult {
@@ -423,6 +425,15 @@ export function validateStarterName(base: string, value?: string) {
   if (existsSync(path.join(base, name))) return "A folder with this name already exists"
 }
 
+function launchProfile(profile: ProductProfile): LaunchProfile {
+  const values = profile as ProductProfile & Partial<LaunchProfile>
+  return {
+    name: profile.name,
+    launcherPackageName: values.launcherPackageName ?? AgencyProduct.launcherPackageName,
+    pythonEnvironment: values.pythonEnvironment ?? AgencyProduct.pythonEnvironment,
+  }
+}
+
 export async function prepareNpxLaunch(
   directory: string,
   profile: ProductProfile = AgencyProduct,
@@ -439,7 +450,7 @@ export async function prepareNpxLaunch(
       return
     }
 
-    const launch = await prepareProjectLaunch(targetProject)
+    const launch = await prepareProjectLaunch(targetProject, launchProfile(profile))
     if (!launch) {
       prompts.outro("Cancelled")
       return
@@ -477,7 +488,7 @@ export async function prepareNpxLaunch(
     return
   }
 
-  const launch = await prepareProjectLaunch(targetProject)
+  const launch = await prepareProjectLaunch(targetProject, launchProfile(profile))
   if (!launch) {
     prompts.outro("Cancelled")
     return
@@ -722,13 +733,16 @@ async function createStarterProject(input: {
   return requireDetectedStarterProject(targetDirectory, starterProfile)
 }
 
-export async function prepareProjectLaunch(project: AgencyProject): Promise<PreparedNpxLaunch | undefined> {
-  prompts.log.info(`Starting the ${AgencyProduct.name} project.`)
+export async function prepareProjectLaunch(
+  project: AgencyProject,
+  profile: LaunchProfile = AgencyProduct,
+): Promise<PreparedNpxLaunch | undefined> {
+  prompts.log.info(`Starting the ${profile.name} project.`)
   prompts.log.info(
     "The launcher will reuse a project `.venv`, start a local FastAPI server, and connect the terminal UI to it.",
   )
 
-  const python = await ensureProjectPython(project.directory)
+  const python = await ensureProjectPython(project.directory, profile)
   if (!python) return
 
   prompts.log.info("Starting your agency project.")
@@ -744,7 +758,10 @@ export async function prepareProjectLaunch(project: AgencyProject): Promise<Prep
   }
 }
 
-async function ensureProjectPython(directory: string) {
+async function ensureProjectPython(
+  directory: string,
+  profile: Pick<LaunchProfile, "launcherPackageName" | "pythonEnvironment">,
+) {
   const venvPython = getVenvPythonPath(directory)
   const venvDir = path.resolve(path.join(directory, ".venv"))
   let selfHealing = false
@@ -757,11 +774,16 @@ async function ensureProjectPython(directory: string) {
     // the self-heal path rebuilds instead of the launcher aborting.
     let info: PythonInfo | undefined
     try {
-      info = await inspectPython([venvPython])
+      info = await inspectPython([venvPython], undefined, {
+        includeBasePrefix: profile.pythonEnvironment === "standalone",
+      })
     } catch (error) {
       prompts.log.warn(`Project Python could not be probed: ${error instanceof Error ? error.message : String(error)}`)
     }
     if (!info) {
+      corruptedVenv = true
+    } else if (profile.pythonEnvironment === "standalone" && isCondaPython(info)) {
+      prompts.log.warn("Project `.venv` uses a Conda-family Python. Rebuilding with a standalone Python...")
       corruptedVenv = true
     } else {
       prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
@@ -811,7 +833,7 @@ async function ensureProjectPython(directory: string) {
     corruptedVenv = true
   }
 
-  const detected = await findPythonExecutable(corruptedVenv ? venvDir : undefined)
+  const detected = await findPythonExecutable(corruptedVenv ? venvDir : undefined, profile.pythonEnvironment)
   if (!detected) {
     if (corruptedVenv) {
       throw new Error(
@@ -819,7 +841,7 @@ async function ensureProjectPython(directory: string) {
       )
     }
     throw new Error(
-      `Python 3.12 or newer was not found. Install Python, then rerun \`npx ${AgencyProduct.launcherPackageName}\`.`,
+      `Python 3.12 or newer was not found. Install Python, then rerun \`npx ${profile.launcherPackageName}\`.`,
     )
   }
   // During self-heal, invoke the resolved interpreter by its absolute path. The alias
@@ -1444,7 +1466,8 @@ async function hasGitHubTemplateFlow() {
 // supported versions only through their fully qualified names, such as python3.14.
 // Prefer the oldest supported version when several are installed.
 export async function collectUnixPythonCandidates(): Promise<string[][]> {
-  const found = new Map<string, number>()
+  const found = new Map<string, { minor: number; order: number }>()
+  let order = 0
   for (const dir of (process.env.PATH ?? "").split(":")) {
     if (!dir) continue
     let entries: string[]
@@ -1458,14 +1481,20 @@ export async function collectUnixPythonCandidates(): Promise<string[][]> {
       if (!match) continue
       const minor = Number(match[1])
       if (minor < 12) continue
-      if (!found.has(entry)) found.set(entry, minor)
+      const candidate = path.join(dir, entry)
+      if (!found.has(candidate)) found.set(candidate, { minor, order: order++ })
     }
   }
-  const versioned = [...found.entries()].sort(([, a], [, b]) => a - b).map(([name]) => [name])
+  const versioned = [...found.entries()]
+    .sort(([, a], [, b]) => a.minor - b.minor || a.order - b.order)
+    .map(([name]) => [name])
   return [...versioned, ["python3"], ["python"]]
 }
 
-async function findPythonExecutable(excludeUnder?: string) {
+async function findPythonExecutable(
+  excludeUnder?: string,
+  pythonEnvironment: AgencyProduct.PythonEnvironment = "any",
+) {
   const candidates: string[][] =
     process.platform === "win32"
       ? [["py", "-3.13"], ["py", "-3.12"], ["python"], ["python3"]]
@@ -1476,7 +1505,9 @@ async function findPythonExecutable(excludeUnder?: string) {
   const spawnEnv = excludeRoot ? stripVenvFromEnv(process.env, excludeRoot) : undefined
 
   for (const candidate of candidates) {
-    const info = await inspectPython(candidate, spawnEnv)
+    const info = await inspectPython(candidate, spawnEnv, {
+      includeBasePrefix: pythonEnvironment === "standalone",
+    })
     if (!info) continue
     if (excludeRoot && excludePrefix) {
       const resolved = path.resolve(info.executable)
@@ -1486,6 +1517,7 @@ async function findPythonExecutable(excludeUnder?: string) {
     if (!match) continue
     const major = Number(match[1])
     const minor = Number(match[2])
+    if (pythonEnvironment === "standalone" && isCondaPython(info)) continue
     if (major > 3 || (major === 3 && minor >= 12)) return info
   }
 }
@@ -1517,19 +1549,33 @@ function stripVenvFromEnv(env: NodeJS.ProcessEnv, venvRoot: string): NodeJS.Proc
   return next
 }
 
-async function inspectPython(cmd: string[], env?: NodeJS.ProcessEnv): Promise<PythonInfo | undefined> {
+async function inspectPython(
+  cmd: string[],
+  env?: NodeJS.ProcessEnv,
+  options?: { includeBasePrefix?: boolean },
+): Promise<PythonInfo | undefined> {
+  const script = options?.includeBasePrefix
+    ? "import sys; print(sys.executable); print(sys.version.split()[0]); print(getattr(sys, 'base_prefix', sys.prefix))"
+    : "import sys; print(sys.executable); print(sys.version.split()[0])"
   const result = await runCommand(
-    [...cmd, "-c", "import sys; print(sys.executable); print(sys.version.split()[0])"],
+    [...cmd, "-c", script],
     env ? { env } : undefined,
   )
   if (result.code !== 0) return
-  const [executable, version] = result.stdout.trim().split(/\r?\n/)
+  const [executable, version, basePrefix] = result.stdout.trim().split(/\r?\n/)
   if (!executable || !version) return
   return {
     cmd,
     executable,
     version,
+    basePrefix,
   }
+}
+
+function isCondaPython(info: PythonInfo) {
+  return [info.executable, info.basePrefix].some((value) =>
+    value ? /(?:^|[/\\])(?:anaconda\d*|miniconda\d*|miniforge\d*|mambaforge|micromamba)(?:[/\\]|$)/i.test(value) : false,
+  )
 }
 
 function formatPython(info: PythonInfo | undefined, cmd: string[]) {
