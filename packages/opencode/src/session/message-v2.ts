@@ -706,7 +706,13 @@ function hydrate(rows: (typeof MessageTable.$inferSelect)[]) {
 
 function providerMeta(metadata: Record<string, any> | undefined) {
   if (!metadata) return undefined
-  const { providerExecuted: _, ...rest } = metadata
+  // AI SDK provider metadata is keyed by provider name, so flat Agency fields
+  // cannot be replayed as top-level provider options.
+  const rest = Object.fromEntries(
+    Object.entries(metadata).filter(
+      ([key, value]) => key !== "providerExecuted" && typeof value === "object" && value !== null && !Array.isArray(value),
+    ),
+  )
   return Object.keys(rest).length > 0 ? rest : undefined
 }
 
@@ -843,7 +849,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           assistantMessage.parts.push({
             type: "text",
             text: part.text,
-            ...(differentModel ? {} : { providerMetadata: part.metadata }),
+            ...(differentModel ? {} : { providerMetadata: providerMeta(part.metadata) }),
           })
         if (part.type === "step-start")
           assistantMessage.parts.push({
@@ -925,7 +931,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           assistantMessage.parts.push({
             type: "reasoning",
             text: part.text,
-            ...(differentModel ? {} : { providerMetadata: part.metadata }),
+            ...(differentModel ? {} : { providerMetadata: providerMeta(part.metadata) }),
           })
         }
       }

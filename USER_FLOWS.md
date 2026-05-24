@@ -213,14 +213,18 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** Attached file and image context stays available across follow-up prompts without requiring reattachment.
 - **Happy-path proof:** Manual history replay may resend inline attachment content or references.
 - **Happy-path proof:** Handoff-selected recipient agents persist across turns.
+- **Happy-path proof:** Explicit current-prompt handoff recipients persist across metadata-refresh outages.
 - **Happy-path proof:** Ordinary `SendMessage` delegation does not change user control.
 - **Happy-path proof:** Caller agent identity survives history compaction.
+- **Happy-path proof:** History compaction ignores internal Agency metadata that is not valid model provider metadata.
 - **Happy-path proof:** Loopback history recovers across local server URL or port changes.
 - **Happy-path proof:** Agency tool-output metadata stays attached to the correct wrapper call.
 - **Failure scenarios to test:** Structured-capability mismatch uses the legacy payload instead of dropping attachments.
 - **Failure scenarios to test:** History compaction does not lose caller agent identity.
+- **Failure scenarios to test:** A metadata outage after an explicit current-prompt handoff recipient does not drop the next prompt back to the coordinator.
+- **Failure scenarios to test:** Flat Agency metadata on text, reasoning, or tool parts does not break compaction.
 - **Failure scenarios to test:** Local loopback URL or port changes do not strand prior history.
-- **Owner/source:** `packages/opencode/src/session/agency-swarm-utils.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/agency-swarm/history.ts`.
+- **Owner/source:** `packages/opencode/src/session/agency-swarm-utils.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/session/message-v2.ts`, `packages/opencode/src/agency-swarm/history.ts`.
 
 ### Sharing, PR Reopen, And Backend Management
 
