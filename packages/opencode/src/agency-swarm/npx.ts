@@ -3,7 +3,7 @@ import net from "node:net"
 import os from "node:os"
 import path from "node:path"
 import { createWriteStream, existsSync, statSync } from "node:fs"
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { AgencySwarmRunSession } from "./run-session"
 import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
@@ -12,6 +12,16 @@ import { Filesystem } from "@/util/filesystem"
 import type { Session } from "@/session"
 import { SessionID } from "@/session/schema"
 import { AgencyProduct } from "./product"
+import {
+  collectUnixPythonCandidates,
+  findPythonExecutable,
+  formatPython,
+  inspectPython,
+  isCondaPython,
+  type PythonInfo,
+} from "./python-runtime"
+
+export { collectUnixPythonCandidates }
 
 export const LAUNCHER_ENTRY_ENV = "AGENTSWARM_LAUNCHER"
 export const STARTER_TEMPLATE_REPO = AgencyProduct.starterTemplateRepo
@@ -23,6 +33,7 @@ type ProductProfile = Pick<
   AgencyProduct.Profile,
   "custom" | "name" | "customStarter" | "starterTemplateRepo" | "starterProjectName" | "agencyEntryFiles"
 >
+type LaunchProfile = Pick<AgencyProduct.Profile, "name" | "launcherPackageName" | "pythonEnvironment">
 
 export function starterTemplateUrl(profile: Pick<AgencyProduct.Profile, "starterTemplateRepo"> = AgencyProduct) {
   return `https://github.com/${profile.starterTemplateRepo}.git`
@@ -52,12 +63,6 @@ interface CommandResult {
   stderr: string
   timedOut?: boolean
   logFile?: string
-}
-
-interface PythonInfo {
-  cmd: string[]
-  executable: string
-  version: string
 }
 
 interface VenvCanaryResult {
@@ -423,6 +428,15 @@ export function validateStarterName(base: string, value?: string) {
   if (existsSync(path.join(base, name))) return "A folder with this name already exists"
 }
 
+function launchProfile(profile: ProductProfile): LaunchProfile {
+  const values = profile as ProductProfile & Partial<LaunchProfile>
+  return {
+    name: profile.name,
+    launcherPackageName: values.launcherPackageName ?? AgencyProduct.launcherPackageName,
+    pythonEnvironment: values.pythonEnvironment ?? AgencyProduct.pythonEnvironment,
+  }
+}
+
 export async function prepareNpxLaunch(
   directory: string,
   profile: ProductProfile = AgencyProduct,
@@ -439,7 +453,7 @@ export async function prepareNpxLaunch(
       return
     }
 
-    const launch = await prepareProjectLaunch(targetProject)
+    const launch = await prepareProjectLaunch(targetProject, launchProfile(profile))
     if (!launch) {
       prompts.outro("Cancelled")
       return
@@ -477,7 +491,7 @@ export async function prepareNpxLaunch(
     return
   }
 
-  const launch = await prepareProjectLaunch(targetProject)
+  const launch = await prepareProjectLaunch(targetProject, launchProfile(profile))
   if (!launch) {
     prompts.outro("Cancelled")
     return
@@ -722,13 +736,16 @@ async function createStarterProject(input: {
   return requireDetectedStarterProject(targetDirectory, starterProfile)
 }
 
-export async function prepareProjectLaunch(project: AgencyProject): Promise<PreparedNpxLaunch | undefined> {
-  prompts.log.info(`Starting the ${AgencyProduct.name} project.`)
+export async function prepareProjectLaunch(
+  project: AgencyProject,
+  profile: LaunchProfile = AgencyProduct,
+): Promise<PreparedNpxLaunch | undefined> {
+  prompts.log.info(`Starting the ${profile.name} project.`)
   prompts.log.info(
     "The launcher will reuse a project `.venv`, start a local FastAPI server, and connect the terminal UI to it.",
   )
 
-  const python = await ensureProjectPython(project.directory)
+  const python = await ensureProjectPython(project.directory, profile)
   if (!python) return
 
   prompts.log.info("Starting your agency project.")
@@ -744,7 +761,10 @@ export async function prepareProjectLaunch(project: AgencyProject): Promise<Prep
   }
 }
 
-async function ensureProjectPython(directory: string) {
+async function ensureProjectPython(
+  directory: string,
+  profile: Pick<LaunchProfile, "launcherPackageName" | "pythonEnvironment">,
+) {
   const venvPython = getVenvPythonPath(directory)
   const venvDir = path.resolve(path.join(directory, ".venv"))
   let selfHealing = false
@@ -757,11 +777,16 @@ async function ensureProjectPython(directory: string) {
     // the self-heal path rebuilds instead of the launcher aborting.
     let info: PythonInfo | undefined
     try {
-      info = await inspectPython([venvPython])
+      info = await inspectPython(runCommand, [venvPython], undefined, {
+        includeBasePrefix: profile.pythonEnvironment === "standalone",
+      })
     } catch (error) {
       prompts.log.warn(`Project Python could not be probed: ${error instanceof Error ? error.message : String(error)}`)
     }
     if (!info) {
+      corruptedVenv = true
+    } else if (profile.pythonEnvironment === "standalone" && isCondaPython(info)) {
+      prompts.log.warn("Project `.venv` uses a Conda-family Python. Rebuilding with a standalone Python...")
       corruptedVenv = true
     } else {
       prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
@@ -811,7 +836,11 @@ async function ensureProjectPython(directory: string) {
     corruptedVenv = true
   }
 
-  const detected = await findPythonExecutable(corruptedVenv ? venvDir : undefined)
+  const detected = await findPythonExecutable(
+    runCommand,
+    corruptedVenv ? venvDir : undefined,
+    profile.pythonEnvironment,
+  )
   if (!detected) {
     if (corruptedVenv) {
       throw new Error(
@@ -819,7 +848,7 @@ async function ensureProjectPython(directory: string) {
       )
     }
     throw new Error(
-      `Python 3.12 or newer was not found. Install Python, then rerun \`npx ${AgencyProduct.launcherPackageName}\`.`,
+      `Python 3.12 or newer was not found. Install Python, then rerun \`npx ${profile.launcherPackageName}\`.`,
     )
   }
   // During self-heal, invoke the resolved interpreter by its absolute path. The alias
@@ -1437,104 +1466,6 @@ async function hasGitHubTemplateFlow() {
   if (gh.code !== 0) return false
   const auth = await runCommand(["gh", "auth", "status"])
   return auth.code === 0
-}
-
-// Walk $PATH for python3.<minor> binaries before trying unqualified names. Some
-// installers leave `python3` pointed at an older system interpreter while exposing
-// supported versions only through their fully qualified names, such as python3.14.
-// Prefer the oldest supported version when several are installed.
-export async function collectUnixPythonCandidates(): Promise<string[][]> {
-  const found = new Map<string, number>()
-  for (const dir of (process.env.PATH ?? "").split(":")) {
-    if (!dir) continue
-    let entries: string[]
-    try {
-      entries = await readdir(dir)
-    } catch {
-      continue
-    }
-    for (const entry of entries) {
-      const match = entry.match(/^python3\.(\d+)$/)
-      if (!match) continue
-      const minor = Number(match[1])
-      if (minor < 12) continue
-      if (!found.has(entry)) found.set(entry, minor)
-    }
-  }
-  const versioned = [...found.entries()].sort(([, a], [, b]) => a - b).map(([name]) => [name])
-  return [...versioned, ["python3"], ["python"]]
-}
-
-async function findPythonExecutable(excludeUnder?: string) {
-  const candidates: string[][] =
-    process.platform === "win32"
-      ? [["py", "-3.13"], ["py", "-3.12"], ["python"], ["python3"]]
-      : await collectUnixPythonCandidates()
-
-  const excludeRoot = excludeUnder ? path.resolve(excludeUnder) : undefined
-  const excludePrefix = excludeRoot ? excludeRoot + path.sep : undefined
-  const spawnEnv = excludeRoot ? stripVenvFromEnv(process.env, excludeRoot) : undefined
-
-  for (const candidate of candidates) {
-    const info = await inspectPython(candidate, spawnEnv)
-    if (!info) continue
-    if (excludeRoot && excludePrefix) {
-      const resolved = path.resolve(info.executable)
-      if (resolved === excludeRoot || resolved.startsWith(excludePrefix)) continue
-    }
-    const match = info.version.match(/^(\d+)\.(\d+)/)
-    if (!match) continue
-    const major = Number(match[1])
-    const minor = Number(match[2])
-    if (major > 3 || (major === 3 && minor >= 12)) return info
-  }
-}
-
-function stripVenvFromEnv(env: NodeJS.ProcessEnv, venvRoot: string): NodeJS.ProcessEnv {
-  const venvBin = path.join(venvRoot, process.platform === "win32" ? "Scripts" : "bin")
-  const venvBinResolved = path.resolve(venvBin)
-  const pathKey = process.platform === "win32" ? "Path" : "PATH"
-  const rawPath = env[pathKey] ?? env.PATH ?? ""
-  const sep = process.platform === "win32" ? ";" : ":"
-  const filtered = rawPath
-    .split(sep)
-    .filter((entry) => {
-      if (!entry) return false
-      try {
-        const resolved = path.resolve(entry)
-        return resolved !== venvBinResolved && !resolved.startsWith(venvBinResolved + path.sep)
-      } catch {
-        return true
-      }
-    })
-    .join(sep)
-  const next = { ...env, [pathKey]: filtered }
-  delete next.VIRTUAL_ENV
-  // macOS's python3 honors __PYVENV_LAUNCHER__ when reporting sys.executable,
-  // so leaving it in would make a healthy system Python lie and report itself
-  // as the broken .venv interpreter, hiding the only valid recovery candidate.
-  delete next.__PYVENV_LAUNCHER__
-  return next
-}
-
-async function inspectPython(cmd: string[], env?: NodeJS.ProcessEnv): Promise<PythonInfo | undefined> {
-  const result = await runCommand(
-    [...cmd, "-c", "import sys; print(sys.executable); print(sys.version.split()[0])"],
-    env ? { env } : undefined,
-  )
-  if (result.code !== 0) return
-  const [executable, version] = result.stdout.trim().split(/\r?\n/)
-  if (!executable || !version) return
-  return {
-    cmd,
-    executable,
-    version,
-  }
-}
-
-function formatPython(info: PythonInfo | undefined, cmd: string[]) {
-  if (!info) return cmd.join(" ")
-  return `${info.executable} (Python ${info.version})`
 }
 
 function getVenvPythonPath(directory: string) {

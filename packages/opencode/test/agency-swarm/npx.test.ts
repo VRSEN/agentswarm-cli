@@ -20,6 +20,7 @@ import {
   summarizeBridgeStderr,
   validateStarterName,
 } from "../../src/agency-swarm/npx"
+import { AgencyProduct } from "../../src/agency-swarm/product"
 import { AgencySwarmRunSession } from "../../src/agency-swarm/run-session"
 import { Instance } from "../../src/project/instance"
 import { Session } from "../../src/session"
@@ -178,8 +179,12 @@ describe("agency-swarm npx onboarding", () => {
       process.env.PATH = [oldDir.path, newDir.path].join(":")
       try {
         const candidates = await collectUnixPythonCandidates()
-        const versioned = candidates.map(([name]) => name).filter((name) => /^python3\.\d+$/.test(name))
-        expect(versioned).toEqual(["python3.12", "python3.14", "python3.99"])
+        const versioned = candidates.map(([name]) => name).filter((name) => /^python3\.\d+$/.test(path.basename(name)))
+        expect(versioned).toEqual([
+          path.join(oldDir.path, "python3.12"),
+          path.join(newDir.path, "python3.14"),
+          path.join(newDir.path, "python3.99"),
+        ])
         expect(candidates.at(-2)).toEqual(["python3"])
         expect(candidates.at(-1)).toEqual(["python"])
       } finally {
@@ -199,7 +204,7 @@ describe("agency-swarm npx onboarding", () => {
       process.env.PATH = dir.path
       try {
         const candidates = await collectUnixPythonCandidates()
-        expect(candidates.map(([name]) => name)).toEqual(["python3.14", "python3", "python"])
+        expect(candidates.map(([name]) => name)).toEqual([path.join(dir.path, "python3.14"), "python3", "python"])
       } finally {
         process.env.PATH = originalPath
       }
@@ -220,8 +225,8 @@ describe("agency-swarm npx onboarding", () => {
       process.env.PATH = dir.path
       try {
         const candidates = await collectUnixPythonCandidates()
-        const versioned = candidates.map(([name]) => name).filter((name) => /^python3\.\d+$/.test(name))
-        expect(versioned).toEqual(["python3.13"])
+        const versioned = candidates.map(([name]) => name).filter((name) => /^python3\.\d+$/.test(path.basename(name)))
+        expect(versioned).toEqual([path.join(dir.path, "python3.13")])
       } finally {
         process.env.PATH = originalPath
       }
@@ -283,7 +288,9 @@ describe("agency-swarm npx onboarding", () => {
 
     const installCommand = commands.find(isUvPipInstallCommand)
 
-    expect(commands.filter(isPythonVenvCommand)).toEqual([["python3.12", "-m", "venv", ".venv"]])
+    const venvCommand = commands.find(isPythonVenvCommand)
+    expect(venvCommand?.slice(1)).toEqual(["-m", "venv", ".venv"])
+    expect(path.basename(venvCommand?.[0] ?? "")).toBe("python3.12")
     expect(installCommand).toEqual([
       getTestVenvUv(dir.path),
       "pip",
@@ -955,6 +962,261 @@ describe("agency-swarm npx onboarding", () => {
     expect(await Bun.file(staleFile).exists()).toBe(false)
     expect(commands.filter(isPythonVenvCommand)).toEqual([["/usr/bin/python3.12", "-m", "venv", ".venv"]])
   })
+
+  test("prepareProjectLaunch rebuilds Conda-family venvs for standalone products", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await writeVenvPython(dir.path)
+
+    const profile = {
+      ...AgencyProduct.resolve({}),
+      name: "Example Product",
+      pythonEnvironment: "standalone" as const,
+    }
+    const commands: string[][] = []
+    const replacementPython =
+      process.platform === "win32" ? "C:\\Python312\\python.exe" : "/opt/homebrew/bin/python3.12"
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+    spyOn(prompts, "spinner").mockReturnValue({
+      start() {},
+      stop() {},
+    } as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      if (isUvVersionCommand(cmd)) {
+        return { exited: Promise.resolve(0), stdout: "uv 0.8.0\n", stderr: "" } as never
+      }
+      commands.push(cmd)
+      if (isPythonProbeCommand(cmd)) {
+        const target = cmd[0] ?? ""
+        if (target.endsWith(process.platform === "win32" ? "\\python.exe" : "/python")) {
+          return {
+            exited: Promise.resolve(0),
+            stdout: `${target}\n3.12.7\n/opt/conda\n`,
+            stderr: "",
+          } as never
+        }
+        if (isReplacementPythonProbe(cmd)) {
+          return {
+            exited: Promise.resolve(0),
+            stdout: `${replacementPython}\n3.12.7\n/opt/homebrew/opt/python@3.12\n`,
+            stderr: "",
+          } as never
+        }
+      }
+      if (
+        isPythonVenvCommand(cmd) ||
+        isPythonPipInstallUvCommand(cmd) ||
+        isUvPipInstallCommand(cmd) ||
+        isCanaryCommand(cmd)
+      ) {
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareProjectLaunch(
+      {
+        directory: dir.path,
+        agencyFile: path.join(dir.path, "agency.py"),
+        moduleName: "agency",
+      },
+      profile,
+    )
+
+    expect(commands.some((cmd) => isPythonProbeCommand(cmd) && (cmd.at(-1) ?? "").includes("base_prefix"))).toBe(true)
+    expect(commands.filter(isPythonVenvCommand)).toEqual([[replacementPython, "-m", "venv", ".venv"]])
+
+    await launch?.cleanup?.()
+  })
+
+  test.skipIf(process.platform === "win32")(
+    "prepareProjectLaunch keeps standalone venvs when only the project path contains conda",
+    async () => {
+      await using root = await tmpdir()
+      const project = path.join(root.path, "work", "conda", "my-agency")
+      await mkdir(project, { recursive: true })
+      await writeAgency(project)
+      await writeVenvPython(project)
+
+      const profile = {
+        ...AgencyProduct.resolve({}),
+        name: "Example Product",
+        pythonEnvironment: "standalone" as const,
+      }
+      const commands: string[][] = []
+
+      spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+      spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+      spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+      spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+      spyOn(Bun, "spawn").mockImplementation((options: any) => {
+        const cmd = options?.cmd as string[] | undefined
+        if (!cmd) throw new Error("Missing command")
+        if (isUvVersionCommand(cmd)) {
+          return { exited: Promise.resolve(0), stdout: "uv 0.8.0\n", stderr: "" } as never
+        }
+        commands.push(cmd)
+        if (isPythonProbeCommand(cmd)) {
+          const target = cmd[0] ?? ""
+          return {
+            exited: Promise.resolve(0),
+            stdout: `${target}\n3.12.7\n/opt/homebrew/opt/python@3.12\n0\n`,
+            stderr: "",
+          } as never
+        }
+        if (isPythonPipInstallUvCommand(cmd) || isUvPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+          return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+        }
+        if (cmd[1]?.endsWith("launch_agency.py")) {
+          let resolveExit!: (code: number) => void
+          const exited = new Promise<number>((resolve) => {
+            resolveExit = resolve
+          })
+          return {
+            exited,
+            stderr: "",
+            kill() {
+              resolveExit(0)
+            },
+          } as never
+        }
+        throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+      })
+
+      const launch = await prepareProjectLaunch(
+        {
+          directory: project,
+          agencyFile: path.join(project, "agency.py"),
+          moduleName: "agency",
+        },
+        profile,
+      )
+
+      expect(getTestVenvPython(project)).toContain(`${path.sep}conda${path.sep}`)
+      expect(commands.some((cmd) => isPythonProbeCommand(cmd) && (cmd.at(-1) ?? "").includes("conda-meta"))).toBe(true)
+      expect(commands.some(isPythonVenvCommand)).toBe(false)
+
+      await launch?.cleanup?.()
+    },
+  )
+
+  test.skipIf(process.platform === "win32")(
+    "prepareProjectLaunch skips Conda metadata candidates for standalone products",
+    async () => {
+      await using dir = await tmpdir()
+      await using conda = await tmpdir()
+      await writeAgency(dir.path)
+      await Bun.write(path.join(conda.path, "python3.12"), "")
+
+      const profile = {
+        ...AgencyProduct.resolve({}),
+        name: "Example Product",
+        pythonEnvironment: "standalone" as const,
+      }
+      const commands: string[][] = []
+      const originalPath = process.env.PATH
+
+      process.env.PATH = conda.path
+      spyOn(prompts, "confirm").mockResolvedValue(true as never)
+      spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+      spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+      spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+      spyOn(prompts, "spinner").mockReturnValue({
+        start() {},
+        stop() {},
+      } as never)
+      spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+      spyOn(Bun, "spawn").mockImplementation((options: any) => {
+        const cmd = options?.cmd as string[] | undefined
+        if (!cmd) throw new Error("Missing command")
+        if (isUvVersionCommand(cmd)) {
+          return { exited: Promise.resolve(0), stdout: "uv 0.8.0\n", stderr: "" } as never
+        }
+        commands.push(cmd)
+        if (isPythonProbeCommand(cmd)) {
+          const target = cmd[0] ?? ""
+          if (target === path.join(conda.path, "python3.12")) {
+            return {
+              exited: Promise.resolve(0),
+              stdout: "/opt/py312/bin/python\n3.12.7\n/opt/py312\n1\n",
+              stderr: "",
+            } as never
+          }
+          if (target === "python3") {
+            return {
+              exited: Promise.resolve(0),
+              stdout: "/usr/bin/python3.12\n3.12.7\n/usr\n0\n",
+              stderr: "",
+            } as never
+          }
+        }
+        if (
+          isPythonVenvCommand(cmd) ||
+          isPythonPipInstallUvCommand(cmd) ||
+          isUvPipInstallCommand(cmd) ||
+          isCanaryCommand(cmd)
+        ) {
+          return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+        }
+        if (cmd[1]?.endsWith("launch_agency.py")) {
+          let resolveExit!: (code: number) => void
+          const exited = new Promise<number>((resolve) => {
+            resolveExit = resolve
+          })
+          return {
+            exited,
+            stderr: "",
+            kill() {
+              resolveExit(0)
+            },
+          } as never
+        }
+        throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+      })
+
+      try {
+        const launch = await prepareProjectLaunch(
+          {
+            directory: dir.path,
+            agencyFile: path.join(dir.path, "agency.py"),
+            moduleName: "agency",
+          },
+          profile,
+        )
+
+        expect(commands.some((cmd) => isPythonProbeCommand(cmd) && (cmd.at(-1) ?? "").includes("conda-meta"))).toBe(
+          true,
+        )
+        expect(commands.filter(isPythonVenvCommand)).toEqual([["python3", "-m", "venv", ".venv"]])
+
+        await launch?.cleanup?.()
+      } finally {
+        process.env.PATH = originalPath
+      }
+    },
+  )
 
   test("prepareProjectLaunch recreates `.venv` when uv cannot refresh launcher-managed dependencies", async () => {
     await using dir = await tmpdir()
@@ -3997,7 +4259,13 @@ function isReplacementPythonProbe(cmd: string[]) {
     if (target === "py" && (cmd[1]?.startsWith("-3.") ?? false)) return true
     return target === "python" || target === "python3"
   }
-  return target === "python" || target === "python3" || /^python3\.\d+$/.test(target)
+  const base = path.basename(target)
+  return target === "python" || target === "python3" || /^python3\.\d+$/.test(base)
+}
+
+function isPythonProbeCommand(cmd: string[]) {
+  const script = cmd.at(-1) ?? ""
+  return cmd.includes("-c") && script.includes("print(sys.executable)") && script.includes("sys.version.split")
 }
 
 function isCanaryCommand(cmd: string[]) {

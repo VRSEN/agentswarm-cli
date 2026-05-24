@@ -14,8 +14,11 @@ declare const AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION: string | undefined
 declare const AGENTSWARM_PRODUCT_TUI_LOGO_LEFT: string | undefined
 declare const AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: string | undefined
 declare const AGENTSWARM_PRODUCT_WORDMARK_LINES: string | undefined
+declare const AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT: string | undefined
 
 export namespace AgencyProduct {
+  export type PythonEnvironment = "any" | "standalone"
+
   export interface Profile {
     custom: boolean
     customBranding: boolean
@@ -36,6 +39,7 @@ export namespace AgencyProduct {
     tuiLogoLeft?: string[]
     tuiLogoRight?: string[]
     wordmarkLines?: string[]
+    pythonEnvironment: PythonEnvironment
   }
 
   const defaults: Profile = {
@@ -55,6 +59,7 @@ export namespace AgencyProduct {
     starterTemplateRepo: "agency-ai-solutions/agency-starter-template",
     starterProjectName: "my-agency",
     agencyEntryFiles: ["agency.py"],
+    pythonEnvironment: "any",
   }
 
   const defineValues = {
@@ -96,6 +101,10 @@ export namespace AgencyProduct {
       typeof AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT === "undefined" ? undefined : AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT,
     AGENTSWARM_PRODUCT_WORDMARK_LINES:
       typeof AGENTSWARM_PRODUCT_WORDMARK_LINES === "undefined" ? undefined : AGENTSWARM_PRODUCT_WORDMARK_LINES,
+    AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT:
+      typeof AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT === "undefined"
+        ? undefined
+        : AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT,
   } satisfies Record<string, string | undefined>
 
   function clean(value: string | undefined) {
@@ -144,6 +153,13 @@ export namespace AgencyProduct {
     return undefined
   }
 
+  function readPythonEnvironment(value: string | undefined): PythonEnvironment | undefined {
+    const normalized = clean(value)?.toLowerCase()
+    if (!normalized) return undefined
+    if (normalized === "any" || normalized === "standalone") return normalized
+    return undefined
+  }
+
   export function resolve(env: Record<string, string | undefined> = process.env): Profile {
     const overrides = {
       name: readValue(env, "AGENTSWARM_PRODUCT_DISPLAY_NAME"),
@@ -162,6 +178,7 @@ export namespace AgencyProduct {
       tuiLogoLeft: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_TUI_LOGO_LEFT")),
       tuiLogoRight: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT")),
       wordmarkLines: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_WORDMARK_LINES")),
+      pythonEnvironment: readPythonEnvironment(readValue(env, "AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT")),
     }
     const custom = Object.values(overrides).some((value) => value !== undefined)
     const customBranding =
@@ -191,6 +208,7 @@ export namespace AgencyProduct {
       tuiLogoLeft: overrides.tuiLogoLeft,
       tuiLogoRight: overrides.tuiLogoRight,
       wordmarkLines: overrides.wordmarkLines,
+      pythonEnvironment: overrides.pythonEnvironment ?? defaults.pythonEnvironment,
     }
   }
 
@@ -215,6 +233,7 @@ export namespace AgencyProduct {
   export const tuiLogoLeft = current.tuiLogoLeft
   export const tuiLogoRight = current.tuiLogoRight
   export const wordmarkLines = current.wordmarkLines
+  export const pythonEnvironment = current.pythonEnvironment
   export const connect = "Authenticate providers"
   export const start = [
     "Authenticate providers and connect to a local agency-swarm server before sending prompts.",
