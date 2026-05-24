@@ -100,6 +100,8 @@ const SERVER_STDERR_COLLECT_TIMEOUT_MS = 1000
 const REBUILD_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 const PROCESS_KILL_GRACE_MS = 5000
 const FALLBACK_AGENCY_SWARM_REQUIREMENT = "agency-swarm[fastapi,litellm]>=1.9.6"
+const CONDA_PATH_COMPONENT =
+  /(?:^|[/\\])(?:anaconda\d*|miniconda\d*|miniforge\d*|mambaforge|micromamba|conda\d*)(?:[/\\]|$)/i
 
 export function shouldRunNpxOnboarding(input: {
   env: NodeJS.ProcessEnv
@@ -1573,9 +1575,7 @@ async function inspectPython(
 }
 
 function isCondaPython(info: PythonInfo) {
-  return [info.executable, info.basePrefix].some((value) =>
-    value ? /(?:^|[/\\])(?:anaconda\d*|miniconda\d*|miniforge\d*|mambaforge|micromamba)(?:[/\\]|$)/i.test(value) : false,
-  )
+  return [info.executable, info.basePrefix].some((value) => (value ? CONDA_PATH_COMPONENT.test(value) : false))
 }
 
 function formatPython(info: PythonInfo | undefined, cmd: string[]) {

@@ -997,7 +997,7 @@ describe("agency-swarm npx onboarding", () => {
         if (target.endsWith(process.platform === "win32" ? "\\python.exe" : "/python")) {
           return {
             exited: Promise.resolve(0),
-            stdout: `${target}\n3.12.7\n/opt/anaconda3\n`,
+            stdout: `${target}\n3.12.7\n/opt/conda\n`,
             stderr: "",
           } as never
         }
@@ -1042,6 +1042,100 @@ describe("agency-swarm npx onboarding", () => {
 
     await launch?.cleanup?.()
   })
+
+  test.skipIf(process.platform === "win32")(
+    "prepareProjectLaunch skips plain Conda candidates for standalone products",
+    async () => {
+      await using dir = await tmpdir()
+      await using conda = await tmpdir()
+      await writeAgency(dir.path)
+      await Bun.write(path.join(conda.path, "python3.12"), "")
+
+      const profile = {
+        ...AgencyProduct.resolve({}),
+        name: "Example Product",
+        pythonEnvironment: "standalone" as const,
+      }
+      const commands: string[][] = []
+      const originalPath = process.env.PATH
+
+      process.env.PATH = conda.path
+      spyOn(prompts, "confirm").mockResolvedValue(true as never)
+      spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+      spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+      spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+      spyOn(prompts, "spinner").mockReturnValue({
+        start() {},
+        stop() {},
+      } as never)
+      spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+      spyOn(Bun, "spawn").mockImplementation((options: any) => {
+        const cmd = options?.cmd as string[] | undefined
+        if (!cmd) throw new Error("Missing command")
+        if (isUvVersionCommand(cmd)) {
+          return { exited: Promise.resolve(0), stdout: "uv 0.8.0\n", stderr: "" } as never
+        }
+        commands.push(cmd)
+        if (isPythonProbeCommand(cmd)) {
+          const target = cmd[0] ?? ""
+          if (target === path.join(conda.path, "python3.12")) {
+            return {
+              exited: Promise.resolve(0),
+              stdout: "/opt/conda/bin/python\n3.12.7\n/opt/conda\n",
+              stderr: "",
+            } as never
+          }
+          if (target === "python3") {
+            return {
+              exited: Promise.resolve(0),
+              stdout: "/usr/bin/python3.12\n3.12.7\n/usr\n",
+              stderr: "",
+            } as never
+          }
+        }
+        if (
+          isPythonVenvCommand(cmd) ||
+          isPythonPipInstallUvCommand(cmd) ||
+          isUvPipInstallCommand(cmd) ||
+          isCanaryCommand(cmd)
+        ) {
+          return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+        }
+        if (cmd[1]?.endsWith("launch_agency.py")) {
+          let resolveExit!: (code: number) => void
+          const exited = new Promise<number>((resolve) => {
+            resolveExit = resolve
+          })
+          return {
+            exited,
+            stderr: "",
+            kill() {
+              resolveExit(0)
+            },
+          } as never
+        }
+        throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+      })
+
+      try {
+        const launch = await prepareProjectLaunch(
+          {
+            directory: dir.path,
+            agencyFile: path.join(dir.path, "agency.py"),
+            moduleName: "agency",
+          },
+          profile,
+        )
+
+        expect(commands.filter(isPythonVenvCommand)).toEqual([["python3", "-m", "venv", ".venv"]])
+
+        await launch?.cleanup?.()
+      } finally {
+        process.env.PATH = originalPath
+      }
+    },
+  )
 
   test("prepareProjectLaunch recreates `.venv` when uv cannot refresh launcher-managed dependencies", async () => {
     await using dir = await tmpdir()
