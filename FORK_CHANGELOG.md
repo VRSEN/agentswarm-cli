@@ -95,14 +95,14 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 - **Persist handed-off agent across turns**
   - Intent: keep Agency Swarm handoff control active until the user changes it.
-  - Behavior: a `transfer_to_*` handoff switches control to the handed-off agent for later turns. This is not delegation; control does not return to the original agent unless the user or swarm changes it.
+  - Behavior: a `transfer_to_*` handoff switches control to the handed-off agent for later turns. This is not delegation; control does not return to the original agent unless the user or swarm changes it. If metadata refresh is unavailable during a later turn, an explicit prompt recipient is still sent best-effort instead of dropping routing.
   - Implementation: `resolveSessionRecipient` in `packages/opencode/src/session/agency-swarm.ts`.
   - Added by: `708545a4`
 
 - **Preserve caller agent during history compaction**
   - Intent: keep agency caller context intact when long sessions are compacted.
-  - Behavior: compaction preserves the caller agent identity needed for later routing and display.
-  - Implementation: `compactHistory` and `extractCallerAgent` in `packages/opencode/src/session/agency-swarm.ts`.
+  - Behavior: compaction preserves the caller agent identity needed for later routing and display. Internal flat Agency metadata is not replayed as AI SDK provider metadata.
+  - Implementation: `compactHistory` and `extractCallerAgent` in `packages/opencode/src/session/agency-swarm.ts`, and Agency metadata replay filtering in `packages/opencode/src/session/message-v2.ts`.
   - Added by: `06ad1be4`
 
 - **Recover loopback history across Agency server URL or port changes**

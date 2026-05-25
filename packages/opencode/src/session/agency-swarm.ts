@@ -1685,7 +1685,8 @@ export namespace SessionAgencySwarm {
         timeoutMs: input.options.discoveryTimeoutMs,
         mentionedRecipient,
         promptRecipient: input.recipientAgent,
-        historyRecipient: resolveHandoffRecipientFromHistory(chatHistory),
+        historyRecipient:
+          resolveHandoffRecipientFromHistory(chatHistory) ?? resolveHandoffRecipientFromHistory(history.chat_history),
         configuredRecipient: input.options.recipientAgent,
         configuredRecipientSelectedAt: input.options.recipientAgentSelectedAt,
       })
@@ -2235,6 +2236,17 @@ export namespace SessionAgencySwarm {
         timeoutMs: input.timeoutMs,
       })
     } catch (error) {
+      const explicit = candidates.find((candidate) => candidate.source === "message" || candidate.source === "prompt")
+      if (explicit) {
+        log.info("using explicit recipient without metadata validation because agency metadata refresh failed", {
+          sessionID: input.sessionID,
+          agency: input.agency,
+          recipientAgent: explicit.value.agent,
+          source: explicit.source,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return explicit.value.agent
+      }
       log.warn("unable to refresh agency metadata; skipping recipient override", {
         sessionID: input.sessionID,
         agency: input.agency,
