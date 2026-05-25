@@ -319,12 +319,6 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 ## Policy
 
-- **Artifact-aware requirement ledger**
-  - Intent: keep active work tied to the branches, PRs, files, and other artifacts it creates.
-  - Behavior: the ledger workflow records artifact lists on active requirements instead of leaving them implicit.
-  - Implementation: `command_add` and `command_update` in `.codex/skills/requirement-ledger/scripts/requirement_ledger.py`.
-  - Added by: `41f624ab`
-
 - **Fork divergence substantiation log**
   - Intent: keep durable proof of why the fork differs from upstream.
   - Behavior: `FORK_CHANGELOG.md` tracks the current intentional fork-only feature set against the upstream baseline.
@@ -336,18 +330,6 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Behavior: standing rules require an upstream read before non-trivial edits to shared files.
   - Implementation: `## Fork Context` in `AGENTS.md`.
   - Added by: `27e66122`
-
-- **End-user proof gate for bug fixes**
-  - Intent: stop bug fixes from being marked done without proof from the real user flow.
-  - Behavior: bug-fix work is not complete until the same user-visible flow is rerun and checked.
-  - Implementation: `.codex/skills/test-workflow`.
-  - Added by: `537df24c`
-
-- **Screenshot proof gate for TUI and visual fixes**
-  - Intent: stop visual and TUI fixes from closing without a real image check.
-  - Behavior: TUI and visual bug fixes need screenshot proof from the installed or user-visible build.
-  - Implementation: `.codex/skills/test-workflow`.
-  - Added by: `80f8fa36`
 
 - **Codex pre-release review gate**
   - Intent: stop release work from shipping before the fork's required Codex review is complete.

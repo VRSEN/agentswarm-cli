@@ -4,7 +4,7 @@ This file is the public repo-specific supplement for `agentswarm-cli`.
 CLAUDE.md must stay a symlink to AGENTS.md.
 
 Use this file for repo invariants, fork policy, code style, release gates, and repo skill routing. Do not duplicate detailed global manager/process policy here.
-Policy summaries live in AGENTS.md files. Repo skills under `.codex/skills/**` carry procedures, commands, validation details, and routing only; they must not become a second policy store.
+Policy summaries live in AGENTS.md files. Do not check in duplicate copies of global workflow skills. If this repo adds a skill, it must carry only narrow repo-specific procedure, command routing, validation detail, or harness facts.
 
 ## Project Context
 
@@ -18,7 +18,7 @@ Policy summaries live in AGENTS.md files. Repo skills under `.codex/skills/**` c
 - `packages/app` is the shared Solid UI; `packages/desktop` and `packages/desktop-electron` wrap desktop surfaces around it.
 - `packages/sdk/js` and `packages/plugin` define generated client and extension surfaces that must stay aligned with server and transport contracts.
 - `packages/web`, `packages/docs`, and `specs/` carry public docs and protocol specs; use package-local scripts from `package.json` for validation.
-- Route Agent Swarm terminal QA through `.codex/skills/test-workflow`; the harness lives in `e2e/agent-swarm-tui`.
+- The Agent Swarm terminal QA harness lives in `e2e/agent-swarm-tui`.
 
 ## Fork Context
 
@@ -60,7 +60,7 @@ Policy summaries live in AGENTS.md files. Repo skills under `.codex/skills/**` c
 - If the remote is unavailable, you may continue, but say that you are assuming the branch is already synced.
 - Keep pull-request branches linear on top of their base branch. Rebase onto the live base branch; do not merge the base branch into a pull-request branch.
 - Before opening a pull request, open and satisfy the live repo rules: `CONTRIBUTING.md`, `.github/pull_request_template.md`, `.github/workflows/pr-standards.yml`, `.github/workflows/compliance-close.yml`, and any workflow that will gate the touched change.
-- For pull-request-specific work or required local Codex review, including comment review, thread replies, issue-link checks, pull-request body edits, outside-signal polling, and other GitHub-side mutations, use `.codex/skills/codex-cli-review`.
+- Pull-request-specific work includes comment review, thread replies, issue-link checks, pull-request body edits, outside-signal polling, and other GitHub-side mutations. Keep those checks tied to the live pull request, current head SHA, and repo gates.
 - Before requesting merge approval, verify the final diff, source/base/head SHAs, required checks, unresolved threads, and official review findings. The latest head is merge-ready only with a clean current-head local Codex review, green required checks, and zero unresolved threads.
 - Every pull-request merge needs explicit user approval and a human alignment gate. Pull requests with user-testable behavior also need a human QA gate. Worker review can inform these gates but cannot replace them.
 - Pending GitHub checks, hosted reviews, unresolved pull-request comments, unresolved official review findings, and other agent-visible workflows are open work until fixed, rerun green, or classified as non-blocking with checked evidence.
@@ -82,8 +82,8 @@ Policy summaries live in AGENTS.md files. Repo skills under `.codex/skills/**` c
   3. The user tests that local build by hand and gives explicit approval.
   4. Only then tag the release, create the GitHub Release, and publish to npm.
 - Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts changed.
-- Before release approval or any release safety claim, satisfy `.codex/skills/test-workflow` release proof for the exact release commit.
-- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit. Use `.codex/skills/codex-cli-review` with base `vrsen/dev`; if any review finding remains, stop and surface it to the user.
+- Before release approval or any release safety claim, prove the exact release commit against the repo's release checks, TUI flow checks when relevant, installed-build proof, and human QA gate.
+- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit against base `vrsen/dev`; if any review finding remains, stop and surface it to the user.
 
 ## Documentation Rules
 
@@ -210,17 +210,6 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
 - If a review comment is truly needed, keep it short, technical, and action-focused.
 - If you do not know what a mention will trigger, look it up before you post. When in doubt, do not post.
 - Why: a recent free-form PR comment paged the maintainer and re-triggered the Codex bot unnecessarily; `@` on GitHub is a side effect, not prose.
-
-## Repo Skill Routing
-
-Repo skills are checked-in procedure and routing playbooks under `.codex/skills/**`; they are not product/TUI skills and do not run automatically. Read the relevant `SKILL.md` on demand unless the environment exposes the skill directly.
-
-- Use `.codex/skills/requirement-ledger` for durable queue, archive, work-state, and active artifact tracking.
-- Use `.codex/skills/policy-maintenance` for `AGENTS.md`, `CLAUDE.md`, and repo-skill procedure or routing edits.
-- Use `.codex/skills/test-workflow` for test selection, test writing, automated E2E, manual QA, installed-build proof, release proof, live-service validation, and Agent Swarm TUI evidence.
-- Use `.codex/skills/delegation-management` for subagent prompts, worker reuse or rotation, delegated permissions, and manager review of worker output.
-- Use `.codex/skills/codex-cli-review` for local Codex review artifacts, pull-request compliance checks, pull-request comment review loops, and GitHub-side pull-request work.
-- Use `.codex/skills/claude-cli-review` only as supporting review evidence when active policy allows it.
 
 ## References
 
