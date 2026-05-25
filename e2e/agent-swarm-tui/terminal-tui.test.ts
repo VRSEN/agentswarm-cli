@@ -118,6 +118,24 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(screen).not.toContain("Connect a provider")
   })
 
+  test("downstream product /agents exact command is not shadowed by /addons", async () => {
+    currentServer = await startAgencyProtocolServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      env: {
+        AGENTSWARM_PRODUCT_ENABLE_ADDONS: "true",
+      },
+      config: openAIProviderTestConfig,
+    })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    currentTui.write("/agents\r")
+    const screen = await currentTui.waitForText("Select swarm", tuiInteractionTimeoutMs)
+
+    expect(screen).toContain("Live QA Agency")
+    expect(screen).not.toContain("Configure add-ons")
+  })
+
   test("downstream product auth success opens add-ons before closing", async () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({

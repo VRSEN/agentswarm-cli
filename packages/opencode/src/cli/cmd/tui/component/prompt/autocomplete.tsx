@@ -464,6 +464,9 @@ export function Autocomplete(props: {
       return prev
     }
 
+    const exact = mixed.find(
+      (item) => removeLineRange((item.value ?? item.display).trimEnd()) === store.visible + searchValue,
+    )
     const result = fuzzysort.go(removeLineRange(searchValue), mixed, {
       keys: [
         (obj) => removeLineRange((obj.value ?? obj.display).trimEnd()),
@@ -482,7 +485,9 @@ export function Autocomplete(props: {
       },
     })
 
-    return result.map((arr) => arr.obj)
+    const sorted = result.map((arr) => arr.obj)
+    if (!exact) return sorted
+    return [exact, ...sorted.filter((item) => item !== exact)]
   })
 
   createEffect(() => {
@@ -512,6 +517,15 @@ export function Autocomplete(props: {
   }
 
   function select() {
+    if (store.visible === "/" && store.selected === 0) {
+      const typed = "/" + props.input().getTextRange(store.index + 1, props.input().cursorOffset)
+      const exact = command.slashes().find((item) => [item.display, ...(item.aliases ?? [])].includes(typed))
+      if (exact) {
+        hide()
+        exact.onSelect()
+        return
+      }
+    }
     const selected = options()[store.selected]
     if (!selected) return
     hide()
