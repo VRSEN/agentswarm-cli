@@ -22,8 +22,8 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 
 ## Fork Context
 
-- This repo is `agentswarm-cli`, our fork, which means our maintained copy of OpenCode. Here, `upstream` means `upstream/dev` from `https://github.com/anomalyco/opencode`, never `vrsen/dev` or `https://github.com/VRSEN/agentswarm-cli`.
-- Treat `upstream/dev` as the baseline and keep the fork delta limited to Agency Swarm integration, required fork packaging or release work, and approved branding.
+- This repo is `agentswarm-cli`, our maintained fork of OpenCode. Here, `upstream` means the OpenCode `dev` branch at `https://github.com/anomalyco/opencode`, never this fork's own default branch.
+- Treat the upstream OpenCode `dev` branch as the baseline and keep the fork delta limited to Agency Swarm integration, required fork packaging or release work, and approved branding.
 - Before any non-trivial edit to a file that also exists in upstream, read the upstream version first and prove that the change still fits one of those buckets. Ask: can you shape the change so the next upstream merge is easier, and do any changed lines look accidental or unexplained? If yes, treat those lines as a bug candidate, check `git blame` or `FORK_CHANGELOG.md`, and escalate to the user if you still cannot explain them.
 - Unrelated refactors, reformatting, style drift, while-you're-here cleanup, and made-up abstraction layers are not allowed in fork-only work.
 - Every fork-only line needs a concrete reason. If a line is not strictly required, remove it or restore the upstream shape. State why upstream behavior is not enough in the commit message or `FORK_CHANGELOG.md`.
@@ -32,34 +32,35 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 - In code, pull-request, and release-candidate reviews, treat code bugs, repo-rule violations, PR compliance failures, missing official review gates, missing required QA or evidence, fork-minimality drift, excessive scope, and unintentional divergence as findings, not style notes. Mark them `P0` when they risk release harm, data loss, security, privacy, destructive behavior, or the core Agent Swarm/TUI release path; `P1` when they risk real regressions, user-visible behavior changes, or fork-minimality/upstream-alignment breakage; and `P2` when they add unjustified drift, unrelated churn, missing evidence, or unapproved fork delta.
 - Treat `FORK_CHANGELOG.md` and `USER_FLOWS.md` as the fork priming path for coding, review, release, and delegation. Read the relevant bounded sections before fork work; `FORK_CHANGELOG.md` approves intentional divergence, and `USER_FLOWS.md` owns fork user-flow expectations. If code differs from upstream and the behavior is not clearly covered there, looks unintentional, or changes a listed user flow without matching proof, stop and escalate before editing further.
 - Keep a line-or-hunk-level classification for every non-trivial fork delta before merge. The classification may live in an internal review artifact, PR review notes, or tests; `FORK_CHANGELOG.md` stays high-level and should summarize categories, not become a raw line dump.
-- If the needed feature or behavior already exists in `upstream/dev`, use that implementation. Do not build a parallel path.
+- If the needed feature or behavior already exists upstream, use that implementation. Do not build a parallel path.
 - Keep the clean test checkout clean and current before you use it as proof. If that checkout is stale or has unowned local changes, escalate before you rely on it.
 - Do not hide local-only drift.
 - Any task that edits files must run in a separate git worktree. Do not edit from a detached checkout or the shared main checkout.
-- Before any commit, pull request, or release, compare your state to the right clean baseline: use `upstream/dev` for upstream comparisons and fork-delta checks, and use `vrsen/dev` only for fork-branch drift or publish-state checks. Revert or justify anything that is not tied to a deliberate requirement.
+- Before any commit, pull request, or release, compare your state to the right clean baseline: use upstream OpenCode for upstream comparisons and fork-delta checks, and use this fork's default branch only for fork-branch drift or publish-state checks. Revert or justify anything that is not tied to a deliberate requirement.
 - Why: preserve rebuild-from-upstream capability and stop silent fork drift.
-- Local remote model: in the maintainer checkout, `upstream` must point to upstream OpenCode at `https://github.com/anomalyco/opencode` and `vrsen` must point to the fork at `https://github.com/VRSEN/agentswarm-cli`, the canonical remote for `dev` pushes. These are local Git remote aliases, not GitHub-global names.
+- Local remotes may differ by checkout. Verify remote URLs before fetch, push, compare, or release work; do not rely on a remote alias name as proof of ownership.
 - Treat `dev` and other shared long-lived fork branches as append-only. Do not force-push, rebase, or rewrite their published history unless the user explicitly asks for that exact recovery.
 - A stale-branch mistake is severity one. If a pull request comes from the wrong base, wrong diff, or wrong artifact, stop product work and do a full live audit before you mutate pull requests again.
-- To sync fork `dev`, merge `upstream/dev` into fork `dev`, or do the reverse equivalent, then fast-forward push. Avoid restacking published commit series.
+- To sync the fork default branch, merge upstream OpenCode `dev` into the fork default branch, or do the reverse equivalent, then fast-forward push. Avoid restacking published commit series.
 - If a rewrite is explicitly approved as an emergency exception, make backup refs first and save proof that compares the old commit range to the new one before and after.
 - Sync workflow:
-  - verify `upstream` and `vrsen` point to the expected repository URLs
+  - verify local remote URLs point to the expected upstream and fork repositories
   - run `git fetch --all --prune`
-  - verify `upstream/dev...vrsen/dev` counts
-  - push local `dev` to the `vrsen` remote
+  - verify upstream-branch to fork-default-branch counts
+  - push the local fork default branch to the fork repository
 - To regenerate the JavaScript SDK, run `./packages/sdk/js/script/build.ts`.
 
 ## Repo Work And Pull Requests
 
-- Docs-only and `FORK_CHANGELOG.md` edits do not need product QA, but mutating `vrsen/dev` for them still needs explicit user approval.
-- After verifying the local remote model, if the relevant remotes are reachable, run `git fetch --all --prune` and work from a named branch based on the mandated target branch before analysis, edits, or tests. In this checkout, `upstream/dev` means the upstream OpenCode `dev` branch and `vrsen/dev` means the canonical fork `dev` branch.
-- If the task spans more than one repo or worktree, run `git fetch --all --prune`, `git status -sb`, and `git rev-parse --short HEAD`, or the repo-tooling equivalent, in each one and confirm the active branch before you edit.
-- For pushes to `vrsen/dev`, verify the `upstream/dev...vrsen/dev` counts before you push.
-- For public release work, verify that the exact release commit is already reachable from `vrsen/dev` and that the target version is already present in the release input files.
+- Docs-only and `FORK_CHANGELOG.md` edits do not need product QA, but mutating the fork default branch for them still needs explicit user approval.
+- After verifying the local remote model, if the relevant remotes are reachable, run `git fetch --all --prune` and work from a named branch based on the mandated target branch before analysis, edits, or tests.
+- If the task spans more than one repo or worktree, fetch the relevant remotes, run `git status -sb` and `git rev-parse --short HEAD`, or the repo-tooling equivalent, in each one and confirm the active branch before you edit.
+- For pushes to the fork default branch, verify the upstream-branch to fork-default-branch counts before you push.
+- For public release work, verify that the exact release commit is already reachable from the fork default branch and that the target version is already present in the release input files.
 - If the remote is unavailable, you may continue, but say that you are assuming the branch is already synced.
 - Keep pull-request branches linear on top of their base branch. Rebase onto the live base branch; do not merge the base branch into a pull-request branch.
 - Before opening a pull request, open and satisfy the live repo rules: `CONTRIBUTING.md`, `.github/pull_request_template.md`, `.github/workflows/pr-standards.yml`, `.github/workflows/compliance-close.yml`, and any workflow that will gate the touched change.
+- Build-impact changes must go through a pull request before they reach the fork default branch. Build-impact includes runtime code, packaging, release scripts, generated binaries, dependency manifests or lockfiles, CI/build workflows, and tests or harnesses that gate shipped behavior. Direct default-branch commits for build-impact changes are forbidden unless the user explicitly approves an emergency exception for that exact change.
 - Pull-request-specific work includes comment review, thread replies, issue-link checks, pull-request body edits, outside-signal polling, and other GitHub-side mutations. Keep those checks tied to the live pull request, current head SHA, and repo gates.
 - Before requesting merge approval, verify the final diff, source/base/head SHAs, required checks, unresolved threads, and official review findings. The latest head is merge-ready only with a clean current-head local Codex review, green required checks, and zero unresolved threads.
 - Every pull-request merge needs explicit user approval and a human alignment gate. Pull requests with user-testable behavior also need a human QA gate. Worker review can inform these gates but cannot replace them.
@@ -83,7 +84,7 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
   4. Only then tag the release, create the GitHub Release, and publish to npm.
 - Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts changed.
 - Before release approval or any release safety claim, prove the exact release commit against the repo's release checks, TUI flow checks when relevant, installed-build proof, and human QA gate.
-- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit against base `vrsen/dev`; if any review finding remains, stop and surface it to the user.
+- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit against the fork default branch; if any review finding remains, stop and surface it to the user.
 
 ## Documentation Rules
 
