@@ -5,26 +5,9 @@ import { useTheme } from "../context/theme"
 import { DialogPrompt } from "../ui/dialog-prompt"
 import { readEnvKey, writeEnvKeys } from "../util/env-file"
 import { errorMessage as toErrorMessage } from "@/util/error"
+import { AgencyProduct } from "@/agency-swarm/product"
 
-type Addon = {
-  id: string
-  title: string
-  keys: string[]
-  excludeProviders?: string[]
-}
-
-const ADDONS: Addon[] = [
-  { id: "search", title: "Web Search", keys: ["SEARCH_API_KEY"] },
-  { id: "anthropic", title: "Anthropic Claude", keys: ["ANTHROPIC_API_KEY"], excludeProviders: ["anthropic"] },
-  { id: "composio", title: "Composio", keys: ["COMPOSIO_API_KEY", "COMPOSIO_USER_ID"] },
-  { id: "google", title: "Google Gemini", keys: ["GOOGLE_API_KEY"], excludeProviders: ["google"] },
-  { id: "fal", title: "Fal.ai", keys: ["FAL_KEY"] },
-  { id: "pexels", title: "Pexels", keys: ["PEXELS_API_KEY"] },
-  { id: "pixabay", title: "Pixabay", keys: ["PIXABAY_API_KEY"] },
-  { id: "unsplash", title: "Unsplash", keys: ["UNSPLASH_ACCESS_KEY"] },
-]
-
-function keys(addons: Addon[]) {
+function keys(addons: AgencyProduct.Addon[]) {
   return addons.flatMap((addon) => addon.keys)
 }
 
@@ -35,14 +18,14 @@ export function DialogAddons(props: { providerID: string; onDone: () => void; er
   const [version, setVersion] = createSignal(0)
   const [error, setError] = createSignal(props.error)
   const available = createMemo(() =>
-    ADDONS.filter((addon) => !(addon.excludeProviders ?? []).includes(props.providerID)),
+    AgencyProduct.addons.filter((addon) => !(addon.excludeProviders ?? []).includes(props.providerID)),
   )
 
   onMount(() => {
     if (available().length === 0) props.onDone()
   })
 
-  function toggle(addon: Addon) {
+  function toggle(addon: AgencyProduct.Addon) {
     setError(undefined)
     setSelected((current) => {
       const next = new Set(current)
@@ -52,7 +35,7 @@ export function DialogAddons(props: { providerID: string; onDone: () => void; er
     })
   }
 
-  function configured(addon: Addon) {
+  function configured(addon: AgencyProduct.Addon) {
     version()
     return addon.keys.every((key) => readEnvKey(key))
   }

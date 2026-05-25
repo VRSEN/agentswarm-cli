@@ -9,7 +9,7 @@ describe("AgencyProduct profile", () => {
     expect(profile.customBranding).toBe(false)
     expect(profile.skipPostAuthModelSelection).toBe(false)
     expect(profile.hideModelSelection).toBe(false)
-    expect(profile.enableAddons).toBe(false)
+    expect(profile.addons).toEqual([])
     expect(AgencyProduct.shouldShowPostAuthModelSelection(profile)).toBe(true)
     expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(true)
     expect(AgencyProduct.shouldShowAddons(profile)).toBe(false)
@@ -50,7 +50,15 @@ describe("AgencyProduct profile", () => {
       AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: "RIGHT\\nRIGHT2",
       AGENTSWARM_PRODUCT_WORDMARK_LINES: "WORD\\n MARK",
       AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT: "standalone",
-      AGENTSWARM_PRODUCT_ENABLE_ADDONS: "true",
+      AGENTSWARM_PRODUCT_ADDONS: JSON.stringify([
+        { id: "search", title: "Search", keys: ["SEARCH_API_KEY"] },
+        {
+          id: "anthropic",
+          title: "Anthropic",
+          keys: ["ANTHROPIC_API_KEY"],
+          excludeProviders: ["anthropic"],
+        },
+      ]),
     })
 
     expect(profile.custom).toBe(true)
@@ -58,7 +66,15 @@ describe("AgencyProduct profile", () => {
     expect(profile.customStarter).toBe(true)
     expect(profile.skipPostAuthModelSelection).toBe(true)
     expect(profile.hideModelSelection).toBe(true)
-    expect(profile.enableAddons).toBe(true)
+    expect(profile.addons).toEqual([
+      { id: "search", title: "Search", keys: ["SEARCH_API_KEY"] },
+      {
+        id: "anthropic",
+        title: "Anthropic",
+        keys: ["ANTHROPIC_API_KEY"],
+        excludeProviders: ["anthropic"],
+      },
+    ])
     expect(AgencyProduct.shouldShowPostAuthModelSelection(profile)).toBe(false)
     expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(false)
     expect(AgencyProduct.shouldShowAddons(profile)).toBe(true)
@@ -83,14 +99,53 @@ describe("AgencyProduct profile", () => {
     })
   })
 
-  test("ignores invalid add-ons flag values", () => {
+  test("ignores invalid add-ons config values", () => {
     const profile = AgencyProduct.resolve({
-      AGENTSWARM_PRODUCT_ENABLE_ADDONS: "maybe",
+      AGENTSWARM_PRODUCT_ADDONS: JSON.stringify([{ id: "search", title: "Search", keys: [] }]),
     })
 
     expect(profile.custom).toBe(false)
-    expect(profile.enableAddons).toBe(false)
+    expect(profile.addons).toEqual([])
     expect(AgencyProduct.shouldShowAddons(profile)).toBe(false)
+  })
+
+  test("ignores add-ons config with invalid env keys", () => {
+    for (const key of ["", "bad", "BAD-KEY"]) {
+      const profile = AgencyProduct.resolve({
+        AGENTSWARM_PRODUCT_ADDONS: JSON.stringify([{ id: "search", title: "Search", keys: [key] }]),
+      })
+
+      expect(profile.custom).toBe(false)
+      expect(profile.addons).toEqual([])
+      expect(AgencyProduct.shouldShowAddons(profile)).toBe(false)
+    }
+  })
+
+  test("ignores add-ons config with duplicate ids", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_ADDONS: JSON.stringify([
+        { id: "search", title: "Search", keys: ["SEARCH_API_KEY"] },
+        { id: "search", title: "Other Search", keys: ["OTHER_SEARCH_API_KEY"] },
+      ]),
+    })
+
+    expect(profile.custom).toBe(false)
+    expect(profile.addons).toEqual([])
+    expect(AgencyProduct.shouldShowAddons(profile)).toBe(false)
+  })
+
+  test("ignores add-ons config with malformed provider exclusions", () => {
+    for (const excludeProviders of ["anthropic", [1], [null], {}]) {
+      const profile = AgencyProduct.resolve({
+        AGENTSWARM_PRODUCT_ADDONS: JSON.stringify([
+          { id: "search", title: "Search", keys: ["SEARCH_API_KEY"], excludeProviders },
+        ]),
+      })
+
+      expect(profile.custom).toBe(false)
+      expect(profile.addons).toEqual([])
+      expect(AgencyProduct.shouldShowAddons(profile)).toBe(false)
+    }
   })
 
   test("ignores invalid downstream Python environment values", () => {

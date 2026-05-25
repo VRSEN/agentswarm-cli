@@ -46,7 +46,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Behavior: release builds can use `AGENTSWARM_PRODUCT_VERSION` so direct downstream binaries report the downstream package version.
   - Behavior: downstream profiles can set `AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION` to skip the model prompt after auth. `/models` stays available unless `AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION` explicitly hides it.
   - Behavior: downstream profiles can set `AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT=standalone` so launcher-created or repaired project `.venv` environments use standalone Python instead of Conda-family Python. The Agent Swarm default remains `any`.
-  - Behavior: downstream profiles can set `AGENTSWARM_PRODUCT_ENABLE_ADDONS=true` to expose the native `/addons` command and post-auth add-ons setup flow. The Agent Swarm default keeps `/addons` hidden.
+  - Behavior: downstream profiles can set `AGENTSWARM_PRODUCT_ADDONS` to a JSON add-ons list to expose the native `/addons` command and post-auth add-ons setup flow. The Agent Swarm default keeps `/addons` hidden.
   - Implementation: `AgencyProduct` in `packages/opencode/src/agency-swarm/product.ts`, launcher detection in `packages/opencode/src/agency-swarm/npx.ts`, the FastAPI server launcher module argument, installation distribution metadata, native TUI provider dialogs, and `packages/opencode/script/build.ts`.
 
 - **One-command launcher npm package**

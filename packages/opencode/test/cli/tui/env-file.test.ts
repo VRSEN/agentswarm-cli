@@ -87,6 +87,27 @@ describe("env-file", () => {
     }
   })
 
+  test("deduplicates keys before writing", async () => {
+    const dir = await tempdir()
+    try {
+      writeEnvKeys(
+        [
+          ["SEARCH_API_KEY", "old"],
+          ["COMPOSIO_API_KEY", "composio"],
+          ["SEARCH_API_KEY", "new"],
+        ],
+        dir,
+      )
+
+      const content = await readFile(path.join(dir, ".env"), "utf8")
+      expect(content.match(/SEARCH_API_KEY/g)?.length).toBe(1)
+      expect(readEnvKey("SEARCH_API_KEY", dir)).toBe("new")
+      expect(readEnvKey("COMPOSIO_API_KEY", dir)).toBe("composio")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   test("preserves CRLF line endings", async () => {
     const dir = await tempdir()
     try {

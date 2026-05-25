@@ -68,10 +68,11 @@ export function writeEnvKey(key: string, value: string, dir = process.cwd()) {
 export function writeEnvKeys(values: [string, string][], dir = process.cwd()) {
   if (values.length === 0) return
   for (const [key] of values) assertKey(key)
+  const unique = [...new Map(values)]
   if (isTracked(dir)) throw new Error("Refusing to write add-on secrets to a git-tracked .env file.")
 
   const file = envPath(dir)
-  const next = values.map(([key, value]) => `${key}=${formatValue(value)}`)
+  const next = unique.map(([key, value]) => `${key}=${formatValue(value)}`)
   if (!existsSync(file)) {
     writeProtected(file, `${next.join("\n")}\n`)
     return
@@ -80,8 +81,8 @@ export function writeEnvKeys(values: [string, string][], dir = process.cwd()) {
   const current = readFileSync(file, "utf8")
   const lineEnd = eol(current)
   let lines = current.split(/\r\n|\n/)
-  const pending = new Map(values)
-  for (const [key, value] of values) {
+  const pending = new Map(unique)
+  for (const [key, value] of unique) {
     const match = new RegExp(`^(\\s*(?:export\\s+)?)${key}(\\s*=)`)
     lines = lines.map((line) => {
       if (!match.test(line)) return line

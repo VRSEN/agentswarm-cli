@@ -15,10 +15,17 @@ declare const AGENTSWARM_PRODUCT_TUI_LOGO_LEFT: string | undefined
 declare const AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: string | undefined
 declare const AGENTSWARM_PRODUCT_WORDMARK_LINES: string | undefined
 declare const AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT: string | undefined
-declare const AGENTSWARM_PRODUCT_ENABLE_ADDONS: string | undefined
+declare const AGENTSWARM_PRODUCT_ADDONS: string | undefined
 
 export namespace AgencyProduct {
   export type PythonEnvironment = "any" | "standalone"
+
+  export interface Addon {
+    id: string
+    title: string
+    keys: string[]
+    excludeProviders?: string[]
+  }
 
   export interface Profile {
     custom: boolean
@@ -26,7 +33,7 @@ export namespace AgencyProduct {
     customStarter: boolean
     skipPostAuthModelSelection: boolean
     hideModelSelection: boolean
-    enableAddons: boolean
+    addons: Addon[]
     name: string
     cmd: string
     packageName: string
@@ -50,7 +57,7 @@ export namespace AgencyProduct {
     customStarter: false,
     skipPostAuthModelSelection: false,
     hideModelSelection: false,
-    enableAddons: false,
+    addons: [],
     name: "Agent Swarm",
     cmd: "agentswarm",
     packageName: "agentswarm-cli",
@@ -106,8 +113,8 @@ export namespace AgencyProduct {
       typeof AGENTSWARM_PRODUCT_WORDMARK_LINES === "undefined" ? undefined : AGENTSWARM_PRODUCT_WORDMARK_LINES,
     AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT:
       typeof AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT === "undefined" ? undefined : AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT,
-    AGENTSWARM_PRODUCT_ENABLE_ADDONS:
-      typeof AGENTSWARM_PRODUCT_ENABLE_ADDONS === "undefined" ? undefined : AGENTSWARM_PRODUCT_ENABLE_ADDONS,
+    AGENTSWARM_PRODUCT_ADDONS:
+      typeof AGENTSWARM_PRODUCT_ADDONS === "undefined" ? undefined : AGENTSWARM_PRODUCT_ADDONS,
   } satisfies Record<string, string | undefined>
 
   function clean(value: string | undefined) {
@@ -163,6 +170,54 @@ export namespace AgencyProduct {
     return undefined
   }
 
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+  }
+
+  function readStringList(value: unknown) {
+    return Array.isArray(value) && value.every((item) => typeof item === "string") && value.length > 0
+      ? value
+      : undefined
+  }
+
+  function readOptionalStringList(value: unknown) {
+    return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : undefined
+  }
+
+  function isEnvKey(value: string) {
+    return /^[A-Z_][A-Z0-9_]*$/.test(value)
+  }
+
+  function readAddon(value: unknown): Addon | undefined {
+    if (!isRecord(value)) return undefined
+    if (typeof value.id !== "string" || typeof value.title !== "string") return undefined
+    const keys = readStringList(value.keys)
+    if (!keys || keys.some((key) => !isEnvKey(key))) return undefined
+    const hasExclusions = Object.hasOwn(value, "excludeProviders")
+    const excludeProviders = hasExclusions ? readOptionalStringList(value.excludeProviders) : undefined
+    if (hasExclusions && !excludeProviders) return undefined
+    const addon = {
+      id: value.id,
+      title: value.title,
+      keys,
+    }
+    return excludeProviders ? { ...addon, excludeProviders } : addon
+  }
+
+  function readAddons(value: string | undefined) {
+    if (value === undefined || value.trim() === "") return undefined
+    try {
+      const parsed: unknown = JSON.parse(value)
+      if (!Array.isArray(parsed)) return undefined
+      const addons = parsed.map(readAddon).filter((item): item is Addon => item !== undefined)
+      if (addons.length !== parsed.length) return undefined
+      if (new Set(addons.map((addon) => addon.id)).size !== addons.length) return undefined
+      return addons
+    } catch {
+      return undefined
+    }
+  }
+
   export function resolve(env: Record<string, string | undefined> = process.env): Profile {
     const overrides = {
       name: readValue(env, "AGENTSWARM_PRODUCT_DISPLAY_NAME"),
@@ -182,7 +237,7 @@ export namespace AgencyProduct {
       tuiLogoRight: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT")),
       wordmarkLines: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_WORDMARK_LINES")),
       pythonEnvironment: readPythonEnvironment(readValue(env, "AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT")),
-      enableAddons: readBoolean(readValue(env, "AGENTSWARM_PRODUCT_ENABLE_ADDONS")),
+      addons: readAddons(readRawValue(env, "AGENTSWARM_PRODUCT_ADDONS")),
     }
     const custom = Object.values(overrides).some((value) => value !== undefined)
     const customBranding =
@@ -198,7 +253,7 @@ export namespace AgencyProduct {
       customStarter,
       skipPostAuthModelSelection: overrides.skipPostAuthModelSelection ?? defaults.skipPostAuthModelSelection,
       hideModelSelection: overrides.hideModelSelection ?? defaults.hideModelSelection,
-      enableAddons: overrides.enableAddons ?? defaults.enableAddons,
+      addons: overrides.addons ?? defaults.addons,
       name: overrides.name ?? defaults.name,
       cmd: overrides.cmd ?? defaults.cmd,
       packageName: overrides.packageName ?? defaults.packageName,
@@ -224,7 +279,7 @@ export namespace AgencyProduct {
   export const customStarter = current.customStarter
   export const skipPostAuthModelSelection = current.skipPostAuthModelSelection
   export const hideModelSelection = current.hideModelSelection
-  export const enableAddons = current.enableAddons
+  export const addons = current.addons
   export const name = current.name
   export const packageName = current.packageName
   export const launcherPackageName = current.launcherPackageName
@@ -254,8 +309,8 @@ export namespace AgencyProduct {
     return !profile.hideModelSelection
   }
 
-  export function shouldShowAddons(profile: Pick<Profile, "enableAddons"> = current) {
-    return profile.enableAddons
+  export function shouldShowAddons(profile: Pick<Profile, "addons"> = current) {
+    return profile.addons.length > 0
   }
 
   export function modelSwitchCommandState(profile: Pick<Profile, "hideModelSelection"> = current) {
