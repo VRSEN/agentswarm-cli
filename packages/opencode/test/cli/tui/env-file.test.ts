@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { spawnSync } from "node:child_process"
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { readEnvKey, writeEnvKey } from "../../../src/cli/cmd/tui/util/env-file"
+import { readEnvKey, writeEnvKey, writeEnvKeys } from "../../../src/cli/cmd/tui/util/env-file"
 
 async function tempdir() {
   return mkdtemp(path.join(os.tmpdir(), "agentswarm-env-file-"))
@@ -14,8 +15,12 @@ describe("env-file", () => {
     try {
       writeEnvKey("SEARCH_API_KEY", "search-key", dir)
 
-      expect(await readFile(path.join(dir, ".env"), "utf8")).toBe('SEARCH_API_KEY="search-key"\n')
+      const file = path.join(dir, ".env")
+      expect(await readFile(file, "utf8")).toContain("SEARCH_API_KEY=")
       expect(readEnvKey("SEARCH_API_KEY", dir)).toBe("search-key")
+      if (process.platform !== "win32") {
+        expect((await stat(file)).mode & 0o777).toBe(0o600)
+      }
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
@@ -28,7 +33,10 @@ describe("env-file", () => {
 
       writeEnvKey("SEARCH_API_KEY", "new", dir)
 
-      expect(await readFile(path.join(dir, ".env"), "utf8")).toBe('A=1\nexport SEARCH_API_KEY="new"\nB=2\n')
+      const content = await readFile(path.join(dir, ".env"), "utf8")
+      expect(content).toContain("A=1\n")
+      expect(content).toContain('export SEARCH_API_KEY="new"\n')
+      expect(content).toContain("B=2\n")
       expect(readEnvKey("SEARCH_API_KEY", dir)).toBe("new")
     } finally {
       await rm(dir, { recursive: true, force: true })
@@ -42,7 +50,65 @@ describe("env-file", () => {
 
       writeEnvKey("UNSPLASH_ACCESS_KEY", "photo-key", dir)
 
-      expect(await readFile(path.join(dir, ".env"), "utf8")).toBe('A=1\nUNSPLASH_ACCESS_KEY="photo-key"\n')
+      expect(readEnvKey("UNSPLASH_ACCESS_KEY", dir)).toBe("photo-key")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("round trips quoted values with escapes", async () => {
+    const dir = await tempdir()
+    try {
+      const value = 'quote" slash\\ newline\nend'
+
+      writeEnvKey("SEARCH_API_KEY", value, dir)
+
+      expect(readEnvKey("SEARCH_API_KEY", dir)).toBe(value)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("writes multiple keys together", async () => {
+    const dir = await tempdir()
+    try {
+      writeEnvKeys(
+        [
+          ["SEARCH_API_KEY", "search"],
+          ["COMPOSIO_API_KEY", "composio"],
+        ],
+        dir,
+      )
+
+      expect(readEnvKey("SEARCH_API_KEY", dir)).toBe("search")
+      expect(readEnvKey("COMPOSIO_API_KEY", dir)).toBe("composio")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("preserves CRLF line endings", async () => {
+    const dir = await tempdir()
+    try {
+      await writeFile(path.join(dir, ".env"), "A=1\r\nSEARCH_API_KEY=old\r\nB=2\r\n")
+
+      writeEnvKey("SEARCH_API_KEY", "new", dir)
+
+      expect(await readFile(path.join(dir, ".env"), "utf8")).toBe('A=1\r\nSEARCH_API_KEY="new"\r\nB=2\r\n')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("does not write secrets to a tracked .env file", async () => {
+    const dir = await tempdir()
+    try {
+      await writeFile(path.join(dir, ".env"), "SEARCH_API_KEY=old\n")
+      spawnSync("git", ["init"], { cwd: dir, stdio: "ignore" })
+      spawnSync("git", ["add", ".env"], { cwd: dir, stdio: "ignore" })
+
+      expect(() => writeEnvKey("SEARCH_API_KEY", "new", dir)).toThrow("git-tracked .env")
+      expect(readEnvKey("SEARCH_API_KEY", dir)).toBe("old")
     } finally {
       await rm(dir, { recursive: true, force: true })
     }

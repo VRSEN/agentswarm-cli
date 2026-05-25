@@ -3,7 +3,8 @@ import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
 import { useDialog } from "@tui/ui/dialog"
 import { useTheme } from "../context/theme"
 import { DialogPrompt } from "../ui/dialog-prompt"
-import { readEnvKey, writeEnvKey } from "../util/env-file"
+import { readEnvKey, writeEnvKeys } from "../util/env-file"
+import { errorMessage as toErrorMessage } from "@/util/error"
 
 type Addon = {
   id: string
@@ -27,11 +28,12 @@ function keys(addons: Addon[]) {
   return addons.flatMap((addon) => addon.keys)
 }
 
-export function DialogAddons(props: { providerID: string; onDone: () => void }) {
+export function DialogAddons(props: { providerID: string; onDone: () => void; error?: string }) {
   const dialog = useDialog()
   const { theme } = useTheme()
   const [selected, setSelected] = createSignal(new Set<string>())
   const [version, setVersion] = createSignal(0)
+  const [error, setError] = createSignal(props.error)
   const available = createMemo(() =>
     ADDONS.filter((addon) => !(addon.excludeProviders ?? []).includes(props.providerID)),
   )
@@ -41,6 +43,7 @@ export function DialogAddons(props: { providerID: string; onDone: () => void }) 
   })
 
   function toggle(addon: Addon) {
+    setError(undefined)
     setSelected((current) => {
       const next = new Set(current)
       if (next.has(addon.id)) next.delete(addon.id)
@@ -60,6 +63,7 @@ export function DialogAddons(props: { providerID: string; onDone: () => void }) 
       props.onDone()
       return
     }
+    const values: [string, string][] = []
     for (const key of keys(picked)) {
       const value = await DialogPrompt.show(dialog, key, {
         placeholder: key,
@@ -74,13 +78,34 @@ export function DialogAddons(props: { providerID: string; onDone: () => void }) 
         dialog.replace(() => <DialogAddons providerID={props.providerID} onDone={props.onDone} />)
         return
       }
-      writeEnvKey(key, clean)
+      values.push([key, clean])
+    }
+    try {
+      writeEnvKeys(values)
+    } catch (err) {
+      dialog.replace(() => (
+        <DialogAddons
+          providerID={props.providerID}
+          onDone={props.onDone}
+          error={`Could not save add-ons: ${toErrorMessage(err)}`}
+        />
+      ))
+      return
     }
     setVersion((value) => value + 1)
     props.onDone()
   }
 
   const options = createMemo<DialogSelectOption<string>[]>(() => [
+    ...(error()
+      ? [
+          {
+            title: "Add-ons were not saved",
+            value: "error",
+            description: error(),
+          },
+        ]
+      : []),
     ...available().map((addon) => ({
       title: addon.title,
       value: addon.id,

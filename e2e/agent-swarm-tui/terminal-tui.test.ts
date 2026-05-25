@@ -32,6 +32,10 @@ async function waitForConfiguredDemoRecipient(tui: TuiProcess) {
   )
 }
 
+function hasCommand(screen: string, command: string) {
+  return screen.split("\n").some((line) => line.includes(command) && line.trimStart().startsWith("┃"))
+}
+
 afterEach(async () => {
   await currentTui?.close()
   currentTui = undefined
@@ -73,11 +77,12 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await currentTui.waitForText("/auth")
     const screen = await currentTui.waitForText("/connect")
 
-    expect(screen).toContain("/auth")
-    expect(screen).toContain("/connect")
-    expect(screen).toContain("/models")
-    expect(screen).toContain("/agents")
-    expect(screen).not.toContain("/addons")
+    expect(hasCommand(screen, "/auth")).toBe(true)
+    expect(hasCommand(screen, "/connect")).toBe(true)
+    expect(hasCommand(screen, "/models")).toBe(true)
+    expect(hasCommand(screen, "/agents")).toBe(true)
+    expect(hasCommand(screen, "/addons")).toBe(false)
+    expect(screen).not.toContain("Configure add-ons")
   })
 
   test("downstream product add-ons command opens the native add-ons dialog", async () => {
