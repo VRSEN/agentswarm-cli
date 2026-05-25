@@ -133,6 +133,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await currentTui.waitForText("Select swarm", tuiInteractionTimeoutMs)
     const screen = await currentTui.waitForText("Live QA Agency", tuiInteractionTimeoutMs)
 
+    expect(screen).toContain("Select swarm")
     expect(screen).toContain("Live QA Agency")
     expect(screen).not.toContain("Configure add-ons")
   })
