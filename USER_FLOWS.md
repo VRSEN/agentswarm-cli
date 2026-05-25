@@ -37,6 +37,7 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** The launcher detects configured entry files; the default Agent Swarm profile still detects only `agency.py`.
 - **Happy-path proof:** A missing local project creates the configured starter repository in the configured starter folder.
 - **Happy-path proof:** A release-built binary reports `AGENTSWARM_PRODUCT_VERSION` when it is set.
+- **Happy-path proof:** A downstream profile can opt into `/addons`, while the default Agent Swarm profile keeps `/addons` hidden.
 - **Happy-path proof:** With `AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT=standalone`, launcher setup creates or repairs project `.venv` environments with standalone Python 3.12+ and rebuilds existing Conda-family `.venv` environments.
 - **Failure scenarios to test:** Missing custom product values fall back to Agent Swarm defaults instead of inventing a downstream product.
 - **Failure scenarios to test:** With standalone Python required, a machine without standalone Python 3.12+ fails visibly instead of silently using Conda-family Python.

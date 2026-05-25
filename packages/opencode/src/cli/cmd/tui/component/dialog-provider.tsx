@@ -2,7 +2,7 @@ import { createMemo, createResource, createSignal, onCleanup, onMount, Show } fr
 import { useSync } from "@tui/context/sync"
 import { map, pipe, sortBy } from "remeda"
 import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
-import { useDialog } from "@tui/ui/dialog"
+import { useDialog, type DialogContext } from "@tui/ui/dialog"
 import { useSDK } from "../context/sdk"
 import { DialogPrompt } from "../ui/dialog-prompt"
 import { Link } from "../ui/link"
@@ -29,6 +29,7 @@ import { Log } from "@/util"
 import open from "open"
 import type { Provider } from "@opencode-ai/sdk/v2"
 import { useConnected } from "./use-connected"
+import { DialogAddons } from "./dialog-addons"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
   openai: 0,
@@ -367,6 +368,25 @@ function DialogPostAuthModelChoice(props: { providerID: string }) {
       ]}
     />
   )
+}
+
+function finishProviderAuth(input: { providerID: string; frameworkMode: boolean; dialog: DialogContext }) {
+  const done = () => {
+    if (!AgencyProduct.shouldShowPostAuthModelSelection()) {
+      input.dialog.clear()
+      return
+    }
+    if (input.frameworkMode) {
+      input.dialog.replace(() => <DialogPostAuthModelChoice providerID={input.providerID} />)
+      return
+    }
+    input.dialog.replace(() => <DialogModel providerID={input.providerID} />)
+  }
+  if (input.frameworkMode && AgencyProduct.shouldShowAddons()) {
+    input.dialog.replace(() => <DialogAddons providerID={input.providerID} onDone={done} />)
+    return
+  }
+  done()
 }
 
 type Option =
@@ -834,15 +854,7 @@ function AutoMethod(props: AutoMethodProps) {
         dispose: () => sdk.client.instance.dispose(),
         bootstrap: () => sync.bootstrap(),
       })
-      if (!AgencyProduct.shouldShowPostAuthModelSelection()) {
-        dialog.clear()
-        return
-      }
-      if (frameworkMode()) {
-        dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
-        return
-      }
-      dialog.replace(() => <DialogModel providerID={props.providerID} />)
+      finishProviderAuth({ providerID: props.providerID, frameworkMode: frameworkMode(), dialog })
     } catch (error) {
       const message = toErrorMessage(error)
       log.error("provider oauth post-callback bootstrap failed", {
@@ -925,15 +937,7 @@ function CodeMethod(props: CodeMethodProps) {
               dispose: () => sdk.client.instance.dispose(),
               bootstrap: () => sync.bootstrap(),
             })
-            if (!AgencyProduct.shouldShowPostAuthModelSelection()) {
-              dialog.clear()
-              return
-            }
-            if (frameworkMode()) {
-              dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
-              return
-            }
-            dialog.replace(() => <DialogModel providerID={props.providerID} />)
+            finishProviderAuth({ providerID: props.providerID, frameworkMode: frameworkMode(), dialog })
           } catch (error) {
             const message = toErrorMessage(error)
             log.error("provider oauth code-flow bootstrap failed", {
@@ -1064,15 +1068,7 @@ function ApiMethod(props: ApiMethodProps) {
             dispose: () => sdk.client.instance.dispose(),
             bootstrap: () => sync.bootstrap(),
           })
-          if (!AgencyProduct.shouldShowPostAuthModelSelection()) {
-            dialog.clear()
-            return
-          }
-          if (frameworkMode()) {
-            dialog.replace(() => <DialogPostAuthModelChoice providerID={props.providerID} />)
-            return
-          }
-          dialog.replace(() => <DialogModel providerID={props.providerID} />)
+          finishProviderAuth({ providerID: props.providerID, frameworkMode: frameworkMode(), dialog })
         } catch (error) {
           const message = toErrorMessage(error)
           log.error("provider api auth bootstrap failed", {

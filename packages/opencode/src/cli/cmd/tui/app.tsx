@@ -13,6 +13,7 @@ import {
   DialogAuth,
   DialogProvider as DialogProviderConnect,
 } from "@tui/component/dialog-provider"
+import { DialogAddons } from "@tui/component/dialog-addons"
 import { ErrorComponent } from "@tui/component/error-component"
 import { PluginRouteMissing } from "@tui/component/plugin-route-missing"
 import { ProjectProvider } from "@tui/context/project"
@@ -691,6 +692,25 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       onSelect: () => {
         dialog.replace(() => <DialogAuth />)
+      },
+      category: "Provider",
+    },
+    {
+      title: "Configure add-ons",
+      value: "provider.addons",
+      hidden: !(frameworkMode() && AgencyProduct.shouldShowAddons()),
+      enabled: frameworkMode() && AgencyProduct.shouldShowAddons(),
+      slash: {
+        name: "addons",
+      },
+      onSelect: () => {
+        const providerID =
+          sync.data.provider_next.connected.find((id) => ["openai", "anthropic", "google"].includes(id)) ??
+          (local.model.current()?.providerID !== AgencySwarmAdapter.PROVIDER_ID
+            ? local.model.current()?.providerID
+            : undefined) ??
+          "openai"
+        dialog.replace(() => <DialogAddons providerID={providerID} onDone={() => dialog.clear()} />)
       },
       category: "Provider",
     },

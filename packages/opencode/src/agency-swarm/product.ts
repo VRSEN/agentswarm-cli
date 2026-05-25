@@ -15,6 +15,7 @@ declare const AGENTSWARM_PRODUCT_TUI_LOGO_LEFT: string | undefined
 declare const AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: string | undefined
 declare const AGENTSWARM_PRODUCT_WORDMARK_LINES: string | undefined
 declare const AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT: string | undefined
+declare const AGENTSWARM_PRODUCT_ENABLE_ADDONS: string | undefined
 
 export namespace AgencyProduct {
   export type PythonEnvironment = "any" | "standalone"
@@ -25,6 +26,7 @@ export namespace AgencyProduct {
     customStarter: boolean
     skipPostAuthModelSelection: boolean
     hideModelSelection: boolean
+    enableAddons: boolean
     name: string
     cmd: string
     packageName: string
@@ -48,6 +50,7 @@ export namespace AgencyProduct {
     customStarter: false,
     skipPostAuthModelSelection: false,
     hideModelSelection: false,
+    enableAddons: false,
     name: "Agent Swarm",
     cmd: "agentswarm",
     packageName: "agentswarm-cli",
@@ -102,9 +105,9 @@ export namespace AgencyProduct {
     AGENTSWARM_PRODUCT_WORDMARK_LINES:
       typeof AGENTSWARM_PRODUCT_WORDMARK_LINES === "undefined" ? undefined : AGENTSWARM_PRODUCT_WORDMARK_LINES,
     AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT:
-      typeof AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT === "undefined"
-        ? undefined
-        : AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT,
+      typeof AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT === "undefined" ? undefined : AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT,
+    AGENTSWARM_PRODUCT_ENABLE_ADDONS:
+      typeof AGENTSWARM_PRODUCT_ENABLE_ADDONS === "undefined" ? undefined : AGENTSWARM_PRODUCT_ENABLE_ADDONS,
   } satisfies Record<string, string | undefined>
 
   function clean(value: string | undefined) {
@@ -179,6 +182,7 @@ export namespace AgencyProduct {
       tuiLogoRight: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT")),
       wordmarkLines: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_WORDMARK_LINES")),
       pythonEnvironment: readPythonEnvironment(readValue(env, "AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT")),
+      enableAddons: readBoolean(readValue(env, "AGENTSWARM_PRODUCT_ENABLE_ADDONS")),
     }
     const custom = Object.values(overrides).some((value) => value !== undefined)
     const customBranding =
@@ -194,6 +198,7 @@ export namespace AgencyProduct {
       customStarter,
       skipPostAuthModelSelection: overrides.skipPostAuthModelSelection ?? defaults.skipPostAuthModelSelection,
       hideModelSelection: overrides.hideModelSelection ?? defaults.hideModelSelection,
+      enableAddons: overrides.enableAddons ?? defaults.enableAddons,
       name: overrides.name ?? defaults.name,
       cmd: overrides.cmd ?? defaults.cmd,
       packageName: overrides.packageName ?? defaults.packageName,
@@ -219,6 +224,7 @@ export namespace AgencyProduct {
   export const customStarter = current.customStarter
   export const skipPostAuthModelSelection = current.skipPostAuthModelSelection
   export const hideModelSelection = current.hideModelSelection
+  export const enableAddons = current.enableAddons
   export const name = current.name
   export const packageName = current.packageName
   export const launcherPackageName = current.launcherPackageName
@@ -246,6 +252,10 @@ export namespace AgencyProduct {
 
   export function shouldShowModelSelection(profile: Pick<Profile, "hideModelSelection"> = current) {
     return !profile.hideModelSelection
+  }
+
+  export function shouldShowAddons(profile: Pick<Profile, "enableAddons"> = current) {
+    return profile.enableAddons
   }
 
   export function modelSwitchCommandState(profile: Pick<Profile, "hideModelSelection"> = current) {

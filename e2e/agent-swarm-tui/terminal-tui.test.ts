@@ -75,6 +75,78 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(screen).not.toContain("/addons")
   })
 
+  test("downstream product add-ons command opens the native add-ons dialog", async () => {
+    currentServer = await startAgencyProtocolServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      env: {
+        AGENTSWARM_PRODUCT_ENABLE_ADDONS: "true",
+      },
+      config: openAIProviderTestConfig,
+    })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    currentTui.write("/add")
+    await currentTui.waitForText("/addons", tuiInteractionTimeoutMs)
+    currentTui.write("\r")
+    const screen = await currentTui.waitForText("Web Search", tuiInteractionTimeoutMs)
+
+    expect(screen).toContain("Web Search")
+    expect(screen).toContain("Composio")
+    expect(screen).toContain("Fal.ai")
+    expect(screen).toContain("Unsplash")
+    expect(screen).toContain("Continue")
+  })
+
+  test("downstream product /auth keeps the Agent Swarm auth dialog available", async () => {
+    currentServer = await startAgencyProtocolServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      env: {
+        AGENTSWARM_PRODUCT_ENABLE_ADDONS: "true",
+      },
+      config: openAIProviderTestConfig,
+    })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    currentTui.write("/auth")
+    await currentTui.waitForText("/auth", tuiInteractionTimeoutMs)
+    currentTui.write("\r")
+    const screen = await currentTui.waitForText("Manage Agent Swarm auth", tuiInteractionTimeoutMs)
+
+    expect(screen).toContain("OpenAI")
+    expect(screen).not.toContain("Connect a provider")
+  })
+
+  test("downstream product auth success opens add-ons before closing", async () => {
+    currentServer = await startAgencyProtocolServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      env: {
+        AGENTSWARM_PRODUCT_ENABLE_ADDONS: "true",
+      },
+    })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    currentTui.write("/auth")
+    await currentTui.waitForText("/auth", tuiInteractionTimeoutMs)
+    currentTui.write("\r")
+    await currentTui.waitForText("OpenAI", tuiInteractionTimeoutMs)
+    currentTui.write("\r")
+    await currentTui.waitForText("Manually enter API Key", tuiInteractionTimeoutMs)
+    currentTui.write("\x1b[B\r")
+    await currentTui.waitFor(
+      () => currentTui!.screen().includes("API key") && currentTui!.screen().includes("enter submit"),
+      "API key prompt",
+      tuiInteractionTimeoutMs,
+    )
+    currentTui.write("test-openai-key\r")
+    const screen = await currentTui.waitForText("Web Search", tuiInteractionTimeoutMs)
+
+    expect(screen).toContain("Configure add-ons")
+    expect(screen).toContain("Composio")
+  })
+
   test("run-mode slash command filtering hides native commands by query", async () => {
     for (const [hiddenCommand, query] of [
       ["/editor", "/edi"],

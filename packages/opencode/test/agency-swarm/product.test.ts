@@ -9,8 +9,10 @@ describe("AgencyProduct profile", () => {
     expect(profile.customBranding).toBe(false)
     expect(profile.skipPostAuthModelSelection).toBe(false)
     expect(profile.hideModelSelection).toBe(false)
+    expect(profile.enableAddons).toBe(false)
     expect(AgencyProduct.shouldShowPostAuthModelSelection(profile)).toBe(true)
     expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(true)
+    expect(AgencyProduct.shouldShowAddons(profile)).toBe(false)
     expect(profile.name).toBe("Agent Swarm")
     expect(profile.cmd).toBe("agentswarm")
     expect(profile.packageName).toBe("agentswarm-cli")
@@ -48,6 +50,7 @@ describe("AgencyProduct profile", () => {
       AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: "RIGHT\\nRIGHT2",
       AGENTSWARM_PRODUCT_WORDMARK_LINES: "WORD\\n MARK",
       AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT: "standalone",
+      AGENTSWARM_PRODUCT_ENABLE_ADDONS: "true",
     })
 
     expect(profile.custom).toBe(true)
@@ -55,8 +58,10 @@ describe("AgencyProduct profile", () => {
     expect(profile.customStarter).toBe(true)
     expect(profile.skipPostAuthModelSelection).toBe(true)
     expect(profile.hideModelSelection).toBe(true)
+    expect(profile.enableAddons).toBe(true)
     expect(AgencyProduct.shouldShowPostAuthModelSelection(profile)).toBe(false)
     expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(false)
+    expect(AgencyProduct.shouldShowAddons(profile)).toBe(true)
     expect(profile.name).toBe("Example Product")
     expect(profile.cmd).toBe("example")
     expect(profile.packageName).toBe("example-cli")
@@ -76,6 +81,16 @@ describe("AgencyProduct profile", () => {
       left: [" LEFT", "LEFT2"],
       right: ["RIGHT", "RIGHT2"],
     })
+  })
+
+  test("ignores invalid add-ons flag values", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_ENABLE_ADDONS: "maybe",
+    })
+
+    expect(profile.custom).toBe(false)
+    expect(profile.enableAddons).toBe(false)
+    expect(AgencyProduct.shouldShowAddons(profile)).toBe(false)
   })
 
   test("ignores invalid downstream Python environment values", () => {
