@@ -70,8 +70,6 @@ import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
 import { Telemetry } from "@/telemetry/telemetry"
 
-let appStartedTelemetry = false
-
 function rendererConfig(_config: TuiConfig.Info): CliRendererConfig {
   const mouseEnabled = !Flag.OPENCODE_DISABLE_MOUSE && (_config.mouse ?? true)
 
@@ -439,6 +437,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     }),
   )
 
+  let appStartedTelemetry = false
   createEffect(() => {
     if (appStartedTelemetry || sync.status === "loading") return
     appStartedTelemetry = true

@@ -90,11 +90,12 @@ const tracked = new Set([
 
 export function captureCommand(input: CommandTelemetryInput) {
   const builtin = tracked.has(input.value)
+  if (!builtin) return
   void Telemetry.capture("ui_command_executed", {
-    category: builtin ? input.category : undefined,
-    command: builtin ? input.value : undefined,
-    keybind: builtin ? input.keybind : undefined,
-    slash: builtin ? input.slash : undefined,
+    category: input.category,
+    command: input.value,
+    keybind: input.keybind,
+    slash: input.slash,
     source: input.source,
   })
 }

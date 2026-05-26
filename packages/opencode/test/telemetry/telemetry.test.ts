@@ -248,7 +248,7 @@ describe("Telemetry", () => {
     expect(JSON.stringify(requests[0].body)).not.toContain("internal-client-gateway")
   })
 
-  test("does not send custom command names", async () => {
+  test("does not send custom command telemetry", async () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
@@ -267,13 +267,7 @@ describe("Telemetry", () => {
     })
     await Telemetry.flush()
 
-    expect(requests[0].body.properties).toMatchObject({
-      source: "palette",
-    })
-    expect(requests[0].body.properties?.command).toBeUndefined()
-    expect(requests[0].body.properties?.category).toBeUndefined()
-    expect(requests[0].body.properties?.keybind).toBeUndefined()
-    expect(JSON.stringify(requests[0].body)).not.toContain("private.plugin.command")
+    expect(requests).toHaveLength(0)
   })
 
   test("sanitizes built-in properties through the privacy boundary", async () => {
