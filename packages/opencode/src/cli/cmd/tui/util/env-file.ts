@@ -83,11 +83,11 @@ export function writeEnvKeys(values: [string, string][], dir = process.cwd()) {
   let lines = current.split(/\r\n|\n/)
   const pending = new Map(unique)
   for (const [key, value] of unique) {
-    const match = new RegExp(`^(\\s*(?:export\\s+)?)${key}(\\s*=)`)
+    const match = new RegExp(`^(\\s*(?:export\\s+)?)${key}(\\s*=).*$`)
     lines = lines.map((line) => {
       if (!match.test(line)) return line
       pending.delete(key)
-      return line.replace(match, `$1${key}$2`).replace(/=.*/, `=${formatValue(value)}`)
+      return line.replace(match, (_, prefix: string, equals: string) => `${prefix}${key}${equals}${formatValue(value)}`)
     })
   }
   const remaining = [...pending].map(([key, value]) => `${key}=${formatValue(value)}`)

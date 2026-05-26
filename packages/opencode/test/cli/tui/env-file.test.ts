@@ -43,6 +43,19 @@ describe("env-file", () => {
     }
   })
 
+  test("updates values containing replacement tokens", async () => {
+    const dir = await tempdir()
+    try {
+      await writeFile(path.join(dir, ".env"), "SEARCH_API_KEY=old\n")
+
+      writeEnvKey("SEARCH_API_KEY", "foo$&bar$$baz", dir)
+
+      expect(readEnvKey("SEARCH_API_KEY", dir)).toBe("foo$&bar$$baz")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   test("appends a missing key", async () => {
     const dir = await tempdir()
     try {
