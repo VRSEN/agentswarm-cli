@@ -49,7 +49,7 @@ const productEnvNames = [
 const productDefines = Object.fromEntries(
   productEnvNames.map((name) => [name, process.env[name] ? JSON.stringify(process.env[name]) : "undefined"]),
 )
-const buildVersion = resolveBuildVersion(process.env, Script.version)
+const buildVersion = resolveBuildVersion(process.env, pkg.version)
 const versionValues = createReleaseVersionValues(buildVersion)
 const releaseRepo = resolveReleaseRepo(process.env)
 // Product package overrides are for compiled runtime copy and the user agent;
