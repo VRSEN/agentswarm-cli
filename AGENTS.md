@@ -113,13 +113,15 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 
 ## Code Quality
 
-- No file may grow past 500 lines unless the user explicitly approves an exception.
+- Keep files maintainable: one clear responsibility, a small public surface, local dependencies and effects, and enough focus to review and understand in one sitting.
+- Treat 1,200 lines as a repo-wide soft cap. This is a planning and refactor signal, not a blocker.
 - Aim for methods under 100 lines, and prefer 10 to 40.
 
 ### Large Files
 
-- Prefer extracting focused modules when growth would make a file harder to reason about.
-- If you edit an already-large file, do not increase its line count unless the user explicitly approves an exception.
+- When planning, implementing, or refactoring hand-authored production TypeScript or TSX, start split planning at the 1,200-line cap.
+- If you add to an already-over-cap file, keep the change focused and be ready to explain why splitting first would be worse.
+- Exclude generated files, declarations, schemas, data blobs, icons, legal or static copy, and cohesive tests, fixtures, snapshots, or stories from the cap.
 
 ## Style Guide
 
