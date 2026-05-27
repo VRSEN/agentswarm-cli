@@ -350,7 +350,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(screen).toContain("Authentication")
     expect(screen).not.toContain("Connect a provider")
 
-    currentTui.write("\x1b[B\x1b[B")
+    currentTui.write("token")
     const tokenScreen = await currentTui.waitForText("Update token", tuiInteractionTimeoutMs)
 
     expect(tokenScreen).toContain("Authentication")
