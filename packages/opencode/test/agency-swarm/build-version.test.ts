@@ -22,7 +22,12 @@ describe("resolveBuildVersion", () => {
 
   test("keeps normal Agent Swarm build version precedence", () => {
     expect(resolveBuildVersion({ OPENCODE_VERSION: "1.0.0-opencode" }, "0.0.0-local")).toBe("1.0.0-opencode")
-    expect(resolveBuildVersion({}, "0.0.0-local")).toBe("0.0.0-local")
+  })
+
+  test("build script falls back to package.json version instead of Script.version", async () => {
+    const source = await Bun.file(new URL("../../script/build.ts", import.meta.url)).text()
+    expect(source).toContain("resolveBuildVersion(process.env, pkg.version)")
+    expect(source).not.toContain("resolveBuildVersion(process.env, Script.version)")
   })
 })
 
