@@ -66,6 +66,14 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 - Every pull-request merge needs explicit user approval and a human alignment gate. Pull requests with user-testable behavior also need a human QA gate. Worker review can inform these gates but cannot replace them.
 - Pending GitHub checks, hosted reviews, unresolved pull-request comments, unresolved official review findings, and other agent-visible workflows are open work until fixed, rerun green, or classified as non-blocking with checked evidence.
 
+## Approval Proof Gates
+
+- Before asking for approval on `agentswarm-cli` work, classify the current diff or branch as functional or non-functional. Functional changes affect runtime behavior, user-visible CLI, TUI, app, desktop, web, SDK, or plugin flows, build, install, release, API or schema contracts, generated shipped artifacts, shipped package surfaces, or tests and harnesses that gate shipped behavior. Non-functional changes are policy, docs, comments, naming, formatting, or behavior-preserving refactors.
+- Non-functional approval requires a clean Codex review of the current diff or branch, with no blocking findings.
+- Functional approval requires a proof package that separates logical/static proof from empirical proof. Empirical proof must include checks matching each touched shipped surface, installed user-testable entry-point proof, and a manual QA script the user can run.
+- For CLI or npm shipped-surface changes, prove the installed `agentswarm` binary from the exact local `agentswarm-cli` package, not a source checkout, registry install, or stale global binary. If desktop, web, SDK, plugin, or other shipped surfaces are touched, include proof matching those surfaces.
+- `.codex/skills/manual-qa-binary-proof/SKILL.md` owns the functional proof package; load it before asking the user to test, approve, merge, or release functional work.
+
 ## Danger Zone: Public And Irreversible Operations
 
 - Pull-request merges, release notes, tags, GitHub Releases, npm publishing, yanks, unpublishes, and any public package or release change are danger-zone operations.
