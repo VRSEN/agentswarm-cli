@@ -66,6 +66,13 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 - Every pull-request merge needs explicit user approval and a human alignment gate. Pull requests with user-testable behavior also need a human QA gate. Worker review can inform these gates but cannot replace them.
 - Pending GitHub checks, hosted reviews, unresolved pull-request comments, unresolved official review findings, and other agent-visible workflows are open work until fixed, rerun green, or classified as non-blocking with checked evidence.
 
+## Change Approval Gates
+
+- Before asking for approval on AgentSwarm CLI work, classify the diff as functional or non-functional. Functional changes alter runtime behavior, user-visible flows, build, install, release, API, schema, generated shipped artifacts, or tests that gate shipped behavior. Non-functional changes are policy, docs, comments, naming, formatting, or refactors that preserve behavior.
+- Non-functional changes are allowed only after Codex review approves the current diff or branch with no blocking findings.
+- Functional changes require 100% proof before approval: a proof package that separates logical/static proof (types, contracts, invariants, diff reasoning, or relevant static checks) from empirical proof (matching local checks, user-testable binary smoke, and a manual QA script the user can run). The binary must be built from the exact change every time. Existing Codex review, pull-request, release, and human QA gates still apply.
+- Manual QA and user-testable binary proof are owned by `.opencode/skills/manual-qa-binary-proof/SKILL.md`; load that skill for functional changes before asking the user to test, approve, merge, or release.
+
 ## Danger Zone: Public And Irreversible Operations
 
 - Pull-request merges, release notes, tags, GitHub Releases, npm publishing, yanks, unpublishes, and any public package or release change are danger-zone operations.
