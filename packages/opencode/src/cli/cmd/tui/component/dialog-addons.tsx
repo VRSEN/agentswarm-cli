@@ -8,7 +8,7 @@ import { errorMessage as toErrorMessage } from "@/util/error"
 import { AgencyProduct } from "@/agency-swarm/product"
 
 function keys(addons: AgencyProduct.Addon[]) {
-  return addons.flatMap((addon) => addon.keys)
+  return [...new Set(addons.flatMap((addon) => addon.keys))]
 }
 
 export function DialogAddons(props: { providerID: string; onDone: () => void; error?: string }) {
