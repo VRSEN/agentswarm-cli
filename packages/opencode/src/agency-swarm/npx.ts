@@ -24,6 +24,7 @@ import {
 export { collectUnixPythonCandidates }
 
 export const LAUNCHER_ENTRY_ENV = "AGENTSWARM_LAUNCHER"
+export const PRODUCT_STATE_ROOT_ENV = AgencySwarmRunSession.PRODUCT_STATE_ROOT_ENV
 export const STARTER_TEMPLATE_REPO = AgencyProduct.starterTemplateRepo
 export const LOCAL_AGENCY_ID = "local-agency"
 
@@ -31,15 +32,31 @@ const nativeSetTimeout = globalThis.setTimeout.bind(globalThis)
 
 type ProductProfile = Pick<
   AgencyProduct.Profile,
-  "custom" | "name" | "customStarter" | "starterTemplateRepo" | "starterProjectName" | "agencyEntryFiles"
+  "custom" | "name" | "customStarter" | "starterTemplateRepo" | "starterProjectName" | "agencyEntryFiles" | "stateRoot"
 >
-type LaunchProfile = Pick<AgencyProduct.Profile, "name" | "launcherPackageName" | "pythonEnvironment">
+type LaunchProfile = Pick<AgencyProduct.Profile, "name" | "launcherPackageName" | "pythonEnvironment" | "stateRoot">
 
 export function starterTemplateUrl(profile: Pick<AgencyProduct.Profile, "starterTemplateRepo"> = AgencyProduct) {
   return `https://github.com/${profile.starterTemplateRepo}.git`
 }
 
 export const STARTER_TEMPLATE_URL = starterTemplateUrl()
+
+export function resolveProductStateRoot(profile: Pick<AgencyProduct.Profile, "stateRoot"> = AgencyProduct) {
+  const root = profile.stateRoot?.trim()
+  return root ? Filesystem.resolve(root) : undefined
+}
+
+export function resolveProductProjectDirectory(profile: Pick<AgencyProduct.Profile, "stateRoot"> = AgencyProduct) {
+  const root = resolveProductStateRoot(profile)
+  return root ? path.join(root, "project") : undefined
+}
+
+function normalizeProductStateRootEnv(profile: Pick<AgencyProduct.Profile, "stateRoot"> = AgencyProduct) {
+  const root = resolveProductStateRoot(profile)
+  if (root) process.env[PRODUCT_STATE_ROOT_ENV] = root
+  return root
+}
 
 type LaunchChoice = "project" | "starter" | "connect"
 type StarterMode = "github" | "local"
@@ -55,6 +72,31 @@ export interface AgencyProject {
   directory: string
   agencyFile: string
   moduleName: string
+}
+
+export interface NpxCwdLaunch {
+  directory: string
+  cwdOnly: true
+  configContent?: string
+}
+
+export type NpxAutoProject = AgencyProject | NpxCwdLaunch
+
+export type InputRunSession =
+  | {
+      sessionID: string
+      mode?: "local-project"
+      directory: string
+    }
+  | {
+      sessionID: string
+      mode: "remote-config"
+      directory: string
+      config: AgencySwarmRunSession.RemoteConfig
+    }
+
+export function isNpxCwdLaunch(project: NpxAutoProject): project is NpxCwdLaunch {
+  return "cwdOnly" in project
 }
 
 interface CommandResult {
@@ -133,28 +175,34 @@ export async function resolveNpxAutoProject(input: {
   prompt?: string
   agent?: string
   sessions?: Iterable<Pick<Session.Info, "id" | "directory" | "parentID" | "time">>
-  runSessions?: Iterable<{ sessionID: string; directory: string }>
-}) {
+  runSessions?: Iterable<InputRunSession>
+  profile?: Pick<ProductProfile, "agencyEntryFiles" | "stateRoot">
+}): Promise<NpxAutoProject | undefined> {
   if (!isLauncher(input)) return
   if (input.model && input.model.split("/")[0] !== AgencySwarmAdapter.PROVIDER_ID) return
+  const profile = input.profile ?? AgencyProduct
+  const stateRoot = normalizeProductStateRootEnv(profile)
+  const directory = stateRoot ? path.join(stateRoot, "project") : input.directory
 
   if (input.session) {
     const session = await getResumeSession(input.session, input.sessions)
-    return session ? resolveRunProject(session, input.runSessions) : undefined
+    return session ? resolveRunProject(session, input.runSessions, profile) : undefined
   }
 
   if (input.continue) {
-    const sessions = input.sessions ? Array.from(input.sessions) : await listResumeSessions(input.directory)
+    const sessions = input.sessions ? Array.from(input.sessions) : await listResumeSessions(directory)
     const session = sessions
-      .filter((item) => item.directory === input.directory && !item.parentID)
+      .filter(
+        (item) => (stateRoot ? Filesystem.resolve(item.directory) : item.directory) === directory && !item.parentID,
+      )
       .toSorted((a, b) => b.time.updated - a.time.updated)[0]
-    if (session) return resolveRunProject(session, input.runSessions)
+    if (session) return resolveRunProject(session, input.runSessions, profile)
     if (input.fork) return
-    return detectAgencyProject(input.directory)
+    return detectAgencyProject(directory, profile)
   }
 
   if (input.prompt || input.agent || input.model) {
-    return detectAgencyProject(input.directory)
+    return detectAgencyProject(directory, profile)
   }
 }
 
@@ -256,21 +304,56 @@ function isLauncher(input: { env: NodeJS.ProcessEnv; argv?: string[] }) {
 
 async function resolveRunProject(
   session: Pick<Session.Info, "id" | "directory">,
-  runSessions?: Iterable<{ sessionID: string; directory: string }>,
-) {
+  runSessions?: Iterable<InputRunSession>,
+  profile: Pick<ProductProfile, "agencyEntryFiles" | "stateRoot"> = AgencyProduct,
+): Promise<NpxAutoProject | undefined> {
+  const directory = resolveProductProjectDirectory(profile)
+  const sessionDirectory = directory ? Filesystem.resolve(session.directory) : path.resolve(session.directory)
+  const scoped = directory !== undefined && sessionDirectory === directory
+  if (directory && !scoped) return
+
   const run = runSessions
-    ? Array.from(runSessions).find((item) => item.sessionID === session.id)
+    ? resolveInputRunSession(session.id, runSessions)
     : await AgencySwarmRunSession.get(session.id)
   if (run) {
-    if (path.resolve(run.directory) !== path.resolve(session.directory)) return
-    return detectAgencyProject(run.directory)
+    const runDirectory = directory ? Filesystem.resolve(run.directory) : path.resolve(run.directory)
+    if (run.mode === "remote-config") {
+      if (!directory || !scoped) return
+      if (runDirectory !== sessionDirectory) return
+      return {
+        directory: run.directory,
+        cwdOnly: true,
+        configContent: buildAgencyConfig(run.config),
+      }
+    }
+    if (runDirectory !== sessionDirectory) return
+    return detectAgencyProject(run.directory, profile)
   }
 
-  const project = await detectAgencyProject(session.directory)
-  if (!project) return
-  if (!(await isLegacyAgencySwarmRunSession(session.id))) return
-  if (!(await hasLegacyLocalAgencyHistory(session.id))) return
-  return project
+  const project = await detectAgencyProject(session.directory, profile)
+  if (project && (await isLegacyAgencySwarmRunSession(session.id)) && (await hasLegacyLocalAgencyHistory(session.id))) {
+    return project
+  }
+  if (scoped) return { directory, cwdOnly: true }
+}
+
+function resolveInputRunSession(
+  sessionID: string,
+  runSessions: Iterable<InputRunSession>,
+): AgencySwarmRunSession.Info | undefined {
+  const match = Array.from(runSessions).find((item) => item.sessionID === sessionID)
+  if (!match) return
+  if (match.mode === "remote-config") {
+    return {
+      mode: "remote-config",
+      directory: match.directory,
+      config: match.config,
+    }
+  }
+  return {
+    mode: "local-project",
+    directory: match.directory,
+  }
 }
 
 async function isLegacyAgencySwarmRunSession(sessionID: Session.Info["id"]) {
@@ -434,6 +517,7 @@ function launchProfile(profile: ProductProfile): LaunchProfile {
     name: profile.name,
     launcherPackageName: values.launcherPackageName ?? AgencyProduct.launcherPackageName,
     pythonEnvironment: values.pythonEnvironment ?? AgencyProduct.pythonEnvironment,
+    stateRoot: profile.stateRoot,
   }
 }
 
@@ -442,12 +526,18 @@ export async function prepareNpxLaunch(
   profile: ProductProfile = AgencyProduct,
 ): Promise<PreparedNpxLaunch | undefined> {
   prompts.intro(profile.name)
+  const stateRoot = normalizeProductStateRootEnv(profile)
+  const projectDirectory = stateRoot ? path.join(stateRoot, "project") : undefined
+  const launchDirectory = projectDirectory ?? directory
 
   if (profile.customStarter) {
     const targetProject =
-      (await detectAgencyProject(directory, profile)) ??
-      (await detectAgencyProject(path.join(directory, profile.starterProjectName), profile)) ??
-      (await createStarterProject({ baseDirectory: directory, profile }))
+      projectDirectory !== undefined
+        ? ((await detectAgencyProject(projectDirectory, profile)) ??
+          (await createProductStateRootProject({ directory: projectDirectory, profile })))
+        : ((await detectAgencyProject(directory, profile)) ??
+          (await detectAgencyProject(path.join(directory, profile.starterProjectName), profile)) ??
+          (await createStarterProject({ baseDirectory: directory, profile })))
     if (!targetProject) {
       prompts.outro("Cancelled")
       return
@@ -462,15 +552,16 @@ export async function prepareNpxLaunch(
     return launch
   }
 
-  const project = await detectAgencyProject(directory, profile)
+  const project = await detectAgencyProject(launchDirectory, profile)
   const choice = await chooseLaunchChoice(project, profile)
   if (!choice) {
     prompts.outro("Cancelled")
     return
   }
+  if (projectDirectory) await mkdir(projectDirectory, { recursive: true })
 
   if (choice === "connect") {
-    const launch = await prepareRemoteLaunch(directory)
+    const launch = await prepareRemoteLaunch(launchDirectory)
     if (!launch) {
       prompts.outro("Cancelled")
       return
@@ -480,12 +571,14 @@ export async function prepareNpxLaunch(
   }
 
   const targetProject =
-    choice === "project"
+    choice === "project" || (choice === "starter" && projectDirectory && project)
       ? project
-      : await createStarterProject({
-          baseDirectory: directory,
-          profile,
-        })
+      : projectDirectory
+        ? await createProductStateRootProject({ directory: projectDirectory, profile })
+        : await createStarterProject({
+            baseDirectory: launchDirectory,
+            profile,
+          })
   if (!targetProject) {
     prompts.outro("Cancelled")
     return
@@ -502,7 +595,7 @@ export async function prepareNpxLaunch(
 
 async function chooseLaunchChoice(
   project: AgencyProject | undefined,
-  profile: Pick<ProductProfile, "custom" | "name"> = AgencyProduct,
+  profile: Pick<ProductProfile, "custom" | "name" | "stateRoot"> = AgencyProduct,
 ) {
   prompts.log.info("1. Choose how to start the terminal UI.")
   prompts.log.info(
@@ -520,11 +613,15 @@ async function chooseLaunchChoice(
             },
           ]
         : []),
-      {
-        value: "starter" as const,
-        label: "Create a new starter project",
-        hint: "recommended for a fresh setup",
-      },
+      ...(project && resolveProductStateRoot(profile)
+        ? []
+        : [
+            {
+              value: "starter" as const,
+              label: "Create a new starter project",
+              hint: "recommended for a fresh setup",
+            },
+          ]),
       {
         value: "connect" as const,
         label: "Connect to an existing agency",
@@ -736,6 +833,29 @@ async function createStarterProject(input: {
   return requireDetectedStarterProject(targetDirectory, starterProfile)
 }
 
+async function createProductStateRootProject(input: {
+  directory: string
+  profile: ProductProfile
+}): Promise<AgencyProject | undefined> {
+  prompts.log.info("2. Create the product state project.")
+  prompts.log.info(`   This keeps ${input.profile.name} launcher state in one user folder.`)
+
+  const starterProfile = input.profile.customStarter ? input.profile : AgencyProduct
+
+  await mkdir(path.dirname(input.directory), { recursive: true })
+  prompts.log.step(`Creating starter project in \`${input.directory}\``)
+  const clone = await runCommand(["git", "clone", "--depth=1", starterTemplateUrl(input.profile), input.directory])
+  if (clone.code !== 0) {
+    throw new Error(clone.stderr.trim() || clone.stdout.trim() || "Starter template clone failed")
+  }
+  await rm(path.join(input.directory, ".git"), {
+    recursive: true,
+    force: true,
+  }).catch(() => undefined)
+  await runCommand(["git", "init", "-b", "main"], { cwd: input.directory })
+  return requireDetectedStarterProject(input.directory, starterProfile)
+}
+
 export async function prepareProjectLaunch(
   project: AgencyProject,
   profile: LaunchProfile = AgencyProduct,
@@ -763,7 +883,7 @@ export async function prepareProjectLaunch(
 
 async function ensureProjectPython(
   directory: string,
-  profile: Pick<LaunchProfile, "launcherPackageName" | "pythonEnvironment">,
+  profile: Pick<LaunchProfile, "launcherPackageName" | "pythonEnvironment" | "stateRoot">,
 ) {
   const venvPython = getVenvPythonPath(directory)
   const venvDir = path.resolve(path.join(directory, ".venv"))
@@ -790,7 +910,12 @@ async function ensureProjectPython(
       corruptedVenv = true
     } else {
       prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
-      const refreshLogFile = await tryCreateProjectCommandLogFile(directory, "launcher-refresh", "launcher refresh")
+      const refreshLogFile = await tryCreateProjectCommandLogFile(
+        directory,
+        "launcher-refresh",
+        "launcher refresh",
+        profile,
+      )
       prompts.log.info(
         refreshLogFile
           ? `Refreshing project dependencies with local uv. Streaming output to stderr. Full log: ${refreshLogFile}`
@@ -892,7 +1017,12 @@ async function ensureProjectPython(
   }
 
   prompts.log.step("`.venv` created")
-  const installLogFile = await tryCreateProjectCommandLogFile(directory, "launcher-rebuild", "launcher rebuild")
+  const installLogFile = await tryCreateProjectCommandLogFile(
+    directory,
+    "launcher-rebuild",
+    "launcher rebuild",
+    profile,
+  )
   prompts.log.info(
     installLogFile
       ? `Installing project dependencies. Streaming output to stderr. Full log: ${installLogFile}`
@@ -1179,16 +1309,28 @@ async function hasDependencyManifest(directory: string) {
   )
 }
 
-async function createProjectCommandLogFile(directory: string, stem: string) {
+async function createProjectCommandLogFile(
+  directory: string,
+  stem: string,
+  profile: Pick<AgencyProduct.Profile, "stateRoot"> = AgencyProduct,
+) {
   const projectID = `${path.basename(path.resolve(directory)) || "project"}-${Bun.hash(path.resolve(directory)).toString(16)}`
-  const logDirectory = path.join(os.tmpdir(), "agentswarm-cli-logs", projectID)
+  const stateRoot = resolveProductStateRoot(profile)
+  const logDirectory = stateRoot
+    ? path.join(stateRoot, "logs", projectID)
+    : path.join(os.tmpdir(), "agentswarm-cli-logs", projectID)
   await mkdir(logDirectory, { recursive: true })
   return path.join(logDirectory, `${new Date().toISOString().replaceAll(":", "").replaceAll(".", "")}-${stem}.log`)
 }
 
-async function tryCreateProjectCommandLogFile(directory: string, stem: string, label: string) {
+async function tryCreateProjectCommandLogFile(
+  directory: string,
+  stem: string,
+  label: string,
+  profile: Pick<AgencyProduct.Profile, "stateRoot"> = AgencyProduct,
+) {
   try {
-    return await createProjectCommandLogFile(directory, stem)
+    return await createProjectCommandLogFile(directory, stem, profile)
   } catch (error) {
     prompts.log.warn(
       `Could not create ${label} log file. Continuing without a saved log: ${error instanceof Error ? error.message : String(error)}`,

@@ -494,6 +494,8 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
           yield* remove(child.id)
         }
 
+        yield* Effect.promise(() => AgencySwarmRunSession.clear(sessionID).catch((e) => log.error(e)))
+
         // `remove` needs to work in all cases, such as a broken
         // sessions that run cleanup. In certain cases these will
         // run without any instance state, so we need to turn off
@@ -571,6 +573,13 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
       const runProject = process.env[AgencySwarmRunSession.LOCAL_PROJECT_ENV]
       if (runProject) {
         yield* Effect.promise(() => AgencySwarmRunSession.mark({ sessionID: result.id, directory: runProject }))
+      } else {
+        const remoteConfig = AgencySwarmRunSession.remoteConfigFromEnv({ directory })
+        if (remoteConfig) {
+          yield* Effect.promise(() =>
+            AgencySwarmRunSession.markRemote({ sessionID: result.id, directory, config: remoteConfig }),
+          )
+        }
       }
       return result
     })
@@ -609,6 +618,7 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
           })
         }
       }
+      yield* Effect.promise(() => AgencySwarmRunSession.copy({ sourceID: original.id, targetID: session.id }))
       return session
     })
 

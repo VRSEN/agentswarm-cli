@@ -32,6 +32,10 @@ async function waitForConfiguredDemoRecipient(tui: TuiProcess) {
   )
 }
 
+function hasCommand(screen: string, command: string) {
+  return screen.split("\n").some((line) => line.includes(command) && line.trimStart().startsWith("┃"))
+}
+
 afterEach(async () => {
   await currentTui?.close()
   currentTui = undefined
@@ -73,43 +77,18 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await currentTui.waitForText("/auth")
     const screen = await currentTui.waitForText("/connect")
 
-    expect(screen).toContain("/auth")
-    expect(screen).toContain("/connect")
-    expect(screen).toContain("/models")
-    expect(screen).toContain("/agents")
-    expect(screen).not.toContain("/addons")
-  })
-
-  test("downstream product add-ons command opens the native add-ons dialog", async () => {
-    currentServer = await startAgencyProtocolServer()
-    currentTui = await startTui({
-      baseURL: currentServer.baseURL,
-      env: {
-        AGENTSWARM_PRODUCT_ENABLE_ADDONS: "true",
-      },
-      config: openAIProviderTestConfig,
-    })
-
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
-    currentTui.write("/add")
-    await currentTui.waitForText("/addons", tuiInteractionTimeoutMs)
-    currentTui.write("\r")
-    const screen = await currentTui.waitForText("Web Search", tuiInteractionTimeoutMs)
-
-    expect(screen).toContain("Web Search")
-    expect(screen).toContain("Composio")
-    expect(screen).toContain("Fal.ai")
-    expect(screen).toContain("Unsplash")
-    expect(screen).toContain("Continue")
+    expect(hasCommand(screen, "/auth")).toBe(true)
+    expect(hasCommand(screen, "/connect")).toBe(true)
+    expect(hasCommand(screen, "/models")).toBe(true)
+    expect(hasCommand(screen, "/agents")).toBe(true)
+    expect(hasCommand(screen, "/addons")).toBe(false)
+    expect(screen).not.toContain("Configure add-ons")
   })
 
   test("downstream product /auth keeps the Agent Swarm auth dialog available", async () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({
       baseURL: currentServer.baseURL,
-      env: {
-        AGENTSWARM_PRODUCT_ENABLE_ADDONS: "true",
-      },
       config: openAIProviderTestConfig,
     })
 
@@ -121,54 +100,6 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     expect(screen).toContain("OpenAI")
     expect(screen).not.toContain("Connect a provider")
-  })
-
-  test("downstream product /agents exact command is not shadowed by /addons", async () => {
-    currentServer = await startAgencyProtocolServer()
-    currentTui = await startTui({
-      baseURL: currentServer.baseURL,
-      env: {
-        AGENTSWARM_PRODUCT_ENABLE_ADDONS: "true",
-      },
-      config: openAIProviderTestConfig,
-    })
-
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
-    currentTui.write("/agents\r")
-    await currentTui.waitForText("Select swarm", tuiInteractionTimeoutMs)
-    const screen = await currentTui.waitForText("Live QA Agency", tuiInteractionTimeoutMs)
-
-    expect(screen).toContain("Live QA Agency")
-    expect(screen).not.toContain("Configure add-ons")
-  })
-
-  test("downstream product auth success opens add-ons before closing", async () => {
-    currentServer = await startAgencyProtocolServer()
-    currentTui = await startTui({
-      baseURL: currentServer.baseURL,
-      env: {
-        AGENTSWARM_PRODUCT_ENABLE_ADDONS: "true",
-      },
-    })
-
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
-    currentTui.write("/auth")
-    await currentTui.waitForText("/auth", tuiInteractionTimeoutMs)
-    currentTui.write("\r")
-    await currentTui.waitForText("OpenAI", tuiInteractionTimeoutMs)
-    currentTui.write("\r")
-    await currentTui.waitForText("Manually enter API Key", tuiInteractionTimeoutMs)
-    currentTui.write("\x1b[B\r")
-    await currentTui.waitFor(
-      () => currentTui!.screen().includes("API key") && currentTui!.screen().includes("enter submit"),
-      "API key prompt",
-      tuiInteractionTimeoutMs,
-    )
-    currentTui.write("test-openai-key\r")
-    const screen = await currentTui.waitForText("Web Search", tuiInteractionTimeoutMs)
-
-    expect(screen).toContain("Configure add-ons")
-    expect(screen).toContain("Composio")
   })
 
   test("run-mode /auth emits telemetry by default when PostHog config is present", async () => {

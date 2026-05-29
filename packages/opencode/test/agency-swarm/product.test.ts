@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
 import { AgencyProduct } from "../../src/agency-swarm/product"
 
 describe("AgencyProduct profile", () => {
@@ -9,7 +12,7 @@ describe("AgencyProduct profile", () => {
     expect(profile.customBranding).toBe(false)
     expect(profile.skipPostAuthModelSelection).toBe(false)
     expect(profile.hideModelSelection).toBe(false)
-    expect(profile.enableAddons).toBe(false)
+    expect(profile.addons).toEqual([])
     expect(AgencyProduct.shouldShowPostAuthModelSelection(profile)).toBe(true)
     expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(true)
     expect(AgencyProduct.shouldShowAddons(profile)).toBe(false)
@@ -28,7 +31,16 @@ describe("AgencyProduct profile", () => {
     expect(profile.tuiLogoRight).toBeUndefined()
     expect(profile.wordmarkLines).toBeUndefined()
     expect(profile.pythonEnvironment).toBe("any")
+    expect(profile.stateRoot).toBeUndefined()
     expect(AgencyProduct.tuiLogo(profile)).toBeUndefined()
+  })
+
+  test("normalizes relative product state roots once", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_STATE_ROOT: "example-product",
+    })
+
+    expect(profile.stateRoot).toBe(path.resolve("example-product"))
   })
 
   test("selects a generic downstream profile from product env", () => {
@@ -50,7 +62,16 @@ describe("AgencyProduct profile", () => {
       AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: "RIGHT\\nRIGHT2",
       AGENTSWARM_PRODUCT_WORDMARK_LINES: "WORD\\n MARK",
       AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT: "standalone",
-      AGENTSWARM_PRODUCT_ENABLE_ADDONS: "true",
+      AGENTSWARM_PRODUCT_STATE_ROOT: "/tmp/example-product",
+      AGENTSWARM_PRODUCT_ADDONS: JSON.stringify([
+        { id: "search", title: "Search", keys: ["SEARCH_API_KEY"] },
+        {
+          id: "anthropic",
+          title: "Anthropic",
+          keys: ["ANTHROPIC_API_KEY"],
+          excludeProviders: ["anthropic"],
+        },
+      ]),
     })
 
     expect(profile.custom).toBe(true)
@@ -58,7 +79,15 @@ describe("AgencyProduct profile", () => {
     expect(profile.customStarter).toBe(true)
     expect(profile.skipPostAuthModelSelection).toBe(true)
     expect(profile.hideModelSelection).toBe(true)
-    expect(profile.enableAddons).toBe(true)
+    expect(profile.addons).toEqual([
+      { id: "search", title: "Search", keys: ["SEARCH_API_KEY"] },
+      {
+        id: "anthropic",
+        title: "Anthropic",
+        keys: ["ANTHROPIC_API_KEY"],
+        excludeProviders: ["anthropic"],
+      },
+    ])
     expect(AgencyProduct.shouldShowPostAuthModelSelection(profile)).toBe(false)
     expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(false)
     expect(AgencyProduct.shouldShowAddons(profile)).toBe(true)
@@ -77,20 +106,118 @@ describe("AgencyProduct profile", () => {
     expect(profile.tuiLogoRight).toEqual(["RIGHT", "RIGHT2"])
     expect(profile.wordmarkLines).toEqual(["WORD", " MARK"])
     expect(profile.pythonEnvironment).toBe("standalone")
+    expect(profile.stateRoot).toBe("/tmp/example-product")
     expect(AgencyProduct.tuiLogo(profile)).toEqual({
       left: [" LEFT", "LEFT2"],
       right: ["RIGHT", "RIGHT2"],
     })
   })
 
-  test("ignores invalid add-ons flag values", () => {
+  test("preserves compiled add-ons when runtime add-ons env is blank", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-product-"))
+    try {
+      const addons = [{ id: "search", title: "Search", keys: ["SEARCH_API_KEY"] }]
+      const root = path.resolve(import.meta.dir, "../..")
+      const entry = path.join(dir, "entry.ts")
+      const outdir = path.join(dir, "out")
+      await writeFile(
+        entry,
+        [
+          `import { AgencyProduct } from ${JSON.stringify(path.join(root, "src/agency-swarm/product.ts"))}`,
+          "console.log(JSON.stringify({",
+          "  addons: AgencyProduct.resolve(process.env).addons,",
+          "  currentAddons: AgencyProduct.addons,",
+          "  show: AgencyProduct.shouldShowAddons(),",
+          "}))",
+        ].join("\n"),
+      )
+
+      const result = await Bun.build({
+        entrypoints: [entry],
+        outdir,
+        format: "esm",
+        target: "bun",
+        define: {
+          AGENTSWARM_PRODUCT_ADDONS: JSON.stringify(JSON.stringify(addons)),
+        },
+      })
+      if (!result.success) {
+        throw new Error(result.logs.map((log) => log.message).join("\n"))
+      }
+
+      const proc = Bun.spawn([process.execPath, path.join(outdir, "entry.js")], {
+        cwd: root,
+        env: {
+          AGENTSWARM_PRODUCT_ADDONS: "",
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      })
+      const [stdout, stderr, code] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ])
+
+      expect(stderr).toBe("")
+      expect(code).toBe(0)
+      expect(JSON.parse(stdout)).toEqual({
+        addons,
+        currentAddons: addons,
+        show: true,
+      })
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("ignores invalid add-ons config values", () => {
     const profile = AgencyProduct.resolve({
-      AGENTSWARM_PRODUCT_ENABLE_ADDONS: "maybe",
+      AGENTSWARM_PRODUCT_ADDONS: JSON.stringify([{ id: "search", title: "Search", keys: [] }]),
     })
 
     expect(profile.custom).toBe(false)
-    expect(profile.enableAddons).toBe(false)
+    expect(profile.addons).toEqual([])
     expect(AgencyProduct.shouldShowAddons(profile)).toBe(false)
+  })
+
+  test("ignores add-ons config with invalid env keys", () => {
+    for (const key of ["", "bad", "BAD-KEY"]) {
+      const profile = AgencyProduct.resolve({
+        AGENTSWARM_PRODUCT_ADDONS: JSON.stringify([{ id: "search", title: "Search", keys: [key] }]),
+      })
+
+      expect(profile.custom).toBe(false)
+      expect(profile.addons).toEqual([])
+      expect(AgencyProduct.shouldShowAddons(profile)).toBe(false)
+    }
+  })
+
+  test("ignores add-ons config with duplicate ids", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_ADDONS: JSON.stringify([
+        { id: "search", title: "Search", keys: ["SEARCH_API_KEY"] },
+        { id: "search", title: "Other Search", keys: ["OTHER_SEARCH_API_KEY"] },
+      ]),
+    })
+
+    expect(profile.custom).toBe(false)
+    expect(profile.addons).toEqual([])
+    expect(AgencyProduct.shouldShowAddons(profile)).toBe(false)
+  })
+
+  test("ignores add-ons config with malformed provider exclusions", () => {
+    for (const excludeProviders of ["anthropic", [1], [null], {}]) {
+      const profile = AgencyProduct.resolve({
+        AGENTSWARM_PRODUCT_ADDONS: JSON.stringify([
+          { id: "search", title: "Search", keys: ["SEARCH_API_KEY"], excludeProviders },
+        ]),
+      })
+
+      expect(profile.custom).toBe(false)
+      expect(profile.addons).toEqual([])
+      expect(AgencyProduct.shouldShowAddons(profile)).toBe(false)
+    }
   })
 
   test("ignores invalid downstream Python environment values", () => {

@@ -3,44 +3,30 @@ import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
 import { useDialog } from "@tui/ui/dialog"
 import { useTheme } from "../context/theme"
 import { DialogPrompt } from "../ui/dialog-prompt"
-import { readEnvKey, writeEnvKey } from "../util/env-file"
+import { readEnvKey, writeEnvKeys } from "../util/env-file"
+import { errorMessage as toErrorMessage } from "@/util/error"
+import { AgencyProduct } from "@/agency-swarm/product"
 
-type Addon = {
-  id: string
-  title: string
-  keys: string[]
-  excludeProviders?: string[]
+function keys(addons: AgencyProduct.Addon[]) {
+  return [...new Set(addons.flatMap((addon) => addon.keys))]
 }
 
-const ADDONS: Addon[] = [
-  { id: "search", title: "Web Search", keys: ["SEARCH_API_KEY"] },
-  { id: "anthropic", title: "Anthropic Claude", keys: ["ANTHROPIC_API_KEY"], excludeProviders: ["anthropic"] },
-  { id: "composio", title: "Composio", keys: ["COMPOSIO_API_KEY", "COMPOSIO_USER_ID"] },
-  { id: "google", title: "Google Gemini", keys: ["GOOGLE_API_KEY"], excludeProviders: ["google"] },
-  { id: "fal", title: "Fal.ai", keys: ["FAL_KEY"] },
-  { id: "pexels", title: "Pexels", keys: ["PEXELS_API_KEY"] },
-  { id: "pixabay", title: "Pixabay", keys: ["PIXABAY_API_KEY"] },
-  { id: "unsplash", title: "Unsplash", keys: ["UNSPLASH_ACCESS_KEY"] },
-]
-
-function keys(addons: Addon[]) {
-  return addons.flatMap((addon) => addon.keys)
-}
-
-export function DialogAddons(props: { providerID: string; onDone: () => void }) {
+export function DialogAddons(props: { providerID: string; onDone: () => void; error?: string }) {
   const dialog = useDialog()
   const { theme } = useTheme()
   const [selected, setSelected] = createSignal(new Set<string>())
   const [version, setVersion] = createSignal(0)
+  const [error, setError] = createSignal(props.error)
   const available = createMemo(() =>
-    ADDONS.filter((addon) => !(addon.excludeProviders ?? []).includes(props.providerID)),
+    AgencyProduct.addons.filter((addon) => !(addon.excludeProviders ?? []).includes(props.providerID)),
   )
 
   onMount(() => {
     if (available().length === 0) props.onDone()
   })
 
-  function toggle(addon: Addon) {
+  function toggle(addon: AgencyProduct.Addon) {
+    setError(undefined)
     setSelected((current) => {
       const next = new Set(current)
       if (next.has(addon.id)) next.delete(addon.id)
@@ -49,7 +35,7 @@ export function DialogAddons(props: { providerID: string; onDone: () => void }) 
     })
   }
 
-  function configured(addon: Addon) {
+  function configured(addon: AgencyProduct.Addon) {
     version()
     return addon.keys.every((key) => readEnvKey(key))
   }
@@ -60,6 +46,7 @@ export function DialogAddons(props: { providerID: string; onDone: () => void }) 
       props.onDone()
       return
     }
+    const values: [string, string][] = []
     for (const key of keys(picked)) {
       const value = await DialogPrompt.show(dialog, key, {
         placeholder: key,
@@ -74,13 +61,34 @@ export function DialogAddons(props: { providerID: string; onDone: () => void }) 
         dialog.replace(() => <DialogAddons providerID={props.providerID} onDone={props.onDone} />)
         return
       }
-      writeEnvKey(key, clean)
+      values.push([key, clean])
+    }
+    try {
+      writeEnvKeys(values)
+    } catch (err) {
+      dialog.replace(() => (
+        <DialogAddons
+          providerID={props.providerID}
+          onDone={props.onDone}
+          error={`Could not save add-ons: ${toErrorMessage(err)}`}
+        />
+      ))
+      return
     }
     setVersion((value) => value + 1)
     props.onDone()
   }
 
   const options = createMemo<DialogSelectOption<string>[]>(() => [
+    ...(error()
+      ? [
+          {
+            title: "Add-ons were not saved",
+            value: "error",
+            description: error(),
+          },
+        ]
+      : []),
     ...available().map((addon) => ({
       title: addon.title,
       value: addon.id,
