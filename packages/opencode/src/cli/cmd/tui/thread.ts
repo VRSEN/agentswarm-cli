@@ -18,6 +18,7 @@ import { Instance } from "@/project/instance"
 import { writeHeapSnapshot } from "v8"
 import { AgencyProduct } from "@/agency-swarm/product"
 import {
+  isNpxCwdLaunch,
   prepareNpxLaunch,
   prepareProjectLaunch,
   resolveNpxAutoProject,
@@ -158,12 +159,16 @@ export const TuiThreadCommand = cmd({
             prompt: args.prompt,
             agent: args.agent,
           })
+      const localProject = project && !isNpxCwdLaunch(project) ? project : undefined
+      const cwdProject = project && isNpxCwdLaunch(project) ? project : undefined
       const prepared = shouldBootstrap
         ? await prepareNpxLaunch(selectedProject)
-        : project
-          ? await prepareProjectLaunch(project)
+        : localProject
+          ? await prepareProjectLaunch(localProject)
+          : cwdProject
+            ? { directory: cwdProject.directory }
           : undefined
-      if ((shouldBootstrap || project) && !prepared) {
+      if ((shouldBootstrap || localProject) && !prepared) {
         return
       }
       cleanup = prepared?.cleanup

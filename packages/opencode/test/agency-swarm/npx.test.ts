@@ -27,6 +27,7 @@ import { AgencyProduct } from "../../src/agency-swarm/product"
 import { AgencySwarmRunSession } from "../../src/agency-swarm/run-session"
 import { Instance } from "../../src/project/instance"
 import { Session } from "../../src/session"
+import { SessionID } from "../../src/session/schema"
 import { Storage } from "../../src/storage/storage"
 import { tmpdir } from "../fixture/fixture"
 
@@ -4242,6 +4243,38 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(project).toBeUndefined()
+  })
+
+  test("resolveNpxAutoProject preserves product state cwd for remote continue sessions", async () => {
+    await using caller = await tmpdir()
+    await using root = await tmpdir()
+    const projectDir = path.join(root.path, "project")
+    const sessionID = SessionID.descending("ses_remote")
+    await mkdir(projectDir, { recursive: true })
+
+    const project = await resolveNpxAutoProject({
+      directory: caller.path,
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      continue: true,
+      profile: {
+        ...downstreamProfile,
+        stateRoot: root.path,
+      },
+      sessions: [
+        {
+          id: sessionID,
+          directory: projectDir,
+          parentID: undefined,
+          time: {
+            created: 1,
+            updated: 1,
+          },
+        },
+      ],
+      runSessions: [],
+    })
+
+    expect(project).toEqual({ directory: projectDir, cwdOnly: true })
   })
 
   test("resolveNpxAutoProject uses legacy local-agency history for continue", async () => {

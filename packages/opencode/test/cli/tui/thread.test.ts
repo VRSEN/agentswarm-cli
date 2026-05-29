@@ -10,10 +10,16 @@ import * as Network from "../../../src/cli/network"
 import * as Win32 from "../../../src/cli/cmd/tui/win32"
 import { TuiConfig } from "../../../src/cli/cmd/tui/config/tui"
 import { AgencyProduct } from "../../../src/agency-swarm/product"
+import * as Npx from "../../../src/agency-swarm/npx"
 
 const stop = new Error("stop")
 const seen = {
   tui: [] as string[],
+}
+
+type CallOverrides = {
+  continue?: boolean
+  prompt?: string
 }
 
 function setup() {
@@ -48,7 +54,7 @@ describe("tui thread", () => {
     mock.restore()
   })
 
-  async function call(project?: string) {
+  async function call(project?: string, overrides: CallOverrides = {}) {
     const { TuiThreadCommand } = await import("../../../src/cli/cmd/tui/thread")
     const args: Parameters<NonNullable<typeof TuiThreadCommand.handler>>[0] = {
       _: [],
@@ -66,6 +72,7 @@ describe("tui thread", () => {
       "mdns-domain": AgencyProduct.mdnsDomain,
       mdnsDomain: AgencyProduct.mdnsDomain,
       cors: [],
+      ...overrides,
     }
     return TuiThreadCommand.handler(args)
   }
@@ -116,5 +123,49 @@ describe("tui thread", () => {
 
   test("uses the real cwd after resolving a relative project from PWD", async () => {
     await check(".")
+  })
+
+  test("uses cwd-only npx launches without preparing local projects", async () => {
+    setup()
+    await using caller = await tmpdir({ git: true })
+    await using root = await tmpdir()
+    const project = path.join(root.path, "project")
+    const cwd = process.cwd()
+    const pwd = process.env.PWD
+    const worker = globalThis.Worker
+    const tty = Object.getOwnPropertyDescriptor(process.stdin, "isTTY")
+    seen.tui.length = 0
+    await fs.mkdir(project, { recursive: true })
+    const prepare = spyOn(Npx, "prepareProjectLaunch").mockImplementation(async () => {
+      throw new Error("prepareProjectLaunch should not run for cwd-only launches")
+    })
+    spyOn(Npx, "resolveNpxAutoProject").mockResolvedValue({ directory: project, cwdOnly: true })
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    })
+    globalThis.Worker = class extends EventTarget {
+      onerror = null
+      onmessage = null
+      onmessageerror = null
+      postMessage() {}
+      terminate() {}
+    } as unknown as typeof Worker
+
+    try {
+      process.chdir(caller.path)
+      process.env.PWD = caller.path
+      await expect(call(undefined, { continue: true, prompt: undefined })).rejects.toBe(stop)
+      expect(prepare).not.toHaveBeenCalled()
+      expect(seen.tui[0]).toBe(project)
+    } finally {
+      process.chdir(cwd)
+      if (pwd === undefined) delete process.env.PWD
+      else process.env.PWD = pwd
+      if (tty) Object.defineProperty(process.stdin, "isTTY", tty)
+      else delete (process.stdin as { isTTY?: boolean }).isTTY
+      globalThis.Worker = worker
+    }
   })
 })

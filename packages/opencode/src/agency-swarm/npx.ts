@@ -74,6 +74,17 @@ export interface AgencyProject {
   moduleName: string
 }
 
+export interface NpxCwdLaunch {
+  directory: string
+  cwdOnly: true
+}
+
+export type NpxAutoProject = AgencyProject | NpxCwdLaunch
+
+export function isNpxCwdLaunch(project: NpxAutoProject): project is NpxCwdLaunch {
+  return "cwdOnly" in project
+}
+
 interface CommandResult {
   code: number
   stdout: string
@@ -152,7 +163,7 @@ export async function resolveNpxAutoProject(input: {
   sessions?: Iterable<Pick<Session.Info, "id" | "directory" | "parentID" | "time">>
   runSessions?: Iterable<{ sessionID: string; directory: string }>
   profile?: Pick<ProductProfile, "agencyEntryFiles" | "stateRoot">
-}) {
+}): Promise<NpxAutoProject | undefined> {
   if (!isLauncher(input)) return
   if (input.model && input.model.split("/")[0] !== AgencySwarmAdapter.PROVIDER_ID) return
   const profile = input.profile ?? AgencyProduct
@@ -279,9 +290,10 @@ async function resolveRunProject(
   session: Pick<Session.Info, "id" | "directory">,
   runSessions?: Iterable<{ sessionID: string; directory: string }>,
   profile: Pick<ProductProfile, "agencyEntryFiles" | "stateRoot"> = AgencyProduct,
-) {
+): Promise<NpxAutoProject | undefined> {
   const directory = resolveProductProjectDirectory(profile)
-  if (directory && path.resolve(session.directory) !== directory) return
+  const scoped = directory !== undefined && path.resolve(session.directory) === directory
+  if (directory && !scoped) return
 
   const run = runSessions
     ? Array.from(runSessions).find((item) => item.sessionID === session.id)
@@ -292,10 +304,10 @@ async function resolveRunProject(
   }
 
   const project = await detectAgencyProject(session.directory, profile)
-  if (!project) return
-  if (!(await isLegacyAgencySwarmRunSession(session.id))) return
-  if (!(await hasLegacyLocalAgencyHistory(session.id))) return
-  return project
+  if (project && (await isLegacyAgencySwarmRunSession(session.id)) && (await hasLegacyLocalAgencyHistory(session.id))) {
+    return project
+  }
+  if (scoped) return { directory, cwdOnly: true }
 }
 
 async function isLegacyAgencySwarmRunSession(sessionID: Session.Info["id"]) {
