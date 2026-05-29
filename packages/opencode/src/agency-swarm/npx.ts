@@ -505,10 +505,12 @@ export async function prepareNpxLaunch(
   const targetProject =
     choice === "project"
       ? project
-      : await createStarterProject({
-          baseDirectory: launchDirectory,
-          profile,
-        })
+      : projectDirectory
+        ? await createProductStateRootProject({ directory: projectDirectory, profile })
+        : await createStarterProject({
+            baseDirectory: launchDirectory,
+            profile,
+          })
   if (!targetProject) {
     prompts.outro("Cancelled")
     return
@@ -766,6 +768,8 @@ async function createProductStateRootProject(input: {
   prompts.log.info("2. Create the product state project.")
   prompts.log.info(`   This keeps ${input.profile.name} launcher state in one user folder.`)
 
+  const starterProfile = input.profile.customStarter ? input.profile : AgencyProduct
+
   await mkdir(path.dirname(input.directory), { recursive: true })
   prompts.log.step(`Creating starter project in \`${input.directory}\``)
   const clone = await runCommand(["git", "clone", "--depth=1", starterTemplateUrl(input.profile), input.directory])
@@ -777,7 +781,7 @@ async function createProductStateRootProject(input: {
     force: true,
   }).catch(() => undefined)
   await runCommand(["git", "init", "-b", "main"], { cwd: input.directory })
-  return requireDetectedStarterProject(input.directory, input.profile)
+  return requireDetectedStarterProject(input.directory, starterProfile)
 }
 
 export async function prepareProjectLaunch(

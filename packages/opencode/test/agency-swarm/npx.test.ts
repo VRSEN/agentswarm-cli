@@ -3341,6 +3341,101 @@ describe("agency-swarm npx onboarding", () => {
     expect(launch?.directory).toBe(project)
   })
 
+  test("prepareNpxLaunch creates default starters at the state-root project path", async () => {
+    await using caller = await tmpdir()
+    await using root = await tmpdir()
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_STATE_ROOT: root.path,
+    })
+    const project = path.join(root.path, "project")
+    const nested = path.join(project, profile.starterProjectName)
+    const calls: { cmd: string[]; cwd?: string }[] = []
+    const text = spyOn(prompts, "text").mockResolvedValue(profile.starterProjectName as never)
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "step").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+    spyOn(prompts, "outro").mockImplementation(() => undefined as never)
+    spyOn(prompts, "select").mockResolvedValue("starter" as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      calls.push({ cmd, cwd: options.cwd })
+
+      if (cmd[0] === "gh") {
+        return { exited: Promise.resolve(1), stdout: "", stderr: "gh unavailable" } as never
+      }
+
+      if (cmd[0] === "git" && cmd[1] === "clone") {
+        const target = cmd.at(-1)
+        if (!target) throw new Error("Missing clone target")
+        mkdirSync(path.join(target, ".venv", process.platform === "win32" ? "Scripts" : "bin"), { recursive: true })
+        writeFileSync(
+          path.join(target, "agency.py"),
+          "from agency_swarm import Agency\n\ndef create_agency():\n    return Agency()\n",
+        )
+        writeFileSync(getTestVenvPython(target), "")
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (cmd[0] === "git" && cmd[1] === "init") {
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (isUvVersionCommand(cmd)) {
+        return { exited: Promise.resolve(0), stdout: "uv 0.8.0\n", stderr: "" } as never
+      }
+
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        return { exited: Promise.resolve(0), stdout: `${cmd[0]}\n3.12.7\n`, stderr: "" } as never
+      }
+
+      if (
+        isPythonVenvCommand(cmd) ||
+        isPythonPipInstallUvCommand(cmd) ||
+        isUvPipInstallCommand(cmd) ||
+        isCanaryCommand(cmd)
+      ) {
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareNpxLaunch(caller.path, profile)
+    const detected = await resolveNpxAutoProject({
+      directory: caller.path,
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      prompt: "hello",
+      profile,
+    })
+
+    expect(profile.customStarter).toBe(false)
+    expect(text).not.toHaveBeenCalled()
+    expect(calls).toContainEqual({ cmd: ["git", "clone", "--depth=1", starterTemplateUrl(profile), project] })
+    expect(launch?.directory).toBe(project)
+    expect(launch?.runProjectDirectory).toBe(project)
+    expect(detected?.directory).toBe(project)
+    expect(existsSync(nested)).toBe(false)
+
+    await launch?.cleanup?.()
+  })
+
   test("prepareNpxLaunch clones the configured starter folder and launches the configured entry file", async () => {
     await using dir = await tmpdir()
     const target = path.join(dir.path, downstreamProfile.starterProjectName)

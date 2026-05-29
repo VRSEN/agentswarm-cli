@@ -39,10 +39,11 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** A release-built binary reports `AGENTSWARM_PRODUCT_VERSION` when it is set.
 - **Happy-path proof:** A downstream profile can provide `AGENTSWARM_PRODUCT_ADDONS` to expose `/addons`, while the default Agent Swarm profile keeps `/addons` hidden.
 - **Happy-path proof:** With `AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT=standalone`, launcher setup creates or repairs project `.venv` environments with standalone Python 3.12+ and rebuilds existing Conda-family `.venv` environments.
+- **Happy-path proof:** With `AGENTSWARM_PRODUCT_STATE_ROOT`, the product project, launcher logs, and add-on `.env` reads and writes stay under the fixed product state root.
 - **Failure scenarios to test:** Missing custom product values fall back to Agent Swarm defaults instead of inventing a downstream product.
 - **Failure scenarios to test:** The default Agent Swarm profile does not expose `/addons`.
 - **Failure scenarios to test:** With standalone Python required, a machine without standalone Python 3.12+ fails visibly instead of silently using Conda-family Python.
-- **Owner/source:** `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/agency-swarm/server-launcher.ts`, `packages/opencode/src/installation/distribution.ts`, and `packages/opencode/script/build.ts`.
+- **Owner/source:** `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/cli/cmd/tui/util/env-file.ts`, `packages/opencode/src/agency-swarm/server-launcher.ts`, `packages/opencode/src/installation/distribution.ts`, and `packages/opencode/script/build.ts`.
 
 #### Detected local project, venv, and uv
 
