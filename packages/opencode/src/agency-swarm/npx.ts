@@ -24,6 +24,7 @@ import {
 export { collectUnixPythonCandidates }
 
 export const LAUNCHER_ENTRY_ENV = "AGENTSWARM_LAUNCHER"
+export const PRODUCT_STATE_ROOT_ENV = "AGENTSWARM_PRODUCT_STATE_ROOT"
 export const STARTER_TEMPLATE_REPO = AgencyProduct.starterTemplateRepo
 export const LOCAL_AGENCY_ID = "local-agency"
 
@@ -42,12 +43,19 @@ export function starterTemplateUrl(profile: Pick<AgencyProduct.Profile, "starter
 export const STARTER_TEMPLATE_URL = starterTemplateUrl()
 
 export function resolveProductStateRoot(profile: Pick<AgencyProduct.Profile, "stateRoot"> = AgencyProduct) {
-  return profile.stateRoot ? path.resolve(profile.stateRoot) : undefined
+  const root = profile.stateRoot?.trim()
+  return root ? path.resolve(root) : undefined
 }
 
 export function resolveProductProjectDirectory(profile: Pick<AgencyProduct.Profile, "stateRoot"> = AgencyProduct) {
   const root = resolveProductStateRoot(profile)
   return root ? path.join(root, "project") : undefined
+}
+
+function normalizeProductStateRootEnv(profile: Pick<AgencyProduct.Profile, "stateRoot"> = AgencyProduct) {
+  const root = resolveProductStateRoot(profile)
+  if (root) process.env[PRODUCT_STATE_ROOT_ENV] = root
+  return root
 }
 
 type LaunchChoice = "project" | "starter" | "connect"
@@ -148,7 +156,8 @@ export async function resolveNpxAutoProject(input: {
   if (!isLauncher(input)) return
   if (input.model && input.model.split("/")[0] !== AgencySwarmAdapter.PROVIDER_ID) return
   const profile = input.profile ?? AgencyProduct
-  const directory = resolveProductProjectDirectory(profile) ?? input.directory
+  const stateRoot = normalizeProductStateRootEnv(profile)
+  const directory = stateRoot ? path.join(stateRoot, "project") : input.directory
 
   if (input.session) {
     const session = await getResumeSession(input.session, input.sessions)
@@ -459,7 +468,8 @@ export async function prepareNpxLaunch(
   profile: ProductProfile = AgencyProduct,
 ): Promise<PreparedNpxLaunch | undefined> {
   prompts.intro(profile.name)
-  const projectDirectory = resolveProductProjectDirectory(profile)
+  const stateRoot = normalizeProductStateRootEnv(profile)
+  const projectDirectory = stateRoot ? path.join(stateRoot, "project") : undefined
   const launchDirectory = projectDirectory ?? directory
 
   if (profile.customStarter) {
@@ -503,7 +513,7 @@ export async function prepareNpxLaunch(
   }
 
   const targetProject =
-    choice === "project"
+    choice === "project" || (choice === "starter" && projectDirectory && project)
       ? project
       : projectDirectory
         ? await createProductStateRootProject({ directory: projectDirectory, profile })
@@ -527,7 +537,7 @@ export async function prepareNpxLaunch(
 
 async function chooseLaunchChoice(
   project: AgencyProject | undefined,
-  profile: Pick<ProductProfile, "custom" | "name"> = AgencyProduct,
+  profile: Pick<ProductProfile, "custom" | "name" | "stateRoot"> = AgencyProduct,
 ) {
   prompts.log.info("1. Choose how to start the terminal UI.")
   prompts.log.info(
@@ -545,11 +555,15 @@ async function chooseLaunchChoice(
             },
           ]
         : []),
-      {
-        value: "starter" as const,
-        label: "Create a new starter project",
-        hint: "recommended for a fresh setup",
-      },
+      ...(project && resolveProductStateRoot(profile)
+        ? []
+        : [
+            {
+              value: "starter" as const,
+              label: "Create a new starter project",
+              hint: "recommended for a fresh setup",
+            },
+          ]),
       {
         value: "connect" as const,
         label: "Connect to an existing agency",

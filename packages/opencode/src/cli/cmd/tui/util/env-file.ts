@@ -6,9 +6,16 @@ import { AgencyProduct } from "@/agency-swarm/product"
 const keyPattern = /^[A-Z_][A-Z0-9_]*$/
 const productStateRootEnv = "AGENTSWARM_PRODUCT_STATE_ROOT"
 
+function envProductStateRoot() {
+  const root = process.env[productStateRootEnv]?.trim()
+  if (!root) return
+  const resolved = path.resolve(root)
+  if (resolved !== root) process.env[productStateRootEnv] = resolved
+  return resolved
+}
+
 function envDir(dir?: string) {
-  const env = process.env[productStateRootEnv]?.trim()
-  const root = env || AgencyProduct.stateRoot?.trim()
+  const root = envProductStateRoot() ?? AgencyProduct.stateRoot?.trim()
   return dir ?? (root ? path.resolve(root) : process.cwd())
 }
 

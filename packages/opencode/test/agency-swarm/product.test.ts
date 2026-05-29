@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import path from "node:path"
 import { AgencyProduct } from "../../src/agency-swarm/product"
 
 describe("AgencyProduct profile", () => {
@@ -30,6 +31,14 @@ describe("AgencyProduct profile", () => {
     expect(profile.pythonEnvironment).toBe("any")
     expect(profile.stateRoot).toBeUndefined()
     expect(AgencyProduct.tuiLogo(profile)).toBeUndefined()
+  })
+
+  test("normalizes relative product state roots once", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_PRODUCT_STATE_ROOT: "example-product",
+    })
+
+    expect(profile.stateRoot).toBe(path.resolve("example-product"))
   })
 
   test("selects a generic downstream profile from product env", () => {

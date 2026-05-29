@@ -13,6 +13,7 @@ import {
   LAUNCHER_ENTRY_ENV,
   prepareProjectLaunch,
   prepareNpxLaunch,
+  PRODUCT_STATE_ROOT_ENV,
   resolveLauncherCommand,
   resolveNpxAutoProject,
   resolveProductProjectDirectory,
@@ -31,6 +32,7 @@ import { tmpdir } from "../fixture/fixture"
 
 describe("agency-swarm npx onboarding", () => {
   const originalEnv = process.env[LAUNCHER_ENTRY_ENV]
+  const originalProductStateRootEnv = process.env[PRODUCT_STATE_ROOT_ENV]
   const downstreamProfile = {
     custom: true,
     name: "Example Product",
@@ -44,6 +46,8 @@ describe("agency-swarm npx onboarding", () => {
     mock.restore()
     if (originalEnv === undefined) delete process.env[LAUNCHER_ENTRY_ENV]
     else process.env[LAUNCHER_ENTRY_ENV] = originalEnv
+    if (originalProductStateRootEnv === undefined) delete process.env[PRODUCT_STATE_ROOT_ENV]
+    else process.env[PRODUCT_STATE_ROOT_ENV] = originalProductStateRootEnv
   })
 
   test("wrapper env enables onboarding for the default launch only", () => {
@@ -3341,6 +3345,95 @@ describe("agency-swarm npx onboarding", () => {
     expect(launch?.directory).toBe(project)
   })
 
+  test("prepareNpxLaunch exports a relative state root as absolute before launch", async () => {
+    await using caller = await tmpdir()
+    const cwd = process.cwd()
+    const previous = process.env[PRODUCT_STATE_ROOT_ENV]
+    const calls: { cmd: string[]; cwd?: string }[] = []
+    try {
+      process.chdir(caller.path)
+      process.env[PRODUCT_STATE_ROOT_ENV] = "state-root"
+      const profile = AgencyProduct.resolve({
+        [PRODUCT_STATE_ROOT_ENV]: process.env[PRODUCT_STATE_ROOT_ENV],
+      })
+      const root = path.join(caller.path, "state-root")
+      const project = path.join(root, "project")
+
+      spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+      spyOn(prompts.log, "step").mockImplementation(() => undefined as never)
+      spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+      spyOn(prompts, "outro").mockImplementation(() => undefined as never)
+      spyOn(prompts, "select").mockResolvedValue("starter" as never)
+      spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+      spyOn(Bun, "spawn").mockImplementation((options: any) => {
+        const cmd = options?.cmd as string[] | undefined
+        if (!cmd) throw new Error("Missing command")
+        calls.push({ cmd, cwd: options.cwd })
+
+        if (cmd[0] === "git" && cmd[1] === "clone") {
+          const target = cmd.at(-1)
+          if (!target) throw new Error("Missing clone target")
+          mkdirSync(path.join(target, ".venv", process.platform === "win32" ? "Scripts" : "bin"), { recursive: true })
+          writeFileSync(
+            path.join(target, "agency.py"),
+            "from agency_swarm import Agency\n\ndef create_agency():\n    return Agency()\n",
+          )
+          writeFileSync(getTestVenvPython(target), "")
+          return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+        }
+
+        if (cmd[0] === "git" && cmd[1] === "init") {
+          return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+        }
+
+        if (isUvVersionCommand(cmd)) {
+          return { exited: Promise.resolve(0), stdout: "uv 0.8.0\n", stderr: "" } as never
+        }
+
+        if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+          return { exited: Promise.resolve(0), stdout: `${cmd[0]}\n3.12.7\n`, stderr: "" } as never
+        }
+
+        if (
+          isPythonVenvCommand(cmd) ||
+          isPythonPipInstallUvCommand(cmd) ||
+          isUvPipInstallCommand(cmd) ||
+          isCanaryCommand(cmd)
+        ) {
+          return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+        }
+
+        if (cmd[1]?.endsWith("launch_agency.py")) {
+          let resolveExit!: (code: number) => void
+          const exited = new Promise<number>((resolve) => {
+            resolveExit = resolve
+          })
+          return {
+            exited,
+            stderr: "",
+            kill() {
+              resolveExit(0)
+            },
+          } as never
+        }
+
+        throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+      })
+
+      const launch = await prepareNpxLaunch(caller.path, profile)
+
+      expect(process.env[PRODUCT_STATE_ROOT_ENV]).toBe(root)
+      expect(calls).toContainEqual({ cmd: ["git", "clone", "--depth=1", starterTemplateUrl(profile), project] })
+      expect(launch?.directory).toBe(project)
+
+      await launch?.cleanup?.()
+    } finally {
+      process.chdir(cwd)
+      if (previous === undefined) delete process.env[PRODUCT_STATE_ROOT_ENV]
+      else process.env[PRODUCT_STATE_ROOT_ENV] = previous
+    }
+  })
+
   test("prepareNpxLaunch creates default starters at the state-root project path", async () => {
     await using caller = await tmpdir()
     await using root = await tmpdir()
@@ -3432,6 +3525,69 @@ describe("agency-swarm npx onboarding", () => {
     expect(launch?.runProjectDirectory).toBe(project)
     expect(detected?.directory).toBe(project)
     expect(existsSync(nested)).toBe(false)
+
+    await launch?.cleanup?.()
+  })
+
+  test("prepareNpxLaunch hides starter creation when a fixed state-root project exists", async () => {
+    await using root = await tmpdir()
+    const project = path.join(root.path, "project")
+    const profile = AgencyProduct.resolve({
+      [PRODUCT_STATE_ROOT_ENV]: root.path,
+    })
+    const choices: string[] = []
+    const calls: { cmd: string[]; cwd?: string }[] = []
+    await mkdir(project, { recursive: true })
+    await writeAgency(project)
+    await writeVenvPython(project)
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "step").mockImplementation(() => undefined as never)
+    spyOn(prompts, "outro").mockImplementation(() => undefined as never)
+    spyOn(prompts, "select").mockImplementation((input) => {
+      choices.push(...input.options.map((option) => String(option.value)))
+      return Promise.resolve("project" as never)
+    })
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      calls.push({ cmd, cwd: options.cwd })
+
+      if (isUvVersionCommand(cmd)) {
+        return { exited: Promise.resolve(0), stdout: "uv 0.8.0\n", stderr: "" } as never
+      }
+
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        return { exited: Promise.resolve(0), stdout: `${cmd[0]}\n3.12.7\n`, stderr: "" } as never
+      }
+
+      if (isUvPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareNpxLaunch(root.path, profile)
+
+    expect(choices).toEqual(["project", "connect"])
+    expect(calls.some((call) => call.cmd[0] === "git" && call.cmd[1] === "clone")).toBe(false)
+    expect(launch?.directory).toBe(project)
 
     await launch?.cleanup?.()
   })

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { AgencyProduct } from "../../../src/agency-swarm/product"
@@ -51,6 +51,34 @@ describe("env-file", () => {
       else process.env.AGENTSWARM_PRODUCT_STATE_ROOT = previous
       await rm(caller, { recursive: true, force: true })
       await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("keeps a relative product state root stable after cwd changes", async () => {
+    const caller = await tempdir()
+    const cwd = process.cwd()
+    const previous = process.env.AGENTSWARM_PRODUCT_STATE_ROOT
+    try {
+      process.env.AGENTSWARM_PRODUCT_STATE_ROOT = "state"
+      process.chdir(caller)
+      const root = path.resolve("state")
+      const project = path.join(root, "project")
+
+      writeEnvKey("SEARCH_API_KEY", "search-key")
+      await mkdir(project, { recursive: true })
+      process.chdir(project)
+      writeEnvKey("COMPOSIO_API_KEY", "composio-key")
+
+      expect(process.env.AGENTSWARM_PRODUCT_STATE_ROOT).toBe(root)
+      expect(readEnvKey("SEARCH_API_KEY")).toBe("search-key")
+      expect(readEnvKey("COMPOSIO_API_KEY")).toBe("composio-key")
+      expect(await readFile(path.join(root, ".env"), "utf8")).toContain("COMPOSIO_API_KEY=")
+      await expect(readFile(path.join(project, "state", ".env"), "utf8")).rejects.toThrow()
+    } finally {
+      process.chdir(cwd)
+      if (previous === undefined) delete process.env.AGENTSWARM_PRODUCT_STATE_ROOT
+      else process.env.AGENTSWARM_PRODUCT_STATE_ROOT = previous
+      await rm(caller, { recursive: true, force: true })
     }
   })
 

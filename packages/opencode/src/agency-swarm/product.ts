@@ -1,3 +1,5 @@
+import path from "node:path"
+
 declare const AGENTSWARM_PRODUCT_DISPLAY_NAME: string | undefined
 declare const AGENTSWARM_PRODUCT_COMMAND: string | undefined
 declare const AGENTSWARM_PRODUCT_PACKAGE_NAME: string | undefined
@@ -129,6 +131,11 @@ export namespace AgencyProduct {
     return clean(env[name]) ?? clean(defineValues[name])
   }
 
+  function readStateRoot(env: Record<string, string | undefined>) {
+    const root = readValue(env, "AGENTSWARM_PRODUCT_STATE_ROOT")
+    return root ? path.resolve(root) : undefined
+  }
+
   function readRawValue(env: Record<string, string | undefined>, name: keyof typeof defineValues) {
     return env[name] ?? defineValues[name]
   }
@@ -241,7 +248,7 @@ export namespace AgencyProduct {
       wordmarkLines: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_WORDMARK_LINES")),
       pythonEnvironment: readPythonEnvironment(readValue(env, "AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT")),
       addons: readAddons(readRawValue(env, "AGENTSWARM_PRODUCT_ADDONS")),
-      stateRoot: readValue(env, "AGENTSWARM_PRODUCT_STATE_ROOT"),
+      stateRoot: readStateRoot(env),
     }
     const custom = Object.values(overrides).some((value) => value !== undefined)
     const customBranding =
