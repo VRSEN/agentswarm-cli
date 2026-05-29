@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { AgencyProduct } from "../../src/agency-swarm/product"
 
@@ -109,6 +111,64 @@ describe("AgencyProduct profile", () => {
       left: [" LEFT", "LEFT2"],
       right: ["RIGHT", "RIGHT2"],
     })
+  })
+
+  test("preserves compiled add-ons when runtime add-ons env is blank", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-product-"))
+    try {
+      const addons = [{ id: "search", title: "Search", keys: ["SEARCH_API_KEY"] }]
+      const root = path.resolve(import.meta.dir, "../..")
+      const entry = path.join(dir, "entry.ts")
+      const outdir = path.join(dir, "out")
+      await writeFile(
+        entry,
+        [
+          `import { AgencyProduct } from ${JSON.stringify(path.join(root, "src/agency-swarm/product.ts"))}`,
+          "console.log(JSON.stringify({",
+          "  addons: AgencyProduct.resolve(process.env).addons,",
+          "  currentAddons: AgencyProduct.addons,",
+          "  show: AgencyProduct.shouldShowAddons(),",
+          "}))",
+        ].join("\n"),
+      )
+
+      const result = await Bun.build({
+        entrypoints: [entry],
+        outdir,
+        format: "esm",
+        target: "bun",
+        define: {
+          AGENTSWARM_PRODUCT_ADDONS: JSON.stringify(JSON.stringify(addons)),
+        },
+      })
+      if (!result.success) {
+        throw new Error(result.logs.map((log) => log.message).join("\n"))
+      }
+
+      const proc = Bun.spawn([process.execPath, path.join(outdir, "entry.js")], {
+        cwd: root,
+        env: {
+          AGENTSWARM_PRODUCT_ADDONS: "",
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      })
+      const [stdout, stderr, code] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ])
+
+      expect(stderr).toBe("")
+      expect(code).toBe(0)
+      expect(JSON.parse(stdout)).toEqual({
+        addons,
+        currentAddons: addons,
+        show: true,
+      })
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 
   test("ignores invalid add-ons config values", () => {

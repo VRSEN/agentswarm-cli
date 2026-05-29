@@ -247,7 +247,7 @@ export namespace AgencyProduct {
       tuiLogoRight: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT")),
       wordmarkLines: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_WORDMARK_LINES")),
       pythonEnvironment: readPythonEnvironment(readValue(env, "AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT")),
-      addons: readAddons(readRawValue(env, "AGENTSWARM_PRODUCT_ADDONS")),
+      addons: readAddons(readValue(env, "AGENTSWARM_PRODUCT_ADDONS")),
       stateRoot: readStateRoot(env),
     }
     const custom = Object.values(overrides).some((value) => value !== undefined)
