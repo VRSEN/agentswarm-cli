@@ -571,6 +571,13 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
       const runProject = process.env[AgencySwarmRunSession.LOCAL_PROJECT_ENV]
       if (runProject) {
         yield* Effect.promise(() => AgencySwarmRunSession.mark({ sessionID: result.id, directory: runProject }))
+      } else {
+        const remoteConfig = AgencySwarmRunSession.remoteConfigFromEnv({ directory })
+        if (remoteConfig) {
+          yield* Effect.promise(() =>
+            AgencySwarmRunSession.markRemote({ sessionID: result.id, directory, config: remoteConfig }),
+          )
+        }
       }
       return result
     })

@@ -24,7 +24,7 @@ import {
 export { collectUnixPythonCandidates }
 
 export const LAUNCHER_ENTRY_ENV = "AGENTSWARM_LAUNCHER"
-export const PRODUCT_STATE_ROOT_ENV = "AGENTSWARM_PRODUCT_STATE_ROOT"
+export const PRODUCT_STATE_ROOT_ENV = AgencySwarmRunSession.PRODUCT_STATE_ROOT_ENV
 export const STARTER_TEMPLATE_REPO = AgencyProduct.starterTemplateRepo
 export const LOCAL_AGENCY_ID = "local-agency"
 
@@ -77,9 +77,23 @@ export interface AgencyProject {
 export interface NpxCwdLaunch {
   directory: string
   cwdOnly: true
+  configContent?: string
 }
 
 export type NpxAutoProject = AgencyProject | NpxCwdLaunch
+
+export type InputRunSession =
+  | {
+      sessionID: string
+      mode?: "local-project"
+      directory: string
+    }
+  | {
+      sessionID: string
+      mode: "remote-config"
+      directory: string
+      config: AgencySwarmRunSession.RemoteConfig
+    }
 
 export function isNpxCwdLaunch(project: NpxAutoProject): project is NpxCwdLaunch {
   return "cwdOnly" in project
@@ -161,7 +175,7 @@ export async function resolveNpxAutoProject(input: {
   prompt?: string
   agent?: string
   sessions?: Iterable<Pick<Session.Info, "id" | "directory" | "parentID" | "time">>
-  runSessions?: Iterable<{ sessionID: string; directory: string }>
+  runSessions?: Iterable<InputRunSession>
   profile?: Pick<ProductProfile, "agencyEntryFiles" | "stateRoot">
 }): Promise<NpxAutoProject | undefined> {
   if (!isLauncher(input)) return
@@ -288,7 +302,7 @@ function isLauncher(input: { env: NodeJS.ProcessEnv; argv?: string[] }) {
 
 async function resolveRunProject(
   session: Pick<Session.Info, "id" | "directory">,
-  runSessions?: Iterable<{ sessionID: string; directory: string }>,
+  runSessions?: Iterable<InputRunSession>,
   profile: Pick<ProductProfile, "agencyEntryFiles" | "stateRoot"> = AgencyProduct,
 ): Promise<NpxAutoProject | undefined> {
   const directory = resolveProductProjectDirectory(profile)
@@ -296,9 +310,18 @@ async function resolveRunProject(
   if (directory && !scoped) return
 
   const run = runSessions
-    ? Array.from(runSessions).find((item) => item.sessionID === session.id)
+    ? resolveInputRunSession(session.id, runSessions)
     : await AgencySwarmRunSession.get(session.id)
   if (run) {
+    if (run.mode === "remote-config") {
+      if (!directory || !scoped) return
+      if (path.resolve(run.directory) !== path.resolve(session.directory)) return
+      return {
+        directory: run.directory,
+        cwdOnly: true,
+        configContent: buildAgencyConfig(run.config),
+      }
+    }
     if (path.resolve(run.directory) !== path.resolve(session.directory)) return
     return detectAgencyProject(run.directory, profile)
   }
@@ -308,6 +331,25 @@ async function resolveRunProject(
     return project
   }
   if (scoped) return { directory, cwdOnly: true }
+}
+
+function resolveInputRunSession(
+  sessionID: string,
+  runSessions: Iterable<InputRunSession>,
+): AgencySwarmRunSession.Info | undefined {
+  const match = Array.from(runSessions).find((item) => item.sessionID === sessionID)
+  if (!match) return
+  if (match.mode === "remote-config") {
+    return {
+      mode: "remote-config",
+      directory: match.directory,
+      config: match.config,
+    }
+  }
+  return {
+    mode: "local-project",
+    directory: match.directory,
+  }
 }
 
 async function isLegacyAgencySwarmRunSession(sessionID: Session.Info["id"]) {

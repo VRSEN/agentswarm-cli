@@ -4277,6 +4277,95 @@ describe("agency-swarm npx onboarding", () => {
     expect(project).toEqual({ directory: projectDir, cwdOnly: true })
   })
 
+  test("resolveNpxAutoProject preserves remote config for product state resumes", async () => {
+    await using caller = await tmpdir()
+    await using root = await tmpdir()
+    const projectDir = path.join(root.path, "project")
+    const sessionID = SessionID.descending("ses_remote")
+    await mkdir(projectDir, { recursive: true })
+
+    const project = await resolveNpxAutoProject({
+      directory: caller.path,
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      session: sessionID,
+      profile: {
+        ...downstreamProfile,
+        stateRoot: root.path,
+      },
+      sessions: [
+        {
+          id: sessionID,
+          directory: projectDir,
+          parentID: undefined,
+          time: {
+            created: 1,
+            updated: 1,
+          },
+        },
+      ],
+      runSessions: [
+        {
+          sessionID,
+          mode: "remote-config",
+          directory: projectDir,
+          config: {
+            baseURL: "https://remote.example",
+            agency: "remote-agency",
+            token: "server-token",
+          },
+        },
+      ],
+    })
+    if (!project || !("cwdOnly" in project)) throw new Error("Expected cwd-only project")
+    const config = JSON.parse(project.configContent ?? "{}")
+
+    expect(project.directory).toBe(projectDir)
+    expect(project.cwdOnly).toBe(true)
+    expect(config.provider["agency-swarm"].options).toEqual({
+      baseURL: "https://remote.example",
+      agency: "remote-agency",
+      discoveryTimeoutMs: 2000,
+      timeout: false,
+      token: "server-token",
+    })
+  })
+
+  test("resolveNpxAutoProject ignores remote run metadata without a product state root", async () => {
+    await using dir = await tmpdir()
+    const sessionID = SessionID.descending("ses_remote")
+
+    const project = await resolveNpxAutoProject({
+      directory: dir.path,
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      session: sessionID,
+      sessions: [
+        {
+          id: sessionID,
+          directory: dir.path,
+          parentID: undefined,
+          time: {
+            created: 1,
+            updated: 1,
+          },
+        },
+      ],
+      runSessions: [
+        {
+          sessionID,
+          mode: "remote-config",
+          directory: dir.path,
+          config: {
+            baseURL: "https://remote.example",
+            agency: "remote-agency",
+            token: "server-token",
+          },
+        },
+      ],
+    })
+
+    expect(project).toBeUndefined()
+  })
+
   test("resolveNpxAutoProject uses legacy local-agency history for continue", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)

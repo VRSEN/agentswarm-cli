@@ -166,8 +166,8 @@ export const TuiThreadCommand = cmd({
         : localProject
           ? await prepareProjectLaunch(localProject)
           : cwdProject
-            ? { directory: cwdProject.directory }
-          : undefined
+            ? { directory: cwdProject.directory, configContent: cwdProject.configContent }
+            : undefined
       if ((shouldBootstrap || localProject) && !prepared) {
         return
       }
