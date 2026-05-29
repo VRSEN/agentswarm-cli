@@ -207,6 +207,77 @@ describe("Session", () => {
     })
   })
 
+  test("remove clears Agency Swarm run-session metadata", async () => {
+    await using tmp = await tmpdir({ git: true })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const info = await create({ title: "remote run-session delete" })
+        const config = {
+          baseURL: "https://remote.example",
+          agency: "remote-agency",
+          token: "server-token",
+        }
+
+        try {
+          await AgencySwarmRunSession.markRemote({
+            sessionID: info.id,
+            directory: tmp.path,
+            config,
+          })
+
+          await remove(info.id)
+
+          expect(await AgencySwarmRunSession.get(info.id)).toBeUndefined()
+        } finally {
+          await AgencySwarmRunSession.clear(info.id)
+          await remove(info.id).catch(() => undefined)
+        }
+      },
+    })
+  })
+
+  test("remove clears child Agency Swarm run-session metadata", async () => {
+    await using tmp = await tmpdir({ git: true })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const parent = await create({ title: "remote run-session parent delete" })
+        const child = await create({ parentID: parent.id, title: "remote run-session child delete" })
+        const config = {
+          baseURL: "https://remote.example",
+          agency: "remote-agency",
+          token: "server-token",
+        }
+
+        try {
+          await AgencySwarmRunSession.markRemote({
+            sessionID: parent.id,
+            directory: tmp.path,
+            config,
+          })
+          await AgencySwarmRunSession.markRemote({
+            sessionID: child.id,
+            directory: tmp.path,
+            config,
+          })
+
+          await remove(parent.id)
+
+          expect(await AgencySwarmRunSession.get(parent.id)).toBeUndefined()
+          expect(await AgencySwarmRunSession.get(child.id)).toBeUndefined()
+        } finally {
+          await AgencySwarmRunSession.clear(parent.id)
+          await AgencySwarmRunSession.clear(child.id)
+          await remove(child.id).catch(() => undefined)
+          await remove(parent.id).catch(() => undefined)
+        }
+      },
+    })
+  })
+
   test("remove works without an instance", async () => {
     await using tmp = await tmpdir({ git: true })
 
