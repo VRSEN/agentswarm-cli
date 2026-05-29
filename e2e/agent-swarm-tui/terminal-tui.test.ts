@@ -180,11 +180,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
         AGENTSWARM_POSTHOG_API_KEY: "ph_test",
         AGENTSWARM_POSTHOG_HOST: currentTelemetryServer.url,
         AGENTSWARM_TELEMETRY: undefined,
-        AGENTSWARM_TELEMETRY_ALLOW_TEST: undefined,
-        BUN_TEST: "",
-        CI: "",
-        NODE_ENV: "",
-        OPENCODE_PURE: "",
+        AGENTSWARM_TELEMETRY_ALLOW_TEST: "1",
         OPEN_SWARM_TELEMETRY: undefined,
       },
     })
@@ -917,11 +913,19 @@ async function driveOpenAIAPIKeyAuth(tui: TuiProcess, apiKey: string) {
   await tui.waitForText("/auth", tuiInteractionTimeoutMs)
   tui.write("\r")
   await tui.waitForText("Manage Agent Swarm auth", tuiInteractionTimeoutMs)
-  tui.write("openai\r")
-  await tui.waitForText("Select OpenAI auth method", tuiInteractionTimeoutMs)
-  tui.write("api\r")
-  await tui.waitForText("API key", tuiInteractionTimeoutMs)
-  await tui.waitForText("enter submit", tuiInteractionTimeoutMs)
+  await tui.waitForText("OpenAI", tuiInteractionTimeoutMs)
+  tui.write("\r")
+  const hasAPIKeyPrompt = () => tui.screen().includes("API key") && tui.screen().includes("enter submit")
+  await tui.waitFor(
+    () => tui.screen().includes("Select OpenAI auth method") || hasAPIKeyPrompt(),
+    "OpenAI auth method or API key prompt",
+    tuiInteractionTimeoutMs,
+  )
+  if (!hasAPIKeyPrompt()) {
+    await tui.waitForText("Manually enter API Key", tuiInteractionTimeoutMs)
+    tui.write("\x1b[B\r")
+  }
+  await tui.waitFor(hasAPIKeyPrompt, "API key prompt", tuiInteractionTimeoutMs)
   await Bun.sleep(100)
   tui.write(`${apiKey}\r`)
 }

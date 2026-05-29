@@ -134,8 +134,11 @@ async function anonymousInstallID() {
 function isDisabledByEnvironment() {
   const explicit = [process.env.OPEN_SWARM_TELEMETRY, process.env.AGENTSWARM_TELEMETRY, process.env.OPENCODE_TELEMETRY]
   if (explicit.some((value) => value && FALSE_VALUES.has(value.trim().toLowerCase()))) return true
-  if (Flag.OPENCODE_PURE) return true
-  if (process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST === "1") return false
+  const allowTest =
+    process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST === "1" &&
+    !!(process.env.BUN_TEST || process.env.NODE_ENV === "test" || process.env.OPENCODE_TEST_HOME)
+  if (Flag.OPENCODE_PURE && !allowTest) return true
+  if (allowTest) return false
   if (process.env.CI) return true
   if (process.env.NODE_ENV === "test" || process.env.BUN_TEST) return true
   return false

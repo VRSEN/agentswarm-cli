@@ -532,12 +532,15 @@ describe("prompt auth rejection handling", () => {
 
     expect(commandSession).toHaveBeenCalledTimes(1)
     expect(promptSession).not.toHaveBeenCalled()
-    const telemetryCall = telemetryCapture.mock.calls.find(
-      ([event, properties]) => event === "ui_prompt_submitted" && (properties as any)?.type === "server_command",
-    )
+    const telemetryCall = telemetryCapture.mock.calls.find(([event, properties]) => {
+      if (event !== "ui_prompt_submitted") return false
+      if (!properties || typeof properties !== "object") return false
+      return (properties as Record<string, unknown>).type === "server_command"
+    })
     expect(telemetryCall).toBeTruthy()
-    expect((telemetryCall?.[1] as any)?.command).toBeUndefined()
-    expect((telemetryCall?.[1] as any)?.provider_id).toBe("agency-swarm")
+    const telemetryProperties = telemetryCall?.[1] as Record<string, unknown> | undefined
+    expect(telemetryProperties?.command).toBeUndefined()
+    expect(telemetryProperties?.provider_id).toBe("agency-swarm")
     expect(appendHistory).toHaveBeenCalledWith({
       input: "/auth refresh\nsecond line",
       parts: [],
