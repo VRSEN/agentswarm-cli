@@ -1,12 +1,14 @@
 import { spawnSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
+import { AgencyProduct } from "@/agency-swarm/product"
 
 const keyPattern = /^[A-Z_][A-Z0-9_]*$/
 const productStateRootEnv = "AGENTSWARM_PRODUCT_STATE_ROOT"
 
 function envDir(dir?: string) {
-  const root = process.env[productStateRootEnv]?.trim()
+  const env = process.env[productStateRootEnv]?.trim()
+  const root = env || AgencyProduct.stateRoot?.trim()
   return dir ?? (root ? path.resolve(root) : process.cwd())
 }
 

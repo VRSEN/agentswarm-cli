@@ -459,7 +459,6 @@ export async function prepareNpxLaunch(
   profile: ProductProfile = AgencyProduct,
 ): Promise<PreparedNpxLaunch | undefined> {
   prompts.intro(profile.name)
-  const stateRoot = resolveProductStateRoot(profile)
   const projectDirectory = resolveProductProjectDirectory(profile)
   const launchDirectory = projectDirectory ?? directory
 
@@ -491,9 +490,9 @@ export async function prepareNpxLaunch(
     prompts.outro("Cancelled")
     return
   }
+  if (projectDirectory) await mkdir(projectDirectory, { recursive: true })
 
   if (choice === "connect") {
-    if (stateRoot) await mkdir(stateRoot, { recursive: true })
     const launch = await prepareRemoteLaunch(launchDirectory)
     if (!launch) {
       prompts.outro("Cancelled")

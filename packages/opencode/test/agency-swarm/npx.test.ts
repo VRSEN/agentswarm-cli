@@ -3302,6 +3302,45 @@ describe("agency-swarm npx onboarding", () => {
     await launch?.cleanup?.()
   })
 
+  test("prepareNpxLaunch creates the state-root project directory before remote connect launch", async () => {
+    await using caller = await tmpdir()
+    await using root = await tmpdir()
+    const project = path.join(root.path, "project")
+    const profile = {
+      ...AgencyProduct.resolve({}),
+      stateRoot: root.path,
+    }
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+    spyOn(prompts, "outro").mockImplementation(() => undefined as never)
+    spyOn(prompts, "select").mockResolvedValue("connect" as never)
+    spyOn(prompts, "text").mockResolvedValue("http://127.0.0.1:8123" as never)
+    spyOn(prompts, "confirm").mockResolvedValue(false as never)
+    const rawFetch = globalThis.fetch
+    spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: URL | RequestInfo) => {
+          const url = String(input)
+          const body = url.endsWith("/openapi.json")
+            ? { paths: { "/local-agency/get_metadata": { get: {} } } }
+            : { name: "Local Agency" }
+          return Response.json(body)
+        },
+        {
+          preconnect: rawFetch.preconnect?.bind(rawFetch),
+        },
+      ) as typeof globalThis.fetch,
+    )
+
+    expect(existsSync(project)).toBe(false)
+
+    const launch = await prepareNpxLaunch(caller.path, profile)
+
+    expect(existsSync(project)).toBe(true)
+    expect(launch?.directory).toBe(project)
+  })
+
   test("prepareNpxLaunch clones the configured starter folder and launches the configured entry file", async () => {
     await using dir = await tmpdir()
     const target = path.join(dir.path, downstreamProfile.starterProjectName)
