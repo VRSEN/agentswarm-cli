@@ -29,6 +29,7 @@ export type CommandOption = DialogSelectOption<string> & {
   slash?: Slash
   hidden?: boolean
   enabled?: boolean
+  telemetry?: boolean
 }
 
 function init() {
@@ -50,6 +51,7 @@ function init() {
   const isVisible = (option: CommandOption) => isEnabled(option) && !option.hidden
   const track = (option: CommandOption, source: CommandTelemetrySource) =>
     captureCommand({
+      builtin: option.telemetry !== false,
       category: option.category,
       keybind: option.keybind,
       source,

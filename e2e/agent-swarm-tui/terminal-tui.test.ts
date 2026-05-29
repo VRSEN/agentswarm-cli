@@ -185,6 +185,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
         CI: "",
         NODE_ENV: "",
         OPENCODE_PURE: "",
+        OPEN_SWARM_TELEMETRY: undefined,
       },
     })
 
@@ -238,6 +239,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
         CI: "",
         NODE_ENV: "",
         OPENCODE_PURE: "",
+        OPEN_SWARM_TELEMETRY: undefined,
       },
     })
 

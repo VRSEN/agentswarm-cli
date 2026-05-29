@@ -241,7 +241,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 - **Privacy-safe product telemetry for TUI feature usage**
   - Intent: learn which Agent Swarm TUI features users use without collecting prompts, command arguments, file paths, session content, or raw workspace data.
-  - Behavior: npm release builds can send PostHog events for app start, provider auth setup, command use, route changes, and prompt submission shape when the release build includes the PostHog capture key. Users can disable this with `AGENTSWARM_TELEMETRY=0`.
+  - Behavior: npm release builds can send PostHog events for app start, provider auth setup, command use, route changes, and prompt submission shape when the release build includes the PostHog capture key. Users can disable this with `OPEN_SWARM_TELEMETRY=0`, `AGENTSWARM_TELEMETRY=0`, or `--no-telemetry`.
   - Implementation: `Telemetry` in `packages/opencode/src/telemetry/telemetry.ts`, TUI command/prompt/app hooks, and release-time `POSTHOG_API_KEY`/`POSTHOG_HOST` injection in `.github/workflows/publish-npm-on-release.yml`.
   - Reference: PR #226
 

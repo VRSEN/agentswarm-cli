@@ -41,31 +41,7 @@ const allowedEvents = new Set([
   "ui_route_changed",
 ])
 
-const allowedProperties = new Set([
-  "app",
-  "arch",
-  "auth_method",
-  "category",
-  "channel",
-  "command",
-  "entrypoint",
-  "framework_mode",
-  "has_agent_parts",
-  "has_editor_selection",
-  "has_file_parts",
-  "keybind",
-  "mode",
-  "platform",
-  "provider_id",
-  "route",
-  "slash",
-  "source",
-  "terminal",
-  "to_route",
-  "telemetry_session_id",
-  "type",
-  "version",
-])
+const baseProperties = new Set(["app", "arch", "channel", "platform", "terminal", "telemetry_session_id", "version"])
 
 type TelemetryEvent =
   | "app_started"
@@ -74,14 +50,33 @@ type TelemetryEvent =
   | "ui_prompt_submitted"
   | "ui_route_changed"
 type SafeValue = string | number | boolean
-type Fetch = typeof fetch
 type Pending = {
   abort: () => void
   promise: Promise<void>
 }
 
-let installID: Promise<string> | undefined
-let fetchOverride: Fetch | undefined
+type InstallID = {
+  file: string
+  value: Promise<string>
+}
+
+const eventProperties: Record<TelemetryEvent, Set<string>> = {
+  app_started: new Set(["entrypoint", "framework_mode", "provider_id"]),
+  provider_auth_configured: new Set(["auth_method", "framework_mode", "provider_id", "source"]),
+  ui_command_executed: new Set(["category", "command", "keybind", "source"]),
+  ui_prompt_submitted: new Set([
+    "framework_mode",
+    "has_agent_parts",
+    "has_editor_selection",
+    "has_file_parts",
+    "mode",
+    "provider_id",
+    "type",
+  ]),
+  ui_route_changed: new Set(["route", "to_route"]),
+}
+
+let installID: InstallID | undefined
 let pending = new Set<Pending>()
 
 function definedValue(name: "AGENTSWARM_POSTHOG_API_KEY" | "AGENTSWARM_POSTHOG_HOST") {
@@ -114,28 +109,31 @@ function statePath() {
 }
 
 async function anonymousInstallID() {
-  if (!installID) {
-    installID = (async () => {
-      const file = statePath()
-      try {
-        const current = JSON.parse(await fs.readFile(file, "utf8")) as { installID?: unknown }
-        if (typeof current.installID === "string" && current.installID) return current.installID
-      } catch {}
+  const file = statePath()
+  if (installID?.file !== file) {
+    installID = {
+      file,
+      value: (async () => {
+        try {
+          const current = JSON.parse(await fs.readFile(file, "utf8")) as { installID?: unknown }
+          if (typeof current.installID === "string" && current.installID) return current.installID
+        } catch {}
 
-      const next = crypto.randomUUID()
-      try {
-        await fs.mkdir(path.dirname(file), { recursive: true })
-        await fs.writeFile(file, JSON.stringify({ installID: next }, null, 2) + "\n", "utf8")
-      } catch {}
-      return next
-    })()
+        const next = crypto.randomUUID()
+        try {
+          await fs.mkdir(path.dirname(file), { recursive: true })
+          await fs.writeFile(file, JSON.stringify({ installID: next }, null, 2) + "\n", "utf8")
+        } catch {}
+        return next
+      })(),
+    }
   }
-  return installID
+  return installID.value
 }
 
 function isDisabledByEnvironment() {
-  const explicit = process.env.AGENTSWARM_TELEMETRY ?? process.env.OPENCODE_TELEMETRY
-  if (explicit && FALSE_VALUES.has(explicit.trim().toLowerCase())) return true
+  const explicit = [process.env.OPEN_SWARM_TELEMETRY, process.env.AGENTSWARM_TELEMETRY, process.env.OPENCODE_TELEMETRY]
+  if (explicit.some((value) => value && FALSE_VALUES.has(value.trim().toLowerCase()))) return true
   if (Flag.OPENCODE_PURE) return true
   if (process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST === "1") return false
   if (process.env.CI) return true
@@ -150,8 +148,8 @@ function safeString(value: string) {
   return trimmed
 }
 
-function safeValue(key: string, value: unknown): SafeValue | undefined {
-  if (!allowedProperties.has(key)) return undefined
+function safeValue(key: string, value: unknown, allowed: Set<string>): SafeValue | undefined {
+  if (!allowed.has(key)) return undefined
   if (typeof value === "boolean") return value
   if (typeof value === "number") return Number.isFinite(value) ? value : undefined
   if (typeof value === "string") {
@@ -162,23 +160,24 @@ function safeValue(key: string, value: unknown): SafeValue | undefined {
   return undefined
 }
 
-function assignSafe(output: Record<string, SafeValue>, key: string, value: unknown) {
-  const safe = safeValue(key, value)
+function assignSafe(output: Record<string, SafeValue>, allowed: Set<string>, key: string, value: unknown) {
+  const safe = safeValue(key, value, allowed)
   if (safe !== undefined) output[key] = safe
 }
 
-function sanitize(input: Record<string, unknown> | undefined) {
+function sanitize(event: TelemetryEvent, input: Record<string, unknown> | undefined) {
   const output: Record<string, SafeValue> = {}
-  assignSafe(output, "app", AgencyProduct.name)
-  assignSafe(output, "arch", os.arch())
-  assignSafe(output, "channel", InstallationChannel)
-  assignSafe(output, "platform", os.platform())
-  assignSafe(output, "telemetry_session_id", sessionID)
-  assignSafe(output, "version", InstallationVersion)
-  assignSafe(output, "terminal", Flag.OPENCODE_CLIENT)
+  assignSafe(output, baseProperties, "app", AgencyProduct.name)
+  assignSafe(output, baseProperties, "arch", os.arch())
+  assignSafe(output, baseProperties, "channel", InstallationChannel)
+  assignSafe(output, baseProperties, "platform", os.platform())
+  assignSafe(output, baseProperties, "telemetry_session_id", sessionID)
+  assignSafe(output, baseProperties, "version", InstallationVersion)
+  assignSafe(output, baseProperties, "terminal", Flag.OPENCODE_CLIENT)
 
+  const allowed = eventProperties[event]
   for (const [key, value] of Object.entries(input ?? {})) {
-    assignSafe(output, key, value)
+    assignSafe(output, allowed, key, value)
   }
   return output
 }
@@ -198,12 +197,11 @@ export async function capture(event: TelemetryEvent, properties?: Record<string,
       api_key: apiKey,
       distinct_id: await anonymousInstallID(),
       event,
-      properties: sanitize(properties),
+      properties: sanitize(event, properties),
     }
 
-    const fetcher = fetchOverride ?? fetch
     try {
-      await fetcher(url, {
+      await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -255,20 +253,8 @@ export function isEnabled() {
   return !!config().apiKey && !isDisabledByEnvironment()
 }
 
-export function setFetchForTests(next: Fetch | undefined) {
-  fetchOverride = next
-}
-
-export function resetForTests() {
-  installID = undefined
-  pending = new Set()
-  fetchOverride = undefined
-}
-
 export const Telemetry = {
   capture,
   flush,
   isEnabled,
-  resetForTests,
-  setFetchForTests,
 }

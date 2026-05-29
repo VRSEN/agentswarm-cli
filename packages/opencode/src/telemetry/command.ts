@@ -3,6 +3,7 @@ import { Telemetry } from "./telemetry"
 export type CommandTelemetrySource = "keybind" | "palette" | "programmatic" | "slash" | "suggested"
 
 type CommandTelemetryInput = {
+  builtin?: boolean | undefined
   category?: string | undefined
   keybind?: string | undefined
   source: CommandTelemetrySource
@@ -89,6 +90,7 @@ const tracked = new Set([
 ])
 
 export function captureCommand(input: CommandTelemetryInput) {
+  if (input.builtin === false) return
   const builtin = tracked.has(input.value)
   if (!builtin) return
   void Telemetry.capture("ui_command_executed", {

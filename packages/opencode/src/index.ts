@@ -89,9 +89,17 @@ const cli = yargs(args)
     describe: "run without external plugins",
     type: "boolean",
   })
+  .option("telemetry", {
+    describe: "send privacy-safe product telemetry",
+    type: "boolean",
+  })
   .middleware(async (opts) => {
     if (opts.pure) {
       process.env.OPENCODE_PURE = "1"
+    }
+    if (opts.telemetry === false) {
+      process.env.OPEN_SWARM_TELEMETRY = "0"
+      process.env.AGENTSWARM_TELEMETRY = "0"
     }
 
     await Log.init({

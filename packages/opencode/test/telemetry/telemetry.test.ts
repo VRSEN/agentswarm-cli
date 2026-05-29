@@ -5,6 +5,7 @@ import { Telemetry } from "../../src/telemetry/telemetry"
 import { captureCommand } from "../../src/telemetry/command"
 
 const originalClient = process.env.OPENCODE_CLIENT
+const originalFetch = globalThis.fetch
 
 type Captured = {
   api_key?: unknown
@@ -19,6 +20,7 @@ function enableTelemetry(input: { key?: string; host?: string; stateDir: string 
   process.env.AGENTSWARM_POSTHOG_HOST = input.host ?? "https://posthog.example"
   process.env.AGENTSWARM_TELEMETRY_STATE_DIR = input.stateDir
   delete process.env.AGENTSWARM_TELEMETRY
+  delete process.env.OPEN_SWARM_TELEMETRY
 }
 
 function resetEnv() {
@@ -27,6 +29,7 @@ function resetEnv() {
   delete process.env.AGENTSWARM_TELEMETRY
   delete process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST
   delete process.env.AGENTSWARM_TELEMETRY_STATE_DIR
+  delete process.env.OPEN_SWARM_TELEMETRY
   if (originalClient === undefined) delete process.env.OPENCODE_CLIENT
   else process.env.OPENCODE_CLIENT = originalClient
 }
@@ -35,9 +38,13 @@ function asFetch(fn: (url: string | URL | Request, init?: RequestInit) => Promis
   return fn as unknown as typeof fetch
 }
 
+function useFetch(next: typeof fetch) {
+  globalThis.fetch = next
+}
+
 describe("Telemetry", () => {
   afterEach(() => {
-    Telemetry.resetForTests()
+    globalThis.fetch = originalFetch
     resetEnv()
   })
 
@@ -45,7 +52,7 @@ describe("Telemetry", () => {
     await using tmp = await tmpdir()
     const requests: { url: string; body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
-    Telemetry.setFetchForTests(
+    useFetch(
       asFetch(async (url, init) => {
         requests.push({
           url: String(url),
@@ -74,13 +81,13 @@ describe("Telemetry", () => {
     expect(requests[0].body.api_key).toBe("ph_test")
     expect(requests[0].body.distinct_id).toBeTruthy()
     expect(requests[0].body.properties).toMatchObject({
-      command: "run",
       framework_mode: true,
       has_file_parts: true,
       mode: "normal",
       provider_id: "agency-swarm",
       type: "prompt",
     })
+    expect(requests[0].body.properties?.command).toBeUndefined()
     expect(JSON.stringify(requests[0].body)).not.toContain("secret prompt")
   })
 
@@ -89,7 +96,7 @@ describe("Telemetry", () => {
     const requests: unknown[] = []
     enableTelemetry({ stateDir: tmp.path })
     process.env.AGENTSWARM_TELEMETRY = "false"
-    Telemetry.setFetchForTests(
+    useFetch(
       asFetch(async () => {
         requests.push({})
         return new Response(null, { status: 200 })
@@ -102,22 +109,30 @@ describe("Telemetry", () => {
     expect(requests).toHaveLength(0)
   })
 
-  test("reuses the anonymous install id from state", async () => {
+  test("does not send when OpenSwarm opt-out is set", async () => {
+    await using tmp = await tmpdir()
+    const requests: unknown[] = []
+    enableTelemetry({ stateDir: tmp.path })
+    process.env.OPEN_SWARM_TELEMETRY = "0"
+    useFetch(
+      asFetch(async () => {
+        requests.push({})
+        return new Response(null, { status: 200 })
+      }),
+    )
+
+    await expect(Telemetry.capture("app_started", { entrypoint: "tui" })).resolves.toBe(false)
+    await Telemetry.flush()
+
+    expect(requests).toHaveLength(0)
+  })
+
+  test("uses the anonymous install id from state", async () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []
+    await Bun.write(path.join(tmp.path, "telemetry.json"), JSON.stringify({ installID: "known-install-id" }))
     enableTelemetry({ stateDir: tmp.path })
-    Telemetry.setFetchForTests(
-      asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
-        return new Response(null, { status: 200 })
-      }),
-    )
-
-    await Telemetry.capture("app_started", { entrypoint: "tui" })
-    await Telemetry.flush()
-    Telemetry.resetForTests()
-    enableTelemetry({ stateDir: tmp.path })
-    Telemetry.setFetchForTests(
+    useFetch(
       asFetch(async (_url, init) => {
         requests.push({ body: JSON.parse(String(init?.body)) as Captured })
         return new Response(null, { status: 200 })
@@ -126,10 +141,10 @@ describe("Telemetry", () => {
     await Telemetry.capture("app_started", { entrypoint: "tui" })
     await Telemetry.flush()
 
-    expect(requests).toHaveLength(2)
-    expect(requests[1].body.distinct_id).toBe(requests[0].body.distinct_id)
+    expect(requests).toHaveLength(1)
+    expect(requests[0].body.distinct_id).toBe("known-install-id")
     expect(await Bun.file(path.join(tmp.path, "telemetry.json")).json()).toEqual({
-      installID: requests[0].body.distinct_id,
+      installID: "known-install-id",
     })
   })
 
@@ -137,7 +152,7 @@ describe("Telemetry", () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
-    Telemetry.setFetchForTests(
+    useFetch(
       asFetch(async (_url, init) => {
         requests.push({ body: JSON.parse(String(init?.body)) as Captured })
         return new Response(null, { status: 200 })
@@ -155,11 +170,19 @@ describe("Telemetry", () => {
   test("flush can be bounded for shutdown", async () => {
     await using tmp = await tmpdir()
     enableTelemetry({ stateDir: tmp.path })
-    Telemetry.setFetchForTests(
+    useFetch(
       asFetch(
-        () =>
+        (_url, init) =>
           new Promise<Response>((resolve) => {
-            setTimeout(() => resolve(new Response(null, { status: 200 })), 50)
+            const timeout = setTimeout(() => resolve(new Response(null, { status: 200 })), 50)
+            init?.signal?.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timeout)
+                resolve(new Response(null, { status: 499 }))
+              },
+              { once: true },
+            )
           }),
       ),
     )
@@ -175,7 +198,7 @@ describe("Telemetry", () => {
     await using tmp = await tmpdir()
     enableTelemetry({ stateDir: tmp.path })
     let aborted = false
-    Telemetry.setFetchForTests(
+    useFetch(
       asFetch((_url, init) => {
         return new Promise<Response>((resolve) => {
           init?.signal?.addEventListener(
@@ -200,7 +223,7 @@ describe("Telemetry", () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
-    Telemetry.setFetchForTests(
+    useFetch(
       asFetch(async (_url, init) => {
         requests.push({ body: JSON.parse(String(init?.body)) as Captured })
         return new Response(null, { status: 200 })
@@ -230,7 +253,7 @@ describe("Telemetry", () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
-    Telemetry.setFetchForTests(
+    useFetch(
       asFetch(async (_url, init) => {
         requests.push({ body: JSON.parse(String(init?.body)) as Captured })
         return new Response(null, { status: 200 })
@@ -252,7 +275,7 @@ describe("Telemetry", () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
-    Telemetry.setFetchForTests(
+    useFetch(
       asFetch(async (_url, init) => {
         requests.push({ body: JSON.parse(String(init?.body)) as Captured })
         return new Response(null, { status: 200 })
@@ -270,11 +293,33 @@ describe("Telemetry", () => {
     expect(requests).toHaveLength(0)
   })
 
+  test("does not send externally registered command telemetry for colliding values", async () => {
+    await using tmp = await tmpdir()
+    const requests: { body: Captured }[] = []
+    enableTelemetry({ stateDir: tmp.path })
+    useFetch(
+      asFetch(async (_url, init) => {
+        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
+        return new Response(null, { status: 200 })
+      }),
+    )
+
+    captureCommand({
+      builtin: false,
+      category: "Plugin",
+      source: "palette",
+      value: "provider.auth",
+    })
+    await Telemetry.flush()
+
+    expect(requests).toHaveLength(0)
+  })
+
   test("tracks built-in slash command source without raw slash names", async () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
-    Telemetry.setFetchForTests(
+    useFetch(
       asFetch(async (_url, init) => {
         requests.push({ body: JSON.parse(String(init?.body)) as Captured })
         return new Response(null, { status: 200 })
@@ -302,7 +347,7 @@ describe("Telemetry", () => {
     const requests: { body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
     process.env.OPENCODE_CLIENT = "bad\nterminal"
-    Telemetry.setFetchForTests(
+    useFetch(
       asFetch(async (_url, init) => {
         requests.push({ body: JSON.parse(String(init?.body)) as Captured })
         return new Response(null, { status: 200 })
