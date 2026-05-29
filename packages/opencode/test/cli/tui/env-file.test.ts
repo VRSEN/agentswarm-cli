@@ -10,6 +10,49 @@ async function tempdir() {
 }
 
 describe("env-file", () => {
+  test("defaults to the caller cwd when no product state root is set", async () => {
+    const dir = await tempdir()
+    const cwd = process.cwd()
+    const root = process.env.AGENTSWARM_PRODUCT_STATE_ROOT
+    try {
+      delete process.env.AGENTSWARM_PRODUCT_STATE_ROOT
+      process.chdir(dir)
+
+      writeEnvKey("SEARCH_API_KEY", "search-key")
+
+      expect(await readFile(path.join(dir, ".env"), "utf8")).toContain("SEARCH_API_KEY=")
+      expect(readEnvKey("SEARCH_API_KEY")).toBe("search-key")
+    } finally {
+      process.chdir(cwd)
+      if (root === undefined) delete process.env.AGENTSWARM_PRODUCT_STATE_ROOT
+      else process.env.AGENTSWARM_PRODUCT_STATE_ROOT = root
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("uses product state root for default env reads and writes", async () => {
+    const caller = await tempdir()
+    const root = await tempdir()
+    const cwd = process.cwd()
+    const previous = process.env.AGENTSWARM_PRODUCT_STATE_ROOT
+    try {
+      process.env.AGENTSWARM_PRODUCT_STATE_ROOT = root
+      process.chdir(caller)
+
+      writeEnvKey("SEARCH_API_KEY", "search-key")
+
+      expect(readEnvKey("SEARCH_API_KEY")).toBe("search-key")
+      expect(await readFile(path.join(root, ".env"), "utf8")).toContain("SEARCH_API_KEY=")
+      await expect(readFile(path.join(caller, ".env"), "utf8")).rejects.toThrow()
+    } finally {
+      process.chdir(cwd)
+      if (previous === undefined) delete process.env.AGENTSWARM_PRODUCT_STATE_ROOT
+      else process.env.AGENTSWARM_PRODUCT_STATE_ROOT = previous
+      await rm(caller, { recursive: true, force: true })
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("writes a new project .env file", async () => {
     const dir = await tempdir()
     try {

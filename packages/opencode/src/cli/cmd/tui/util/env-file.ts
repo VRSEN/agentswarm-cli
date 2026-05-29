@@ -1,11 +1,17 @@
 import { spawnSync } from "node:child_process"
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 
 const keyPattern = /^[A-Z_][A-Z0-9_]*$/
+const productStateRootEnv = "AGENTSWARM_PRODUCT_STATE_ROOT"
 
-function envPath(dir = process.cwd()) {
-  return path.join(dir, ".env")
+function envDir(dir?: string) {
+  const root = process.env[productStateRootEnv]?.trim()
+  return dir ?? (root ? path.resolve(root) : process.cwd())
+}
+
+function envPath(dir?: string) {
+  return path.join(envDir(dir), ".env")
 }
 
 function parseValue(value: string) {
@@ -49,7 +55,7 @@ function eol(content: string) {
   return content.includes("\r\n") ? "\r\n" : "\n"
 }
 
-export function readEnvKey(key: string, dir = process.cwd()) {
+export function readEnvKey(key: string, dir?: string) {
   assertKey(key)
   const file = envPath(dir)
   if (!existsSync(file)) return undefined
@@ -61,17 +67,19 @@ export function readEnvKey(key: string, dir = process.cwd()) {
   return parseValue(line.slice(line.indexOf("=") + 1))
 }
 
-export function writeEnvKey(key: string, value: string, dir = process.cwd()) {
+export function writeEnvKey(key: string, value: string, dir?: string) {
   writeEnvKeys([[key, value]], dir)
 }
 
-export function writeEnvKeys(values: [string, string][], dir = process.cwd()) {
+export function writeEnvKeys(values: [string, string][], dir?: string) {
   if (values.length === 0) return
   for (const [key] of values) assertKey(key)
   const unique = [...new Map(values)]
-  if (isTracked(dir)) throw new Error("Refusing to write add-on secrets to a git-tracked .env file.")
+  const root = envDir(dir)
+  mkdirSync(root, { recursive: true })
+  if (isTracked(root)) throw new Error("Refusing to write add-on secrets to a git-tracked .env file.")
 
-  const file = envPath(dir)
+  const file = envPath(root)
   const next = unique.map(([key, value]) => `${key}=${formatValue(value)}`)
   if (!existsSync(file)) {
     writeProtected(file, `${next.join("\n")}\n`)

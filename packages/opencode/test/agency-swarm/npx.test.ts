@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { mkdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { mkdir } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -15,6 +15,8 @@ import {
   prepareNpxLaunch,
   resolveLauncherCommand,
   resolveNpxAutoProject,
+  resolveProductProjectDirectory,
+  resolveProductStateRoot,
   shouldRunNpxOnboarding,
   starterTemplateUrl,
   summarizeBridgeStderr,
@@ -3211,6 +3213,95 @@ describe("agency-swarm npx onboarding", () => {
     expect(project).toBeUndefined()
   })
 
+  test("product state root is the launcher project and state directory", async () => {
+    await using caller = await tmpdir()
+    await using root = await tmpdir()
+    const project = path.join(root.path, "project")
+    writeFileSync(path.join(root.path, ".env"), 'SEARCH_API_KEY="existing"\n')
+    const profile = {
+      ...downstreamProfile,
+      stateRoot: root.path,
+    }
+    const calls: { cmd: string[]; cwd?: string; logFile?: string }[] = []
+
+    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "step").mockImplementation(() => undefined as never)
+    spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+    spyOn(prompts, "outro").mockImplementation(() => undefined as never)
+    spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+    spyOn(Bun, "spawn").mockImplementation((options: any) => {
+      const cmd = options?.cmd as string[] | undefined
+      if (!cmd) throw new Error("Missing command")
+      calls.push({ cmd, cwd: options.cwd, logFile: options.logFile })
+
+      if (cmd[0] === "git" && cmd[1] === "clone") {
+        mkdirSync(project, { recursive: true })
+        writeFileSync(
+          path.join(project, "main.py"),
+          "from agency_swarm import Agency\n\ndef create_agency():\n    return Agency()\n",
+        )
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (cmd[0] === "git" && cmd[1] === "init") {
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (isUvVersionCommand(cmd)) {
+        return { exited: Promise.resolve(0), stdout: "uv 0.8.0\n", stderr: "" } as never
+      }
+
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        return { exited: Promise.resolve(0), stdout: "/usr/bin/python3.12\n3.12.7\n", stderr: "" } as never
+      }
+
+      if (
+        isPythonVenvCommand(cmd) ||
+        isPythonPipInstallUvCommand(cmd) ||
+        isUvPipInstallCommand(cmd) ||
+        isCanaryCommand(cmd)
+      ) {
+        return { exited: Promise.resolve(0), stdout: "", stderr: "" } as never
+      }
+
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
+        } as never
+      }
+
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareNpxLaunch(caller.path, profile)
+    const venv = calls.find((call) => isPythonVenvCommand(call.cmd))
+    const installs = calls.filter((call) => isUvPipInstallCommand(call.cmd) || isPythonPipInstallUvCommand(call.cmd))
+    const logs = await Array.fromAsync(new Bun.Glob("logs/**/*.log").scan(root.path))
+
+    expect(resolveProductStateRoot(profile)).toBe(root.path)
+    expect(resolveProductProjectDirectory(profile)).toBe(project)
+    expect(calls).toContainEqual({ cmd: ["git", "clone", "--depth=1", starterTemplateUrl(profile), project] })
+    expect(launch?.directory).toBe(project)
+    expect(launch?.runProjectDirectory).toBe(project)
+    expect(venv?.cwd).toBe(project)
+    expect(installs.flatMap((call) => call.cmd).every((item) => !item.includes(caller.path))).toBe(true)
+    expect(installs.flatMap((call) => call.cmd).some((item) => item.includes(path.join(project, ".venv")))).toBe(true)
+    expect(logs.some((file) => file.endsWith("launcher-rebuild.log"))).toBe(true)
+    expect(existsSync(path.join(root.path, ".env"))).toBe(true)
+    expect(existsSync(path.join(caller.path, ".venv"))).toBe(false)
+
+    await launch?.cleanup?.()
+  })
+
   test("prepareNpxLaunch clones the configured starter folder and launches the configured entry file", async () => {
     await using dir = await tmpdir()
     const target = path.join(dir.path, downstreamProfile.starterProjectName)
@@ -3551,6 +3642,40 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(project?.directory).toBe(dir.path)
+  })
+
+  test("resolveNpxAutoProject rejects explicit sessions outside product state project directory", async () => {
+    await using caller = await tmpdir()
+    await using root = await tmpdir()
+    await using stale = await tmpdir()
+    const project = path.join(root.path, "project")
+    await mkdir(project, { recursive: true })
+    await writeAgency(project)
+    await writeAgency(stale.path)
+
+    const resolved = await resolveNpxAutoProject({
+      directory: caller.path,
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      session: "ses_123",
+      profile: {
+        ...downstreamProfile,
+        stateRoot: root.path,
+      },
+      sessions: [
+        {
+          id: "ses_123" as any,
+          directory: stale.path,
+          parentID: undefined,
+          time: {
+            created: 1,
+            updated: 1,
+          },
+        },
+      ],
+      runSessions: [{ sessionID: "ses_123", directory: stale.path }],
+    })
+
+    expect(resolved).toBeUndefined()
   })
 
   test("resolveNpxAutoProject does not auto-start explicit sessions without run metadata", async () => {
@@ -3987,6 +4112,33 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(project?.directory).toBe(dir.path)
+  })
+
+  test("resolveNpxAutoProject uses product state root for prompt launch", async () => {
+    await using caller = await tmpdir()
+    await using root = await tmpdir()
+    const projectDir = path.join(root.path, "project")
+    await mkdir(projectDir, { recursive: true })
+    await Bun.write(
+      path.join(projectDir, "main.py"),
+      "from agency_swarm import Agency\n\ndef create_agency(load_threads_callback=None):\n    return Agency()\n",
+    )
+    await Bun.write(
+      path.join(caller.path, "main.py"),
+      "from agency_swarm import Agency\n\ndef create_agency(load_threads_callback=None):\n    return Agency()\n",
+    )
+
+    const project = await resolveNpxAutoProject({
+      directory: caller.path,
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      prompt: "hello",
+      profile: {
+        ...downstreamProfile,
+        stateRoot: root.path,
+      },
+    })
+
+    expect(project?.directory).toBe(path.join(root.path, "project"))
   })
 
   test("resolveNpxAutoProject starts current project for agent launch", async () => {

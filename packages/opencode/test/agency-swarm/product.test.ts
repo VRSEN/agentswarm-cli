@@ -28,6 +28,7 @@ describe("AgencyProduct profile", () => {
     expect(profile.tuiLogoRight).toBeUndefined()
     expect(profile.wordmarkLines).toBeUndefined()
     expect(profile.pythonEnvironment).toBe("any")
+    expect(profile.stateRoot).toBeUndefined()
     expect(AgencyProduct.tuiLogo(profile)).toBeUndefined()
   })
 
@@ -50,6 +51,7 @@ describe("AgencyProduct profile", () => {
       AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: "RIGHT\\nRIGHT2",
       AGENTSWARM_PRODUCT_WORDMARK_LINES: "WORD\\n MARK",
       AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT: "standalone",
+      AGENTSWARM_PRODUCT_STATE_ROOT: "/tmp/example-product",
       AGENTSWARM_PRODUCT_ADDONS: JSON.stringify([
         { id: "search", title: "Search", keys: ["SEARCH_API_KEY"] },
         {
@@ -93,6 +95,7 @@ describe("AgencyProduct profile", () => {
     expect(profile.tuiLogoRight).toEqual(["RIGHT", "RIGHT2"])
     expect(profile.wordmarkLines).toEqual(["WORD", " MARK"])
     expect(profile.pythonEnvironment).toBe("standalone")
+    expect(profile.stateRoot).toBe("/tmp/example-product")
     expect(AgencyProduct.tuiLogo(profile)).toEqual({
       left: [" LEFT", "LEFT2"],
       right: ["RIGHT", "RIGHT2"],

@@ -16,6 +16,7 @@ declare const AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: string | undefined
 declare const AGENTSWARM_PRODUCT_WORDMARK_LINES: string | undefined
 declare const AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT: string | undefined
 declare const AGENTSWARM_PRODUCT_ADDONS: string | undefined
+declare const AGENTSWARM_PRODUCT_STATE_ROOT: string | undefined
 
 export namespace AgencyProduct {
   export type PythonEnvironment = "any" | "standalone"
@@ -49,6 +50,7 @@ export namespace AgencyProduct {
     tuiLogoRight?: string[]
     wordmarkLines?: string[]
     pythonEnvironment: PythonEnvironment
+    stateRoot?: string
   }
 
   const defaults: Profile = {
@@ -113,8 +115,9 @@ export namespace AgencyProduct {
       typeof AGENTSWARM_PRODUCT_WORDMARK_LINES === "undefined" ? undefined : AGENTSWARM_PRODUCT_WORDMARK_LINES,
     AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT:
       typeof AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT === "undefined" ? undefined : AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT,
-    AGENTSWARM_PRODUCT_ADDONS:
-      typeof AGENTSWARM_PRODUCT_ADDONS === "undefined" ? undefined : AGENTSWARM_PRODUCT_ADDONS,
+    AGENTSWARM_PRODUCT_ADDONS: typeof AGENTSWARM_PRODUCT_ADDONS === "undefined" ? undefined : AGENTSWARM_PRODUCT_ADDONS,
+    AGENTSWARM_PRODUCT_STATE_ROOT:
+      typeof AGENTSWARM_PRODUCT_STATE_ROOT === "undefined" ? undefined : AGENTSWARM_PRODUCT_STATE_ROOT,
   } satisfies Record<string, string | undefined>
 
   function clean(value: string | undefined) {
@@ -238,6 +241,7 @@ export namespace AgencyProduct {
       wordmarkLines: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_WORDMARK_LINES")),
       pythonEnvironment: readPythonEnvironment(readValue(env, "AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT")),
       addons: readAddons(readRawValue(env, "AGENTSWARM_PRODUCT_ADDONS")),
+      stateRoot: readValue(env, "AGENTSWARM_PRODUCT_STATE_ROOT"),
     }
     const custom = Object.values(overrides).some((value) => value !== undefined)
     const customBranding =
@@ -269,6 +273,7 @@ export namespace AgencyProduct {
       tuiLogoRight: overrides.tuiLogoRight,
       wordmarkLines: overrides.wordmarkLines,
       pythonEnvironment: overrides.pythonEnvironment ?? defaults.pythonEnvironment,
+      stateRoot: overrides.stateRoot,
     }
   }
 
@@ -295,6 +300,7 @@ export namespace AgencyProduct {
   export const tuiLogoRight = current.tuiLogoRight
   export const wordmarkLines = current.wordmarkLines
   export const pythonEnvironment = current.pythonEnvironment
+  export const stateRoot = current.stateRoot
   export const connect = "Authenticate providers"
   export const start = [
     "Authenticate providers and connect to a local agency-swarm server before sending prompts.",
