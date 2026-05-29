@@ -46,6 +46,24 @@ function useFetch(next: typeof fetch) {
   globalThis.fetch = next
 }
 
+async function captureBody(event: Parameters<typeof Telemetry.capture>[0], properties: Record<string, unknown>) {
+  await using tmp = await tmpdir()
+  const requests: { body: Captured }[] = []
+  enableTelemetry({ stateDir: tmp.path })
+  useFetch(
+    asFetch(async (_url, init) => {
+      requests.push({ body: JSON.parse(String(init?.body)) as Captured })
+      return new Response(null, { status: 200 })
+    }),
+  )
+
+  await Telemetry.capture(event, properties)
+  await Telemetry.flush()
+
+  expect(requests).toHaveLength(1)
+  return requests[0].body
+}
+
 describe("Telemetry", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch
@@ -259,6 +277,372 @@ describe("Telemetry", () => {
     expect(JSON.stringify(requests[0].body)).not.toContain("sk-secret")
   })
 
+  test("captures the approved trust-safe event properties", async () => {
+    const cases: Array<{
+      event: Parameters<typeof Telemetry.capture>[0]
+      properties: Record<string, unknown>
+      expected: Record<string, unknown>
+    }> = [
+      {
+        event: "provider_requested",
+        properties: {
+          connected_before: false,
+          framework_mode: true,
+          provider_id: "openai",
+          source: "auth_dialog",
+        },
+        expected: {
+          connected_before: false,
+          framework_mode: true,
+          provider_id: "openai",
+          source: "auth_dialog",
+        },
+      },
+      {
+        event: "provider_auth_started",
+        properties: {
+          auth_method: "api",
+          framework_mode: true,
+          provider_id: "anthropic",
+          source: "auth_dialog",
+        },
+        expected: {
+          auth_method: "api",
+          framework_mode: true,
+          provider_id: "anthropic",
+          source: "auth_dialog",
+        },
+      },
+      {
+        event: "provider_auth_failed",
+        properties: {
+          auth_method: "oauth",
+          error_bucket: "auth_rejected",
+          framework_mode: true,
+          provider_id: "openai",
+          source: "auth_dialog",
+          step: "oauth_callback",
+        },
+        expected: {
+          auth_method: "oauth",
+          error_bucket: "auth_rejected",
+          framework_mode: true,
+          provider_id: "openai",
+          source: "auth_dialog",
+          step: "oauth_callback",
+        },
+      },
+      {
+        event: "task_succeeded",
+        properties: {
+          duration_bucket: "lt_2s",
+          framework_mode: true,
+          has_agent_parts: false,
+          has_file_parts: true,
+          mode: "normal",
+          provider_id: "agency-swarm",
+        },
+        expected: {
+          duration_bucket: "lt_2s",
+          framework_mode: true,
+          has_agent_parts: false,
+          has_file_parts: true,
+          mode: "normal",
+          provider_id: "agency-swarm",
+        },
+      },
+      {
+        event: "task_failed",
+        properties: {
+          duration_bucket: "2s_10s",
+          error_bucket: "network",
+          framework_mode: true,
+          has_agent_parts: true,
+          has_file_parts: false,
+          mode: "normal",
+          provider_id: "agency-swarm",
+        },
+        expected: {
+          duration_bucket: "2s_10s",
+          error_bucket: "network",
+          framework_mode: true,
+          has_agent_parts: true,
+          has_file_parts: false,
+          mode: "normal",
+          provider_id: "agency-swarm",
+        },
+      },
+      {
+        event: "project_initialized",
+        properties: {
+          source: "init_command",
+          vcs: "git",
+        },
+        expected: {
+          source: "init_command",
+          vcs: "git",
+        },
+      },
+      {
+        event: "integration_requested",
+        properties: {
+          already_configured: true,
+          integration_id: "search",
+          provider_id: "openai",
+          source: "addons_dialog",
+        },
+        expected: {
+          already_configured: true,
+          integration_id: "search",
+          provider_id: "openai",
+          source: "addons_dialog",
+        },
+      },
+    ]
+
+    for (const item of cases) {
+      const body = await captureBody(item.event, {
+        ...item.properties,
+        env_var: "OPENAI_API_KEY=sk-env-secret",
+        error_text: "Invalid API key: sk-error-secret",
+        file_path: "/Users/example/private.ts",
+        message: "secret prompt text",
+        message_content: "private conversation content",
+        messageID: "msg_secret",
+        model_id: "openai/gpt-5.4-mini",
+        project_id: "proj_secret",
+        prompt_text: "private prompt text",
+        raw_error: "Invalid API key: sk-secret",
+        secret: "sk-explicit-secret",
+        sessionID: "ses_secret",
+        source_content: "private source content",
+        tool_input: "private tool input",
+        tool_output: "private tool output",
+      })
+
+      expect(body.event).toBe(item.event)
+      expect(body.properties).toMatchObject(item.expected)
+      const serialized = JSON.stringify(body)
+      expect(serialized).not.toContain("secret prompt text")
+      expect(serialized).not.toContain("OPENAI_API_KEY")
+      expect(serialized).not.toContain("sk-env-secret")
+      expect(serialized).not.toContain("sk-error-secret")
+      expect(serialized).not.toContain("msg_secret")
+      expect(serialized).not.toContain("/Users/example/private.ts")
+      expect(serialized).not.toContain("private conversation content")
+      expect(serialized).not.toContain("openai/gpt-5.4-mini")
+      expect(serialized).not.toContain("proj_secret")
+      expect(serialized).not.toContain("private prompt text")
+      expect(serialized).not.toContain("sk-secret")
+      expect(serialized).not.toContain("sk-explicit-secret")
+      expect(serialized).not.toContain("ses_secret")
+      expect(serialized).not.toContain("private source content")
+      expect(serialized).not.toContain("private tool input")
+      expect(serialized).not.toContain("private tool output")
+    }
+  })
+
+  test("drops invalid enum values and buckets unknown public ids", async () => {
+    const auth = await captureBody("provider_auth_failed", {
+      auth_method: "password",
+      error_bucket: "raw provider error",
+      framework_mode: true,
+      provider_id: "openai/gpt-5.4-mini",
+      source: "external",
+      step: "token_exchange",
+    })
+
+    expect(auth.properties).toMatchObject({
+      framework_mode: true,
+      provider_id: "custom",
+    })
+    expect(auth.properties?.auth_method).toBeUndefined()
+    expect(auth.properties?.error_bucket).toBeUndefined()
+    expect(auth.properties?.source).toBeUndefined()
+    expect(auth.properties?.step).toBeUndefined()
+    expect(JSON.stringify(auth)).not.toContain("openai/gpt-5.4-mini")
+    expect(JSON.stringify(auth)).not.toContain("raw provider error")
+
+    const integration = await captureBody("integration_requested", {
+      already_configured: false,
+      integration_id: "private-crm",
+      provider_id: "private-provider",
+      source: "addons_dialog",
+    })
+
+    expect(integration.properties).toMatchObject({
+      already_configured: false,
+      integration_id: "custom",
+      provider_id: "custom",
+      source: "addons_dialog",
+    })
+    expect(JSON.stringify(integration)).not.toContain("private-crm")
+    expect(JSON.stringify(integration)).not.toContain("private-provider")
+  })
+
+  test("drops string payloads passed to boolean telemetry fields", async () => {
+    const provider = await captureBody("provider_requested", {
+      connected_before: "private connected sentinel",
+      framework_mode: "private env var sentinel",
+      provider_id: "openai",
+      source: "auth_dialog",
+    })
+
+    expect(provider.properties).toMatchObject({
+      provider_id: "openai",
+      source: "auth_dialog",
+    })
+    expect(provider.properties?.connected_before).toBeUndefined()
+    expect(provider.properties?.framework_mode).toBeUndefined()
+
+    const prompt = await captureBody("ui_prompt_submitted", {
+      framework_mode: "private framework sentinel",
+      has_agent_parts: "private agent sentinel",
+      has_editor_selection: "private editor sentinel",
+      has_file_parts: "private file sentinel",
+      mode: "normal",
+      provider_id: "agency-swarm",
+      type: "prompt",
+    })
+
+    expect(prompt.properties).toMatchObject({
+      mode: "normal",
+      provider_id: "agency-swarm",
+      type: "prompt",
+    })
+    expect(prompt.properties?.framework_mode).toBeUndefined()
+    expect(prompt.properties?.has_agent_parts).toBeUndefined()
+    expect(prompt.properties?.has_editor_selection).toBeUndefined()
+    expect(prompt.properties?.has_file_parts).toBeUndefined()
+
+    const integration = await captureBody("integration_requested", {
+      already_configured: "private configured sentinel",
+      integration_id: "search",
+      provider_id: "openai",
+      source: "addons_dialog",
+    })
+
+    expect(integration.properties).toMatchObject({
+      integration_id: "search",
+      provider_id: "openai",
+      source: "addons_dialog",
+    })
+    expect(integration.properties?.already_configured).toBeUndefined()
+
+    const command = await captureBody("ui_command_executed", {
+      category: "Provider",
+      command: "provider.auth",
+      keybind: "private keybind sentinel",
+      source: "keybind",
+    })
+
+    expect(command.properties).toMatchObject({
+      category: "Provider",
+      command: "provider.auth",
+      source: "keybind",
+    })
+    expect(command.properties?.keybind).toBeUndefined()
+
+    const serialized = JSON.stringify([provider, prompt, integration, command])
+    expect(serialized).not.toContain("private env var sentinel")
+    expect(serialized).not.toContain("private connected sentinel")
+    expect(serialized).not.toContain("private framework sentinel")
+    expect(serialized).not.toContain("private agent sentinel")
+    expect(serialized).not.toContain("private editor sentinel")
+    expect(serialized).not.toContain("private file sentinel")
+    expect(serialized).not.toContain("private configured sentinel")
+    expect(serialized).not.toContain("private keybind sentinel")
+  })
+
+  test("drops prototype-named unknown telemetry properties", async () => {
+    const body = await captureBody("ui_prompt_submitted", {
+      constructor: "private constructor sentinel",
+      framework_mode: true,
+      hasOwnProperty: "private hasOwnProperty sentinel",
+      has_agent_parts: false,
+      has_editor_selection: false,
+      has_file_parts: false,
+      mode: "normal",
+      provider_id: "agency-swarm",
+      toString: "private toString sentinel",
+      type: "prompt",
+      valueOf: "private valueOf sentinel",
+    })
+
+    expect(body.properties).toMatchObject({
+      framework_mode: true,
+      has_agent_parts: false,
+      has_editor_selection: false,
+      has_file_parts: false,
+      mode: "normal",
+      provider_id: "agency-swarm",
+      type: "prompt",
+    })
+    for (const key of ["constructor", "hasOwnProperty", "toString", "valueOf"]) {
+      expect(Object.prototype.hasOwnProperty.call(body.properties ?? {}, key)).toBe(false)
+    }
+    const serialized = JSON.stringify(body)
+    expect(serialized).not.toContain("private constructor sentinel")
+    expect(serialized).not.toContain("private hasOwnProperty sentinel")
+    expect(serialized).not.toContain("private toString sentinel")
+    expect(serialized).not.toContain("private valueOf sentinel")
+  })
+
+  test("classifies durations and errors into fixed buckets", () => {
+    expect(Telemetry.durationBucket(100)).toBe("lt_2s")
+    expect(Telemetry.durationBucket(2_500)).toBe("2s_10s")
+    expect(Telemetry.durationBucket(20_000)).toBe("10s_60s")
+    expect(Telemetry.durationBucket(70_000)).toBe("gte_60s")
+    expect(Telemetry.durationBucket(Number.NaN)).toBe("unknown")
+
+    expect(Telemetry.errorBucket({ status: 403 })).toBe("auth_rejected")
+    expect(Telemetry.errorBucket(new Error("request timed out"))).toBe("timeout")
+    expect(Telemetry.errorBucket(new Error("fetch failed ECONNREFUSED"))).toBe("network")
+    expect(Telemetry.errorBucket({ status: 502 })).toBe("server")
+    expect(Telemetry.errorBucket(new Error("private backend stack trace"))).toBe("unknown")
+  })
+
+  test("buckets nested SDK error wrapper data without exposing raw text", async () => {
+    const authStatus = Object.assign(new Error("wrapper message"), {
+      data: { message: "ignored raw auth detail sk-nested-secret", statusCode: 401 },
+    })
+    const serverStatus = {
+      data: { message: "ignored raw server detail", status: 503 },
+      message: "wrapper message",
+    }
+    const authMessage = {
+      data: { message: "Invalid API key sk-nested-secret" },
+      message: "wrapper message",
+    }
+    const serverMessage = {
+      data: { message: "Internal server error private stack" },
+      message: "wrapper message",
+    }
+
+    expect(Telemetry.errorBucket(authStatus)).toBe("auth_rejected")
+    expect(Telemetry.errorBucket(serverStatus)).toBe("server")
+    expect(Telemetry.errorBucket(authMessage)).toBe("auth_rejected")
+    expect(Telemetry.errorBucket(serverMessage)).toBe("server")
+
+    const body = await captureBody("task_failed", {
+      duration_bucket: "lt_2s",
+      error_bucket: Telemetry.errorBucket(authMessage),
+      framework_mode: true,
+      has_agent_parts: false,
+      has_file_parts: false,
+      mode: "normal",
+      provider_id: "agency-swarm",
+      raw_error: authMessage.data.message,
+    })
+
+    expect(body.properties).toMatchObject({
+      error_bucket: "auth_rejected",
+      provider_id: "agency-swarm",
+    })
+    expect(JSON.stringify(body)).not.toContain("sk-nested-secret")
+    expect(JSON.stringify(body)).not.toContain("Invalid API key")
+  })
+
   test("buckets custom provider ids", async () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []
@@ -301,6 +685,8 @@ describe("Telemetry", () => {
     await Telemetry.flush()
 
     expect(requests).toHaveLength(0)
+    expect(JSON.stringify(requests)).not.toContain("private.plugin.command")
+    expect(JSON.stringify(requests)).not.toContain("ctrl+x")
   })
 
   test("does not send externally registered command telemetry for colliding values", async () => {
@@ -323,6 +709,36 @@ describe("Telemetry", () => {
     await Telemetry.flush()
 
     expect(requests).toHaveLength(0)
+  })
+
+  test("tracks built-in keybind commands with a safe boolean flag", async () => {
+    await using tmp = await tmpdir()
+    const requests: { body: Captured }[] = []
+    enableTelemetry({ stateDir: tmp.path })
+    useFetch(
+      asFetch(async (_url, init) => {
+        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
+        return new Response(null, { status: 200 })
+      }),
+    )
+
+    captureCommand({
+      category: "Provider",
+      keybind: "private keybind sentinel",
+      source: "keybind",
+      value: "provider.auth",
+    })
+    await Telemetry.flush()
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0].body.event).toBe("ui_command_executed")
+    expect(requests[0].body.properties).toMatchObject({
+      category: "Provider",
+      command: "provider.auth",
+      keybind: true,
+      source: "keybind",
+    })
+    expect(JSON.stringify(requests[0].body)).not.toContain("private keybind sentinel")
   })
 
   test("tracks built-in slash command source without raw slash names", async () => {

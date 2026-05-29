@@ -12,6 +12,7 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
 - Local Agency Swarm project detection, starter creation, Python environment repair, uv setup, bridge startup, resume recovery, and external Agency server connection.
 - TUI Run mode routing, `/auth`, `/connect`, run-target selection, attachments, history, handoffs, dead-server recovery, and hidden upstream-native commands.
 - Fork branding, tips, theme, config precedence, upgrade channel limits, share carry-forward, and developer/debug `agentswarm agency` commands.
+- Trust-safe telemetry metrics, event-list docs, derived dashboard metrics, opt-out behavior, and privacy proof for fork-owned Agent Swarm flows.
 - Out of scope: Python-side `agency.tui()` invocation before control reaches this repo.
 
 ## Release QA Matrix
@@ -251,6 +252,25 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Failure scenarios to test:** URL normalization and discovery failures surface in the CLI command.
 - **Failure scenarios to test:** `agentswarm agency agent new` fails visibly when `agency-swarm create-agent-template` fails.
 - **Owner/source:** `packages/opencode/src/cli/cmd/agency.ts`.
+
+### Trust-Safe Telemetry
+
+#### Telemetry metrics and privacy contract
+
+- **Trigger:** A release build with telemetry enabled exercises supported fork-owned flows: provider demand, provider auth start or failure, normal TUI prompt task success or failure, project initialization, and integration request.
+- **Boundary:** Telemetry events outside the listed supported flows are not supported.
+- **Boundary:** Agent run internals, artifacts generated, crashes, build or release failures, signup, demo, book-demo, and the Agent Swarm connect funnel are deferred.
+- **Happy-path proof:** Provider demand records only the safe provider family or `custom`; raw model IDs are not sent.
+- **Happy-path proof:** Provider auth start and failure events record only safe flow fields such as provider family, auth method, source, and outcome; credential material and raw error text are not sent.
+- **Happy-path proof:** Normal TUI prompt task success and failure metrics record only safe task shape and outcome fields; prompt text, conversation text, source content, tool inputs, and tool outputs are not sent.
+- **Happy-path proof:** Project initialized and integration requested metrics record the user action without project IDs, file paths, source data, tokens, secrets, environment variables, or external account identifiers.
+- **Happy-path proof:** Event-list docs enumerate the supported telemetry events, allowed properties, opt-out controls, deferred metrics, and privacy red lines.
+- **Happy-path proof:** Dashboard metrics are derived from supported events or existing safe events instead of adding separate raw-content collection.
+- **Failure scenarios to test:** Telemetry opt-out blocks capture.
+- **Failure scenarios to test:** Installing the package alone does not send install phone-home telemetry.
+- **Failure scenarios to test:** Privacy tests fail when a payload contains raw model IDs, project IDs, file paths, prompt text, error text, source or content data, secrets, environment variables, conversation text, tool inputs, or tool outputs.
+- **Failure scenarios to test:** Only supported metrics appear in event-list docs or emitted telemetry.
+- **Owner/source:** `packages/opencode/src/telemetry/telemetry.ts`, TUI telemetry hooks, project setup and integration request hooks, telemetry tests, README telemetry copy, and event-list docs.
 
 ### Branding, Config, Upgrade, And Visual Checks
 
