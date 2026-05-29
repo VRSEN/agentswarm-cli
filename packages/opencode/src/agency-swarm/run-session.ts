@@ -85,7 +85,7 @@ export namespace AgencySwarmRunSession {
     const env = input.env ?? process.env
     const root = env[PRODUCT_STATE_ROOT_ENV]?.trim()
     if (!root) return
-    if (path.resolve(input.directory) !== path.join(path.resolve(root), "project")) return
+    if (Filesystem.resolve(input.directory) !== path.join(Filesystem.resolve(root), "project")) return
     return remoteConfigFromContent(env.OPENCODE_CONFIG_CONTENT)
   }
 

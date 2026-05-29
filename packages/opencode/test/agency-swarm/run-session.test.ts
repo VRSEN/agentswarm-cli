@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
+import { mkdir, symlink } from "node:fs/promises"
 import path from "node:path"
 import { AgencySwarmRunSession } from "../../src/agency-swarm/run-session"
 import { Filesystem } from "../../src/util/filesystem"
+import { tmpdir } from "../fixture/fixture"
 
 describe("agency-swarm run session state", () => {
   afterEach(() => {
@@ -139,6 +141,40 @@ describe("agency-swarm run session state", () => {
       directory: path.join(root, "project"),
       env: {
         [AgencySwarmRunSession.PRODUCT_STATE_ROOT_ENV]: root,
+        OPENCODE_CONFIG_CONTENT: JSON.stringify({
+          provider: {
+            "agency-swarm": {
+              options: {
+                baseURL: "https://remote.example/",
+                agency: "remote-agency",
+                token: "server-token",
+              },
+            },
+          },
+        }),
+      },
+    })
+
+    expect(config).toEqual({
+      baseURL: "https://remote.example",
+      agency: "remote-agency",
+      token: "server-token",
+    })
+  })
+
+  test("remoteConfigFromEnv reads config when the state root is symlinked and directory is canonical", async () => {
+    await using root = await tmpdir()
+    await using links = await tmpdir()
+    const stateRoot = path.join(links.path, "state-root")
+    const projectDir = path.join(root.path, "project")
+
+    await mkdir(projectDir, { recursive: true })
+    await symlink(root.path, stateRoot, process.platform === "win32" ? "junction" : "dir")
+
+    const config = AgencySwarmRunSession.remoteConfigFromEnv({
+      directory: projectDir,
+      env: {
+        [AgencySwarmRunSession.PRODUCT_STATE_ROOT_ENV]: stateRoot,
         OPENCODE_CONFIG_CONTENT: JSON.stringify({
           provider: {
             "agency-swarm": {
