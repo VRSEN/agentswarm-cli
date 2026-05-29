@@ -50,6 +50,12 @@ This is intentional for now, so users can keep using upstream-compatible session
 
 Do not share sessions that contain secrets, private code, private customer data, or credentials.
 
+## Telemetry
+
+Release builds may send privacy-safe product analytics to PostHog so maintainers can understand which Agent Swarm TUI features are used. Events cover app start, `/auth` provider setup, command usage for built-in commands, route changes, and prompt submission shape. They do not include prompt text, credentials, file paths, tool payloads, or message content.
+
+Set `OPEN_SWARM_TELEMETRY=0`, `AGENTSWARM_TELEMETRY=0`, or pass `--no-telemetry` to disable this telemetry.
+
 ## Customizing Agent Swarm CLI
 
 This repository is useful if you want to build a custom CLI for your own Agent Swarm distribution.

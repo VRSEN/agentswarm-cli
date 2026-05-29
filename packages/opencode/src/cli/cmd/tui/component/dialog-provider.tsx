@@ -30,6 +30,7 @@ import open from "open"
 import type { Provider } from "@opencode-ai/sdk/v2"
 import { useConnected } from "./use-connected"
 import { DialogAddons } from "./dialog-addons"
+import { Telemetry } from "@/telemetry/telemetry"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
   openai: 0,
@@ -41,6 +42,19 @@ const PROVIDER_PRIORITY: Record<string, number> = {
 }
 
 const log = Log.create({ service: "tui.dialog-provider" })
+
+function captureProviderAuthConfigured(input: {
+  providerID: string
+  authMethod: "api" | "oauth"
+  frameworkMode: boolean
+}) {
+  void Telemetry.capture("provider_auth_configured", {
+    auth_method: input.authMethod,
+    framework_mode: input.frameworkMode,
+    provider_id: input.providerID,
+    source: "auth_dialog",
+  })
+}
 
 export function createDialogProviderOptions() {
   return createDialogProviderOptionsWithFilter()
@@ -854,6 +868,11 @@ function AutoMethod(props: AutoMethodProps) {
         dispose: () => sdk.client.instance.dispose(),
         bootstrap: () => sync.bootstrap(),
       })
+      captureProviderAuthConfigured({
+        providerID: props.providerID,
+        authMethod: "oauth",
+        frameworkMode: frameworkMode(),
+      })
       finishProviderAuth({ providerID: props.providerID, frameworkMode: frameworkMode(), dialog })
     } catch (error) {
       const message = toErrorMessage(error)
@@ -936,6 +955,11 @@ function CodeMethod(props: CodeMethodProps) {
               sessionStatus: () => sync.data.session_status,
               dispose: () => sdk.client.instance.dispose(),
               bootstrap: () => sync.bootstrap(),
+            })
+            captureProviderAuthConfigured({
+              providerID: props.providerID,
+              authMethod: "oauth",
+              frameworkMode: frameworkMode(),
             })
             finishProviderAuth({ providerID: props.providerID, frameworkMode: frameworkMode(), dialog })
           } catch (error) {
@@ -1067,6 +1091,11 @@ function ApiMethod(props: ApiMethodProps) {
             sessionStatus: () => sync.data.session_status,
             dispose: () => sdk.client.instance.dispose(),
             bootstrap: () => sync.bootstrap(),
+          })
+          captureProviderAuthConfigured({
+            providerID: props.providerID,
+            authMethod: "api",
+            frameworkMode: frameworkMode(),
           })
           finishProviderAuth({ providerID: props.providerID, frameworkMode: frameworkMode(), dialog })
         } catch (error) {

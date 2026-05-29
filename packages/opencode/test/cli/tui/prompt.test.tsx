@@ -26,6 +26,7 @@ import * as TextareaKeybindingsModule from "../../../src/cli/cmd/tui/component/t
 import { DialogProvider, useDialog } from "../../../src/cli/cmd/tui/ui/dialog"
 import * as ToastModule from "../../../src/cli/cmd/tui/ui/toast"
 import { AgencySwarmRunSession } from "../../../src/agency-swarm/run-session"
+import { Telemetry } from "../../../src/telemetry/telemetry"
 
 function flushEffects() {
   return Promise.resolve().then(() => Promise.resolve())
@@ -312,6 +313,7 @@ describe("prompt auth rejection handling", () => {
       },
       "command",
     )
+    const telemetryCapture = spyOn(Telemetry, "capture").mockResolvedValue(false)
     const promptSession = spyOn(
       {
         prompt: () => Promise.resolve(),
@@ -389,12 +391,12 @@ describe("prompt auth rejection handling", () => {
       },
       model: {
         current: () => ({
-          providerID: "agency-swarm",
-          modelID: "default",
+          providerID: "openai",
+          modelID: "gpt-4.1",
         }),
         parsed: () => ({
-          provider: "Agency Swarm",
-          model: "default",
+          provider: "OpenAI",
+          model: "gpt-4.1",
         }),
         set: () => {},
         variant: {
@@ -530,6 +532,15 @@ describe("prompt auth rejection handling", () => {
 
     expect(commandSession).toHaveBeenCalledTimes(1)
     expect(promptSession).not.toHaveBeenCalled()
+    const telemetryCall = telemetryCapture.mock.calls.find(([event, properties]) => {
+      if (event !== "ui_prompt_submitted") return false
+      if (!properties || typeof properties !== "object") return false
+      return (properties as Record<string, unknown>).type === "server_command"
+    })
+    expect(telemetryCall).toBeTruthy()
+    const telemetryProperties = telemetryCall?.[1] as Record<string, unknown> | undefined
+    expect(telemetryProperties?.command).toBeUndefined()
+    expect(telemetryProperties?.provider_id).toBe("agency-swarm")
     expect(appendHistory).toHaveBeenCalledWith({
       input: "/auth refresh\nsecond line",
       parts: [],

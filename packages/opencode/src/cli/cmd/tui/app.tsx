@@ -68,6 +68,7 @@ import { buildAgencyTargetOptions, cycleAgencyTargetSelection, readAgencyProvide
 
 import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
+import { Telemetry } from "@/telemetry/telemetry"
 
 function rendererConfig(_config: TuiConfig.Info): CliRendererConfig {
   const mouseEnabled = !Flag.OPENCODE_DISABLE_MOUSE && (_config.mouse ?? true)
@@ -132,6 +133,7 @@ export function tui(input: {
 
     const onBeforeExit = async () => {
       await TuiPluginRuntime.dispose()
+      await Telemetry.flush({ timeoutMs: 500 })
     }
 
     const renderer = await createCliRenderer(rendererConfig(input.config))
@@ -434,6 +436,33 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       connectedProvider: sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID),
     }),
   )
+
+  let appStartedTelemetry = false
+  createEffect(() => {
+    if (appStartedTelemetry || sync.status === "loading") return
+    appStartedTelemetry = true
+    void Telemetry.capture("app_started", {
+      entrypoint: "tui",
+      framework_mode: frameworkMode(),
+      provider_id: local.model.current()?.providerID,
+    })
+  })
+
+  let previousRoute: string | undefined
+  createEffect(() => {
+    const next = route.data.type
+    if (!previousRoute) {
+      previousRoute = next
+      return
+    }
+    if (previousRoute === next) return
+    const from = previousRoute
+    previousRoute = next
+    void Telemetry.capture("ui_route_changed", {
+      route: from,
+      to_route: next,
+    })
+  })
 
   createEffect(() => {
     if (!frameworkMode()) return

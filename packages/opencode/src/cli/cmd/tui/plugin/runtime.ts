@@ -491,7 +491,14 @@ function pluginApi(runtime: RuntimeState, plugin: PluginEntry, scope: PluginScop
   const load = plugin.load
   const command: TuiPluginApi["command"] = {
     register(cb) {
-      return scope.track(api.command.register(cb))
+      return scope.track(
+        api.command.register(() =>
+          cb().map((option) => ({
+            ...option,
+            telemetry: plugin.load.source === "internal",
+          })),
+        ),
+      )
     },
     trigger(value) {
       api.command.trigger(value)
