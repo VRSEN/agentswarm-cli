@@ -5,6 +5,7 @@ import { Telemetry } from "../../src/telemetry/telemetry"
 import { captureCommand } from "../../src/telemetry/command"
 
 const originalClient = process.env.OPENCODE_CLIENT
+const originalTelemetry = process.env.OPENCODE_TELEMETRY
 const originalFetch = globalThis.fetch
 
 type Captured = {
@@ -21,6 +22,7 @@ function enableTelemetry(input: { key?: string; host?: string; stateDir: string 
   process.env.AGENTSWARM_TELEMETRY_STATE_DIR = input.stateDir
   delete process.env.AGENTSWARM_TELEMETRY
   delete process.env.OPEN_SWARM_TELEMETRY
+  delete process.env.OPENCODE_TELEMETRY
 }
 
 function resetEnv() {
@@ -30,6 +32,8 @@ function resetEnv() {
   delete process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST
   delete process.env.AGENTSWARM_TELEMETRY_STATE_DIR
   delete process.env.OPEN_SWARM_TELEMETRY
+  if (originalTelemetry === undefined) delete process.env.OPENCODE_TELEMETRY
+  else process.env.OPENCODE_TELEMETRY = originalTelemetry
   if (originalClient === undefined) delete process.env.OPENCODE_CLIENT
   else process.env.OPENCODE_CLIENT = originalClient
 }

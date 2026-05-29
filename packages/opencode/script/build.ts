@@ -49,15 +49,21 @@ const productEnvNames = [
 const productDefines = Object.fromEntries(
   productEnvNames.map((name) => [name, process.env[name] ? JSON.stringify(process.env[name]) : "undefined"]),
 )
+const releaseTelemetryFallback =
+  process.env.GITHUB_ACTIONS === "true" &&
+  process.env.GITHUB_WORKFLOW === "publish-npm-on-release" &&
+  process.env.GITHUB_REPOSITORY === "VRSEN/agentswarm-cli" &&
+  process.env.GITHUB_EVENT_NAME === "release" &&
+  process.env.OPENCODE_RELEASE === "1"
 const telemetryDefines = {
   AGENTSWARM_POSTHOG_API_KEY: process.env.AGENTSWARM_POSTHOG_API_KEY
     ? JSON.stringify(process.env.AGENTSWARM_POSTHOG_API_KEY)
-    : process.env.POSTHOG_API_KEY
+    : releaseTelemetryFallback && process.env.POSTHOG_API_KEY
       ? JSON.stringify(process.env.POSTHOG_API_KEY)
       : "undefined",
   AGENTSWARM_POSTHOG_HOST: process.env.AGENTSWARM_POSTHOG_HOST
     ? JSON.stringify(process.env.AGENTSWARM_POSTHOG_HOST)
-    : process.env.POSTHOG_HOST
+    : releaseTelemetryFallback && process.env.POSTHOG_HOST
       ? JSON.stringify(process.env.POSTHOG_HOST)
       : "undefined",
 }
