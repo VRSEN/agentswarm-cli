@@ -2,8 +2,10 @@
 
 This is the fork-specific release QA source for the `VRSEN/agentswarm-cli` repository.
 Use it with `FORK_CHANGELOG.md`: the changelog records approved fork divergence, and this file turns that divergence into flows to test one by one before each release.
+Here, upstream means OpenCode at `https://github.com/anomalyco/opencode`.
 
 Do not document upstream-only OpenCode behavior here. Generic session navigation, prompt submission, PR checkout mechanics, native provider/model management, and ordinary `gh` behavior belong upstream unless the fork changes the user outcome.
+Keep implementation-level file paths and symbol details in `FORK_CHANGELOG.md`; this file should stay focused on release QA behavior and visible user results.
 
 ## Scope
 
@@ -18,7 +20,7 @@ Do not document upstream-only OpenCode behavior here. Generic session navigation
 ## Release QA Matrix
 
 Test each flow independently.
-For each failure scenario, capture the visible user result and cite the source pointer that explains the expected behavior.
+For each failure scenario, capture the visible user result and cite the matching `FORK_CHANGELOG.md` entry when the expectation comes from approved fork divergence.
 
 ### Launcher, Install, And Local Project Setup
 
@@ -29,7 +31,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** The wrapper finds the fork package or platform binary, sets or preserves `AGENTSWARM_LAUNCHER=1`, and opens the default TUI command with Agent Swarm branding.
 - **Failure scenarios to test:** Missing fork package or platform binary fails before the TUI opens.
 - **Failure scenarios to test:** The end-user path does not rely on the unapproved local `dist/` fallback.
-- **Owner/source:** `packages/opencode/bin/agentswarm-npx`, `packages/opencode/bin/agentswarm`, `packages/opencode/package.json`, `packages/opencode/script/postinstall.mjs`, `packages/opencode/script/publish.ts`.
 
 #### Downstream product profile
 
@@ -44,7 +45,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Failure scenarios to test:** Missing custom product values fall back to Agent Swarm defaults instead of inventing a downstream product.
 - **Failure scenarios to test:** The default Agent Swarm profile does not expose `/addons`.
 - **Failure scenarios to test:** With standalone Python required, a machine without standalone Python 3.12+ fails visibly instead of silently using Conda-family Python.
-- **Owner/source:** `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/cli/cmd/tui/util/env-file.ts`, `packages/opencode/src/agency-swarm/server-launcher.ts`, `packages/opencode/src/installation/distribution.ts`, and `packages/opencode/script/build.ts`.
 
 #### Detected local project, venv, and uv
 
@@ -61,7 +61,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Failure scenarios to test:** Failed imports produce a visible launcher failure.
 - **Failure scenarios to test:** uv install or repair failure produces a visible launcher failure.
 - **Failure scenarios to test:** Dependency setup failure produces a visible launcher failure.
-- **Owner/source:** `packages/opencode/src/agency-swarm/npx.ts`.
 
 #### Prompt, agent, and agency-swarm model auto project launch
 
@@ -75,7 +74,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** One-shot `--prompt` submits after sync and model state are ready.
 - **Failure scenarios to test:** Non-Agency explicit models do not trigger fork auto-project setup.
 - **Failure scenarios to test:** Missing or broken detected projects fail through the local project setup failure path before prompt launch.
-- **Owner/source:** `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/cli/cmd/tui/thread.ts`, `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/routes/home.tsx`.
 
 #### Starter project
 
@@ -88,7 +86,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Failure scenarios to test:** Clone failure is visible and does not leave the user in a partial TUI launch.
 - **Failure scenarios to test:** Template creation failure is visible and does not leave the user in a partial TUI launch.
 - **Failure scenarios to test:** Later local setup failure is visible and does not leave the user in a partial TUI launch.
-- **Owner/source:** `packages/opencode/src/agency-swarm/npx.ts`.
 
 #### Resume local Agency session
 
@@ -99,7 +96,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** The recovered project is prepared before the TUI opens.
 - **Failure scenarios to test:** Stale run-session records are ignored.
 - **Failure scenarios to test:** Non-Agency sessions stay on the upstream resume path without fork project recovery.
-- **Owner/source:** `packages/opencode/src/agency-swarm/run-session.ts`, `packages/opencode/src/agency-swarm/npx.ts`.
 
 ### Connect, Bridge, And Server Failures
 
@@ -113,7 +109,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** The launcher builds session-scoped config for the selected server.
 - **Failure scenarios to test:** Invalid URL blocks continue.
 - **Failure scenarios to test:** Discovery failure falls back to manual agency id instead of aborting.
-- **Owner/source:** `packages/opencode/src/agency-swarm/npx.ts`.
 
 #### In-TUI `/connect`
 
@@ -124,7 +119,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Failure scenarios to test:** Invalid local-port input is visible.
 - **Failure scenarios to test:** Unavailable selected servers are visible.
 - **Failure scenarios to test:** Agent discovery failures keep `/connect` available.
-- **Owner/source:** `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `packages/opencode/src/cli/cmd/tui/context/agency-swarm-connection.tsx`.
 
 #### Local bridge and server recovery
 
@@ -136,7 +130,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Failure scenarios to test:** Bridge exit or bridge timeout is visible.
 - **Failure scenarios to test:** Server reachability or server-authorization failure opens `/connect`.
 - **Failure scenarios to test:** Agent discovery failure offers `/connect`.
-- **Owner/source:** `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/cli/cmd/tui/session-error.ts`, `packages/opencode/src/cli/cmd/tui/context/agency-swarm-connection.tsx`.
 
 ### Auth And Credential Failures
 
@@ -151,7 +144,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** Esc closes the modal.
 - **Failure scenarios to test:** Bearer tokens for the Agency server do not satisfy upstream provider auth.
 - **Failure scenarios to test:** Unsupported provider auth methods stay hidden in Run mode.
-- **Owner/source:** `packages/opencode/src/cli/cmd/tui/session-error.ts`, `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx`, `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`.
 
 #### Runtime auth recovery
 
@@ -161,7 +153,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** `/auth` reopens so the user can repair credentials and retry.
 - **Failure scenarios to test:** Non-auth failures do not open `/auth`.
 - **Failure scenarios to test:** Connect-class failures route to `/connect`.
-- **Owner/source:** `packages/opencode/src/cli/cmd/tui/session-error.ts`, `packages/opencode/src/session/agency-swarm.ts`.
 
 #### Browser OAuth in Run mode
 
@@ -171,7 +162,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** The sign-in URL remains visible.
 - **Failure scenarios to test:** Browser-launch failure shows inline error text and a warning toast.
 - **Failure scenarios to test:** Browser-launch failure does not silently close or strand the auth dialog.
-- **Owner/source:** `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx`.
 
 ### Run-Mode Routing, Attachments, History, And Handoff
 
@@ -197,7 +187,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Failure scenarios to test:** Server reachability or authorization failure opens `/connect`.
 - **Failure scenarios to test:** Provider credential failure opens `/auth`.
 - **Failure scenarios to test:** Non-OpenAI LiteLLM agency runs do not receive Codex OAuth credentials while OpenAI-based LiteLLM runs still keep them.
-- **Owner/source:** `packages/opencode/src/agency-swarm/adapter.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/component/prompt/autocomplete.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx`, `packages/opencode/src/cli/cmd/tui/context/local.tsx`, `packages/opencode/src/cli/cmd/tui/util/agency-target.ts`.
 
 #### Builder and Plan instruction preservation
 
@@ -206,7 +195,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** Plan still writes Agency Swarm handoff plans instead of upstream OpenCode defaults.
 - **Failure scenarios to test:** Run mode keeps Builder and Plan switching hidden.
 - **Failure scenarios to test:** Any re-enabled Builder or Plan path keeps the fork-specific prompt instructions.
-- **Owner/source:** `packages/opencode/src/session/agent-builder.ts`, `packages/opencode/src/session/agent-planner.ts`, `packages/opencode/src/session/prompt/agent-builder.txt`, `packages/opencode/src/session/prompt/agent-planner.txt`.
 
 #### Attachments, history, and handoff
 
@@ -227,7 +215,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Failure scenarios to test:** A metadata outage after an explicit current-prompt handoff recipient does not drop the next prompt back to the coordinator.
 - **Failure scenarios to test:** Flat Agency metadata on text, reasoning, or tool parts does not break compaction.
 - **Failure scenarios to test:** Local loopback URL or port changes do not strand prior history.
-- **Owner/source:** `packages/opencode/src/session/agency-swarm-utils.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/session/message-v2.ts`, `packages/opencode/src/agency-swarm/history.ts`.
 
 ### Sharing, PR Reopen, And Backend Management
 
@@ -239,7 +226,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** PR checkout relaunches `agentswarm`, not `opencode`.
 - **Happy-path proof:** PR share import uses the fork command and resumes the imported session when import succeeds.
 - **Failure scenarios to test:** Failed share import does not block opening the checked-out PR branch.
-- **Owner/source:** `packages/opencode/src/share/share-next.ts`, `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`, `packages/opencode/src/cli/cmd/pr.ts`, `README.md`.
 
 #### Backend management commands
 
@@ -251,7 +237,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** `agent` provides Agent Builder scaffold helpers.
 - **Failure scenarios to test:** URL normalization and discovery failures surface in the CLI command.
 - **Failure scenarios to test:** `agentswarm agency agent new` fails visibly when `agency-swarm create-agent-template` fails.
-- **Owner/source:** `packages/opencode/src/cli/cmd/agency.ts`.
 
 ### Trust-Safe Telemetry
 
@@ -273,7 +258,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Failure scenarios to test:** Installing the package alone does not send install phone-home telemetry.
 - **Failure scenarios to test:** Privacy tests fail when a payload contains raw model IDs, project IDs, file paths, prompt text, error text, source or content data, secrets, environment variables, conversation text, tool inputs, or tool outputs.
 - **Failure scenarios to test:** Only supported metrics appear in event-list docs or emitted telemetry.
-- **Owner/source:** `packages/opencode/src/telemetry/telemetry.ts`, docs-click telemetry hooks, integration request hooks, telemetry tests, README telemetry copy, and event-list docs.
 
 ### Branding, Config, Upgrade, And Visual Checks
 
@@ -288,7 +272,6 @@ For each failure scenario, capture the visible user result and cite the source p
 - **Happy-path proof:** Legacy files still load when branded files are absent.
 - **Happy-path proof:** Upgrade supports npm only.
 - **Failure scenarios to test:** Yarn, pnpm, Bun, Homebrew, Chocolatey, Scoop, and curl upgrade paths return clear unsupported upgrade method messages.
-- **Owner/source:** `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/cli/logo.ts`, `packages/opencode/src/cli/ui.ts`, `packages/opencode/src/cli/network.ts`, `packages/opencode/src/server/mdns.ts`, `packages/opencode/src/cli/cmd/uninstall.ts`, `packages/opencode/src/cli/cmd/tui/component/logo.tsx`, `packages/opencode/src/cli/cmd/tui/context/theme.tsx`, `packages/opencode/src/config/paths.ts`, `packages/opencode/src/config/config.ts`, `packages/opencode/src/cli/cmd/tui/config/tui.ts`, `packages/opencode/src/installation/index.ts`, `packages/opencode/src/cli/cmd/upgrade.ts`.
 
 ## Related Evidence
 

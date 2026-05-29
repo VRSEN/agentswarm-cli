@@ -2,7 +2,7 @@
 
 This file is the authoritative map of intentional fork-specific differences from upstream.
 It should contain all intentional Agent Swarm / fork changes needed to reconstruct this fork from upstream. It should not list ordinary upstream commits merely because they exist in the fork.
-By default, upstream changes should be merged into the fork. After that, Agent Swarm-specific differences are reapplied. If an upstream change adds or modifies user-facing behavior, it needs product review before being accepted as Agent Swarm behavior.
+By default, changes from upstream OpenCode at `https://github.com/anomalyco/opencode` should be merged into the fork, with conflicts resolved against the approved Agent Swarm differences below. If an upstream change adds or modifies user-facing behavior, it needs product review before being accepted as Agent Swarm behavior.
 When a change is suspicious, unproven, not clearly fork-specific, or not clearly intentional, move it to the upstream alignment cleanup queue until verified and removed or approved. Do not silently delete uncertain items.
 
 ## Fork Product Frame
@@ -16,8 +16,24 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 - Agent Builder and Plan still exist conceptually, but they are currently hidden or disabled in Run mode and continue to rely on the native OpenCode backbone plus fork-specific instructions.
 - Bug-like changes are not product features. Compare them against upstream, find the root cause, reduce divergence, and avoid fork-only workarounds.
 - Install, launcher, and package behavior count as user experience and belong in this file when they are intentional fork behavior.
-- `USER_FLOWS.md` is the single source of truth for full QA before every release.
+- `USER_FLOWS.md` is the single source of truth for full QA before every release; implementation-level file paths and symbols stay in this changelog.
 - Voice transcript note: "Turf UI" means terminal UI / TUI.
+
+## Release QA Implementation Index
+
+Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implementation.
+
+- Launcher bootstrap: `packages/opencode/bin/agentswarm-npx`, `packages/opencode/bin/agentswarm`, `packages/opencode/package.json`, `packages/opencode/script/postinstall.mjs`, `packages/opencode/script/publish.ts`.
+- Downstream product profile: `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/cli/cmd/tui/util/env-file.ts`, `packages/opencode/src/agency-swarm/server-launcher.ts`, `packages/opencode/src/installation/distribution.ts`, `packages/opencode/script/build.ts`.
+- Local project setup, starter creation, and onboarding auto-launch: `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/cli/cmd/tui/thread.ts`, `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/routes/home.tsx`.
+- Agency session resume and bridge recovery: `packages/opencode/src/agency-swarm/run-session.ts`, `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/cli/cmd/tui/session-error.ts`, `packages/opencode/src/cli/cmd/tui/context/agency-swarm-connection.tsx`.
+- Connection, auth, and provider dialogs: `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx`, `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`, `packages/opencode/src/cli/cmd/tui/session-error.ts`.
+- Run-mode routing, add-ons, models, and attachments: `packages/opencode/src/agency-swarm/adapter.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/cli/cmd/tui/component/prompt/autocomplete.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx`, `packages/opencode/src/cli/cmd/tui/context/local.tsx`, `packages/opencode/src/cli/cmd/tui/util/agency-target.ts`.
+- Builder and Plan preservation: `packages/opencode/src/session/agent-builder.ts`, `packages/opencode/src/session/agent-planner.ts`, `packages/opencode/src/session/prompt/agent-builder.txt`, `packages/opencode/src/session/prompt/agent-planner.txt`.
+- History, handoff, and message metadata: `packages/opencode/src/session/agency-swarm-utils.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/session/message-v2.ts`, `packages/opencode/src/agency-swarm/history.ts`.
+- Sharing, PR reopen, and backend management: `packages/opencode/src/share/share-next.ts`, `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`, `packages/opencode/src/cli/cmd/pr.ts`, `packages/opencode/src/cli/cmd/agency.ts`, `README.md`.
+- Telemetry: `packages/opencode/src/telemetry/telemetry.ts`, docs-click telemetry hooks, integration request hooks, telemetry tests, README telemetry copy, and event-list docs.
+- Branding, config, upgrade, and visual surfaces: `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/cli/logo.ts`, `packages/opencode/src/cli/ui.ts`, `packages/opencode/src/cli/network.ts`, `packages/opencode/src/server/mdns.ts`, `packages/opencode/src/cli/cmd/uninstall.ts`, `packages/opencode/src/cli/cmd/tui/component/logo.tsx`, `packages/opencode/src/cli/cmd/tui/context/theme.tsx`, `packages/opencode/src/config/paths.ts`, `packages/opencode/src/config/config.ts`, `packages/opencode/src/cli/cmd/tui/config/tui.ts`, `packages/opencode/src/installation/index.ts`, `packages/opencode/src/cli/cmd/upgrade.ts`.
 
 ## Upstream Baseline Anchor
 
