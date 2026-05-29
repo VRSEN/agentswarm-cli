@@ -44,7 +44,7 @@ export const STARTER_TEMPLATE_URL = starterTemplateUrl()
 
 export function resolveProductStateRoot(profile: Pick<AgencyProduct.Profile, "stateRoot"> = AgencyProduct) {
   const root = profile.stateRoot?.trim()
-  return root ? path.resolve(root) : undefined
+  return root ? Filesystem.resolve(root) : undefined
 }
 
 export function resolveProductProjectDirectory(profile: Pick<AgencyProduct.Profile, "stateRoot"> = AgencyProduct) {
@@ -192,7 +192,9 @@ export async function resolveNpxAutoProject(input: {
   if (input.continue) {
     const sessions = input.sessions ? Array.from(input.sessions) : await listResumeSessions(directory)
     const session = sessions
-      .filter((item) => item.directory === directory && !item.parentID)
+      .filter(
+        (item) => (stateRoot ? Filesystem.resolve(item.directory) : item.directory) === directory && !item.parentID,
+      )
       .toSorted((a, b) => b.time.updated - a.time.updated)[0]
     if (session) return resolveRunProject(session, input.runSessions, profile)
     if (input.fork) return
@@ -306,23 +308,25 @@ async function resolveRunProject(
   profile: Pick<ProductProfile, "agencyEntryFiles" | "stateRoot"> = AgencyProduct,
 ): Promise<NpxAutoProject | undefined> {
   const directory = resolveProductProjectDirectory(profile)
-  const scoped = directory !== undefined && path.resolve(session.directory) === directory
+  const sessionDirectory = directory ? Filesystem.resolve(session.directory) : path.resolve(session.directory)
+  const scoped = directory !== undefined && sessionDirectory === directory
   if (directory && !scoped) return
 
   const run = runSessions
     ? resolveInputRunSession(session.id, runSessions)
     : await AgencySwarmRunSession.get(session.id)
   if (run) {
+    const runDirectory = directory ? Filesystem.resolve(run.directory) : path.resolve(run.directory)
     if (run.mode === "remote-config") {
       if (!directory || !scoped) return
-      if (path.resolve(run.directory) !== path.resolve(session.directory)) return
+      if (runDirectory !== sessionDirectory) return
       return {
         directory: run.directory,
         cwdOnly: true,
         configContent: buildAgencyConfig(run.config),
       }
     }
-    if (path.resolve(run.directory) !== path.resolve(session.directory)) return
+    if (runDirectory !== sessionDirectory) return
     return detectAgencyProject(run.directory, profile)
   }
 

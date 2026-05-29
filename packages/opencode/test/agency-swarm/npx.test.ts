@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
-import { mkdir } from "node:fs/promises"
+import { mkdir, symlink } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import * as prompts from "@clack/prompts"
@@ -4328,6 +4328,77 @@ describe("agency-swarm npx onboarding", () => {
       timeout: false,
       token: "server-token",
     })
+  })
+
+  test("resolveNpxAutoProject resumes product state sessions through symlinked state roots", async () => {
+    await using caller = await tmpdir()
+    await using root = await tmpdir()
+    await using links = await tmpdir()
+    const stateRoot = path.join(links.path, "state-root")
+    const projectDir = path.join(root.path, "project")
+    const sessionID = SessionID.descending("ses_remote")
+    const config = {
+      baseURL: "https://remote.example",
+      agency: "remote-agency",
+      token: "server-token",
+    }
+    const profile = {
+      ...downstreamProfile,
+      stateRoot,
+    }
+    const sessions = [
+      {
+        id: sessionID,
+        directory: projectDir,
+        parentID: undefined,
+        time: {
+          created: 1,
+          updated: 1,
+        },
+      },
+    ]
+    const runSessions = [
+      {
+        sessionID,
+        mode: "remote-config" as const,
+        directory: projectDir,
+        config,
+      },
+    ]
+
+    await mkdir(projectDir, { recursive: true })
+    await symlink(root.path, stateRoot, process.platform === "win32" ? "junction" : "dir")
+
+    const bySession = await resolveNpxAutoProject({
+      directory: caller.path,
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      session: sessionID,
+      profile,
+      sessions,
+      runSessions,
+    })
+    const byContinue = await resolveNpxAutoProject({
+      directory: caller.path,
+      env: { [LAUNCHER_ENTRY_ENV]: "1" },
+      continue: true,
+      profile,
+      sessions,
+      runSessions,
+    })
+
+    expect(resolveProductProjectDirectory(profile)).toBe(projectDir)
+    for (const project of [bySession, byContinue]) {
+      if (!project || !("cwdOnly" in project)) throw new Error("Expected cwd-only project")
+      expect(project.directory).toBe(projectDir)
+      expect(project.cwdOnly).toBe(true)
+      expect(JSON.parse(project.configContent ?? "{}").provider["agency-swarm"].options).toEqual({
+        baseURL: "https://remote.example",
+        agency: "remote-agency",
+        discoveryTimeoutMs: 2000,
+        timeout: false,
+        token: "server-token",
+      })
+    }
   })
 
   test("resolveNpxAutoProject ignores remote run metadata without a product state root", async () => {
