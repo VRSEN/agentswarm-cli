@@ -270,6 +270,33 @@ describe("Telemetry", () => {
     expect(requests).toHaveLength(0)
   })
 
+  test("tracks built-in slash command source without raw slash names", async () => {
+    await using tmp = await tmpdir()
+    const requests: { body: Captured }[] = []
+    enableTelemetry({ stateDir: tmp.path })
+    Telemetry.setFetchForTests(
+      asFetch(async (_url, init) => {
+        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
+        return new Response(null, { status: 200 })
+      }),
+    )
+
+    captureCommand({
+      category: "Provider",
+      source: "slash",
+      value: "provider.addons",
+    })
+    await Telemetry.flush()
+
+    expect(requests[0].body.event).toBe("ui_command_executed")
+    expect(requests[0].body.properties).toMatchObject({
+      category: "Provider",
+      command: "provider.addons",
+      source: "slash",
+    })
+    expect(requests[0].body.properties?.slash).toBeUndefined()
+  })
+
   test("sanitizes built-in properties through the privacy boundary", async () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []

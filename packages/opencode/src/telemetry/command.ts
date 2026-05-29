@@ -5,7 +5,6 @@ export type CommandTelemetrySource = "keybind" | "palette" | "programmatic" | "s
 type CommandTelemetryInput = {
   category?: string | undefined
   keybind?: string | undefined
-  slash?: string | undefined
   source: CommandTelemetrySource
   value: string
 }
@@ -43,6 +42,7 @@ const tracked = new Set([
   "prompt.stash.pop",
   "prompt.submit",
   "provider.auth",
+  "provider.addons",
   "provider.connect",
   "session.child.first",
   "session.child.next",
@@ -95,7 +95,6 @@ export function captureCommand(input: CommandTelemetryInput) {
     category: input.category,
     command: input.value,
     keybind: input.keybind,
-    slash: input.slash,
     source: input.source,
   })
 }

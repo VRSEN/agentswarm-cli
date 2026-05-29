@@ -48,11 +48,10 @@ function init() {
 
   const isEnabled = (option: CommandOption) => option.enabled !== false
   const isVisible = (option: CommandOption) => isEnabled(option) && !option.hidden
-  const track = (option: CommandOption, source: CommandTelemetrySource, slash?: string) =>
+  const track = (option: CommandOption, source: CommandTelemetrySource) =>
     captureCommand({
       category: option.category,
       keybind: option.keybind,
-      slash,
       source,
       value: option.value,
     })
@@ -99,11 +98,11 @@ function init() {
   })
 
   const result = {
-    trigger(name: string, source: "programmatic" | "slash" = "programmatic", slash?: string) {
+    trigger(name: string, source: "programmatic" | "slash" = "programmatic") {
       for (const option of entries()) {
         if (option.value === name) {
           if (!isEnabled(option)) return
-          track(option, source, slash)
+          track(option, source)
           option.onSelect?.(dialog)
           return
         }
@@ -117,7 +116,7 @@ function init() {
           display: "/" + slash.name,
           description: option.description ?? option.title,
           aliases: slash.aliases?.map((alias) => "/" + alias),
-          onSelect: () => result.trigger(option.value, "slash", slash.name),
+          onSelect: () => result.trigger(option.value, "slash"),
         }
       })
     },
