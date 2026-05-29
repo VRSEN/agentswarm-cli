@@ -26,6 +26,7 @@ describe("agency-swarm run session state", () => {
         directory: "/tmp/project",
       },
     })
+    expect(writeJson.mock.calls[0]?.[2]).toBe(0o600)
   })
 
   test("sync clears stale local-project metadata for non-agency sessions", async () => {
@@ -45,6 +46,7 @@ describe("agency-swarm run session state", () => {
 
     expect(writeJson).toHaveBeenCalledTimes(1)
     expect(writeJson.mock.calls[0]?.[1]).toEqual({})
+    expect(writeJson.mock.calls[0]?.[2]).toBe(0o600)
   })
 
   test("sync preserves remote metadata when agency sessions have no local project directory", async () => {
@@ -85,6 +87,50 @@ describe("agency-swarm run session state", () => {
 
     expect(writeJson).toHaveBeenCalledTimes(1)
     expect(writeJson.mock.calls[0]?.[1]).toEqual({})
+    expect(writeJson.mock.calls[0]?.[2]).toBe(0o600)
+  })
+
+  test("copy preserves remote metadata under a new session id", async () => {
+    spyOn(Filesystem, "readJson").mockResolvedValue({
+      ses_parent: {
+        mode: "remote-config",
+        directory: "/tmp/product/project",
+        config: {
+          baseURL: "https://remote.example",
+          agency: "remote-agency",
+          token: "server-token",
+        },
+      },
+    } as never)
+    const writeJson = spyOn(Filesystem, "writeJson").mockResolvedValue(undefined as never)
+
+    await AgencySwarmRunSession.copy({
+      sourceID: "ses_parent",
+      targetID: "ses_child",
+    })
+
+    expect(writeJson).toHaveBeenCalledTimes(1)
+    expect(writeJson.mock.calls[0]?.[1]).toEqual({
+      ses_parent: {
+        mode: "remote-config",
+        directory: "/tmp/product/project",
+        config: {
+          baseURL: "https://remote.example",
+          agency: "remote-agency",
+          token: "server-token",
+        },
+      },
+      ses_child: {
+        mode: "remote-config",
+        directory: "/tmp/product/project",
+        config: {
+          baseURL: "https://remote.example",
+          agency: "remote-agency",
+          token: "server-token",
+        },
+      },
+    })
+    expect(writeJson.mock.calls[0]?.[2]).toBe(0o600)
   })
 
   test("remoteConfigFromEnv reads state-root launch config for the product project directory", () => {

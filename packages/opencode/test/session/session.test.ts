@@ -8,6 +8,7 @@ import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, type SessionID } from "../../src/session/schema"
 import { AppRuntime } from "../../src/effect/app-runtime"
 import { tmpdir } from "../fixture/fixture"
+import { AgencySwarmRunSession } from "../../src/agency-swarm/run-session"
 
 const projectRoot = path.join(__dirname, "../..")
 void Log.init({ print: false })
@@ -22,6 +23,10 @@ function get(id: SessionID) {
 
 function remove(id: SessionID) {
   return AppRuntime.runPromise(SessionNs.Service.use((svc) => svc.remove(id)))
+}
+
+function fork(input: { sessionID: SessionID; messageID?: MessageID }) {
+  return AppRuntime.runPromise(SessionNs.Service.use((svc) => svc.fork(input)))
 }
 
 function updateMessage<T extends MessageV2.Info>(msg: T) {
@@ -162,6 +167,46 @@ describe("step-finish token propagation via Bus event", () => {
 })
 
 describe("Session", () => {
+  test("fork preserves Agency Swarm run-session metadata", async () => {
+    await using tmp = await tmpdir({ git: true })
+
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const parent = await create({ title: "remote run-session parent" })
+        let child: SessionNs.Info | undefined
+        const config = {
+          baseURL: "https://remote.example",
+          agency: "remote-agency",
+          token: "server-token",
+        }
+
+        try {
+          await AgencySwarmRunSession.markRemote({
+            sessionID: parent.id,
+            directory: tmp.path,
+            config,
+          })
+
+          child = await fork({ sessionID: parent.id })
+
+          expect(await AgencySwarmRunSession.get(child.id)).toEqual({
+            mode: "remote-config",
+            directory: tmp.path,
+            config,
+          })
+        } finally {
+          await AgencySwarmRunSession.clear(parent.id)
+          if (child) {
+            await AgencySwarmRunSession.clear(child.id)
+            await remove(child.id).catch(() => undefined)
+          }
+          await remove(parent.id).catch(() => undefined)
+        }
+      },
+    })
+  })
+
   test("remove works without an instance", async () => {
     await using tmp = await tmpdir({ git: true })
 

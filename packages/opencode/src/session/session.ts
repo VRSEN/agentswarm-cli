@@ -616,6 +616,7 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
           })
         }
       }
+      yield* Effect.promise(() => AgencySwarmRunSession.copy({ sourceID: original.id, targetID: session.id }))
       return session
     })
 

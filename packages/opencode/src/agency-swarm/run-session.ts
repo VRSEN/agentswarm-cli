@@ -1,4 +1,5 @@
 import path from "node:path"
+import { chmod } from "node:fs/promises"
 import { Global } from "@opencode-ai/core/global"
 import { Log } from "@/util"
 import { Filesystem } from "@/util/filesystem"
@@ -52,6 +53,14 @@ export namespace AgencySwarmRunSession {
     const data = await read()
     if (!(sessionID in data)) return
     delete data[sessionID]
+    await write(data)
+  }
+
+  export async function copy(input: { sourceID: string; targetID: string }) {
+    const data = await read()
+    const info = data[input.sourceID]
+    if (!info) return
+    data[input.targetID] = structuredClone(info)
     await write(data)
   }
 
@@ -113,7 +122,13 @@ export namespace AgencySwarmRunSession {
   }
 
   async function write(data: Record<string, Info>) {
-    await Filesystem.writeJson(file, data)
+    await Filesystem.writeJson(file, data, 0o600)
+    if (process.platform !== "win32") {
+      await chmod(file, 0o600).catch((error) => {
+        if (isEnoent(error)) return
+        throw error
+      })
+    }
   }
 
   function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -122,5 +137,9 @@ export namespace AgencySwarmRunSession {
 
   function readString(value: unknown) {
     return typeof value === "string" && value.trim().length > 0 ? value : undefined
+  }
+
+  function isEnoent(error: unknown) {
+    return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"
   }
 }
