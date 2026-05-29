@@ -198,8 +198,13 @@ describe("Telemetry", () => {
     await using tmp = await tmpdir()
     enableTelemetry({ stateDir: tmp.path })
     let aborted = false
+    let enter!: () => void
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
     useFetch(
       asFetch((_url, init) => {
+        enter()
         return new Promise<Response>((resolve) => {
           init?.signal?.addEventListener(
             "abort",
@@ -214,6 +219,7 @@ describe("Telemetry", () => {
     )
 
     await Telemetry.capture("app_started", { entrypoint: "tui" })
+    await entered
     await Telemetry.flush({ timeoutMs: 1 })
 
     expect(aborted).toBe(true)
