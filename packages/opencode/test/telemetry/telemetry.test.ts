@@ -103,6 +103,7 @@ describe("Telemetry", () => {
     expect(requests[0].body.api_key).toBe("ph_test")
     expect(requests[0].body.distinct_id).toBeTruthy()
     expect(requests[0].body.properties).toMatchObject({
+      "$process_person_profile": false,
       framework_mode: true,
       has_file_parts: true,
       mode: "normal",
@@ -269,6 +270,7 @@ describe("Telemetry", () => {
 
     expect(requests[0].body.event).toBe("provider_auth_configured")
     expect(requests[0].body.properties).toMatchObject({
+      "$process_person_profile": false,
       auth_method: "api",
       framework_mode: true,
       provider_id: "openai",

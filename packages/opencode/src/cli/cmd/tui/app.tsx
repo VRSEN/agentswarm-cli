@@ -436,6 +436,9 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       connectedProvider: sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID),
     }),
   )
+  const productProviderID = createMemo(() =>
+    frameworkMode() ? AgencySwarmAdapter.PROVIDER_ID : local.model.current()?.providerID,
+  )
 
   let appStartedTelemetry = false
   createEffect(() => {
@@ -444,7 +447,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     void Telemetry.capture("app_started", {
       entrypoint: "tui",
       framework_mode: frameworkMode(),
-      provider_id: local.model.current()?.providerID,
+      provider_id: productProviderID(),
     })
   })
 

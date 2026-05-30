@@ -307,7 +307,9 @@ function assignSafe(
 }
 
 function sanitize(event: TelemetryEvent, input: Record<string, unknown> | undefined) {
-  const output: Record<string, SafeValue> = {}
+  const output: Record<string, SafeValue> = {
+    "$process_person_profile": false,
+  }
   assignSafe(output, baseProperties, "app", AgencyProduct.name)
   assignSafe(output, baseProperties, "arch", os.arch())
   assignSafe(output, baseProperties, "channel", InstallationChannel)

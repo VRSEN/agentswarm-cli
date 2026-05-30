@@ -56,6 +56,8 @@ Release builds may send privacy-safe product analytics to PostHog so maintainers
 
 Set `OPEN_SWARM_TELEMETRY=0`, `AGENTSWARM_TELEMETRY=0`, or pass `--no-telemetry` to disable this telemetry.
 
+Every sent PostHog event sets `$process_person_profile: false`.
+
 Supported events and properties:
 
 - `app_started`: `entrypoint`, `framework_mode`, `provider_id`.
