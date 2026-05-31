@@ -21,11 +21,11 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 ## Upstream Baseline Anchor
 
-- Last upstream sync merged `origin/dev` commit `35734b42fe3094c41b09ec81d3836944a8dd1d89` into the fork.
-- The upstream sync includes release tag `v1.14.28` at `acd8783a36d8642ade7038f34ca4f2f2ac3cc824`.
+- Latest upstream OpenCode `dev` commit already present in fork `dev`: `35734b42fe3094c41b09ec81d3836944a8dd1d89`.
 - Fork merge commit: `8c24d21569620713c438b68e38a6a53fbbc66b68`.
-- Current fork head when this anchor was refreshed: `vrsen/dev` at `ca32b473a217c4158858400a115b73ac7e7db93d`.
-- Current comparison count: `origin/dev...vrsen/dev` = `71 311`.
+- Current upstream OpenCode `dev` head when this anchor was refreshed: `f401f01c05bead2fd0687004c912743d271e2b7b`.
+- Current fork `dev` head when this anchor was refreshed: `ca1936470e71d436cbf793592bad46f4897bf131`.
+- Current comparison count from the anchor: upstream OpenCode `dev` ahead by `1725`; fork `dev` ahead by `451`.
 
 ## Branding/Packaging
 
@@ -368,7 +368,7 @@ These items were checked with `git blame`, source PRs/issues, `origin/dev`, and 
 
 ## Maintenance Protocol
 
-1. Refresh the upstream anchor with fresh `git rev-parse` and `git rev-list --left-right --count` output before you edit this file.
+1. Refresh the upstream anchor by finding the latest upstream OpenCode `dev` commit already present in fork `dev`, then record fresh upstream and fork tips plus counts from that anchor before you edit this file.
 2. Rebuild the live fork delta from fresh `git log` and `git diff` output before you add, remove, or rewrite entries.
 3. Record exactly one intentional fork-specific difference per entry. Do not bundle separate user-visible behaviors or separate technical mechanisms into one entry.
 4. Keep each `Implementation` line to one sentence that names the file path and the key function or symbol that a rebuilder would need on top of upstream.
