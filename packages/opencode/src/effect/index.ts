@@ -1,5 +1,5 @@
-export * as InstanceState from "./instance-state"
 export * as EffectBridge from "./bridge"
+export * as InstanceState from "./instance-state"
+export * as Observability from "./config-service"
 export * as Runner from "./runner"
-export * as Observability from "@opencode-ai/core/effect/observability"
-export * as EffectLogger from "@opencode-ai/core/effect/logger"
+export * as RuntimeFlags from "./runtime-flags"

@@ -2,18 +2,19 @@ import type { ChildProcessWithoutNullStreams } from "child_process"
 import path from "path"
 import os from "os"
 import { Global } from "@opencode-ai/core/global"
-import { Log } from "../util"
+import * as Log from "@opencode-ai/core/util/log"
 import { text } from "node:stream/consumers"
 import fs from "fs/promises"
-import { Filesystem } from "../util"
+import { Filesystem } from "@/util/filesystem"
 import type { InstanceContext } from "../project/instance"
 import { Flag } from "@opencode-ai/core/flag/flag"
-import { Archive } from "../util"
-import { Process } from "../util"
+import { Archive } from "@/util/archive"
+import { Process } from "@/util/process"
 import { which } from "../util/which"
 import { Module } from "@opencode-ai/core/util/module"
 import { spawn } from "./launch"
 import { Npm } from "@opencode-ai/core/npm"
+import type { RuntimeFlags } from "@/effect/runtime-flags"
 
 const log = Log.create({ service: "lsp.server" })
 const pathExists = async (p: string) =>
@@ -60,7 +61,7 @@ export interface Info {
   extensions: string[]
   global?: boolean
   root: RootFunction
-  spawn(root: string, ctx: InstanceContext): Promise<Handle | undefined>
+  spawn(root: string, ctx: InstanceContext, flags: RuntimeFlags.Info): Promise<Handle | undefined>
 }
 
 export const Deno: Info = {
@@ -431,8 +432,8 @@ export const Ty: Info = {
     "Pipfile",
     "pyrightconfig.json",
   ]),
-  async spawn(root) {
-    if (!Flag.OPENCODE_EXPERIMENTAL_LSP_TY) {
+  async spawn(root, _ctx, flags) {
+    if (!flags.experimentalLspTy) {
       return undefined
     }
 

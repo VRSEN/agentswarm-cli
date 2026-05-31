@@ -83,13 +83,15 @@ describe("Agent Swarm downstream add-ons e2e", () => {
     currentTui.write("\r")
     await currentTui.waitForText("OpenAI", tuiInteractionTimeoutMs)
     currentTui.write("\r")
-    await currentTui.waitForText("Manually enter API Key", tuiInteractionTimeoutMs)
-    currentTui.write("\x1b[B\r")
+    const hasAPIKeyPrompt = () =>
+      currentTui!.screen().includes("API key") && currentTui!.screen().includes("enter submit")
     await currentTui.waitFor(
-      () => currentTui!.screen().includes("API key") && currentTui!.screen().includes("enter submit"),
-      "API key prompt",
+      () => currentTui!.screen().includes("Manually enter API Key") || hasAPIKeyPrompt(),
+      "OpenAI auth method or API key prompt",
       tuiInteractionTimeoutMs,
     )
+    if (!hasAPIKeyPrompt()) currentTui.write("\x1b[B\r")
+    await currentTui.waitFor(hasAPIKeyPrompt, "API key prompt", tuiInteractionTimeoutMs)
     currentTui.write("test-openai-key\r")
     const screen = await currentTui.waitForText("Search Add-on", tuiInteractionTimeoutMs)
 

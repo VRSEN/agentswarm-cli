@@ -3,7 +3,9 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { createStore } from "solid-js/store"
 import * as ArgsContext from "../../../src/cli/cmd/tui/context/args"
+import * as EventContext from "../../../src/cli/cmd/tui/context/event"
 import { LocalProvider, useLocal } from "../../../src/cli/cmd/tui/context/local"
+import * as RouteContext from "../../../src/cli/cmd/tui/context/route"
 import * as SDKContext from "../../../src/cli/cmd/tui/context/sdk"
 import * as SyncContext from "../../../src/cli/cmd/tui/context/sync"
 import * as ThemeContext from "../../../src/cli/cmd/tui/context/theme"
@@ -45,6 +47,7 @@ describe("tui local context model sync", () => {
       provider_default: {
         openai: "gpt-5",
       },
+      session: [],
       config: {
         model: undefined,
         provider: {},
@@ -54,6 +57,16 @@ describe("tui local context model sync", () => {
 
     spyOn(SyncContext, "useSync").mockReturnValue({ data: syncData } as any)
     spyOn(ArgsContext, "useArgs").mockReturnValue({} as any)
+    spyOn(RouteContext, "useRoute").mockReturnValue({
+      data: {
+        type: "home",
+      },
+      navigate: () => {},
+    } as any)
+    spyOn(EventContext, "useEvent").mockReturnValue({
+      on: () => () => {},
+      subscribe: () => () => {},
+    } as any)
     spyOn(SDKContext, "useSDK").mockReturnValue({
       client: {
         mcp: {

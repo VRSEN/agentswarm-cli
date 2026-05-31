@@ -27,8 +27,8 @@ describe("agency-swarm connection monitor", () => {
           timeoutMs: 10,
         }),
         openConnectDialog,
-        idleIntervalMs: 5,
-        recoveredIntervalMs: 15,
+        idleIntervalMs: 10,
+        recoveredIntervalMs: 20,
         fetchImpl: async () => {
           if (serverAlive) {
             return new Response("{}", {
@@ -45,14 +45,14 @@ describe("agency-swarm connection monitor", () => {
     }
 
     await testRender(() => <Harness />)
-    await Bun.sleep(15)
+    await Bun.sleep(40)
     await flushEffects()
 
     expect(state.status()).toBe("connected")
     expect(state.requiresReconnect()).toBe(false)
 
     serverAlive = false
-    await Bun.sleep(20)
+    await Bun.sleep(80)
     await flushEffects()
 
     expect(state.status()).toBe("disconnected")

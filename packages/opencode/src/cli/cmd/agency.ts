@@ -139,11 +139,7 @@ const AgencyUseCommand = cmd({
         timeoutMs: runtime.timeout,
       })
 
-      const options: Record<string, unknown> = {
-        baseURL: runtime.baseURL,
-        agency,
-        discoveryTimeoutMs: runtime.timeout,
-      }
+      const options = agencyUseOptions(runtime.baseURL, agency, runtime.timeout)
       if (runtime.token) {
         await Auth.set(AgencySwarmAdapter.PROVIDER_ID, {
           type: "api",
@@ -278,6 +274,16 @@ export function connectOptions(baseURL: string) {
     baseURL,
     discoveryTimeoutMs: AgencySwarmAdapter.DEFAULT_DISCOVERY_TIMEOUT_MS,
     agency: null,
+    recipientAgent: null,
+    recipient_agent: null,
+  } satisfies Record<string, unknown>
+}
+
+export function agencyUseOptions(baseURL: string, agency: string, timeout: number) {
+  return {
+    baseURL,
+    agency,
+    discoveryTimeoutMs: timeout,
     recipientAgent: null,
     recipient_agent: null,
   } satisfies Record<string, unknown>

@@ -1,13 +1,14 @@
-import { InstanceState } from "@/effect"
-import { Runner } from "@/effect"
-import { Effect, Layer, Scope, Context } from "effect"
+import { InstanceState } from "@/effect/instance-state"
+import { Runner } from "@/effect/runner"
+import { BackgroundJob } from "@/background/job"
+import { Effect, Latch, Layer, Scope, Context } from "effect"
 import * as Session from "./session"
 import { MessageV2 } from "./message-v2"
 import { SessionID } from "./schema"
 import { SessionStatus } from "./status"
 
 export interface Interface {
-  readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void>
+  readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
   readonly isBusy: (sessionID: SessionID) => Effect.Effect<boolean>
   readonly isRunning: (sessionID: SessionID) => Effect.Effect<boolean>
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
@@ -20,7 +21,8 @@ export interface Interface {
     sessionID: SessionID,
     onInterrupt: Effect.Effect<MessageV2.WithParts>,
     work: Effect.Effect<MessageV2.WithParts>,
-  ) => Effect.Effect<MessageV2.WithParts>
+    ready?: Latch.Latch,
+  ) => Effect.Effect<MessageV2.WithParts, Session.BusyError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionRunState") {}
@@ -28,6 +30,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Se
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    const background = yield* BackgroundJob.Service
     const status = yield* SessionStatus.Service
 
     const state = yield* InstanceState.make(
@@ -61,9 +64,6 @@ export const layer = Layer.effect(
         }),
         onBusy: status.set(sessionID, { type: "busy" }),
         onInterrupt,
-        busy: () => {
-          throw new Session.BusyError(sessionID)
-        },
       })
       data.runners.set(sessionID, next)
       return next
@@ -72,7 +72,7 @@ export const layer = Layer.effect(
     const assertNotBusy = Effect.fn("SessionRunState.assertNotBusy")(function* (sessionID: SessionID) {
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
-      if (existing?.busy) throw new Session.BusyError(sessionID)
+      if (existing?.busy) yield* busyError(sessionID)
     })
 
     const isBusy = Effect.fn("SessionRunState.isBusy")(function* (sessionID: SessionID) {
@@ -86,6 +86,7 @@ export const layer = Layer.effect(
     })
 
     const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
+      yield* cancelBackgroundJobs(background, sessionID)
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
       if (!existing || !existing.busy) {
@@ -107,14 +108,58 @@ export const layer = Layer.effect(
       sessionID: SessionID,
       onInterrupt: Effect.Effect<MessageV2.WithParts>,
       work: Effect.Effect<MessageV2.WithParts>,
+      ready?: Latch.Latch,
     ) {
-      return yield* (yield* runner(sessionID, onInterrupt)).startShell(work)
+      return yield* (yield* runner(sessionID, onInterrupt))
+        .startShell(work, ready)
+        .pipe(Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))))
     })
 
     return Service.of({ assertNotBusy, isBusy, isRunning, cancel, ensureRunning, startShell })
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(SessionStatus.defaultLayer))
+export const defaultLayer = layer.pipe(
+  Layer.provide(BackgroundJob.defaultLayer),
+  Layer.provide(SessionStatus.defaultLayer),
+)
+
+const cancelBackgroundJobs = Effect.fn("SessionRunState.cancelBackgroundJobs")(function* (
+  background: BackgroundJob.Interface,
+  sessionID: SessionID,
+) {
+  const jobs = yield* background.list()
+  const pending = new Set<string>([sessionID])
+  const cancelled = new Set<string>()
+  const matches = (job: BackgroundJob.Info) => {
+    if (job.status !== "running") return false
+    if (cancelled.has(job.id)) return false
+    if (pending.has(job.id)) return true
+    if (typeof job.metadata?.sessionId === "string" && pending.has(job.metadata.sessionId)) return true
+    return typeof job.metadata?.parentSessionId === "string" && pending.has(job.metadata.parentSessionId)
+  }
+  let batch = jobs.filter(matches)
+  while (batch.length > 0) {
+    yield* Effect.forEach(
+      batch,
+      (job) =>
+        background.cancel(job.id).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              cancelled.add(job.id)
+              pending.add(job.id)
+              if (typeof job.metadata?.sessionId === "string") pending.add(job.metadata.sessionId)
+            }),
+          ),
+        ),
+      { concurrency: "unbounded", discard: true },
+    )
+    batch = jobs.filter(matches)
+  }
+})
+
+function busyError(sessionID: SessionID) {
+  return new Session.BusyError({ sessionID })
+}
 
 export * as SessionRunState from "./run-state"

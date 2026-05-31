@@ -1,6 +1,6 @@
-import { AgencyProduct } from "@/agency-swarm/product"
-import { Log } from "@/util"
+import * as Log from "@opencode-ai/core/util/log"
 import { Bonjour } from "bonjour-service"
+import { AgencyProduct } from "@/agency-swarm/product"
 
 const log = Log.create({ service: "mdns" })
 

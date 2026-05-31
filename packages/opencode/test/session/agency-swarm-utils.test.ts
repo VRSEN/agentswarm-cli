@@ -20,7 +20,7 @@ import {
 } from "../../src/session/agency-swarm-utils"
 
 const sessionID = SessionID.make("session")
-const messageID = MessageID.make("message")
+const messageID = MessageID.make("msg_message")
 const providerID = ProviderID.make("test")
 const modelID = ModelID.make("test")
 
@@ -43,7 +43,7 @@ function msg(parts: MessageV2.WithParts["parts"]): MessageV2.WithParts {
 
 function file(id: string, value: Omit<MessageV2.FilePart, "id" | "sessionID" | "messageID">): MessageV2.FilePart {
   return {
-    id: PartID.make(id),
+    id: PartID.make(`prt_${id}`),
     sessionID,
     messageID,
     ...value,
@@ -52,7 +52,7 @@ function file(id: string, value: Omit<MessageV2.FilePart, "id" | "sessionID" | "
 
 function text(id: string, value: Omit<MessageV2.TextPart, "id" | "sessionID" | "messageID">): MessageV2.TextPart {
   return {
-    id: PartID.make(id),
+    id: PartID.make(`prt_${id}`),
     sessionID,
     messageID,
     ...value,
@@ -61,7 +61,7 @@ function text(id: string, value: Omit<MessageV2.TextPart, "id" | "sessionID" | "
 
 function agent(id: string, value: Omit<MessageV2.AgentPart, "id" | "sessionID" | "messageID">): MessageV2.AgentPart {
   return {
-    id: PartID.make(id),
+    id: PartID.make(`prt_${id}`),
     sessionID,
     messageID,
     ...value,
@@ -131,13 +131,15 @@ describe("session.agency-swarm-utils", () => {
   })
 
   test("collectFileURLs keeps valid file parts and normalizes file URLs", () => {
+    const spec = path.join(os.tmpdir(), "spec.md")
+    const inline = path.join(os.tmpdir(), "inline.png")
     expect(
       collectFileURLs(
         msg([
           file("part-1", {
             type: "file",
             mime: "text/plain",
-            url: "file:///tmp/spec.md",
+            url: pathToFileURL(spec).toString(),
             filename: "spec.md",
           }),
           file("part-2", {
@@ -157,7 +159,7 @@ describe("session.agency-swarm-utils", () => {
             filename: "inline.png",
             source: {
               type: "file",
-              path: "/tmp/inline.png",
+              path: inline,
               text: {
                 value: "[Image 1]",
                 start: 0,
@@ -171,9 +173,9 @@ describe("session.agency-swarm-utils", () => {
         },
       ),
     ).toEqual({
-      "spec.md": "/tmp/spec.md",
+      "spec.md": spec,
       "plan.pdf": "https://example.com/plan.pdf",
-      "inline.png": "/tmp/inline.png",
+      "inline.png": inline,
     })
   })
 

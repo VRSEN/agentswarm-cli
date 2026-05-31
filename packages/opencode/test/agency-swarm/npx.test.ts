@@ -99,7 +99,7 @@ describe("agency-swarm npx onboarding", () => {
   test("resolveLauncherCommand routes Windows shell commands through cmd.exe", () => {
     expect(resolveLauncherCommand(["npm", "install"], "win32")).toEqual(["cmd.exe", "/c", "npm", "install"])
     expect(resolveLauncherCommand(["npx", "playwright"], "win32")).toEqual(["cmd.exe", "/c", "npx", "playwright"])
-    expect(resolveLauncherCommand(["git", "clone"], "win32")).toEqual(["cmd.exe", "/c", "git", "clone"])
+    expect(resolveLauncherCommand(["git", "clone"], "win32")).toEqual(["git", "clone"])
     expect(resolveLauncherCommand(["python", "-V"], "win32")).toEqual(["python", "-V"])
     expect(resolveLauncherCommand(["npm", "install"], "darwin")).toEqual(["npm", "install"])
   })
@@ -296,8 +296,13 @@ describe("agency-swarm npx onboarding", () => {
     const installCommand = commands.find(isUvPipInstallCommand)
 
     const venvCommand = commands.find(isPythonVenvCommand)
-    expect(venvCommand?.slice(1)).toEqual(["-m", "venv", ".venv"])
-    expect(path.basename(venvCommand?.[0] ?? "")).toBe("python3.12")
+    expect(venvCommand).toBeDefined()
+    expect(venvCommand?.slice(pythonModuleIndex(venvCommand))).toEqual(["-m", "venv", ".venv"])
+    if (process.platform === "win32") {
+      expect(venvCommand?.slice(0, 2)).toEqual(["py", "-3.13"])
+    } else {
+      expect(path.basename(venvCommand?.[0] ?? "")).toBe("python3.12")
+    }
     expect(installCommand).toEqual([
       getTestVenvUv(dir.path),
       "pip",
@@ -967,7 +972,7 @@ describe("agency-swarm npx onboarding", () => {
 
     expect(confirm).not.toHaveBeenCalled()
     expect(await Bun.file(staleFile).exists()).toBe(false)
-    expect(commands.filter(isPythonVenvCommand)).toEqual([["/usr/bin/python3.12", "-m", "venv", ".venv"]])
+    expect(commands.filter(isPythonVenvCommand)).toEqual([expectedVenvCommand("/usr/bin/python3.12")])
   })
 
   test("prepareProjectLaunch rebuilds Conda-family venvs for standalone products", async () => {
@@ -1051,7 +1056,7 @@ describe("agency-swarm npx onboarding", () => {
     )
 
     expect(commands.some((cmd) => isPythonProbeCommand(cmd) && (cmd.at(-1) ?? "").includes("base_prefix"))).toBe(true)
-    expect(commands.filter(isPythonVenvCommand)).toEqual([[replacementPython, "-m", "venv", ".venv"]])
+    expect(commands.filter(isPythonVenvCommand)).toEqual([expectedVenvCommand(replacementPython)])
 
     await launch?.cleanup?.()
   })
@@ -1324,7 +1329,7 @@ describe("agency-swarm npx onboarding", () => {
 
     expect(confirm).not.toHaveBeenCalled()
     expect(await Bun.file(staleFile).exists()).toBe(false)
-    expect(commands.filter(isPythonVenvCommand)).toEqual([[replacementPython, "-m", "venv", ".venv"]])
+    expect(commands.filter(isPythonVenvCommand)).toEqual([expectedVenvCommand(replacementPython)])
     expect(uvInstallRuns).toBe(2)
     await launch?.cleanup?.()
   })
@@ -4872,7 +4877,8 @@ function isUvPipInstallCommand(cmd: string[]) {
 }
 
 function isPythonVenvCommand(cmd: string[]) {
-  return cmd[1] === "-m" && cmd[2] === "venv" && cmd[3] === ".venv"
+  const index = pythonModuleIndex(cmd)
+  return index >= 0 && cmd[index + 1] === "venv" && cmd[index + 2] === ".venv"
 }
 
 function isUvVersionCommand(cmd: string[]) {
@@ -4880,7 +4886,22 @@ function isUvVersionCommand(cmd: string[]) {
 }
 
 function isPythonPipInstallUvCommand(cmd: string[]) {
-  return cmd[1] === "-m" && cmd[2] === "pip" && cmd[3] === "install" && cmd[4] === "--upgrade" && cmd[5] === "uv"
+  const index = pythonModuleIndex(cmd)
+  return (
+    index >= 0 &&
+    cmd[index + 1] === "pip" &&
+    cmd[index + 2] === "install" &&
+    cmd[index + 3] === "--upgrade" &&
+    cmd[index + 4] === "uv"
+  )
+}
+
+function pythonModuleIndex(cmd: string[] | undefined) {
+  return cmd?.indexOf("-m") ?? -1
+}
+
+function expectedVenvCommand(python: string) {
+  return [python, "-m", "venv", ".venv"]
 }
 
 function isLocalUvCommand(command: string | undefined) {

@@ -1,9 +1,23 @@
-import { render, TimeToFirstDraw, useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid"
+import { render, TimeToFirstDraw, useRenderer, useTerminalDimensions } from "@opentui/solid"
+import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import * as Clipboard from "@tui/util/clipboard"
 import * as Selection from "@tui/util/selection"
+import * as TuiAudio from "@tui/util/audio"
 import { createCliRenderer, MouseButton, type CliRendererConfig } from "@opentui/core"
 import { RouteProvider, useRoute } from "@tui/context/route"
-import { Switch, Match, createEffect, createMemo, ErrorBoundary, createSignal, onMount, batch, Show } from "solid-js"
+import {
+  Switch,
+  Match,
+  createEffect,
+  createMemo,
+  ErrorBoundary,
+  createSignal,
+  onMount,
+  onCleanup,
+  batch,
+  Show,
+  on,
+} from "solid-js"
 import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import semver from "semver"
@@ -22,17 +36,16 @@ import { useEvent } from "@tui/context/event"
 import { SDKProvider, useSDK } from "@tui/context/sdk"
 import { StartupLoading } from "@tui/component/startup-loading"
 import { SyncProvider, useSync } from "@tui/context/sync"
+import { SyncProviderV2 } from "@tui/context/sync-v2"
 import { LocalProvider, useLocal } from "@tui/context/local"
 import { DialogModel } from "@tui/component/dialog-model"
 import { useConnected } from "@tui/component/use-connected"
 import { DialogMcp } from "@tui/component/dialog-mcp"
 import { DialogStatus } from "@tui/component/dialog-status"
 import { DialogHelp } from "./ui/dialog-help"
-import { CommandProvider, useCommandDialog } from "@tui/component/dialog-command"
 import { DialogAgent } from "@tui/component/dialog-agent"
 import { DialogSessionList } from "@tui/component/dialog-session-list"
 import { DialogConsoleOrg } from "@tui/component/dialog-console-org"
-import { KeybindProvider, useKeybind } from "@tui/context/keybind"
 import { ThemeProvider, useTheme } from "@tui/context/theme"
 import { Home } from "@tui/routes/home"
 import { Session } from "@tui/routes/session"
@@ -44,17 +57,22 @@ import { DialogAlert } from "./ui/dialog-alert"
 import { DialogConfirm } from "./ui/dialog-confirm"
 import { ToastProvider, useToast } from "./ui/toast"
 import { ExitProvider, useExit } from "./context/exit"
-import { Session as SessionApi } from "@/session"
+import { Session as SessionApi } from "@/session/session"
 import { TuiEvent } from "./event"
 import { KVProvider, useKV } from "./context/kv"
-import { Provider } from "@/provider"
+import { Provider } from "@/provider/provider"
 import { ArgsProvider, useArgs, type Args } from "./context/args"
 import open from "open"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { TuiConfigProvider, useTuiConfig } from "./context/tui-config"
 import { TuiConfig } from "@/cli/cmd/tui/config/tui"
-import { createTuiApi, TuiPluginRuntime, type RouteMap } from "./plugin"
+import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
+import { createTuiApi } from "@/cli/cmd/tui/plugin/api"
+import type { RouteMap } from "@/cli/cmd/tui/plugin/api"
+import { createTuiAttention } from "@/cli/cmd/tui/attention"
 import { FormatError, FormatUnknownError } from "@/cli/error"
+import { CommandPaletteProvider, useCommandPalette } from "./context/command-palette"
+import { OpencodeKeymapProvider, registerOpencodeKeymap, useBindings, useOpencodeKeymap } from "./keymap"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencyProduct } from "@/agency-swarm/product"
 import {
@@ -70,7 +88,52 @@ import type { EventSource } from "./context/sdk"
 import { DialogVariant } from "./component/dialog-variant"
 import { Telemetry } from "@/telemetry/telemetry"
 
-function rendererConfig(_config: TuiConfig.Info): CliRendererConfig {
+const appBindingCommands = [
+  "command.palette.show",
+  "session.list",
+  "session.new",
+  "session.cycle_recent",
+  "session.cycle_recent_reverse",
+  "session.quick_switch.1",
+  "session.quick_switch.2",
+  "session.quick_switch.3",
+  "session.quick_switch.4",
+  "session.quick_switch.5",
+  "session.quick_switch.6",
+  "session.quick_switch.7",
+  "session.quick_switch.8",
+  "session.quick_switch.9",
+  "model.list",
+  "model.cycle_recent",
+  "model.cycle_recent_reverse",
+  "model.cycle_favorite",
+  "model.cycle_favorite_reverse",
+  "agent.list",
+  "mcp.list",
+  "agent.cycle",
+  "agent.cycle.reverse",
+  "variant.cycle",
+  "variant.list",
+  "provider.auth",
+  "provider.addons",
+  "provider.connect",
+  "console.org.switch",
+  "opencode.status",
+  "help.show",
+  "docs.open",
+  "app.debug",
+  "app.console",
+  "app.heap_snapshot",
+  "terminal.suspend",
+  "terminal.title.toggle",
+  "app.toggle.animations",
+  "app.toggle.file_context",
+  "app.toggle.diffwrap",
+  "app.toggle.paste_summary",
+  "app.toggle.session_directory_filter",
+] as const
+
+function rendererConfig(_config: TuiConfig.Resolved): CliRendererConfig {
   const mouseEnabled = !Flag.OPENCODE_DISABLE_MOUSE && (_config.mouse ?? true)
 
   return {
@@ -113,7 +176,7 @@ function errorMessage(error: unknown) {
 export function tui(input: {
   url: string
   args: Args
-  config: TuiConfig.Info
+  config: TuiConfig.Resolved
   onSnapshot?: () => Promise<string[]>
   directory?: string
   fetch?: typeof fetch
@@ -130,14 +193,20 @@ export function tui(input: {
       unguard?.()
       resolve()
     }
-
     const onBeforeExit = async () => {
+      offKeymap()
       await TuiPluginRuntime.dispose()
       await Telemetry.flush({ timeoutMs: 500 })
+      TuiAudio.dispose()
     }
 
     const renderer = await createCliRenderer(rendererConfig(input.config))
+    // Prewarm palette before ThemeProvider mounts so `system` theme avoids a first-paint fallback flash.
+    void renderer.getPalette({ size: 16 }).catch(() => undefined)
     const mode = (await renderer.waitForThemeMode(1000)) ?? "dark"
+
+    const keymap = createDefaultOpenTuiKeymap(renderer)
+    const offKeymap = registerOpencodeKeymap(keymap, renderer, input.config)
 
     await render(() => {
       return (
@@ -146,62 +215,64 @@ export function tui(input: {
             <ErrorComponent error={error} reset={reset} onBeforeExit={onBeforeExit} onExit={onExit} mode={mode} />
           )}
         >
-          <ArgsProvider {...input.args}>
-            <ExitProvider onBeforeExit={onBeforeExit} onExit={onExit}>
-              <KVProvider>
-                <ToastProvider>
-                  <RouteProvider
-                    initialRoute={
-                      input.args.continue
-                        ? {
-                            type: "session",
-                            sessionID: "dummy",
-                          }
-                        : undefined
-                    }
-                  >
-                    <TuiConfigProvider config={input.config}>
-                      <SDKProvider
-                        url={input.url}
-                        directory={input.directory}
-                        fetch={input.fetch}
-                        headers={input.headers}
-                        events={input.events}
-                      >
-                        <ProjectProvider>
-                          <SyncProvider>
-                            <ThemeProvider mode={mode}>
-                              <LocalProvider>
-                                <KeybindProvider>
-                                  <PromptStashProvider>
-                                    <DialogProvider>
-                                      <AgencySwarmConnectionProvider>
-                                        <CommandProvider>
-                                          <FrecencyProvider>
-                                            <PromptHistoryProvider>
-                                              <PromptRefProvider>
-                                                <EditorContextProvider>
-                                                  <App onSnapshot={input.onSnapshot} />
-                                                </EditorContextProvider>
-                                              </PromptRefProvider>
-                                            </PromptHistoryProvider>
-                                          </FrecencyProvider>
-                                        </CommandProvider>
-                                      </AgencySwarmConnectionProvider>
-                                    </DialogProvider>
-                                  </PromptStashProvider>
-                                </KeybindProvider>
-                              </LocalProvider>
-                            </ThemeProvider>
-                          </SyncProvider>
-                        </ProjectProvider>
-                      </SDKProvider>
-                    </TuiConfigProvider>
-                  </RouteProvider>
-                </ToastProvider>
-              </KVProvider>
-            </ExitProvider>
-          </ArgsProvider>
+          <OpencodeKeymapProvider keymap={keymap}>
+            <ArgsProvider {...input.args}>
+              <ExitProvider onBeforeExit={onBeforeExit} onExit={onExit}>
+                <KVProvider>
+                  <ToastProvider>
+                    <RouteProvider
+                      initialRoute={
+                        input.args.continue
+                          ? {
+                              type: "session",
+                              sessionID: "dummy",
+                            }
+                          : undefined
+                      }
+                    >
+                      <TuiConfigProvider config={input.config}>
+                        <SDKProvider
+                          url={input.url}
+                          directory={input.directory}
+                          fetch={input.fetch}
+                          headers={input.headers}
+                          events={input.events}
+                        >
+                          <ProjectProvider>
+                            <SyncProvider>
+                              <SyncProviderV2>
+                                <ThemeProvider mode={mode}>
+                                  <LocalProvider>
+                                    <PromptStashProvider>
+                                      <DialogProvider>
+                                        <AgencySwarmConnectionProvider>
+                                          <CommandPaletteProvider>
+                                            <FrecencyProvider>
+                                              <PromptHistoryProvider>
+                                                <PromptRefProvider>
+                                                  <EditorContextProvider>
+                                                    <App onSnapshot={input.onSnapshot} />
+                                                  </EditorContextProvider>
+                                                </PromptRefProvider>
+                                              </PromptHistoryProvider>
+                                            </FrecencyProvider>
+                                          </CommandPaletteProvider>
+                                        </AgencySwarmConnectionProvider>
+                                      </DialogProvider>
+                                    </PromptStashProvider>
+                                  </LocalProvider>
+                                </ThemeProvider>
+                              </SyncProviderV2>
+                            </SyncProvider>
+                          </ProjectProvider>
+                        </SDKProvider>
+                      </TuiConfigProvider>
+                    </RouteProvider>
+                  </ToastProvider>
+                </KVProvider>
+              </ExitProvider>
+            </ArgsProvider>
+          </OpencodeKeymapProvider>
         </ErrorBoundary>
       )
     }, renderer)
@@ -216,8 +287,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const dialog = useDialog()
   const local = useLocal()
   const kv = useKV()
-  const command = useCommandDialog()
-  const keybind = useKeybind()
+  const command = useCommandPalette()
+  const keymap = useOpencodeKeymap()
   const event = useEvent()
   const sdk = useSDK()
   const toast = useToast()
@@ -232,12 +303,13 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     routeRev()
     return routes.get(name)?.at(-1)?.render
   }
+  const attention = createTuiAttention({ renderer, config: tuiConfig, kv })
+  const themePaintReady = createMemo(() => process.env.TERM_PROGRAM !== "Apple_Terminal" || themeState.paintReady)
 
   const api = createTuiApi({
-    command,
     tuiConfig,
     dialog,
-    keybind,
+    keymap,
     kv,
     route,
     routes,
@@ -248,60 +320,33 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     theme: themeState,
     toast,
     renderer,
+    attention,
   })
-  const [pluginsReady, setPluginsReady] = createSignal(false)
-  const themePaintReady = createMemo(() => process.env.TERM_PROGRAM !== "Apple_Terminal" || themeState.paintReady)
-  const ready = createMemo(() => themeState.ready && pluginsReady() && themePaintReady())
-  let pluginsStarted = false
-  createEffect(() => {
-    if (!themeState.ready) return
-    if (pluginsStarted) return
-    pluginsStarted = true
-    void TuiPluginRuntime.init({
-      api,
-      config: tuiConfig,
+  const [ready, setReady] = createSignal(false)
+  TuiPluginRuntime.init({
+    api,
+    config: tuiConfig,
+    dispose: () => attention.dispose(),
+  })
+    .catch((error) => {
+      console.error("Failed to load TUI plugins", error)
     })
-      .catch((error) => {
-        console.error("Failed to load TUI plugins", error)
-      })
-      .finally(() => {
-        setPluginsReady(true)
-      })
-  })
+    .finally(() => {
+      setReady(true)
+    })
 
-  useKeyboard((evt) => {
-    if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
-    const sel = renderer.getSelection()
-    if (!sel) return
-
-    // Windows Terminal-like behavior:
-    // - Ctrl+C copies and dismisses selection
-    // - Esc dismisses selection
-    // - Most other key input dismisses selection and is passed through
-    if (evt.ctrl && evt.name === "c") {
-      if (!Selection.copy(renderer, toast)) {
-        renderer.clearSelection()
-        return
-      }
-
-      evt.preventDefault()
-      evt.stopPropagation()
-      return
-    }
-
-    if (evt.name === "escape") {
-      renderer.clearSelection()
-      evt.preventDefault()
-      evt.stopPropagation()
-      return
-    }
-
-    const focus = renderer.currentFocusedRenderable
-    if (focus?.hasSelection() && sel.selectedRenderables.includes(focus)) {
-      return
-    }
-
-    renderer.clearSelection()
+  // Let selection copy/dismiss win ahead of normal bindings when the feature flag is on.
+  const offSelectionKeys = keymap.intercept(
+    "key",
+    ({ event }) => {
+      if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
+      Selection.handleSelectionKey(renderer, toast, event)
+    },
+    { priority: 1 },
+  )
+  onCleanup(() => {
+    offSelectionKeys()
+    attention.dispose()
   })
 
   // Wire up console copy-to-clipboard via opentui's onCopySelection callback
@@ -315,6 +360,9 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     renderer.clearSelection()
   }
   const [terminalTitleEnabled, setTerminalTitleEnabled] = createSignal(kv.get("terminal_title_enabled", true))
+  const [pasteSummaryEnabled, setPasteSummaryEnabled] = createSignal(
+    kv.get("paste_summary_enabled", !sync.data.config.experimental?.disable_paste_summary),
+  )
 
   // Update terminal window title based on current route and session
   createEffect(() => {
@@ -404,24 +452,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     })
   })
 
-  createEffect(() => {
-    const needsAuth =
-      sync.status === "complete" &&
-      shouldOpenStartupAuthDialog({
-        providers: sync.data.provider,
-        providerAuth: sync.data.provider_auth,
-        frameworkMode: isAgencySwarmFrameworkMode({
-          currentProviderID: local.model.current()?.providerID,
-          configuredModel: sync.data.config.model,
-          agentModel: local.agent.current()?.model,
-        }),
-        env: process.env,
-      })
-
-    if (!needsAuth || dialog.stack.length > 0) return
-    dialog.replace(() => <DialogAuth />)
-  })
-
   const connected = useConnected()
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
@@ -438,6 +468,30 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   )
   const productProviderID = createMemo(() =>
     frameworkMode() ? AgencySwarmAdapter.PROVIDER_ID : local.model.current()?.providerID,
+  )
+
+  createEffect(() => {
+    const needsAuth =
+      sync.status === "complete" &&
+      shouldOpenStartupAuthDialog({
+        providers: sync.data.provider,
+        providerAuth: sync.data.provider_auth,
+        frameworkMode: frameworkMode(),
+        env: process.env,
+      })
+
+    if (!needsAuth || dialog.stack.length > 0) return
+    dialog.replace(() => <DialogAuth />)
+  })
+
+  createEffect(
+    on(
+      () => sync.status === "complete" && !frameworkMode() && sync.data.provider.length === 0,
+      (isEmpty, wasEmpty) => {
+        if (!isEmpty || wasEmpty || dialog.stack.length > 0) return
+        dialog.replace(() => <DialogProviderConnect />)
+      },
+    ),
   )
 
   let appStartedTelemetry = false
@@ -520,374 +574,438 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   }
 
   const modelSwitchCommandState = AgencyProduct.modelSwitchCommandState()
-  command.register(() => [
-    {
-      title: "Switch session",
-      value: "session.list",
-      keybind: "session_list",
-      category: "Session",
-      suggested: sync.data.session.length > 0,
-      slash: {
-        name: "sessions",
-        aliases: ["resume", "continue"],
+  const appCommands = createMemo(() =>
+    [
+      {
+        name: "command.palette.show",
+        title: "Show command palette",
+        category: "System",
+        hidden: true,
+        run: () => {
+          command.show()
+        },
       },
-      onSelect: () => {
-        dialog.replace(() => <DialogSessionList />)
+      {
+        name: "session.list",
+        title: "Switch session",
+        category: "Session",
+        suggested: sync.data.session.length > 0,
+        slashName: "sessions",
+        slashAliases: ["resume", "continue"],
+        run: () => {
+          dialog.replace(() => <DialogSessionList />)
+        },
       },
-    },
-    {
-      title: "New session",
-      suggested: route.data.type === "session",
-      value: "session.new",
-      keybind: "session_new",
-      category: "Session",
-      slash: {
-        name: "new",
-        aliases: ["clear"],
-      },
-      onSelect: () => {
-        route.navigate({
-          type: "home",
-        })
-        dialog.clear()
-      },
-    },
-    {
-      title: "Switch model",
-      value: "model.list",
-      keybind: "model_list",
-      suggested: true,
-      category: "Agent",
-      ...modelSwitchCommandState,
-      slash: {
-        name: "models",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogModel />)
-      },
-    },
-    {
-      title: "Model cycle",
-      value: "model.cycle_recent",
-      keybind: "model_cycle_recent",
-      category: "Agent",
-      enabled: modelSwitchCommandState.enabled,
-      hidden: true,
-      onSelect: () => {
-        local.model.cycle(1)
-      },
-    },
-    {
-      title: "Model cycle reverse",
-      value: "model.cycle_recent_reverse",
-      keybind: "model_cycle_recent_reverse",
-      category: "Agent",
-      enabled: modelSwitchCommandState.enabled,
-      hidden: true,
-      onSelect: () => {
-        local.model.cycle(-1)
-      },
-    },
-    {
-      title: "Favorite cycle",
-      value: "model.cycle_favorite",
-      keybind: "model_cycle_favorite",
-      category: "Agent",
-      enabled: modelSwitchCommandState.enabled,
-      hidden: true,
-      onSelect: () => {
-        local.model.cycleFavorite(1)
-      },
-    },
-    {
-      title: "Favorite cycle reverse",
-      value: "model.cycle_favorite_reverse",
-      keybind: "model_cycle_favorite_reverse",
-      category: "Agent",
-      enabled: modelSwitchCommandState.enabled,
-      hidden: true,
-      onSelect: () => {
-        local.model.cycleFavorite(-1)
-      },
-    },
-    {
-      title: "Switch agent",
-      value: "agent.list",
-      keybind: "agent_list",
-      category: "Agent",
-      slash: {
-        name: "agents",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogAgent />)
-      },
-    },
-    {
-      title: "Toggle MCPs",
-      value: "mcp.list",
-      category: "Agent",
-      slash: {
-        name: "mcps",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogMcp />)
-      },
-    },
-    {
-      title: frameworkMode() ? "Switch agent" : "Agent cycle",
-      value: "agent.cycle",
-      keybind: "agent_cycle",
-      category: "Agent",
-      hidden: true,
-      onSelect: () => {
-        if (frameworkMode()) {
-          void cycleAgencyRunTarget(1).catch((error) => {
-            toast.show({
-              variant: "error",
-              message: error instanceof Error ? error.message : String(error),
-              duration: 4000,
-            })
+      {
+        name: "session.new",
+        title: "New session",
+        suggested: route.data.type === "session",
+        category: "Session",
+        slashName: "new",
+        slashAliases: ["clear"],
+        run: () => {
+          route.navigate({
+            type: "home",
           })
-          return
-        }
-        local.agent.move(1)
+          dialog.clear()
+        },
       },
-    },
-    {
-      title: "Variant cycle",
-      value: "variant.cycle",
-      keybind: "variant_cycle",
-      category: "Agent",
-      enabled: !frameworkMode(),
-      hidden: frameworkMode(),
-      onSelect: () => {
-        local.model.variant.cycle()
+      ...(Flag.OPENCODE_EXPERIMENTAL_SESSION_SWITCHING
+        ? [
+            {
+              name: "session.cycle_recent",
+              title: "Cycle to previous recent session",
+              category: "Session",
+              hidden: true,
+              run: () => {
+                local.session.cycleRecent(1)
+              },
+            },
+            {
+              name: "session.cycle_recent_reverse",
+              title: "Cycle to next recent session",
+              category: "Session",
+              hidden: true,
+              run: () => {
+                local.session.cycleRecent(-1)
+              },
+            },
+            ...Array.from({ length: 9 }, (_, i) => ({
+              name: `session.quick_switch.${i + 1}`,
+              title: `Switch to session in quick slot ${i + 1}`,
+              category: "Session",
+              hidden: true,
+              run: () => {
+                local.session.quickSwitch(i + 1)
+              },
+            })),
+          ]
+        : []),
+      {
+        name: "model.list",
+        title: "Switch model",
+        suggested: true,
+        category: "Agent",
+        ...modelSwitchCommandState,
+        slashName: "models",
+        run: () => {
+          dialog.replace(() => <DialogModel />)
+        },
       },
-    },
-    {
-      title: "Switch model variant",
-      value: "variant.list",
-      keybind: "variant_list",
-      category: "Agent",
-      enabled: !frameworkMode(),
-      hidden: frameworkMode() || local.model.variant.list().length === 0,
-      slash: {
-        name: "variants",
+      {
+        name: "model.cycle_recent",
+        title: "Model cycle",
+        category: "Agent",
+        enabled: modelSwitchCommandState.enabled,
+        hidden: true,
+        run: () => {
+          local.model.cycle(1)
+        },
       },
-      onSelect: () => {
-        dialog.replace(() => <DialogVariant />)
+      {
+        name: "model.cycle_recent_reverse",
+        title: "Model cycle reverse",
+        category: "Agent",
+        enabled: modelSwitchCommandState.enabled,
+        hidden: true,
+        run: () => {
+          local.model.cycle(-1)
+        },
       },
-    },
-    {
-      title: frameworkMode() ? "Switch agent reverse" : "Agent cycle reverse",
-      value: "agent.cycle.reverse",
-      keybind: "agent_cycle_reverse",
-      category: "Agent",
-      hidden: true,
-      onSelect: () => {
-        if (frameworkMode()) {
-          void cycleAgencyRunTarget(-1).catch((error) => {
-            toast.show({
-              variant: "error",
-              message: error instanceof Error ? error.message : String(error),
-              duration: 4000,
+      {
+        name: "model.cycle_favorite",
+        title: "Favorite cycle",
+        category: "Agent",
+        enabled: modelSwitchCommandState.enabled,
+        hidden: true,
+        run: () => {
+          local.model.cycleFavorite(1)
+        },
+      },
+      {
+        name: "model.cycle_favorite_reverse",
+        title: "Favorite cycle reverse",
+        category: "Agent",
+        enabled: modelSwitchCommandState.enabled,
+        hidden: true,
+        run: () => {
+          local.model.cycleFavorite(-1)
+        },
+      },
+      {
+        name: "agent.list",
+        title: "Switch agent",
+        category: "Agent",
+        slashName: "agents",
+        run: () => {
+          dialog.replace(() => <DialogAgent />)
+        },
+      },
+      {
+        name: "mcp.list",
+        title: "Toggle MCPs",
+        category: "Agent",
+        slashName: "mcps",
+        run: () => {
+          dialog.replace(() => <DialogMcp />)
+        },
+      },
+      {
+        name: "agent.cycle",
+        title: frameworkMode() ? "Switch agent" : "Agent cycle",
+        category: "Agent",
+        hidden: true,
+        run: () => {
+          if (frameworkMode()) {
+            void cycleAgencyRunTarget(1).catch((error) => {
+              toast.show({
+                variant: "error",
+                message: error instanceof Error ? error.message : String(error),
+                duration: 4000,
+              })
             })
+            return
+          }
+          local.agent.move(1)
+        },
+      },
+      {
+        name: "variant.cycle",
+        title: "Variant cycle",
+        category: "Agent",
+        enabled: !frameworkMode(),
+        hidden: frameworkMode(),
+        run: () => {
+          local.model.variant.cycle()
+        },
+      },
+      {
+        name: "variant.list",
+        title: "Switch model variant",
+        category: "Agent",
+        enabled: !frameworkMode(),
+        hidden: frameworkMode() || local.model.variant.list().length === 0,
+        slashName: "variants",
+        run: () => {
+          dialog.replace(() => <DialogVariant />)
+        },
+      },
+      {
+        name: "agent.cycle.reverse",
+        title: frameworkMode() ? "Switch agent reverse" : "Agent cycle reverse",
+        category: "Agent",
+        hidden: true,
+        run: () => {
+          if (frameworkMode()) {
+            void cycleAgencyRunTarget(-1).catch((error) => {
+              toast.show({
+                variant: "error",
+                message: error instanceof Error ? error.message : String(error),
+                duration: 4000,
+              })
+            })
+            return
+          }
+          local.agent.move(-1)
+        },
+      },
+      {
+        name: "provider.auth",
+        title: "Manage provider auth",
+        suggested: !connected(),
+        slashName: "auth",
+        slashAliases: ["logout"],
+        run: () => {
+          dialog.replace(() => <DialogAuth />)
+        },
+        category: "Provider",
+      },
+      {
+        name: "provider.addons",
+        title: "Configure add-ons",
+        hidden: !(frameworkMode() && AgencyProduct.shouldShowAddons()),
+        enabled: frameworkMode() && AgencyProduct.shouldShowAddons(),
+        slashName: "addons",
+        run: () => {
+          const providerID =
+            sync.data.provider_next.connected.find((id) => ["openai", "anthropic", "google"].includes(id)) ??
+            (local.model.current()?.providerID !== AgencySwarmAdapter.PROVIDER_ID
+              ? local.model.current()?.providerID
+              : undefined) ??
+            "openai"
+          dialog.replace(() => <DialogAddons providerID={providerID} onDone={() => dialog.clear()} />)
+        },
+        category: "Provider",
+      },
+      {
+        name: "provider.connect",
+        title: AgencyProduct.connect,
+        suggested: !connected(),
+        slashName: "connect",
+        run: () => {
+          dialog.replace(() => (frameworkMode() ? <DialogAgencySwarmConnect /> : <DialogProviderConnect />))
+        },
+        category: "Provider",
+      },
+      ...(sync.data.console_state.switchableOrgCount > 1
+        ? [
+            {
+              name: "console.org.switch",
+              title: "Switch org",
+              suggested: Boolean(sync.data.console_state.activeOrgName),
+              slashName: "org",
+              slashAliases: ["orgs", "switch-org"],
+              run: () => {
+                dialog.replace(() => <DialogConsoleOrg />)
+              },
+              category: "Provider",
+            },
+          ]
+        : []),
+      {
+        name: "opencode.status",
+        title: "View status",
+        slashName: "status",
+        run: () => {
+          dialog.replace(() => <DialogStatus />)
+        },
+        category: "System",
+      },
+      {
+        name: "help.show",
+        title: "Help",
+        slashName: "help",
+        run: () => {
+          dialog.replace(() => <DialogHelp />)
+        },
+        category: "System",
+      },
+      {
+        name: "docs.open",
+        title: "Open docs",
+        run: () => {
+          open(AgencyProduct.docs).catch(() => {})
+          dialog.clear()
+        },
+        category: "System",
+      },
+      {
+        name: "app.exit",
+        title: "Exit the app",
+        slashName: "exit",
+        slashAliases: ["quit", "q"],
+        run: () => exit(),
+        category: "System",
+      },
+      {
+        name: "app.debug",
+        title: "Toggle debug panel",
+        category: "System",
+        run: () => {
+          renderer.toggleDebugOverlay()
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.console",
+        title: "Toggle console",
+        category: "System",
+        run: () => {
+          renderer.console.toggle()
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.heap_snapshot",
+        title: "Write heap snapshot",
+        category: "System",
+        run: async () => {
+          const files = await props.onSnapshot?.()
+          toast.show({
+            variant: "info",
+            message: `Heap snapshot written to ${files?.join(", ")}`,
+            duration: 5000,
           })
-          return
-        }
-        local.agent.move(-1)
+          dialog.clear()
+        },
       },
-    },
-    {
-      title: "Manage provider auth",
-      value: "provider.auth",
-      suggested: !connected(),
-      slash: {
-        name: "auth",
-        aliases: ["logout"],
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogAuth />)
-      },
-      category: "Provider",
-    },
-    {
-      title: "Configure add-ons",
-      value: "provider.addons",
-      hidden: !(frameworkMode() && AgencyProduct.shouldShowAddons()),
-      enabled: frameworkMode() && AgencyProduct.shouldShowAddons(),
-      slash: {
-        name: "addons",
-      },
-      onSelect: () => {
-        const providerID =
-          sync.data.provider_next.connected.find((id) => ["openai", "anthropic", "google"].includes(id)) ??
-          (local.model.current()?.providerID !== AgencySwarmAdapter.PROVIDER_ID
-            ? local.model.current()?.providerID
-            : undefined) ??
-          "openai"
-        dialog.replace(() => <DialogAddons providerID={providerID} onDone={() => dialog.clear()} />)
-      },
-      category: "Provider",
-    },
-    {
-      title: AgencyProduct.connect,
-      value: "provider.connect",
-      suggested: !connected(),
-      slash: {
-        name: "connect",
-      },
-      onSelect: () => {
-        dialog.replace(() => (frameworkMode() ? <DialogAgencySwarmConnect /> : <DialogProviderConnect />))
-      },
-      category: "Provider",
-    },
-    ...(sync.data.console_state.switchableOrgCount > 1
-      ? [
-          {
-            title: "Switch org",
-            value: "console.org.switch",
-            suggested: Boolean(sync.data.console_state.activeOrgName),
-            slash: {
-              name: "org",
-              aliases: ["orgs", "switch-org"],
-            },
-            onSelect: () => {
-              dialog.replace(() => <DialogConsoleOrg />)
-            },
-            category: "Provider",
-          },
-        ]
-      : []),
-    {
-      title: "View status",
-      keybind: "status_view",
-      value: "opencode.status",
-      slash: {
-        name: "status",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogStatus />)
-      },
-      category: "System",
-    },
-    {
-      title: "Help",
-      value: "help.show",
-      slash: {
-        name: "help",
-      },
-      onSelect: () => {
-        dialog.replace(() => <DialogHelp />)
-      },
-      category: "System",
-    },
-    {
-      title: "Open docs",
-      value: "docs.open",
-      onSelect: () => {
-        open(AgencyProduct.docs).catch(() => {})
-        dialog.clear()
-      },
-      category: "System",
-    },
-    {
-      title: "Exit the app",
-      value: "app.exit",
-      slash: {
-        name: "exit",
-        aliases: ["quit", "q"],
-      },
-      onSelect: () => exit(),
-      category: "System",
-    },
-    {
-      title: "Toggle debug panel",
-      category: "System",
-      value: "app.debug",
-      onSelect: (dialog) => {
-        renderer.toggleDebugOverlay()
-        dialog.clear()
-      },
-    },
-    {
-      title: "Toggle console",
-      category: "System",
-      value: "app.console",
-      onSelect: (dialog) => {
-        renderer.console.toggle()
-        dialog.clear()
-      },
-    },
-    {
-      title: "Write heap snapshot",
-      category: "System",
-      value: "app.heap_snapshot",
-      onSelect: async (dialog) => {
-        const files = await props.onSnapshot?.()
-        toast.show({
-          variant: "info",
-          message: `Heap snapshot written to ${files?.join(", ")}`,
-          duration: 5000,
-        })
-        dialog.clear()
-      },
-    },
-    {
-      title: "Suspend terminal",
-      value: "terminal.suspend",
-      keybind: "terminal_suspend",
-      category: "System",
-      hidden: true,
-      enabled: tuiConfig.keybinds?.terminal_suspend !== "none",
-      onSelect: () => {
-        process.once("SIGCONT", () => {
-          renderer.resume()
-        })
+      {
+        name: "terminal.suspend",
+        title: "Suspend terminal",
+        category: "System",
+        hidden: true,
+        enabled: process.platform !== "win32",
+        run: () => {
+          process.once("SIGCONT", () => {
+            renderer.resume()
+          })
 
-        renderer.suspend()
-        // pid=0 means send the signal to all processes in the process group
-        process.kill(0, "SIGTSTP")
+          renderer.suspend()
+          process.kill(0, "SIGTSTP")
+        },
       },
-    },
-    {
-      title: terminalTitleEnabled() ? "Disable terminal title" : "Enable terminal title",
-      value: "terminal.title.toggle",
-      keybind: "terminal_title_toggle",
-      category: "System",
-      onSelect: (dialog) => {
-        setTerminalTitleEnabled((prev) => {
-          const next = !prev
-          kv.set("terminal_title_enabled", next)
-          if (!next) renderer.setTerminalTitle("")
-          return next
-        })
-        dialog.clear()
+      {
+        name: "terminal.title.toggle",
+        title: terminalTitleEnabled() ? "Disable terminal title" : "Enable terminal title",
+        category: "System",
+        run: () => {
+          setTerminalTitleEnabled((prev) => {
+            const next = !prev
+            kv.set("terminal_title_enabled", next)
+            if (!next) renderer.setTerminalTitle("")
+            return next
+          })
+          dialog.clear()
+        },
       },
-    },
-    {
-      title: kv.get("animations_enabled", true) ? "Disable animations" : "Enable animations",
-      value: "app.toggle.animations",
-      category: "System",
-      onSelect: (dialog) => {
-        kv.set("animations_enabled", !kv.get("animations_enabled", true))
-        dialog.clear()
+      {
+        name: "app.toggle.animations",
+        title: kv.get("animations_enabled", true) ? "Disable animations" : "Enable animations",
+        category: "System",
+        run: () => {
+          kv.set("animations_enabled", !kv.get("animations_enabled", true))
+          dialog.clear()
+        },
       },
-    },
-    {
-      title: kv.get("diff_wrap_mode", "word") === "word" ? "Disable diff wrapping" : "Enable diff wrapping",
-      value: "app.toggle.diffwrap",
-      category: "System",
-      onSelect: (dialog) => {
-        const current = kv.get("diff_wrap_mode", "word")
-        kv.set("diff_wrap_mode", current === "word" ? "none" : "word")
-        dialog.clear()
+      {
+        name: "app.toggle.file_context",
+        title: kv.get("file_context_enabled", true) ? "Disable file context" : "Enable file context",
+        category: "System",
+        run: () => {
+          kv.set("file_context_enabled", !kv.get("file_context_enabled", true))
+          dialog.clear()
+        },
       },
+      {
+        name: "app.toggle.diffwrap",
+        title: kv.get("diff_wrap_mode", "word") === "word" ? "Disable diff wrapping" : "Enable diff wrapping",
+        category: "System",
+        run: () => {
+          const current = kv.get("diff_wrap_mode", "word")
+          kv.set("diff_wrap_mode", current === "word" ? "none" : "word")
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.toggle.paste_summary",
+        title: pasteSummaryEnabled() ? "Disable paste summary" : "Enable paste summary",
+        category: "System",
+        run: () => {
+          setPasteSummaryEnabled((prev) => {
+            const next = !prev
+            kv.set("paste_summary_enabled", next)
+            return next
+          })
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.toggle.session_directory_filter",
+        title: kv.get("session_directory_filter_enabled", true)
+          ? "Disable session directory filtering"
+          : "Enable session directory filtering",
+        category: "System",
+        run: async () => {
+          kv.set("session_directory_filter_enabled", !kv.get("session_directory_filter_enabled", true))
+          await sync.session.refresh()
+          dialog.clear()
+        },
+      },
+    ].map((command) => ({
+      namespace: "palette",
+      ...command,
+    })),
+  )
+
+  useBindings(() => ({
+    commands: appCommands(),
+  }))
+
+  useBindings(() => ({
+    enabled: command.matcher,
+    bindings: tuiConfig.keybinds.gather(
+      "app",
+      Flag.OPENCODE_EXPERIMENTAL_SESSION_SWITCHING
+        ? appBindingCommands
+        : appBindingCommands.filter(
+            (c) => !c.startsWith("session.cycle_recent") && !c.startsWith("session.quick_switch"),
+          ),
+    ),
+  }))
+
+  useBindings(() => ({
+    enabled: () => {
+      const ok = command.matcher.get()
+      if (!ok) return false
+      const current = promptRef.current
+      if (!current?.focused) return true
+      return current.current.input === ""
     },
-  ])
+    bindings: tuiConfig.keybinds.gather("app_exit", ["app.exit"]),
+  }))
 
   event.on(TuiEvent.CommandExecute.type, (evt) => {
-    command.trigger(evt.properties.command)
+    command.run(evt.properties.command)
   })
 
   event.on(TuiEvent.ToastShow.type, (evt) => {
@@ -1010,6 +1128,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     <box
       width={dimensions().width}
       height={dimensions().height}
+      flexDirection="column"
       backgroundColor={themePaintReady() ? theme.background : undefined}
       onMouseDown={(evt) => {
         if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
@@ -1025,17 +1144,20 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         <TimeToFirstDraw />
       </Show>
       <Show when={ready()}>
-        <Switch>
-          <Match when={route.data.type === "home"}>
-            <Home />
-          </Match>
-          <Match when={route.data.type === "session"}>
-            <Session />
-          </Match>
-        </Switch>
-      </Show>
-      {plugin()}
-      <Show when={ready()}>
+        <box flexGrow={1} minHeight={0} flexDirection="column">
+          <Switch>
+            <Match when={route.data.type === "home"}>
+              <Home />
+            </Match>
+            <Match when={route.data.type === "session"}>
+              <Session />
+            </Match>
+          </Switch>
+          {plugin()}
+        </box>
+        <box flexShrink={0}>
+          <TuiPluginRuntime.Slot name="app_bottom" />
+        </box>
         <TuiPluginRuntime.Slot name="app" />
       </Show>
       <StartupLoading ready={ready} themed={themePaintReady} />

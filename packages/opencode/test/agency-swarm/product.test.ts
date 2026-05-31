@@ -106,7 +106,7 @@ describe("AgencyProduct profile", () => {
     expect(profile.tuiLogoRight).toEqual(["RIGHT", "RIGHT2"])
     expect(profile.wordmarkLines).toEqual(["WORD", " MARK"])
     expect(profile.pythonEnvironment).toBe("standalone")
-    expect(profile.stateRoot).toBe("/tmp/example-product")
+    expect(profile.stateRoot).toBe(path.resolve("/tmp/example-product"))
     expect(AgencyProduct.tuiLogo(profile)).toEqual({
       left: [" LEFT", "LEFT2"],
       right: ["RIGHT", "RIGHT2"],

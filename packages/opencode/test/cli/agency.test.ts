@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
-import { connectOptions, runtimeOptions } from "../../src/cli/cmd/agency"
+import { agencyUseOptions, connectOptions, runtimeOptions } from "../../src/cli/cmd/agency"
 
 describe("agency", () => {
   test("connect options clear remembered agency state", () => {
@@ -31,6 +31,16 @@ describe("agency", () => {
       baseURL: "https://proxy.example.com/v1",
       token: "auth-token",
       timeout: 12000,
+    })
+  })
+
+  test("agency use options clear remembered recipient state", () => {
+    expect(agencyUseOptions("http://127.0.0.1:9000", "demo-agency", 12000)).toEqual({
+      baseURL: "http://127.0.0.1:9000",
+      agency: "demo-agency",
+      discoveryTimeoutMs: 12000,
+      recipientAgent: null,
+      recipient_agent: null,
     })
   })
 })

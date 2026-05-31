@@ -345,6 +345,7 @@ export namespace AgencyProduct {
   const skip = [
     "Run {highlight}/share{/highlight}",
     "Press {highlight}Ctrl+X E{/highlight} or {highlight}/editor{/highlight}",
+    "Use {highlight}/editor{/highlight}",
     "Run {highlight}/init{/highlight}",
     "Use {highlight}/review{/highlight}",
     "Run {highlight}/models{/highlight}",
@@ -354,7 +355,13 @@ export namespace AgencyProduct {
     "Press {highlight}F2{/highlight}",
     "Configure {highlight}model{/highlight}",
     "OpenCode auto-handles OAuth",
+    "Switch to {highlight}Plan{/highlight}",
+    "Create JSON theme files in {highlight}.agentswarm/themes/{/highlight}",
+    "Use {highlight}\"theme\": \"system\"{/highlight}",
+    "Themes support dark/light variants",
+    "Use numeric xterm color codes",
     "Run {highlight}opencode serve{/highlight}",
+    `Run {highlight}${cmd} agent create{/highlight}`,
     "Use {highlight}/opencode{/highlight}",
     "Run {highlight}opencode github install{/highlight}",
     "Comment {highlight}/opencode fix this{/highlight}",
@@ -374,6 +381,13 @@ export namespace AgencyProduct {
   const swap = [
     ["OpenCode", name],
     ["Open Code", name],
+    ["{highlight}opencode.json{/highlight}", "{highlight}agentswarm.json{/highlight}"],
+    ["{highlight}~/.config/opencode/tui.json{/highlight}", "{highlight}~/.config/agentswarm/tui.json{/highlight}"],
+    ["{highlight}.opencode/commands/{/highlight}", "{highlight}.agentswarm/command/{/highlight}"],
+    ["{highlight}.opencode/agents/{/highlight}", "{highlight}.agentswarm/agent/{/highlight}"],
+    ["{highlight}.opencode/tools/{/highlight}", "{highlight}.agentswarm/tools/{/highlight}"],
+    ["{highlight}.opencode/plugins/{/highlight}", "{highlight}.agentswarm/plugin/{/highlight}"],
+    ["{highlight}.opencode/themes/{/highlight}", "{highlight}.agentswarm/themes/{/highlight}"],
     ["{highlight}opencode run{/highlight}", `{highlight}${cmd} run{/highlight}`],
     ["{highlight}opencode --continue{/highlight}", `{highlight}${cmd} --continue{/highlight}`],
     ["{highlight}opencode run -f file.ts{/highlight}", `{highlight}${cmd} run -f file.ts{/highlight}`],
@@ -383,12 +397,12 @@ export namespace AgencyProduct {
     ["{highlight}opencode debug config{/highlight}", `{highlight}${cmd} debug config{/highlight}`],
   ] as const
 
-  export function tips(input: string[]) {
+  export function tips<T>(input: T[]): T[] {
     const seen = new Set<string>()
     const list = input
-      .filter((item) => !skip.some((text) => item.includes(text)))
       .map((item) => {
-        let next = item
+        if (typeof item !== "string") return item
+        let next: string = item
         for (const [from, to] of swap) next = next.replaceAll(from, to)
         if (next.includes("{highlight}/compact{/highlight}")) {
           next = next.replace("long sessions near context limits", "long agency-swarm sessions near context limits")
@@ -396,10 +410,12 @@ export namespace AgencyProduct {
         if (next.includes("{highlight}opencode auth list{/highlight}")) {
           next = `Run {highlight}${cmd} auth list{/highlight} to see configured provider credentials`
         }
-        return next
+        return next as T
       })
-      .concat(add)
+      .filter((item) => typeof item !== "string" || !skip.some((text) => item.includes(text)))
+      .concat(add as T[])
       .filter((item) => {
+        if (typeof item !== "string") return true
         if (seen.has(item)) return false
         seen.add(item)
         return true

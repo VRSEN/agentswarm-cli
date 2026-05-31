@@ -1,76 +1,198 @@
-import { afterEach, describe, expect, test } from "bun:test"
-import type { UpgradeWebSocket } from "hono/ws"
-import { Effect } from "effect"
+import { afterEach, describe, expect } from "bun:test"
+import { mkdir } from "node:fs/promises"
+import path from "node:path"
+import { Effect, Layer } from "effect"
+import { OpenApi } from "effect/unstable/httpapi"
 import { Flag } from "@opencode-ai/core/flag/flag"
+import { registerAdapter } from "../../src/control-plane/adapters"
+import type { WorkspaceAdapter } from "../../src/control-plane/types"
+import { Workspace } from "../../src/control-plane/workspace"
 import { PermissionID } from "../../src/permission/schema"
 import { ModelID, ProviderID } from "../../src/provider/schema"
-import { Instance } from "../../src/project/instance"
-import { InstanceRoutes } from "../../src/server/routes/instance"
-import { SessionPaths } from "../../src/server/routes/instance/httpapi/session"
-import { Session } from "../../src/session"
-import { MessageID, PartID, type SessionID } from "../../src/session/schema"
+import { InstanceBootstrap } from "../../src/project/bootstrap"
+import { InstanceBootstrap as InstanceBootstrapService } from "../../src/project/bootstrap-service"
+import { InstanceStore } from "../../src/project/instance-store"
+import { Project } from "../../src/project/project"
+import { ProjectID } from "../../src/project/schema"
+import { ProjectTable } from "../../src/project/project.sql"
+import { Server } from "../../src/server/server"
+import { PublicApi } from "../../src/server/routes/instance/httpapi/public"
+import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
+import { Session } from "@/session/session"
+import { MessageID, PartID, SessionID, type SessionID as SessionIDType } from "../../src/session/schema"
 import { MessageV2 } from "../../src/session/message-v2"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
-import { Log } from "../../src/util"
+import { Database } from "@/storage/db"
+import { SessionMessageTable, SessionTable } from "@/session/session.sql"
+import { SessionMessage } from "../../src/v2/session-message"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderV2 } from "@opencode-ai/core/provider"
+import * as DateTime from "effect/DateTime"
+import * as Log from "@opencode-ai/core/util/log"
+import { eq } from "drizzle-orm"
 import { resetDatabase } from "../fixture/db"
-import { tmpdir } from "../fixture/fixture"
+import { disposeAllInstances, TestInstance } from "../fixture/fixture"
+import { testEffect } from "../lib/effect"
 
 void Log.init({ print: false })
 
-const original = Flag.OPENCODE_EXPERIMENTAL_HTTPAPI
-const websocket = (() => () => new Response(null, { status: 501 })) as unknown as UpgradeWebSocket
+const originalWorkspaces = Flag.OPENCODE_EXPERIMENTAL_WORKSPACES
+const workspaceLayer = Workspace.defaultLayer.pipe(
+  Layer.provide(InstanceStore.defaultLayer),
+  Layer.provide(InstanceBootstrap.defaultLayer),
+)
+const instanceStoreLayer = InstanceStore.defaultLayer.pipe(
+  Layer.provide(
+    Layer.succeed(InstanceBootstrapService.Service, InstanceBootstrapService.Service.of({ run: Effect.void })),
+  ),
+)
+const it = testEffect(Layer.mergeAll(instanceStoreLayer, Project.defaultLayer, Session.defaultLayer, workspaceLayer))
 
 function app() {
-  Flag.OPENCODE_EXPERIMENTAL_HTTPAPI = true
-  return InstanceRoutes(websocket)
-}
-
-function runSession<A, E>(fx: Effect.Effect<A, E, Session.Service>) {
-  return Effect.runPromise(fx.pipe(Effect.provide(Session.defaultLayer)))
+  return Server.Default().app
 }
 
 function pathFor(path: string, params: Record<string, string>) {
   return Object.entries(params).reduce((result, [key, value]) => result.replace(`:${key}`, value), path)
 }
 
-async function createSession(directory: string, input?: Session.CreateInput) {
-  return Instance.provide({
-    directory,
-    fn: async () => runSession(Session.Service.use((svc) => svc.create(input))),
+function createSession(input?: Session.CreateInput) {
+  return Session.Service.use((svc) => svc.create(input))
+}
+
+function createTextMessage(sessionID: SessionIDType, text: string) {
+  return Effect.gen(function* () {
+    const svc = yield* Session.Service
+    const info = yield* svc.updateMessage({
+      id: MessageID.ascending(),
+      role: "user",
+      sessionID,
+      agent: "build",
+      model: { providerID: ProviderID.make("test"), modelID: ModelID.make("test") },
+      time: { created: Date.now() },
+    })
+    const part = yield* svc.updatePart({
+      id: PartID.ascending(),
+      sessionID,
+      messageID: info.id,
+      type: "text",
+      text,
+    })
+    return { info, part }
   })
 }
 
-async function createTextMessage(directory: string, sessionID: SessionID, text: string) {
-  return Instance.provide({
-    directory,
-    fn: async () =>
-      runSession(
-        Effect.gen(function* () {
-          const svc = yield* Session.Service
-          const info = yield* svc.updateMessage({
-            id: MessageID.ascending(),
-            role: "user",
-            sessionID,
-            agent: "build",
-            model: { providerID: ProviderID.make("test"), modelID: ModelID.make("test") },
-            time: { created: Date.now() },
-          })
-          const part = yield* svc.updatePart({
-            id: PartID.ascending(),
-            sessionID,
-            messageID: info.id,
-            type: "text",
-            text,
-          })
-          return { info, part }
+const localAdapter = (directory: string): WorkspaceAdapter => ({
+  name: "Local Test",
+  description: "Create a local test workspace",
+  configure: (info) => ({ ...info, name: "local-test", directory }),
+  create: async () => {
+    await mkdir(directory, { recursive: true })
+  },
+  async remove() {},
+  target: () => ({ type: "local" as const, directory }),
+})
+
+const createLocalWorkspace = (input: { projectID: Project.Info["id"]; type: string; directory: string }) =>
+  Effect.acquireRelease(
+    Effect.gen(function* () {
+      registerAdapter(input.projectID, input.type, localAdapter(input.directory))
+      return yield* Workspace.Service.use((svc) =>
+        svc.create({
+          type: input.type,
+          branch: null,
+          extra: null,
+          projectID: input.projectID,
         }),
-      ),
+      )
+    }),
+    (info) => Workspace.Service.use((svc) => svc.remove(info.id)).pipe(Effect.ignore),
+  )
+
+const insertLegacyAssistantMessage = (sessionID: SessionIDType) =>
+  Effect.sync(() => {
+    const message = new SessionMessage.Assistant({
+      id: SessionMessage.ID.create(),
+      type: "assistant",
+      agent: "build",
+      model: {
+        id: ModelV2.ID.make("model"),
+        providerID: ProviderV2.ID.make("provider"),
+        variant: ModelV2.VariantID.make("default"),
+      },
+      time: { created: DateTime.makeUnsafe(1) },
+      content: [],
+    })
+    Database.use((db) =>
+      db
+        .insert(SessionMessageTable)
+        .values([
+          {
+            id: message.id,
+            session_id: sessionID,
+            type: message.type,
+            time_created: 1,
+            data: {
+              time: { created: 1 },
+              agent: message.agent,
+              model: message.model,
+              content: message.content,
+            } as NonNullable<(typeof SessionMessageTable.$inferInsert)["data"]>,
+          },
+        ])
+        .run(),
+    )
+  })
+
+const setLegacySummaryDiff = (sessionID: SessionIDType) =>
+  Effect.sync(() =>
+    Database.use((db) =>
+      db
+        .update(SessionTable)
+        .set({
+          summary_additions: 1,
+          summary_deletions: 0,
+          summary_files: 1,
+          summary_diffs: [{ additions: 1, deletions: 0 }],
+        })
+        .where(eq(SessionTable.id, sessionID))
+        .run(),
+    ),
+  )
+
+const getWorkspaceID = (sessionID: SessionIDType) =>
+  Effect.sync(() =>
+    Database.use((db) =>
+      db
+        .select({ workspaceID: SessionTable.workspace_id })
+        .from(SessionTable)
+        .where(eq(SessionTable.id, sessionID))
+        .get(),
+    ),
+  )
+
+const clearSessionPath = (sessionID: SessionIDType) =>
+  Effect.sync(() =>
+    Database.use((db) => db.update(SessionTable).set({ path: null }).where(eq(SessionTable.id, sessionID)).run()),
+  )
+
+function request(path: string, init?: RequestInit) {
+  return Effect.promise(async () => app().request(path, init))
+}
+
+function json<T>(response: Response) {
+  return Effect.promise(async () => {
+    if (response.status !== 200) throw new Error(await response.text())
+    return (await response.json()) as T
   })
 }
 
-async function json<T>(response: Response) {
-  if (response.status !== 200) throw new Error(`${response.status}: ${await response.text()}`)
-  return (await response.json()) as T
+function responseJson(response: Response) {
+  return Effect.promise(() => response.json())
+}
+
+function requestJson<T>(path: string, init?: RequestInit) {
+  return request(path, init).pipe(Effect.flatMap(json<T>))
 }
 
 function defer<T>() {
@@ -81,188 +203,601 @@ function defer<T>() {
   return { promise, resolve }
 }
 
-async function waitForUserMessageCount(directory: string, sessionID: SessionID, count: number) {
-  for (let attempt = 0; attempt < 50; attempt++) {
-    const messages = await Instance.provide({
-      directory,
-      fn: async () =>
-        runSession(Session.Service.use((svc) => svc.messages({ sessionID }))).then((items) =>
-          items.filter((item) => item.info.role === "user"),
-        ),
-    })
-    if (messages.length === count) return messages
-    await Bun.sleep(10)
-  }
-  throw new Error(`Timed out waiting for ${count} user messages`)
+function expectV2SessionActionNotImplemented(path: string) {
+  const responses = OpenApi.fromApi(PublicApi).paths[path]?.post?.responses
+  expect(responses?.["501"], `${path} must declare its unsupported response`).toBeTruthy()
+}
+
+function waitForUserMessageCount(sessionID: SessionIDType, count: number) {
+  return Effect.gen(function* () {
+    const session = yield* Session.Service
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const messages = yield* session.messages({ sessionID })
+      const users = messages.filter((item) => item.info.role === "user")
+      if (users.length === count) return users
+      yield* Effect.sleep("10 millis")
+    }
+    throw new Error(`Timed out waiting for ${count} user messages`)
+  })
 }
 
 afterEach(async () => {
-  Flag.OPENCODE_EXPERIMENTAL_HTTPAPI = original
-  await Instance.disposeAll()
+  Flag.OPENCODE_EXPERIMENTAL_WORKSPACES = originalWorkspaces
+  await disposeAllInstances()
   await resetDatabase()
 })
 
 describe("session HttpApi", () => {
-  test("serves read routes through Hono bridge", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
-    const headers = { "x-opencode-directory": tmp.path }
-    const parent = await createSession(tmp.path, { title: "parent" })
-    const child = await createSession(tmp.path, { title: "child", parentID: parent.id })
-    const message = await createTextMessage(tmp.path, parent.id, "hello")
-    await createTextMessage(tmp.path, parent.id, "world")
+  it.instance(
+    "returns declared not found errors for read routes",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        const missingSession = SessionID.descending()
+        const missingSessionBody = {
+          name: "NotFoundError",
+          data: { message: `Session not found: ${missingSession}` },
+        }
 
-    expect(
-      (await json<Session.Info[]>(await app().request(`${SessionPaths.list}?roots=true`, { headers }))).map(
-        (item) => item.id,
-      ),
-    ).toContain(parent.id)
+        const get = yield* request(pathFor(SessionPaths.get, { sessionID: missingSession }), { headers })
+        expect(get.status).toBe(404)
+        expect(yield* responseJson(get)).toEqual(missingSessionBody)
 
-    expect(await json<Record<string, unknown>>(await app().request(SessionPaths.status, { headers }))).toEqual({})
+        const children = yield* request(pathFor(SessionPaths.children, { sessionID: missingSession }), { headers })
+        expect(children.status).toBe(404)
+        expect(yield* responseJson(children)).toEqual(missingSessionBody)
 
-    expect(
-      await json<Session.Info>(await app().request(pathFor(SessionPaths.get, { sessionID: parent.id }), { headers })),
-    ).toMatchObject({ id: parent.id, title: "parent" })
+        const todo = yield* request(pathFor(SessionPaths.todo, { sessionID: missingSession }), { headers })
+        expect(todo.status).toBe(404)
+        expect(yield* responseJson(todo)).toEqual(missingSessionBody)
 
-    expect(
-      (
-        await json<Session.Info[]>(
-          await app().request(pathFor(SessionPaths.children, { sessionID: parent.id }), { headers }),
+        const messages = yield* request(pathFor(SessionPaths.messages, { sessionID: missingSession }), { headers })
+        expect(messages.status).toBe(404)
+        expect(yield* responseJson(messages)).toEqual(missingSessionBody)
+
+        const remove = yield* request(pathFor(SessionPaths.remove, { sessionID: missingSession }), {
+          headers,
+          method: "DELETE",
+        })
+        expect(remove.status).toBe(404)
+        expect(yield* responseJson(remove)).toEqual(missingSessionBody)
+
+        const prompt = yield* request(pathFor(SessionPaths.prompt, { sessionID: missingSession }), {
+          headers: { ...headers, "content-type": "application/json" },
+          method: "POST",
+          body: JSON.stringify({ agent: "build", noReply: true, parts: [{ type: "text", text: "hello" }] }),
+        })
+        expect(prompt.status).toBe(404)
+        expect(yield* responseJson(prompt)).toEqual(missingSessionBody)
+
+        const abort = yield* request(pathFor(SessionPaths.abort, { sessionID: missingSession }), {
+          headers,
+          method: "POST",
+        })
+        expect(abort.status).toBe(200)
+        expect(yield* responseJson(abort)).toBe(true)
+
+        const session = yield* createSession({ title: "missing message" })
+        const missingMessage = MessageID.ascending()
+        const message = yield* request(
+          pathFor(SessionPaths.message, { sessionID: session.id, messageID: missingMessage }),
+          { headers },
         )
-      ).map((item) => item.id),
-    ).toEqual([child.id])
+        expect(message.status).toBe(404)
+        expect(yield* responseJson(message)).toEqual({
+          name: "NotFoundError",
+          data: { message: `Message not found: ${missingMessage}` },
+        })
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
 
-    expect(
-      await json<unknown[]>(await app().request(pathFor(SessionPaths.todo, { sessionID: parent.id }), { headers })),
-    ).toEqual([])
+  it.instance(
+    "serves read routes",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        const parent = yield* createSession({ title: "parent" })
+        const child = yield* createSession({ title: "child", parentID: parent.id })
+        const message = yield* createTextMessage(parent.id, "hello")
+        yield* createTextMessage(parent.id, "world")
 
-    expect(
-      await json<unknown[]>(await app().request(pathFor(SessionPaths.diff, { sessionID: parent.id }), { headers })),
-    ).toEqual([])
+        const listed = yield* requestJson<Session.Info[]>(`${SessionPaths.list}?roots=true`, { headers })
+        expect(listed.map((item) => item.id)).toContain(parent.id)
+        expect(Object.hasOwn(listed[0]!, "parentID")).toBe(false)
 
-    const messages = await app().request(`${pathFor(SessionPaths.messages, { sessionID: parent.id })}?limit=1`, {
-      headers,
-    })
-    const messagePage = await json<MessageV2.WithParts[]>(messages)
-    const nextCursor = messages.headers.get("x-next-cursor")
-    expect(nextCursor).toBeTruthy()
-    expect(messagePage[0]?.parts[0]).toMatchObject({ type: "text" })
+        expect(yield* requestJson<Record<string, unknown>>(SessionPaths.status, { headers })).toEqual({})
 
-    expect(
-      (
-        await app().request(`${pathFor(SessionPaths.messages, { sessionID: parent.id })}?before=${nextCursor}`, {
+        expect(
+          yield* requestJson<Session.Info>(pathFor(SessionPaths.get, { sessionID: parent.id }), { headers }),
+        ).toMatchObject({ id: parent.id, title: "parent" })
+
+        expect(
+          (yield* requestJson<Session.Info[]>(pathFor(SessionPaths.children, { sessionID: parent.id }), {
+            headers,
+          })).map((item) => item.id),
+        ).toEqual([child.id])
+
+        expect(
+          yield* requestJson<unknown[]>(pathFor(SessionPaths.todo, { sessionID: parent.id }), { headers }),
+        ).toEqual([])
+
+        expect(
+          yield* requestJson<unknown[]>(pathFor(SessionPaths.diff, { sessionID: parent.id }), { headers }),
+        ).toEqual([])
+
+        const messages = yield* request(`${pathFor(SessionPaths.messages, { sessionID: parent.id })}?limit=1`, {
           headers,
         })
-      ).status,
-    ).toBe(400)
-    expect(
-      (
-        await app().request(`${pathFor(SessionPaths.messages, { sessionID: parent.id })}?limit=1&before=invalid`, {
+        const messagePage = yield* json<MessageV2.WithParts[]>(messages)
+        const nextCursor = messages.headers.get("x-next-cursor")
+        expect(nextCursor).toBeTruthy()
+        expect(messagePage[0]?.parts[0]).toMatchObject({ type: "text" })
+
+        expect(
+          (yield* request(`${pathFor(SessionPaths.messages, { sessionID: parent.id })}?before=${nextCursor}`, {
+            headers,
+          })).status,
+        ).toBe(400)
+        expect(
+          (yield* request(`${pathFor(SessionPaths.messages, { sessionID: parent.id })}?limit=1&before=invalid`, {
+            headers,
+          })).status,
+        ).toBe(400)
+
+        expect(
+          yield* requestJson<MessageV2.WithParts>(
+            pathFor(SessionPaths.message, { sessionID: parent.id, messageID: message.info.id }),
+            { headers },
+          ),
+        ).toMatchObject({ info: { id: message.info.id } })
+
+        yield* insertLegacyAssistantMessage(parent.id)
+
+        expect(
+          (yield* requestJson<{ items: SessionMessage.Message[] }>(`/api/session/${parent.id}/message`, { headers }))
+            .items,
+        ).toMatchObject([{ type: "assistant" }])
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "serves usable v2 session pagination cursors",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        yield* createSession({ title: "v2 cursor first" })
+        yield* createSession({ title: "v2 cursor second" })
+        yield* createSession({ title: "v2 cursor third" })
+
+        const first = yield* requestJson<{
+          items: Array<{ id: string }>
+          cursor: { next?: string; previous?: string }
+        }>("/api/session?limit=1", { headers })
+        expect(first.cursor.next).toBeTruthy()
+        const firstNext = first.cursor.next
+        if (!firstNext) throw new Error("missing first next cursor")
+
+        const second = yield* requestJson<{
+          items: Array<{ id: string }>
+          cursor: { next?: string; previous?: string }
+        }>(`/api/session?limit=1&cursor=${encodeURIComponent(firstNext)}`, { headers })
+        expect(second.cursor.next).toBeTruthy()
+        const secondNext = second.cursor.next
+        if (!secondNext) throw new Error("missing second next cursor")
+
+        const third = yield* requestJson<{
+          items: Array<{ id: string }>
+          cursor: { next?: string; previous?: string }
+        }>(`/api/session?limit=1&cursor=${encodeURIComponent(secondNext)}`, { headers })
+
+        expect(first.items[0]?.id).toBeTruthy()
+        expect(second.items[0]?.id).toBeTruthy()
+        expect(third.items[0]?.id).toBeTruthy()
+        expect(new Set([first.items[0]?.id, second.items[0]?.id, third.items[0]?.id]).size).toBe(3)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "scopes v2 session lists to the active project",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        const current = yield* createSession({ title: "current project" })
+        const otherProject = ProjectID.make("project-v2-list-other")
+        const otherSession = SessionID.descending()
+        const now = Date.now()
+
+        Database.use((db) => {
+          db.insert(ProjectTable)
+            .values({
+              id: otherProject,
+              worktree: "/tmp/opencode-other-project",
+              sandboxes: [],
+              time_created: now,
+              time_updated: now,
+            })
+            .run()
+          db.insert(SessionTable)
+            .values({
+              id: otherSession,
+              project_id: otherProject,
+              slug: "other-project",
+              directory: "/tmp/opencode-other-project",
+              path: "",
+              title: "other project",
+              version: "test",
+              cost: 0,
+              tokens_input: 0,
+              tokens_output: 0,
+              tokens_reasoning: 0,
+              tokens_cache_read: 0,
+              tokens_cache_write: 0,
+              time_created: now,
+              time_updated: now,
+            })
+            .run()
+        })
+
+        const response = yield* requestJson<{ items: Array<{ id: string }> }>("/api/session", { headers })
+        const ids = response.items.map((item) => item.id)
+        expect(ids).toContain(current.id)
+        expect(ids).not.toContain(otherSession)
+      }),
+    { config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "returns unsupported for v2 session actions",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+        const session = yield* createSession({ title: "v2 prompt" })
+
+        const response = yield* request(`/api/session/${session.id}/prompt`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ prompt: { text: "hello v2" } }),
+        })
+
+        expect(response.status).toBe(501)
+        expect(
+          (yield* requestJson<{ items: SessionMessage.Message[] }>(`/api/session/${session.id}/message`, {
+            headers,
+          })).items,
+        ).toEqual([])
+
+        const compact = yield* request(`/api/session/${session.id}/compact`, { method: "POST", headers })
+        expect(compact.status).toBe(501)
+
+        const wait = yield* request(`/api/session/${session.id}/wait`, { method: "POST", headers })
+        expect(wait.status).toBe(501)
+
+        expectV2SessionActionNotImplemented("/api/session/{sessionID}/prompt")
+        expectV2SessionActionNotImplemented("/api/session/{sessionID}/compact")
+        expectV2SessionActionNotImplemented("/api/session/{sessionID}/wait")
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "serves sessions with migrated summary diffs missing file details",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const session = yield* createSession({ title: "legacy diff" })
+        yield* setLegacySummaryDiff(session.id)
+
+        const response = yield* request(pathFor(SessionPaths.get, { sessionID: session.id }), {
+          headers: { "x-opencode-directory": test.directory },
+        })
+
+        expect(response.status).toBe(200)
+        expect((yield* json<Session.Info>(response)).summary?.diffs).toEqual([{ additions: 1, deletions: 0 }])
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "serves lifecycle mutation routes",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+
+        const createdEmpty = yield* requestJson<Session.Info>(SessionPaths.create, {
+          method: "POST",
           headers,
         })
-      ).status,
-    ).toBe(400)
+        expect(createdEmpty.id).toBeTruthy()
 
-    expect(
-      await json<MessageV2.WithParts>(
-        await app().request(pathFor(SessionPaths.message, { sessionID: parent.id, messageID: message.info.id }), {
+        const created = yield* requestJson<Session.Info>(SessionPaths.create, {
+          method: "POST",
           headers,
-        }),
-      ),
-    ).toMatchObject({ info: { id: message.info.id } })
-  })
+          body: JSON.stringify({ title: "created" }),
+        })
+        expect(created.title).toBe("created")
 
-  test("serves lifecycle mutation routes through Hono bridge", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false, share: "disabled" } })
-    const headers = { "x-opencode-directory": tmp.path, "content-type": "application/json" }
-
-    const created = await json<Session.Info>(
-      await app().request(SessionPaths.create, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ title: "created" }),
-      }),
-    )
-    expect(created.title).toBe("created")
-
-    const updated = await json<Session.Info>(
-      await app().request(pathFor(SessionPaths.update, { sessionID: created.id }), {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({ title: "updated", time: { archived: 1 } }),
-      }),
-    )
-    expect(updated).toMatchObject({ id: created.id, title: "updated", time: { archived: 1 } })
-
-    const forked = await json<Session.Info>(
-      await app().request(pathFor(SessionPaths.fork, { sessionID: created.id }), {
-        method: "POST",
-        headers,
-        body: JSON.stringify({}),
-      }),
-    )
-    expect(forked.id).not.toBe(created.id)
-
-    expect(
-      await json<boolean>(
-        await app().request(pathFor(SessionPaths.abort, { sessionID: created.id }), { method: "POST", headers }),
-      ),
-    ).toBe(true)
-
-    expect(
-      await json<boolean>(
-        await app().request(pathFor(SessionPaths.remove, { sessionID: created.id }), { method: "DELETE", headers }),
-      ),
-    ).toBe(true)
-  })
-
-  test("serves message mutation routes through Hono bridge", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
-    const headers = { "x-opencode-directory": tmp.path, "content-type": "application/json" }
-    const session = await createSession(tmp.path, { title: "messages" })
-    const first = await createTextMessage(tmp.path, session.id, "first")
-    const second = await createTextMessage(tmp.path, session.id, "second")
-
-    const updated = await json<MessageV2.Part>(
-      await app().request(
-        pathFor(SessionPaths.updatePart, {
-          sessionID: session.id,
-          messageID: first.info.id,
-          partID: first.part.id,
-        }),
-        {
+        const updated = yield* requestJson<Session.Info>(pathFor(SessionPaths.update, { sessionID: created.id }), {
           method: "PATCH",
           headers,
-          body: JSON.stringify({ ...first.part, text: "updated" }),
-        },
-      ),
-    )
-    expect(updated).toMatchObject({ id: first.part.id, type: "text", text: "updated" })
+          body: JSON.stringify({ title: "updated", time: { archived: 1 } }),
+        })
+        expect(updated).toMatchObject({ id: created.id, title: "updated", time: { archived: 1 } })
 
-    expect(
-      await json<boolean>(
-        await app().request(
-          pathFor(SessionPaths.deletePart, {
+        const forked = yield* requestJson<Session.Info>(pathFor(SessionPaths.fork, { sessionID: created.id }), {
+          method: "POST",
+          headers,
+        })
+        expect(forked.id).not.toBe(created.id)
+
+        expect(
+          yield* requestJson<boolean>(pathFor(SessionPaths.abort, { sessionID: created.id }), {
+            method: "POST",
+            headers,
+          }),
+        ).toBe(true)
+
+        expect(
+          yield* requestJson<boolean>(pathFor(SessionPaths.remove, { sessionID: created.id }), {
+            method: "DELETE",
+            headers,
+          }),
+        ).toBe(true)
+      }),
+    { git: true, config: { formatter: false, lsp: false, share: "disabled" } },
+  )
+
+  it.instance(
+    "persists selected workspace id when creating a session",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        Flag.OPENCODE_EXPERIMENTAL_WORKSPACES = true
+        const project = yield* Project.use.fromDirectory(test.directory)
+        const workspace = yield* createLocalWorkspace({
+          projectID: project.project.id,
+          type: "session-create-workspace",
+          directory: path.join(test.directory, ".workspace-local"),
+        })
+
+        const created = yield* requestJson<Session.Info>(`${SessionPaths.create}?workspace=${workspace.id}`, {
+          method: "POST",
+          headers: { "x-opencode-directory": test.directory, "content-type": "application/json" },
+          body: JSON.stringify({ title: "workspace session" }),
+        })
+        const messages = yield* request(
+          `${pathFor(SessionPaths.messages, { sessionID: created.id })}?workspace=${workspace.id}`,
+          {
+            headers: { "x-opencode-directory": test.directory },
+          },
+        )
+
+        expect(created).toMatchObject({ id: created.id, workspaceID: workspace.id })
+        expect(messages.status).toBe(200)
+        expect(yield* getWorkspaceID(created.id)).toEqual({ workspaceID: workspace.id })
+      }),
+    { git: true, config: { formatter: false, lsp: false, share: "disabled" } },
+  )
+
+  it.instance(
+    "validates archived timestamp values",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+        const session = yield* createSession({ title: "archived" })
+        const body = JSON.stringify({ time: { archived: -1 } })
+
+        const response = yield* request(pathFor(SessionPaths.update, { sessionID: session.id }), {
+          method: "PATCH",
+          headers,
+          body,
+        })
+        expect(response.status).toBe(200)
+        expect((yield* json<Session.Info>(response)).time.archived).toBe(-1)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "uses project-scoped path and directory precedence",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const currentDir = path.join(test.directory, "packages", "opencode", "src")
+        yield* Effect.promise(() => mkdir(currentDir, { recursive: true }))
+
+        const store = yield* InstanceStore.Service
+        const { pathSession, pathlessSession } = yield* store.provide(
+          { directory: currentDir },
+          Effect.gen(function* () {
+            return {
+              pathSession: yield* createSession(),
+              pathlessSession: yield* createSession(),
+            }
+          }).pipe(Effect.provideService(TestInstance, { directory: currentDir }), Effect.provide(Session.defaultLayer)),
+        )
+        yield* clearSessionPath(pathlessSession.id)
+
+        const query = new URLSearchParams({
+          scope: "project",
+          path: "packages/opencode/src",
+          directory: currentDir,
+        })
+        const headers = { "x-opencode-directory": test.directory }
+        const sessions = (yield* json<Session.Info[]>(
+          yield* request(`${SessionPaths.list}?${query}`, { headers }),
+        )).map((item) => item.id)
+
+        expect(sessions).toContain(pathSession.id)
+        expect(sessions).not.toContain(pathlessSession.id)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "serves paginated message link headers",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        const session = yield* createSession({ title: "messages" })
+        yield* createTextMessage(session.id, "first")
+        yield* createTextMessage(session.id, "second")
+        const route = `${pathFor(SessionPaths.messages, { sessionID: session.id })}?limit=1`
+
+        const response = yield* request(route, { headers })
+
+        expect(response.headers.get("x-next-cursor")).toBeTruthy()
+        expect(response.headers.get("link")).toContain("limit=1")
+        expect(response.headers.get("access-control-expose-headers")?.toLowerCase()).toContain("x-next-cursor")
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "serves message mutation routes",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+        const session = yield* createSession({ title: "messages" })
+        const first = yield* createTextMessage(session.id, "first")
+        const second = yield* createTextMessage(session.id, "second")
+
+        const updated = yield* requestJson<MessageV2.Part>(
+          pathFor(SessionPaths.updatePart, {
             sessionID: session.id,
             messageID: first.info.id,
             partID: first.part.id,
           }),
-          { method: "DELETE", headers },
-        ),
-      ),
-    ).toBe(true)
+          {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ ...first.part, text: "updated" }),
+          },
+        )
+        expect(updated).toMatchObject({ id: first.part.id, type: "text", text: "updated" })
 
-    expect(
-      await json<boolean>(
-        await app().request(pathFor(SessionPaths.deleteMessage, { sessionID: session.id, messageID: second.info.id }), {
-          method: "DELETE",
+        expect(
+          yield* requestJson<boolean>(
+            pathFor(SessionPaths.deletePart, {
+              sessionID: session.id,
+              messageID: first.info.id,
+              partID: first.part.id,
+            }),
+            { method: "DELETE", headers },
+          ),
+        ).toBe(true)
+
+        expect(
+          yield* requestJson<boolean>(
+            pathFor(SessionPaths.deleteMessage, { sessionID: session.id, messageID: second.info.id }),
+            { method: "DELETE", headers },
+          ),
+        ).toBe(true)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "deletes queued Run-mode message while active turn is busy",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const originalMetadata = AgencySwarmAdapter.getMetadata
+        const originalDiscover = AgencySwarmAdapter.discover
+        const originalStream = AgencySwarmAdapter.streamRun
+        const firstStarted = defer<void>()
+        const finishFirst = defer<void>()
+        const prompts: Array<string | Record<string, unknown>[]> = []
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            finishFirst.resolve()
+            AgencySwarmAdapter.getMetadata = originalMetadata
+            AgencySwarmAdapter.discover = originalDiscover
+            AgencySwarmAdapter.streamRun = originalStream
+          }),
+        )
+
+        AgencySwarmAdapter.discover = (async () => ({
+          agencies: [
+            {
+              id: "local-agency",
+              name: "Local Agency",
+              agents: [{ id: "entry-agent", name: "entry-agent", isEntryPoint: true }],
+              metadata: {},
+            },
+          ],
+          rawOpenAPI: {},
+        })) as typeof AgencySwarmAdapter.discover
+        AgencySwarmAdapter.getMetadata = (async () => ({
+          metadata: { agents: ["entry-agent"] },
+        })) as typeof AgencySwarmAdapter.getMetadata
+        AgencySwarmAdapter.streamRun = async function* (args) {
+          prompts.push(args.message)
+          if (prompts.length === 1) {
+            firstStarted.resolve()
+            await finishFirst.promise
+          }
+          yield { type: "end" }
+        } as typeof AgencySwarmAdapter.streamRun
+
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+        const session = yield* createSession({
+          title: "queued delete",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        })
+        const model = { providerID: "agency-swarm", modelID: "default" }
+        const promptBody = (text: string, messageID?: MessageID) =>
+          JSON.stringify({
+            ...(messageID ? { messageID } : {}),
+            agent: "build",
+            model,
+            parts: [{ id: PartID.ascending(), type: "text", text }],
+          })
+
+        const first = app().request(pathFor(SessionPaths.prompt, { sessionID: session.id }), {
+          method: "POST",
           headers,
-        }),
-      ),
-    ).toBe(true)
-  })
+          body: promptBody("first issue 172 prompt"),
+        })
+        yield* Effect.promise(() => firstStarted.promise)
 
-  test("deletes queued Run-mode message while active turn is busy", async () => {
-    await using tmp = await tmpdir({
+        const secondMessageID = MessageID.ascending("msg_00000000000000000000000000")
+        const second = app().request(pathFor(SessionPaths.prompt, { sessionID: session.id }), {
+          method: "POST",
+          headers,
+          body: promptBody("second issue 172 prompt SHOULD_NOT_SEND", secondMessageID),
+        })
+        const users = yield* waitForUserMessageCount(session.id, 2)
+        const queued = users.find((item) => item.info.id === secondMessageID)
+        expect(queued).toBeTruthy()
+
+        expect(
+          yield* requestJson<boolean>(
+            pathFor(SessionPaths.deleteMessage, {
+              sessionID: session.id,
+              messageID: queued!.info.id,
+            }),
+            { method: "DELETE", headers },
+          ),
+        ).toBe(true)
+
+        finishFirst.resolve()
+        expect((yield* Effect.promise(() => Promise.resolve(first))).status).toBe(200)
+        expect((yield* Effect.promise(() => Promise.resolve(second))).status).toBe(200)
+        expect(prompts).toEqual(["first issue 172 prompt"])
+      }),
+    {
       git: true,
       config: {
         formatter: false,
@@ -271,124 +806,78 @@ describe("session HttpApi", () => {
         provider: {
           "agency-swarm": {
             options: {
-              baseURL: "http://127.0.0.1:8000",
+              baseURL: "https://agency.test",
               agency: "local-agency",
             },
           },
         },
       },
-    })
-    const originalMetadata = AgencySwarmAdapter.getMetadata
-    const originalStream = AgencySwarmAdapter.streamRun
-    const firstStarted = defer<void>()
-    const finishFirst = defer<void>()
-    const prompts: Array<string | Record<string, unknown>[]> = []
+    },
+  )
 
-    AgencySwarmAdapter.getMetadata = (async () => ({
-      metadata: { agents: ["entry-agent"] },
-    })) as typeof AgencySwarmAdapter.getMetadata
-    AgencySwarmAdapter.streamRun = async function* (args) {
-      prompts.push(args.message)
-      if (prompts.length === 1) {
-        firstStarted.resolve()
-        await finishFirst.promise
-      }
-      yield { type: "end" }
-    } as typeof AgencySwarmAdapter.streamRun
-
-    try {
-      const headers = { "x-opencode-directory": tmp.path, "content-type": "application/json" }
-      const session = await createSession(tmp.path, {
-        title: "queued delete",
-        permission: [{ permission: "*", pattern: "*", action: "allow" }],
-      })
-      const model = { providerID: "agency-swarm", modelID: "default" }
-      const promptBody = (text: string, messageID?: MessageID) =>
-        JSON.stringify({
-          ...(messageID ? { messageID } : {}),
-          agent: "build",
-          model,
-          parts: [{ id: PartID.ascending(), type: "text", text }],
-        })
-
-      const first = app().request(pathFor(SessionPaths.prompt, { sessionID: session.id }), {
-        method: "POST",
-        headers,
-        body: promptBody("first issue 172 prompt"),
-      })
-      await firstStarted.promise
-
-      const secondMessageID = MessageID.ascending("msg_00000000000000000000000000")
-      const second = app().request(pathFor(SessionPaths.prompt, { sessionID: session.id }), {
-        method: "POST",
-        headers,
-        body: promptBody("second issue 172 prompt SHOULD_NOT_SEND", secondMessageID),
-      })
-      const users = await waitForUserMessageCount(tmp.path, session.id, 2)
-      const queued = users.find((item) => item.info.id === secondMessageID)
-      expect(queued).toBeTruthy()
-
-      expect(
-        await json<boolean>(
-          await app().request(
-            pathFor(SessionPaths.deleteMessage, {
-              sessionID: session.id,
-              messageID: queued!.info.id,
-            }),
-            { method: "DELETE", headers },
-          ),
-        ),
-      ).toBe(true)
-
-      finishFirst.resolve()
-      expect((await first).status).toBe(200)
-      expect((await second).status).toBe(200)
-      expect(prompts).toEqual(["first issue 172 prompt"])
-    } finally {
-      finishFirst.resolve()
-      AgencySwarmAdapter.getMetadata = originalMetadata
-      AgencySwarmAdapter.streamRun = originalStream
-    }
-  })
-
-  test("serves remaining non-LLM session mutation routes through Hono bridge", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
-    const headers = { "x-opencode-directory": tmp.path, "content-type": "application/json" }
-    const session = await createSession(tmp.path, { title: "remaining" })
-
-    expect(
-      await json<Session.Info>(
-        await app().request(pathFor(SessionPaths.revert, { sessionID: session.id }), {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ messageID: MessageID.ascending() }),
-        }),
-      ),
-    ).toMatchObject({ id: session.id })
-
-    expect(
-      await json<Session.Info>(
-        await app().request(pathFor(SessionPaths.unrevert, { sessionID: session.id }), {
-          method: "POST",
-          headers,
-        }),
-      ),
-    ).toMatchObject({ id: session.id })
-
-    expect(
-      await json<boolean>(
-        await app().request(
-          pathFor(SessionPaths.permissions, {
+  it.instance(
+    "rejects part updates whose path and body ids disagree",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+        const session = yield* createSession({ title: "part mismatch" })
+        const message = yield* createTextMessage(session.id, "first")
+        const response = yield* request(
+          pathFor(SessionPaths.updatePart, {
             sessionID: session.id,
-            permissionID: String(PermissionID.ascending()),
+            messageID: message.info.id,
+            partID: message.part.id,
           }),
           {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ ...message.part, id: PartID.ascending() }),
+          },
+        )
+
+        expect(response.status).toBe(400)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "serves remaining non-LLM session mutation routes",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+        const session = yield* createSession({ title: "remaining" })
+
+        expect(
+          yield* requestJson<Session.Info>(pathFor(SessionPaths.revert, { sessionID: session.id }), {
             method: "POST",
             headers,
-            body: JSON.stringify({ response: "once" }),
-          },
-        ),
-      ),
-    ).toBe(true)
-  })
+            body: JSON.stringify({ messageID: MessageID.ascending() }),
+          }),
+        ).toMatchObject({ id: session.id })
+
+        expect(
+          yield* requestJson<Session.Info>(pathFor(SessionPaths.unrevert, { sessionID: session.id }), {
+            method: "POST",
+            headers,
+          }),
+        ).toMatchObject({ id: session.id })
+
+        expect(
+          yield* requestJson<boolean>(
+            pathFor(SessionPaths.permissions, {
+              sessionID: session.id,
+              permissionID: String(PermissionID.ascending()),
+            }),
+            {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ response: "once" }),
+            },
+          ),
+        ).toBe(true)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
 })

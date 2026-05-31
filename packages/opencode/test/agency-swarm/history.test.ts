@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
+import path from "node:path"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
 import { Storage } from "../../src/storage/storage"
 
@@ -32,7 +33,7 @@ test("load falls back to legacy opencode storage and migrates entry", async () =
   }) as typeof Storage.write
   Bun.file = ((file: string) => ({
     json: async () => {
-      expect(file.endsWith(`/opencode/storage/agency_swarm_history/${hash}.json`)).toBeTrue()
+      expect(file.endsWith(path.join("opencode", "storage", "agency_swarm_history", `${hash}.json`))).toBeTrue()
       return {
         scope: scopedKey,
         chat_history: [{ type: "message", role: "assistant" }],

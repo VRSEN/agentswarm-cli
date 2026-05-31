@@ -1,6 +1,6 @@
 import type { AssistantMessage, Part, Provider, UserMessage } from "@opencode-ai/sdk/v2"
 import { displayAgentName } from "@/agent/display"
-import { Locale } from "@/util"
+import { Locale } from "@/util/locale"
 import * as Model from "./model"
 
 export type TranscriptOptions = {

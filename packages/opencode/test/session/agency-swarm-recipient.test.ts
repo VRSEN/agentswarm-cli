@@ -39,8 +39,8 @@ describe("session.agency-swarm recipient recovery", () => {
     expect(sentRecipient).toBe("Slides Agent")
   })
 
-  const helper = () =>
-    ({
+  const helper = () => {
+    const input = {
       sessionID: "session_1",
       assistantMessage: {
         id: "message_assistant_1",
@@ -86,7 +86,11 @@ describe("session.agency-swarm recipient recovery", () => {
         discoveryTimeoutMs: 5000,
       },
       abort: new AbortController().signal,
-    }) as Parameters<typeof SessionAgencySwarm.stream>[0]
+    } as Parameters<typeof SessionAgencySwarm.stream>[0]
+    input.loadSessionMessages = async () => [input.userMessage]
+    input.updateSessionMessage = async (message) => message
+    return input
+  }
 
   function mockHistory() {
     AgencySwarmHistory.load = (async () => ({

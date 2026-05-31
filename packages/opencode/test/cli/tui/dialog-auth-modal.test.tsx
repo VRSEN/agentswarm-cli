@@ -1,8 +1,11 @@
 /** @jsxImportSource @opentui/solid */
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { RGBA } from "@opentui/core"
-import { testRender } from "@opentui/solid"
+import { testRender, useRenderer } from "@opentui/solid"
+import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
+import { type ParentProps } from "solid-js"
 import * as CommandDialogModule from "../../../src/cli/cmd/tui/component/dialog-command"
+import { CommandPaletteProvider } from "../../../src/cli/cmd/tui/context/command-palette"
 import { closeDialogAuthOnEscape, DialogAuth } from "../../../src/cli/cmd/tui/component/dialog-provider"
 import { Prompt, type PromptRef } from "../../../src/cli/cmd/tui/component/prompt"
 import * as FrecencyModule from "../../../src/cli/cmd/tui/component/prompt/frecency"
@@ -24,6 +27,20 @@ import * as ThemeContext from "../../../src/cli/cmd/tui/context/theme"
 import { TuiConfigProvider } from "../../../src/cli/cmd/tui/context/tui-config"
 import { DialogProvider, useDialog } from "../../../src/cli/cmd/tui/ui/dialog"
 import * as ToastModule from "../../../src/cli/cmd/tui/ui/toast"
+import { OpencodeKeymapProvider } from "../../../src/cli/cmd/tui/keymap"
+
+function TestKeymapProvider(props: ParentProps) {
+  const renderer = useRenderer()
+  return <OpencodeKeymapProvider keymap={createDefaultOpenTuiKeymap(renderer)}>{props.children}</OpencodeKeymapProvider>
+}
+
+const testTuiConfig = {
+  keybinds: {
+    get: () => [],
+    gather: () => [],
+  },
+  leader_timeout: 1000,
+} as any
 
 function flushEffects() {
   return Promise.resolve().then(() => Promise.resolve())
@@ -151,6 +168,7 @@ async function renderDialogAuthHarness() {
     enabled: () => false,
     connected: () => false,
     selection: () => undefined,
+    labelState: () => "none",
     onMention: () => () => {},
     server: () => undefined,
   } as any)
@@ -159,7 +177,7 @@ async function renderDialogAuthHarness() {
     on: () => () => {},
   } as any)
   spyOn(ProjectContext, "useProject").mockReturnValue({
-    workspace: { current: () => undefined, status: () => undefined },
+    workspace: { current: () => undefined, get: () => undefined, list: () => [], status: () => undefined },
     instance: { directory: () => "/tmp" },
   } as any)
   spyOn(KVContext, "useKV").mockReturnValue({
@@ -234,6 +252,7 @@ async function renderDialogAuthHarness() {
     },
   } as any)
   spyOn(SyncContext, "useSync").mockReturnValue({
+    path: { directory: "/tmp", worktree: "/tmp" },
     data: syncData,
     status: "complete",
     bootstrap: async () => {},
@@ -270,10 +289,14 @@ async function renderDialogAuthHarness() {
 
   const rendered = await testRender(
     () => (
-      <TuiConfigProvider config={{}}>
-        <DialogProvider>
-          <Capture />
-        </DialogProvider>
+      <TuiConfigProvider config={testTuiConfig}>
+        <TestKeymapProvider>
+          <DialogProvider>
+            <CommandPaletteProvider>
+              <Capture />
+            </CommandPaletteProvider>
+          </DialogProvider>
+        </TestKeymapProvider>
       </TuiConfigProvider>
     ),
     { width: 100, height: 32 },

@@ -102,6 +102,6 @@ describe("DialogModel framework mode", () => {
     const { DialogModel } = await import("../../../src/cli/cmd/tui/component/dialog-model")
     await testRender(() => <DialogModel />)
 
-    expect(selectProps?.keybind?.[0]?.title).toBe("Manage provider auth")
+    expect(selectProps?.actions?.[0]?.title).toBe("Manage provider auth")
   })
 })

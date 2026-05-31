@@ -1,4 +1,4 @@
-import { Log } from "@/util"
+import { Log } from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "agency-swarm.tui" })
 
