@@ -6,6 +6,7 @@ import z from "zod"
 import { BusEvent } from "@/bus/bus-event"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Log } from "../util"
+import { makeRuntime } from "@opencode-ai/core/effect/runtime"
 
 import semver from "semver"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
@@ -237,5 +238,11 @@ export const layer: Layer.Layer<Service, never, ChildProcessSpawner.ChildProcess
 )
 
 export const defaultLayer = layer.pipe(Layer.provide(CrossSpawnSpawner.defaultLayer))
+
+const { runPromise } = makeRuntime(Service, defaultLayer)
+
+export const latest = (...args: Parameters<Interface["latest"]>) => runPromise((s) => s.latest(...args))
+export const method = () => runPromise((s) => s.method())
+export const upgrade = (...args: Parameters<Interface["upgrade"]>) => runPromise((s) => s.upgrade(...args))
 
 export * as Installation from "."

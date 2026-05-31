@@ -1,7 +1,6 @@
 import type { Argv } from "yargs"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
-import { AppRuntime } from "@/effect/app-runtime"
 import { Installation } from "../../installation"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { InstallationDistribution } from "@/installation/distribution"
@@ -26,7 +25,7 @@ export const UpgradeCommand = {
     UI.println(UI.logo("  "))
     UI.empty()
     prompts.intro("Upgrade")
-    const detectedMethod = await AppRuntime.runPromise(Installation.Service.use((svc) => svc.method()))
+    const detectedMethod = await Installation.method()
     const method = (args.method as Installation.Method) ?? detectedMethod
     if (method === "unknown") {
       prompts.log.error(
@@ -48,7 +47,7 @@ export const UpgradeCommand = {
     prompts.log.info("Using method: " + method)
     const targetResult = args.target
       ? args.target.replace(/^v/, "")
-      : await AppRuntime.runPromise(Installation.Service.use((svc) => svc.latest(method))).catch((err) => err)
+      : await Installation.latest(method).catch((err) => err)
     if (targetResult instanceof Installation.UpgradeFailedError) {
       prompts.log.error(targetResult.stderr)
       prompts.outro("Done")
@@ -70,9 +69,7 @@ export const UpgradeCommand = {
     prompts.log.info(`From ${InstallationVersion} → ${target}`)
     const spinner = prompts.spinner()
     spinner.start("Upgrading...")
-    const err = await AppRuntime.runPromise(Installation.Service.use((svc) => svc.upgrade(method, target))).catch(
-      (err) => err,
-    )
+    const err = await Installation.upgrade(method, target).catch((err) => err)
     if (err) {
       spinner.stop("Upgrade failed", 1)
       if (err instanceof Installation.UpgradeFailedError) {
