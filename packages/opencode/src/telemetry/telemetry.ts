@@ -21,15 +21,18 @@ const publicProviderIDs = new Set([
   "azure",
   "deepseek",
   "github-copilot",
+  "gitlab",
   "google",
   "google-vertex",
   "groq",
   "litellm",
   "lmstudio",
+  "mistral",
   "ollama",
   "opencode",
   "opencode-go",
   "openai",
+  "openrouter",
   "xai",
 ])
 const publicIntegrationIDs = new Set([
@@ -50,12 +53,10 @@ const allowedEvents = new Set([
   "provider_auth_failed",
   "provider_auth_started",
   "provider_requested",
-  "project_initialized",
   "task_failed",
   "task_succeeded",
   "ui_command_executed",
   "ui_prompt_submitted",
-  "ui_route_changed",
 ])
 
 type TelemetryEvent =
@@ -65,12 +66,10 @@ type TelemetryEvent =
   | "provider_auth_failed"
   | "provider_auth_started"
   | "provider_requested"
-  | "project_initialized"
   | "task_failed"
   | "task_succeeded"
   | "ui_command_executed"
   | "ui_prompt_submitted"
-  | "ui_route_changed"
 type SafeValue = string | boolean
 export type TelemetryDurationBucket = "lt_2s" | "2s_10s" | "10s_60s" | "gte_60s" | "unknown"
 export type TelemetryErrorBucket = "auth_rejected" | "network" | "server" | "timeout" | "unknown"
@@ -108,7 +107,6 @@ const errorBuckets = new Set(["auth_rejected", "network", "server", "timeout", "
 const platforms = new Set(["aix", "darwin", "freebsd", "linux", "openbsd", "sunos", "win32"])
 const promptModes = new Set(["normal", "shell"])
 const promptTypes = new Set(["prompt", "server_command", "shell"])
-const routeTypes = new Set(["home", "plugin", "session"])
 const terminalClients = new Set(["app", "cli", "desktop"])
 
 function stringField(values?: ReadonlySet<string>): PropertySpec {
@@ -165,10 +163,6 @@ const eventProperties: Record<TelemetryEvent, Record<string, PropertySpec>> = {
     provider_id: providerIDField,
     source: stringField(authDialogSources),
   },
-  project_initialized: {
-    source: stringField(new Set(["init_command"])),
-    vcs: stringField(new Set(["git", "none"])),
-  },
   task_failed: {
     duration_bucket: stringField(durationBuckets),
     error_bucket: stringField(errorBuckets),
@@ -200,10 +194,6 @@ const eventProperties: Record<TelemetryEvent, Record<string, PropertySpec>> = {
     mode: stringField(promptModes),
     provider_id: providerIDField,
     type: stringField(promptTypes),
-  },
-  ui_route_changed: {
-    route: stringField(routeTypes),
-    to_route: stringField(routeTypes),
   },
 }
 
@@ -308,7 +298,7 @@ function assignSafe(
 
 function sanitize(event: TelemetryEvent, input: Record<string, unknown> | undefined) {
   const output: Record<string, SafeValue> = {
-    "$process_person_profile": false,
+    $process_person_profile: false,
   }
   assignSafe(output, baseProperties, "app", AgencyProduct.name)
   assignSafe(output, baseProperties, "arch", os.arch())
@@ -324,12 +314,20 @@ function sanitize(event: TelemetryEvent, input: Record<string, unknown> | undefi
   return output
 }
 
+function shouldSend(event: TelemetryEvent, properties: Record<string, SafeValue>) {
+  if (event === "ui_command_executed") return properties.command === "docs.open"
+  return true
+}
+
 export async function capture(event: TelemetryEvent, properties?: Record<string, unknown>) {
   if (!allowedEvents.has(event)) return false
   if (isDisabledByEnvironment()) return false
 
   const { apiKey, host } = config()
   if (!apiKey) return false
+
+  const safe = sanitize(event, properties)
+  if (!shouldSend(event, safe)) return false
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
@@ -339,7 +337,7 @@ export async function capture(event: TelemetryEvent, properties?: Record<string,
       api_key: apiKey,
       distinct_id: await anonymousInstallID(),
       event,
-      properties: sanitize(event, properties),
+      properties: safe,
     }
 
     try {

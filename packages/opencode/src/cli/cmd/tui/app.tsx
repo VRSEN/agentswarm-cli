@@ -451,22 +451,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     })
   })
 
-  let previousRoute: string | undefined
-  createEffect(() => {
-    const next = route.data.type
-    if (!previousRoute) {
-      previousRoute = next
-      return
-    }
-    if (previousRoute === next) return
-    const from = previousRoute
-    previousRoute = next
-    void Telemetry.capture("ui_route_changed", {
-      route: from,
-      to_route: next,
-    })
-  })
-
   createEffect(() => {
     if (!frameworkMode()) return
     if (local.agent.current()?.name === "build") return

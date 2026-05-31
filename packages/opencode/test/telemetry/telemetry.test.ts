@@ -103,7 +103,7 @@ describe("Telemetry", () => {
     expect(requests[0].body.api_key).toBe("ph_test")
     expect(requests[0].body.distinct_id).toBeTruthy()
     expect(requests[0].body.properties).toMatchObject({
-      "$process_person_profile": false,
+      $process_person_profile: false,
       framework_mode: true,
       has_file_parts: true,
       mode: "normal",
@@ -270,7 +270,7 @@ describe("Telemetry", () => {
 
     expect(requests[0].body.event).toBe("provider_auth_configured")
     expect(requests[0].body.properties).toMatchObject({
-      "$process_person_profile": false,
+      $process_person_profile: false,
       auth_method: "api",
       framework_mode: true,
       provider_id: "openai",
@@ -372,17 +372,6 @@ describe("Telemetry", () => {
           has_file_parts: false,
           mode: "normal",
           provider_id: "agency-swarm",
-        },
-      },
-      {
-        event: "project_initialized",
-        properties: {
-          source: "init_command",
-          vcs: "git",
-        },
-        expected: {
-          source: "init_command",
-          vcs: "git",
         },
       },
       {
@@ -532,16 +521,16 @@ describe("Telemetry", () => {
     expect(integration.properties?.already_configured).toBeUndefined()
 
     const command = await captureBody("ui_command_executed", {
-      category: "Provider",
-      command: "provider.auth",
+      category: "System",
+      command: "docs.open",
       keybind: "private keybind sentinel",
-      source: "keybind",
+      source: "palette",
     })
 
     expect(command.properties).toMatchObject({
-      category: "Provider",
-      command: "provider.auth",
-      source: "keybind",
+      category: "System",
+      command: "docs.open",
+      source: "palette",
     })
     expect(command.properties?.keybind).toBeUndefined()
 
@@ -667,6 +656,18 @@ describe("Telemetry", () => {
     expect(JSON.stringify(requests[0].body)).not.toContain("internal-client-gateway")
   })
 
+  test("preserves well-known provider ids", async () => {
+    for (const provider of ["openrouter", "mistral", "gitlab"]) {
+      const body = await captureBody("provider_auth_configured", {
+        auth_method: "api",
+        provider_id: provider,
+        source: "auth_dialog",
+      })
+
+      expect(body.properties?.provider_id).toBe(provider)
+    }
+  })
+
   test("does not send custom command telemetry", async () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []
@@ -691,6 +692,30 @@ describe("Telemetry", () => {
     expect(JSON.stringify(requests)).not.toContain("ctrl+x")
   })
 
+  test("does not send broad command telemetry at the privacy boundary", async () => {
+    await using tmp = await tmpdir()
+    const requests: { body: Captured }[] = []
+    enableTelemetry({ stateDir: tmp.path })
+    useFetch(
+      asFetch(async (_url, init) => {
+        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
+        return new Response(null, { status: 200 })
+      }),
+    )
+
+    await expect(
+      Telemetry.capture("ui_command_executed", {
+        category: "Provider",
+        command: "provider.connect",
+        source: "slash",
+      }),
+    ).resolves.toBe(false)
+    await Telemetry.flush()
+
+    expect(requests).toHaveLength(0)
+    expect(JSON.stringify(requests)).not.toContain("provider.connect")
+  })
+
   test("does not send externally registered command telemetry for colliding values", async () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []
@@ -706,14 +731,14 @@ describe("Telemetry", () => {
       builtin: false,
       category: "Plugin",
       source: "palette",
-      value: "provider.auth",
+      value: "docs.open",
     })
     await Telemetry.flush()
 
     expect(requests).toHaveLength(0)
   })
 
-  test("tracks built-in keybind commands with a safe boolean flag", async () => {
+  test("tracks docs click command telemetry with a safe command shape", async () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
@@ -725,25 +750,23 @@ describe("Telemetry", () => {
     )
 
     captureCommand({
-      category: "Provider",
-      keybind: "private keybind sentinel",
-      source: "keybind",
-      value: "provider.auth",
+      category: "System",
+      source: "palette",
+      value: "docs.open",
     })
     await Telemetry.flush()
 
     expect(requests).toHaveLength(1)
     expect(requests[0].body.event).toBe("ui_command_executed")
     expect(requests[0].body.properties).toMatchObject({
-      category: "Provider",
-      command: "provider.auth",
-      keybind: true,
-      source: "keybind",
+      category: "System",
+      command: "docs.open",
+      keybind: false,
+      source: "palette",
     })
-    expect(JSON.stringify(requests[0].body)).not.toContain("private keybind sentinel")
   })
 
-  test("tracks built-in slash command source without raw slash names", async () => {
+  test("does not send broad slash command telemetry", async () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []
     enableTelemetry({ stateDir: tmp.path })
@@ -757,17 +780,12 @@ describe("Telemetry", () => {
     captureCommand({
       category: "Provider",
       source: "slash",
-      value: "provider.addons",
+      value: "provider.connect",
     })
     await Telemetry.flush()
 
-    expect(requests[0].body.event).toBe("ui_command_executed")
-    expect(requests[0].body.properties).toMatchObject({
-      category: "Provider",
-      command: "provider.addons",
-      source: "slash",
-    })
-    expect(requests[0].body.properties?.slash).toBeUndefined()
+    expect(requests).toHaveLength(0)
+    expect(JSON.stringify(requests)).not.toContain("provider.connect")
   })
 
   test("sanitizes built-in properties through the privacy boundary", async () => {

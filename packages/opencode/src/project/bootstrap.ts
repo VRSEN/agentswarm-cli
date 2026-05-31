@@ -13,7 +13,6 @@ import { FileWatcher } from "@/file/watcher"
 import { ShareNext } from "@/share"
 import * as Effect from "effect/Effect"
 import { Config } from "@/config"
-import { Telemetry } from "@/telemetry/telemetry"
 
 export const InstanceBootstrap = Effect.gen(function* () {
   Log.Default.info("bootstrapping", { directory: Instance.directory })
@@ -37,10 +36,6 @@ export const InstanceBootstrap = Effect.gen(function* () {
     svc.subscribeCallback(Command.Event.Executed, async (payload) => {
       if (payload.properties.name === Command.Default.INIT) {
         Project.setInitialized(Instance.project.id)
-        void Telemetry.capture("project_initialized", {
-          source: "init_command",
-          vcs: Instance.project.vcs ?? "none",
-        })
       }
     }),
   )
