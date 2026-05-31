@@ -21,11 +21,10 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 ## Upstream Baseline Anchor
 
-- Last upstream sync merged OpenCode `dev` commit `acd8783a36d8642ade7038f34ca4f2f2ac3cc824` into the fork.
-- The upstream sync includes release tag `v1.14.28` at `acd8783a36d8642ade7038f34ca4f2f2ac3cc824`.
-- Previous upstream anchor before this sync: `35734b42fe3094c41b09ec81d3836944a8dd1d89`; previous fork merge commit: `8c24d21569620713c438b68e38a6a53fbbc66b68`.
-- Current fork head when this anchor was refreshed: `vrsen/dev` at `ca1936470e71d436cbf793592bad46f4897bf131`.
-- Current comparison count: `35734b42fe3094c41b09ec81d3836944a8dd1d89...v1.14.28` = `0 6`; pre-sync `origin/dev...v1.14.28` = `451 6`.
+- Current sync anchor: upstream OpenCode `dev` commit `acd8783a36d8642ade7038f34ca4f2f2ac3cc824` (release tag `v1.14.28`).
+- Fork merge commit carrying this sync: `519c3ed9697a419d20c36fddd161f90609d5ff5a`.
+- Previous upstream baseline: upstream OpenCode `dev` commit `35734b42fe3094c41b09ec81d3836944a8dd1d89`, carried by fork merge commit `8c24d21569620713c438b68e38a6a53fbbc66b68`.
+- Refresh these anchors through the maintenance protocol below; keep current head SHAs and ahead/behind counts as local proof only, not durable prose here.
 
 ## Branding/Packaging
 
@@ -368,7 +367,7 @@ These items were checked with `git blame`, source PRs/issues, `origin/dev`, and 
 
 ## Maintenance Protocol
 
-1. Refresh the upstream anchor with fresh `git rev-parse` and `git rev-list --left-right --count` output before you edit this file.
+1. Refresh the upstream anchor by finding the latest upstream OpenCode `dev` commit already present in the target fork branch, identifying the fork merge commit that carried it, and updating the current and previous anchor pairs after ancestry verification. Keep current head SHAs and ahead/behind counts out of durable changelog prose.
 2. Rebuild the live fork delta from fresh `git log` and `git diff` output before you add, remove, or rewrite entries.
 3. Record exactly one intentional fork-specific difference per entry. Do not bundle separate user-visible behaviors or separate technical mechanisms into one entry.
 4. Keep each `Implementation` line to one sentence that names the file path and the key function or symbol that a rebuilder would need on top of upstream.

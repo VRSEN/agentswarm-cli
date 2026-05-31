@@ -45,8 +45,12 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 - If a rewrite is explicitly approved as an emergency exception, make backup refs first and save proof that compares the old commit range to the new one before and after.
 - Sync workflow:
   - verify local remote URLs point to the expected upstream and fork repositories
-  - run `git fetch --all --prune`
-  - verify upstream-branch to fork-default-branch counts
+  - run `git fetch --all --prune`, and fetch upstream OpenCode `dev` explicitly if it is not configured as a remote
+  - find the latest upstream OpenCode `dev` commit already present in the target fork branch; use that upstream commit as the sync starting point
+  - identify the fork merge commit that carried that upstream commit into the target branch; keep that merge commit first-class with the upstream commit in `FORK_CHANGELOG.md`
+  - verify upstream-to-fork counts from the recorded current anchor, but keep current head SHAs and ahead/behind counts as local proof only, not durable policy or changelog prose
+  - do not record an upstream tag or commit as included unless an ancestry check proves it is present in the target branch
+  - merge as many upstream OpenCode `dev` changes as possible while preserving `USER_FLOWS.md`; stop and escalate before breaking a listed flow
   - push the local fork default branch to the fork repository
 - To regenerate the JavaScript SDK, run `./packages/sdk/js/script/build.ts`.
 
