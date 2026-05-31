@@ -47,7 +47,7 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
   - verify local remote URLs point to the expected upstream and fork repositories
   - run `git fetch --all --prune`, and fetch upstream OpenCode `dev` explicitly if it is not configured as a remote
   - find the latest upstream OpenCode `dev` commit already present in fork `dev` before planning the sync
-  - record that hash in `FORK_CHANGELOG.md` `## Upstream Baseline Anchor`, with the checked upstream and fork tips
+  - record that upstream hash and the fork merge commit that brought it into fork `dev` in `FORK_CHANGELOG.md` `## Upstream Baseline Anchor`, with the checked upstream and fork tips
   - do not record an upstream tag or commit as included unless the ancestry check proves it is present in fork `dev`
   - verify upstream and fork counts from the recorded anchor, naming which side is upstream and which side is fork
   - merge as many upstream OpenCode `dev` changes as possible while preserving `USER_FLOWS.md`; stop and escalate before breaking a listed flow

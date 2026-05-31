@@ -368,7 +368,7 @@ These items were checked with `git blame`, source PRs/issues, `origin/dev`, and 
 
 ## Maintenance Protocol
 
-1. Refresh the upstream anchor by finding the latest upstream OpenCode `dev` commit already present in fork `dev`, then record fresh upstream and fork tips plus counts from that anchor before you edit this file.
+1. Refresh the upstream anchor by finding the latest upstream OpenCode `dev` commit already present in fork `dev`, then record that upstream commit, the fork merge commit that brought it into fork `dev`, fresh upstream and fork tips, and counts from that anchor before you edit this file.
 2. Rebuild the live fork delta from fresh `git log` and `git diff` output before you add, remove, or rewrite entries.
 3. Record exactly one intentional fork-specific difference per entry. Do not bundle separate user-visible behaviors or separate technical mechanisms into one entry.
 4. Keep each `Implementation` line to one sentence that names the file path and the key function or symbol that a rebuilder would need on top of upstream.
