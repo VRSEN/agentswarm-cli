@@ -75,7 +75,7 @@ export namespace SessionAgencySwarm {
     options: RuntimeOptions
     abort: AbortSignal
     /** Session UI model for this turn; forwarded as `client_config.model` (bare id for OpenAI, else `litellm/...`) for server-side override. */
-    sessionModel?: { providerID: string; modelID: string }
+    sessionModel?: { providerID: string; modelID: string; variantOptions?: Record<string, unknown> }
     recipientAgent?: string
   }
 
@@ -421,6 +421,7 @@ export namespace SessionAgencySwarm {
       const sessionLitellmModel =
         input.sessionModel &&
         buildLitellmModelForClientConfig(input.sessionModel.providerID, input.sessionModel.modelID)
+      const sessionModelSettingsExtraArgs = normalizeVariantOptionsForClientConfig(input.sessionModel)
       const clientConfig = await resolveClientConfig(
         input.options.baseURL,
         agency,
@@ -429,6 +430,7 @@ export namespace SessionAgencySwarm {
         input.options.clientConfig,
         input.options.forwardUpstreamCredentials,
         sessionLitellmModel,
+        sessionModelSettingsExtraArgs,
       )
 
       const hasCurrentFileAttachments = hasFileParts(input.userMessage)
@@ -698,6 +700,71 @@ export namespace SessionAgencySwarm {
 
   function asBoolean(value: unknown): boolean | undefined {
     return typeof value === "boolean" ? value : undefined
+  }
+
+  function normalizeVariantOptionsForClientConfig(
+    sessionModel: { providerID: string; modelID: string; variantOptions?: Record<string, unknown> } | undefined,
+  ): Record<string, unknown> | undefined {
+    const variantOptions = sessionModel?.variantOptions
+    if (!variantOptions || Object.keys(variantOptions).length === 0) return undefined
+    const out: Record<string, unknown> = { ...variantOptions }
+    if ("reasoningEffort" in out && !("reasoning_effort" in out)) {
+      out["reasoning_effort"] = out["reasoningEffort"]
+      delete out["reasoningEffort"]
+    }
+    if ("reasoningSummary" in out && !("reasoning_summary" in out)) {
+      out["reasoning_summary"] = out["reasoningSummary"]
+      delete out["reasoningSummary"]
+    }
+    const providerID = sessionModel.providerID.toLowerCase()
+    const modelID = sessionModel.modelID.toLowerCase()
+    if (providerID === "anthropic") {
+      if (typeof out["effort"] === "string" && !("reasoning_effort" in out)) {
+        out["reasoning_effort"] = out["effort"]
+      }
+      delete out["effort"]
+      delete out["reasoning_summary"]
+      delete out["include"]
+      normalizeThinkingBudget(out)
+    } else if (providerID === "google" || providerID === "gemini" || providerID === "google-vertex") {
+      normalizeGeminiThinkingConfig(out)
+      delete out["reasoning_summary"]
+      delete out["include"]
+    } else if (providerID === "xai" && modelID.includes("grok")) {
+      delete out["reasoning_effort"]
+      delete out["reasoning_summary"]
+      delete out["include"]
+      delete out["effort"]
+    }
+    return Object.keys(out).length > 0 ? out : undefined
+  }
+
+  function normalizeThinkingBudget(out: Record<string, unknown>) {
+    const thinking = asRecord(out["thinking"])
+    if (!thinking) return
+    const budgetTokens = thinking["budgetTokens"]
+    if (typeof budgetTokens === "number" && !("budget_tokens" in thinking)) {
+      out["thinking"] = { ...thinking, budget_tokens: budgetTokens }
+      delete (out["thinking"] as Record<string, unknown>)["budgetTokens"]
+    }
+  }
+
+  function normalizeGeminiThinkingConfig(out: Record<string, unknown>) {
+    const thinkingConfig = asRecord(out["thinkingConfig"])
+    const thinkingBudget = thinkingConfig?.["thinkingBudget"] ?? out["thinkingBudget"]
+    const thinkingLevel = thinkingConfig?.["thinkingLevel"] ?? out["thinkingLevel"]
+    if (typeof thinkingBudget === "number") {
+      out["thinking"] = { type: "enabled", budget_tokens: thinkingBudget }
+      if (!("reasoning_effort" in out)) {
+        out["reasoning_effort"] = thinkingBudget >= 16000 ? "high" : "medium"
+      }
+    } else if (typeof thinkingLevel === "string" && !("reasoning_effort" in out)) {
+      out["reasoning_effort"] = thinkingLevel
+    }
+    delete out["thinkingConfig"]
+    delete out["thinkingBudget"]
+    delete out["thinkingLevel"]
+    delete out["includeThoughts"]
   }
 
   async function resolveRecipientAgent(input: {

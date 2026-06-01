@@ -84,6 +84,15 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     return current === text && !textOpen.has(key)
   }
 
+  const matchesBufferedContent = (buffers: Iterable<string>, text: string) => {
+    const normalized = text.trim()
+    if (!normalized) return false
+    for (const buffer of buffers) {
+      if (buffer.trim() === normalized) return true
+    }
+    return false
+  }
+
   const agentUpdatedHandoffMetadata = (agent: string | undefined) => {
     const handoffAgent = agent ?? input.assistantMessage.agent
     return handoffAgent && agentUpdatedHandoffAgents.has(handoffAgent)
@@ -801,6 +810,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       if (!itemID) return []
       const text = extractMessageText(rawItem)
       if (!text) return []
+      if (matchesBufferedContent(textBuffer.values(), text)) {
+        return []
+      }
       const index = 0
       if (shouldSkipDuplicateAssistantText(itemID, index, text)) {
         return []
@@ -825,6 +837,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     return summary.flatMap((raw, index) => {
       const record = asRecord(raw)
       const text = asString(record?.["text"]) || undefined
+      if (text && matchesBufferedContent(reasoningBuffer.values(), text)) return []
       return finishReasoning(itemID, index, text, eventMeta, { source: "run_item_stream_event" })
     })
   }
@@ -1069,6 +1082,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       if (!itemID) continue
       const text = extractMessageText(message)
       if (!text) continue
+      if (matchesBufferedContent(textBuffer.values(), text)) continue
       if (shouldSkipDuplicateAssistantText(itemID, 0, text)) continue
       parts.push(
         ...finishText(itemID, 0, text, messageMeta, {

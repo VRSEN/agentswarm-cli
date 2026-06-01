@@ -758,7 +758,7 @@ describe("agency session errors", () => {
     ).toBe(true)
   })
 
-  test("framework mode still opens auth when only a non-primary provider is credentialed", () => {
+  test("framework mode accepts Google as an upstream provider credential", () => {
     expect(
       shouldOpenStartupAuthDialog({
         frameworkMode: true,
@@ -782,13 +782,15 @@ describe("agency session errors", () => {
           },
         ],
       }),
-    ).toBe(true)
+    ).toBe(false)
   })
 
-  test("framework auth only supports openai and anthropic", () => {
+  test("framework auth supports Agent Swarm upstream providers", () => {
     expect(isSupportedAgencyAuthProvider("openai")).toBe(true)
     expect(isSupportedAgencyAuthProvider("anthropic")).toBe(true)
-    expect(isSupportedAgencyAuthProvider("google")).toBe(false)
+    expect(isSupportedAgencyAuthProvider("google")).toBe(true)
+    expect(isSupportedAgencyAuthProvider("gemini")).toBe(true)
+    expect(isSupportedAgencyAuthProvider("xai")).toBe(true)
     expect(isSupportedAgencyAuthProvider("github-copilot")).toBe(false)
   })
 
@@ -1013,6 +1015,8 @@ describe("agency session errors", () => {
 describe("isAgencySupportedProvider (/models filter)", () => {
   const mixed: Provider[] = [
     { id: "gemini", name: "Gemini", source: "config", env: [], options: {}, models: {} },
+    { id: "google", name: "Google", source: "config", env: [], options: {}, models: {} },
+    { id: "xai", name: "xAI", source: "config", env: [], options: {}, models: {} },
     { id: "github-copilot", name: "GitHub Copilot", source: "config", env: [], options: {}, models: {} },
     { id: "openai", name: "OpenAI", source: "config", env: [], options: {}, models: {} },
     { id: "anthropic", name: "Anthropic", source: "config", env: [], options: {}, models: {} },
@@ -1024,13 +1028,22 @@ describe("isAgencySupportedProvider (/models filter)", () => {
     return frameworkMode ? providers.filter((provider) => isAgencySupportedProvider(provider.id)) : providers
   }
 
-  test("framework mode keeps only openai, anthropic, agency-swarm", () => {
-    expect(filterForDialog(mixed, true).map((provider) => provider.id)).toEqual(["openai", "anthropic", "agency-swarm"])
+  test("framework mode keeps supported Agent Swarm providers", () => {
+    expect(filterForDialog(mixed, true).map((provider) => provider.id)).toEqual([
+      "gemini",
+      "google",
+      "xai",
+      "openai",
+      "anthropic",
+      "agency-swarm",
+    ])
   })
 
   test("non-framework mode passes the full provider list through", () => {
     expect(filterForDialog(mixed, false).map((provider) => provider.id)).toEqual([
       "gemini",
+      "google",
+      "xai",
       "github-copilot",
       "openai",
       "anthropic",

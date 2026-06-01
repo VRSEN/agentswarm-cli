@@ -1469,6 +1469,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   sessionModel: {
                     providerID: lastUser.model.providerID,
                     modelID: lastUser.model.modelID,
+                    variantOptions:
+                      lastUser.model.variant && model.variants ? model.variants[lastUser.model.variant] : undefined,
                   },
                   recipientAgent:
                     lastUser.agencyRecipientAgent ??

@@ -27,22 +27,35 @@ function finalizeClientConfig(
   merged: Record<string, unknown> | undefined,
   explicitForModel: Record<string, unknown> | undefined,
   sessionLitellmModel: string | undefined,
+  sessionModelSettingsExtraArgs: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
   const explicitModel = explicitForModel && asString(explicitForModel["model"])
-  if (merged && Object.keys(merged).length > 0) {
-    const out = { ...merged }
-    if (explicitModel) {
-      out["model"] = normalizeExplicitClientConfigModel(explicitModel)
-    } else if (sessionLitellmModel) {
-      out["model"] = sessionLitellmModel
+  const applySessionSettings = (out: Record<string, unknown>) => {
+    if (sessionModelSettingsExtraArgs && Object.keys(sessionModelSettingsExtraArgs).length > 0) {
+      out["model_settings_extra_args"] = {
+        ...(asRecord(out["model_settings_extra_args"]) ?? {}),
+        ...sessionModelSettingsExtraArgs,
+      }
     }
     return out
   }
+  if (merged && Object.keys(merged).length > 0) {
+    const out = { ...merged }
+    if (sessionLitellmModel) {
+      out["model"] = sessionLitellmModel
+    } else if (explicitModel) {
+      out["model"] = normalizeExplicitClientConfigModel(explicitModel)
+    }
+    return applySessionSettings(out)
+  }
   if (explicitModel) {
-    return { model: normalizeExplicitClientConfigModel(explicitModel) }
+    return applySessionSettings({ model: normalizeExplicitClientConfigModel(explicitModel) })
   }
   if (sessionLitellmModel) {
-    return { model: sessionLitellmModel }
+    return applySessionSettings({ model: sessionLitellmModel })
+  }
+  if (sessionModelSettingsExtraArgs && Object.keys(sessionModelSettingsExtraArgs).length > 0) {
+    return applySessionSettings({})
   }
   return undefined
 }
@@ -55,11 +68,13 @@ export async function resolveClientConfig(
   config: Record<string, unknown> | undefined,
   forwardUpstreamCredentials?: boolean,
   sessionLitellmModel?: string,
+  sessionModelSettingsExtraArgs?: Record<string, unknown>,
 ): Promise<Record<string, unknown> | undefined> {
   const explicit = asRecord(config)
   const explicitUpstreamBaseURL = readConfiguredBaseURL(explicit)
   const explicitModel = explicit && asString(explicit["model"])
-  const requestedModel = explicitModel ? normalizeExplicitClientConfigModel(explicitModel) : sessionLitellmModel
+  const requestedModel =
+    sessionLitellmModel ?? (explicitModel ? normalizeExplicitClientConfigModel(explicitModel) : undefined)
   const forwardGenerated =
     isLocalAgencyURL(baseURL) || Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS || forwardUpstreamCredentials === true
   const skipOpenAIApiKey = hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config)
@@ -93,14 +108,14 @@ export async function resolveClientConfig(
         : rawGenerated
       : rawGenerated
   if (!config) {
-    return finalizeClientConfig(generated, undefined, sessionLitellmModel)
+    return finalizeClientConfig(generated, undefined, sessionLitellmModel, sessionModelSettingsExtraArgs)
   }
   if (!generated) {
-    return finalizeClientConfig(explicit, explicit, sessionLitellmModel)
+    return finalizeClientConfig(explicit, explicit, sessionLitellmModel, sessionModelSettingsExtraArgs)
   }
 
   if (!explicit) {
-    return finalizeClientConfig(generated, undefined, sessionLitellmModel)
+    return finalizeClientConfig(generated, undefined, sessionLitellmModel, sessionModelSettingsExtraArgs)
   }
 
   const merged: Record<string, unknown> = {
@@ -142,7 +157,7 @@ export async function resolveClientConfig(
   }
   delete merged["defaultHeaders"]
 
-  return finalizeClientConfig(merged, explicit, sessionLitellmModel)
+  return finalizeClientConfig(merged, explicit, sessionLitellmModel, sessionModelSettingsExtraArgs)
 }
 
 async function buildAuthClientConfig(
