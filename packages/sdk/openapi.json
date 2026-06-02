@@ -13325,6 +13325,9 @@
             "type": "string",
             "enum": ["command", "mcp", "skill"]
           },
+          "builtin": {
+            "type": "boolean"
+          },
           "template": {
             "anyOf": [
               {
