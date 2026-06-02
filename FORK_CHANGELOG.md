@@ -21,11 +21,11 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 
 ## Upstream Baseline Anchor
 
-- Last upstream sync merged `origin/dev` commit `35734b42fe3094c41b09ec81d3836944a8dd1d89` into the fork.
-- The upstream sync includes release tag `v1.14.28` at `acd8783a36d8642ade7038f34ca4f2f2ac3cc824`.
-- Fork merge commit: `8c24d21569620713c438b68e38a6a53fbbc66b68`.
-- Current fork head when this anchor was refreshed: `vrsen/dev` at `ca32b473a217c4158858400a115b73ac7e7db93d`.
-- Current comparison count: `origin/dev...vrsen/dev` = `71 311`.
+- Last upstream sync target: OpenCode `v1.14.51` at `a462b1c1011860f65dcb496a8451c550478cc6a7`.
+- Upstream commit already present before this sync: `35734b42fe3094c41b09ec81d3836944a8dd1d89`.
+- Prior fork merge commit carrying that upstream commit: `8c24d21569620713c438b68e38a6a53fbbc66b68`.
+- Current fork merge commit: `2bee78661ca44489811ad6a5366d054156d81795`.
+- Fork base parent for the current merge: `ca1936470e71d436cbf793592bad46f4897bf131`.
 
 ## Branding/Packaging
 
