@@ -1224,6 +1224,236 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream forwards selected OpenRouter model and key through direct client config", async () => {
+    mockHistory()
+    spyOn(Auth, "all").mockImplementation(async () => ({
+      openai: { type: "api", key: "stored-openai" } as any,
+      openrouter: { type: "api", key: "stored-openrouter" } as any,
+    })) as typeof Auth.all
+    spyOn(Env, "all").mockImplementation(() => ({
+      OPENAI_API_KEY: "env-openai",
+      OPENROUTER_API_KEY: "env-openrouter",
+    })) as typeof Env.all
+    spyOn(Provider, "list").mockImplementation(async () => ({
+      openai: {
+        id: "openai",
+        name: "OpenAI",
+        source: "api",
+        env: ["OPENAI_API_KEY"],
+        options: {},
+        models: {},
+      },
+      openrouter: {
+        id: "openrouter",
+        name: "OpenRouter",
+        source: "api",
+        env: ["OPENROUTER_API_KEY"],
+        options: {},
+        models: {},
+      },
+    })) as typeof Provider.list
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      agency_swarm_version: "1.9.3",
+      metadata: { agents: ["AgentA"] },
+      nodes: [],
+    })) as typeof AgencySwarmAdapter.getMetadata
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = { providerID: "openrouter", modelID: "anthropic/claude-sonnet-4.5" }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "env-openrouter",
+      model: "openrouter/anthropic/claude-sonnet-4.5",
+    })
+  })
+
+  test("stream caps OpenRouter Claude max tokens for free tier keys", async () => {
+    mockHistory()
+    globalThis.fetch = mock(async () => Response.json({ data: { is_free_tier: true } })) as unknown as typeof fetch
+    spyOn(Auth, "all").mockImplementation(async () => ({
+      openrouter: { type: "api", key: "stored-openrouter" } as any,
+    })) as typeof Auth.all
+    spyOn(Env, "all").mockImplementation(() => ({
+      OPENROUTER_API_KEY: "env-openrouter",
+    })) as typeof Env.all
+    spyOn(Provider, "list").mockImplementation(async () => ({
+      openrouter: {
+        id: "openrouter",
+        name: "OpenRouter",
+        source: "api",
+        env: ["OPENROUTER_API_KEY"],
+        options: {},
+        models: {},
+      },
+    })) as typeof Provider.list
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      agency_swarm_version: "1.9.3",
+      metadata: { agents: ["AgentA"] },
+      nodes: [],
+    })) as typeof AgencySwarmAdapter.getMetadata
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = {
+      providerID: "openrouter",
+      modelID: "anthropic/claude-sonnet-4.5",
+      variantOptions: {
+        reasoning: { effort: "high" },
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "env-openrouter",
+      model: "openrouter/anthropic/claude-sonnet-4.5",
+      model_settings_extra_args: {
+        extra_body: {
+          reasoning: {
+            effort: "high",
+          },
+        },
+        max_tokens: 2500,
+      },
+    })
+  })
+
+  test("stream leaves OpenRouter Claude max tokens unset for paid tier keys", async () => {
+    mockHistory()
+    globalThis.fetch = mock(async () => Response.json({ data: { is_free_tier: false } })) as unknown as typeof fetch
+    spyOn(Auth, "all").mockImplementation(async () => ({
+      openrouter: { type: "api", key: "stored-openrouter" } as any,
+    })) as typeof Auth.all
+    spyOn(Env, "all").mockImplementation(() => ({
+      OPENROUTER_API_KEY: "env-openrouter",
+    })) as typeof Env.all
+    spyOn(Provider, "list").mockImplementation(async () => ({
+      openrouter: {
+        id: "openrouter",
+        name: "OpenRouter",
+        source: "api",
+        env: ["OPENROUTER_API_KEY"],
+        options: {},
+        models: {},
+      },
+    })) as typeof Provider.list
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      agency_swarm_version: "1.9.3",
+      metadata: { agents: ["AgentA"] },
+      nodes: [],
+    })) as typeof AgencySwarmAdapter.getMetadata
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = {
+      providerID: "openrouter",
+      modelID: "anthropic/claude-sonnet-4.5",
+      variantOptions: {
+        reasoning: { effort: "high" },
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "env-openrouter",
+      model: "openrouter/anthropic/claude-sonnet-4.5",
+      model_settings_extra_args: {
+        extra_body: {
+          reasoning: {
+            effort: "high",
+          },
+        },
+      },
+    })
+  })
+
+  test("stream forwards OpenRouter reasoning effort for non-Claude models", async () => {
+    mockHistory()
+    globalThis.fetch = mock(async () => Response.json({ data: { is_free_tier: true } })) as unknown as typeof fetch
+    spyOn(Auth, "all").mockImplementation(async () => ({
+      openrouter: { type: "api", key: "stored-openrouter" } as any,
+    })) as typeof Auth.all
+    spyOn(Env, "all").mockImplementation(() => ({
+      OPENROUTER_API_KEY: "env-openrouter",
+    })) as typeof Env.all
+    spyOn(Provider, "list").mockImplementation(async () => ({
+      openrouter: {
+        id: "openrouter",
+        name: "OpenRouter",
+        source: "api",
+        env: ["OPENROUTER_API_KEY"],
+        options: {},
+        models: {},
+      },
+    })) as typeof Provider.list
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      agency_swarm_version: "1.9.3",
+      metadata: { agents: ["AgentA"] },
+      nodes: [],
+    })) as typeof AgencySwarmAdapter.getMetadata
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = {
+      providerID: "openrouter",
+      modelID: "openai/gpt-5.4",
+      variantOptions: {
+        reasoning: { effort: "high" },
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "env-openrouter",
+      model: "openrouter/openai/gpt-5.4",
+      model_settings_extra_args: {
+        extra_body: {
+          reasoning: {
+            effort: "high",
+          },
+        },
+        max_tokens: 2500,
+      },
+    })
+  })
+
   test("stream forwards selected model variant settings to agency client config", async () => {
     mockHistory()
 

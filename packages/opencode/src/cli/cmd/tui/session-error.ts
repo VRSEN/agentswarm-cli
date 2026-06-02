@@ -6,7 +6,14 @@ import { Log } from "@/util"
 import { hasStoredProviderCredential } from "@tui/util/provider-auth"
 import type { Provider, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 
-export const AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS = ["openai", "anthropic", "google", "gemini", "xai"] as const
+export const AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS = [
+  "openai",
+  "anthropic",
+  "google",
+  "gemini",
+  "xai",
+  "openrouter",
+] as const
 const log = Log.create({ service: "tui.session-error" })
 
 /**
@@ -156,6 +163,8 @@ function envNamesForPrimaryProvider(id: (typeof AGENCY_SWARM_PRIMARY_AUTH_PROVID
       return ["GEMINI_API_KEY", "GOOGLE_API_KEY"]
     case "xai":
       return ["XAI_API_KEY"]
+    case "openrouter":
+      return ["OPENROUTER_API_KEY"]
   }
 }
 
