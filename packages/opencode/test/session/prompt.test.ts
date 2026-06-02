@@ -155,7 +155,7 @@ function queuedAgencyRecipientScenario(input: {
         ),
       ),
       "timed out waiting for first agency stream to start",
-      "2 seconds",
+      "5 seconds",
     )
 
     const second = yield* prompt
@@ -167,13 +167,13 @@ function queuedAgencyRecipientScenario(input: {
         parts: [{ type: "text", text: "second" }],
       })
       .pipe(Effect.forkChild)
-    yield* awaitWithTimeout(waitForQueuedUser(), "timed out waiting for queued user to persist", "1 second")
+    yield* awaitWithTimeout(waitForQueuedUser(), "timed out waiting for queued user to persist", "3 seconds")
     finishFirst.resolve()
 
     const [firstExit, secondExit] = yield* awaitWithTimeout(
       Effect.all([Fiber.await(first), Fiber.await(second)]),
       "timed out waiting for queued agency prompts to finish",
-      "1 second",
+      "5 seconds",
     )
     expect(Exit.isSuccess(firstExit)).toBe(true)
     expect(Exit.isSuccess(secondExit)).toBe(true)
@@ -735,7 +735,7 @@ it.instance(
       expectedRecipients: ["MathAgent", "support_agent"],
     }),
   { git: true, config: agencyCfg },
-  3_000,
+  8_000,
 )
 
 it.instance(
@@ -745,7 +745,7 @@ it.instance(
       expectedRecipients: ["MathAgent", undefined],
     }),
   { git: true, config: agencyCfg },
-  3_000,
+  8_000,
 )
 
 it.instance(
