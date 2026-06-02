@@ -730,11 +730,6 @@ export namespace SessionAgencySwarm {
       normalizeGeminiThinkingConfig(out)
       delete out["reasoning_summary"]
       delete out["include"]
-    } else if (providerID === "xai" && modelID.includes("grok")) {
-      delete out["reasoning_effort"]
-      delete out["reasoning_summary"]
-      delete out["include"]
-      delete out["effort"]
     } else if (providerID === "openrouter") {
       normalizeOpenRouterReasoningConfig(out, modelID)
     }

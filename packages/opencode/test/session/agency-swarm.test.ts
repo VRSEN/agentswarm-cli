@@ -1489,6 +1489,37 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream forwards selected xAI Grok reasoning effort to agency client config", async () => {
+    mockHistory()
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = {
+      providerID: "xai",
+      modelID: "grok-4.3",
+      variantOptions: {
+        reasoningEffort: "high",
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      model: "litellm/xai/grok-4.3",
+      model_settings_extra_args: {
+        reasoning_effort: "high",
+      },
+    })
+  })
+
   test("stream maps anthropic model variant effort to litellm reasoning effort", async () => {
     mockHistory()
 
