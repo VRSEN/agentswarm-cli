@@ -84,13 +84,17 @@ describe("installation", () => {
     })
 
     testEffect(
-      testLayer((request) => {
-        expect(request.url).toBe(
-          `https://registry.npmjs.org/${InstallationDistribution.packageName}/${InstallationChannel}`,
-        )
-        return jsonResponse({ version: "1.5.0" })
+      testLayer(undefined, (cmd, args) => {
+        expect([cmd, ...args]).toEqual([
+          "npm",
+          "view",
+          `${InstallationDistribution.packageName}@${InstallationChannel}`,
+          "version",
+          "--json",
+        ])
+        return JSON.stringify("1.5.0")
       }),
-    ).effect("uses npm registry lookup for unknown latest lookup", () =>
+    ).effect("uses npm resolver for unknown latest lookup", () =>
       Effect.gen(function* () {
         const result = yield* Installation.Service.use((svc) => svc.latest("unknown"))
         expect(result).toBe("1.5.0")
@@ -103,19 +107,23 @@ describe("installation", () => {
       }),
     )
 
-    const npmCalls: string[] = []
+    const npmCalls: string[][] = []
     testEffect(
-      testLayer((request) => {
-        npmCalls.push(request.url)
-        return jsonResponse({ version: "1.5.0" })
+      testLayer(undefined, (cmd, args) => {
+        npmCalls.push([cmd, ...args])
+        return JSON.stringify("1.5.0")
       }),
-    ).effect("reads npm versions via registry", () =>
+    ).effect("reads npm versions via npm resolver", () =>
       Effect.gen(function* () {
         const result = yield* Installation.Service.use((svc) => svc.latest("npm"))
         expect(result).toBe("1.5.0")
-        expect(npmCalls).toContain(
-          `https://registry.npmjs.org/${InstallationDistribution.packageName}/${InstallationChannel}`,
-        )
+        expect(npmCalls).toContainEqual([
+          "npm",
+          "view",
+          `${InstallationDistribution.packageName}@${InstallationChannel}`,
+          "version",
+          "--json",
+        ])
       }),
     )
 

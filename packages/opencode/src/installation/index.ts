@@ -10,7 +10,6 @@ import * as Log from "@opencode-ai/core/util/log"
 import { makeRuntime } from "@opencode-ai/core/effect/runtime"
 import semver from "semver"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
-import { NpmConfig } from "@opencode-ai/core/npm-config"
 import { InstallationDistribution } from "./distribution"
 
 const log = Log.create({ service: "installation" })
@@ -159,6 +158,16 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
       }
     }, Effect.orDie)
 
+    const viewVersion = Effect.fnUntraced(function* (spec: string) {
+      const result = yield* run(["npm", "view", spec, "version", "--json"])
+      if (result.code !== 0 || !result.stdout.trim()) {
+        return yield* new UpgradeFailedError({
+          stderr: result.stderr || result.stdout || `Failed to resolve ${spec}`,
+        })
+      }
+      return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.String))(result.stdout)
+    })
+
     const result: Interface = {
       info: Effect.fn("Installation.info")(function* () {
         return {
@@ -208,14 +217,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
           })
         }
 
-        const spec = encodeURIComponent(InstallationDistribution.packageName)
-        const response = yield* httpOk.execute(
-          HttpClientRequest.get(`${yield* NpmConfig.registry(process.cwd())}/${spec}/${InstallationChannel}`).pipe(
-            HttpClientRequest.acceptJson,
-          ),
-        )
-        const data = yield* HttpClientResponse.schemaBodyJson(NpmPackage)(response)
-        return data.version
+        return yield* viewVersion(`${InstallationDistribution.packageName}@${InstallationChannel}`)
       }, Effect.orDie),
       upgrade: Effect.fn("Installation.upgrade")(function* (m: Method, target: string) {
         let upgradeResult: { code: number; stdout: string; stderr: string } | undefined
