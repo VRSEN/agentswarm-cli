@@ -8,13 +8,42 @@ export const commandSources = new Set<string>(commandSourceValues)
 
 export const trackedCommandValues = new Set<string>(["docs.open"])
 
-const blockedCommandNameParts = new Set(["credential", "credentials", "key", "password", "private", "secret", "token"])
+export const trackedSlashCommandValues = new Set<string>([
+  "addons",
+  "agents",
+  "auth",
+  "compact",
+  "connect",
+  "copy",
+  "editor",
+  "exit",
+  "export",
+  "fork",
+  "help",
+  "init",
+  "mcps",
+  "models",
+  "new",
+  "org",
+  "redo",
+  "rename",
+  "review",
+  "sessions",
+  "share",
+  "skills",
+  "status",
+  "thinking",
+  "timeline",
+  "timestamps",
+  "undo",
+  "unshare",
+  "variants",
+])
 
 export function normalizeSlashCommandName(value: string) {
   const first = value.trim().split(/\s+/)[0]?.replace(/^\//, "")
   if (!first) return undefined
-  if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(first)) return undefined
-  if (first.split("-").some((part) => blockedCommandNameParts.has(part))) return undefined
+  if (!trackedSlashCommandValues.has(first)) return undefined
   return first
 }
 

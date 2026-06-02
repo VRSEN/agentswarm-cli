@@ -43,21 +43,21 @@ describe("command telemetry", () => {
     captureCommand({
       category: "Provider",
       source: "slash",
-      value: "/commit fix bug",
+      value: "/auth openai",
     })
     await Telemetry.flush()
 
     expect(requests).toHaveLength(1)
     expect(requests[0].body.properties).toMatchObject({
       category: "Provider",
-      command: "commit",
+      command: "auth",
       keybind: false,
       source: "slash",
     })
-    expect(JSON.stringify(requests)).not.toContain("fix bug")
+    expect(JSON.stringify(requests)).not.toContain("openai")
   })
 
-  test("does not send private slash command names", async () => {
+  test("does not send non-allowlisted slash command names", async () => {
     await using tmp = await tmpdir()
     const requests: Captured[] = []
     enableTelemetry(tmp.path)
@@ -69,11 +69,38 @@ describe("command telemetry", () => {
     captureCommand({
       category: "Prompt",
       source: "slash",
-      value: "/deploy-private now",
+      value: "/acme-deploy production",
     })
     await Telemetry.flush()
 
     expect(requests).toHaveLength(0)
-    expect(JSON.stringify(requests)).not.toContain("deploy-private")
+    expect(JSON.stringify(requests)).not.toContain("acme-deploy")
+    expect(JSON.stringify(requests)).not.toContain("production")
+  })
+
+  test("tracks docs open command telemetry", async () => {
+    await using tmp = await tmpdir()
+    const requests: Captured[] = []
+    enableTelemetry(tmp.path)
+    globalThis.fetch = (async (_url, init) => {
+      requests.push({ body: JSON.parse(String(init?.body)) })
+      return new Response(null, { status: 200 })
+    }) as typeof fetch
+
+    captureCommand({
+      category: "System",
+      keybind: "help",
+      source: "palette",
+      value: "docs.open",
+    })
+    await Telemetry.flush()
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0].body.properties).toMatchObject({
+      category: "System",
+      command: "docs.open",
+      keybind: true,
+      source: "palette",
+    })
   })
 })
