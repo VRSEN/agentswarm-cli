@@ -105,6 +105,33 @@ describe("command telemetry", () => {
     expect(JSON.stringify(requests)).not.toContain("args")
   })
 
+  test("tracks public repo slash command telemetry without arguments", async () => {
+    await using tmp = await tmpdir()
+    const requests: Captured[] = []
+    enableTelemetry(tmp.path)
+    globalThis.fetch = (async (_url, init) => {
+      requests.push({ body: JSON.parse(String(init?.body)) })
+      return new Response(null, { status: 200 })
+    }) as typeof fetch
+
+    captureCommand({
+      category: "System",
+      source: "slash",
+      value: "/translate secret text",
+    })
+    await Telemetry.flush()
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0].body.properties).toMatchObject({
+      category: "System",
+      command: "translate",
+      keybind: false,
+      source: "slash",
+    })
+    expect(JSON.stringify(requests)).not.toContain("secret")
+    expect(JSON.stringify(requests)).not.toContain("text")
+  })
+
   test("tracks docs open command telemetry", async () => {
     await using tmp = await tmpdir()
     const requests: Captured[] = []
