@@ -7,16 +7,22 @@ import type { Config } from "@/config/config"
 import { TestInstance, withTmpdirInstance } from "../fixture/fixture"
 
 type Body<A, E, R> = Effect.Effect<A, E, R> | (() => Effect.Effect<A, E, R>)
-type InstanceOptions = { git?: boolean; config?: Partial<Config.Info> }
-
-function isInstanceOptions(options: InstanceOptions | number | TestOptions | undefined): options is InstanceOptions {
-  return !!options && typeof options === "object" && ("git" in options || "config" in options)
+type InstanceOptions<E, R> = {
+  git?: boolean
+  config?: Partial<Config.Info> | (() => Partial<Config.Info>)
+  init?: (directory: string) => Effect.Effect<void, E, R>
 }
 
-function instanceArgs(
-  options?: InstanceOptions | number | TestOptions,
+function isInstanceOptions<E, R>(
+  options: InstanceOptions<E, R> | number | TestOptions | undefined,
+): options is InstanceOptions<E, R> {
+  return !!options && typeof options === "object" && ("git" in options || "config" in options || "init" in options)
+}
+
+function instanceArgs<E, R>(
+  options?: InstanceOptions<E, R> | number | TestOptions,
   testOptions?: number | TestOptions,
-): { instanceOptions: InstanceOptions | undefined; testOptions: number | TestOptions | undefined } {
+): { instanceOptions: InstanceOptions<E, R> | undefined; testOptions: number | TestOptions | undefined } {
   if (typeof options === "number") return { instanceOptions: undefined, testOptions: options }
   if (isInstanceOptions(options)) return { instanceOptions: options, testOptions }
   return { instanceOptions: undefined, testOptions: options }
@@ -54,10 +60,10 @@ const make = <R, E>(testLayer: Layer.Layer<R, E>, liveLayer: Layer.Layer<R, E>) 
   live.skip = <A, E2>(name: string, value: Body<A, E2, R | Scope.Scope>, opts?: number | TestOptions) =>
     test.skip(name, () => run(value, liveLayer), opts)
 
-  const instance = <A, E2>(
+  const instance = <A, E2, E3 = never>(
     name: string,
     value: Body<A, E2, R | TestInstance | Scope.Scope>,
-    options?: InstanceOptions | number | TestOptions,
+    options?: InstanceOptions<E3, R | Scope.Scope> | number | TestOptions,
     opts?: number | TestOptions,
   ) => {
     const args = instanceArgs(options, opts)
@@ -68,10 +74,10 @@ const make = <R, E>(testLayer: Layer.Layer<R, E>, liveLayer: Layer.Layer<R, E>) 
     )
   }
 
-  instance.only = <A, E2>(
+  instance.only = <A, E2, E3 = never>(
     name: string,
     value: Body<A, E2, R | TestInstance | Scope.Scope>,
-    options?: InstanceOptions | number | TestOptions,
+    options?: InstanceOptions<E3, R | Scope.Scope> | number | TestOptions,
     opts?: number | TestOptions,
   ) => {
     const args = instanceArgs(options, opts)
@@ -82,10 +88,10 @@ const make = <R, E>(testLayer: Layer.Layer<R, E>, liveLayer: Layer.Layer<R, E>) 
     )
   }
 
-  instance.skip = <A, E2>(
+  instance.skip = <A, E2, E3 = never>(
     name: string,
     value: Body<A, E2, R | TestInstance | Scope.Scope>,
-    options?: InstanceOptions | number | TestOptions,
+    options?: InstanceOptions<E3, R | Scope.Scope> | number | TestOptions,
     opts?: number | TestOptions,
   ) => {
     const args = instanceArgs(options, opts)
