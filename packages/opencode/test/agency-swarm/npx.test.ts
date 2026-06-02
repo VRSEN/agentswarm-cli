@@ -4861,9 +4861,8 @@ function mockReadinessDeadlineElapsed() {
   const realDateNow = Date.now
   let now = 0
   Date.now = (() => {
-    const value = now
-    now = 120001
-    return value
+    now += 120001
+    return now
   }) as typeof Date.now
   return {
     [Symbol.dispose]() {

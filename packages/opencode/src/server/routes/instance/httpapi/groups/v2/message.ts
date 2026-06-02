@@ -3,7 +3,8 @@ import { SessionMessage } from "@/v2/session-message"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../../middleware/authorization"
-import { WorkspaceRoutingQueryFields } from "../../middleware/workspace-routing"
+import { InstanceContextMiddleware } from "../../middleware/instance-context"
+import { WorkspaceRoutingMiddleware, WorkspaceRoutingQueryFields } from "../../middleware/workspace-routing"
 
 export const MessagesQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
@@ -51,4 +52,6 @@ export const MessageGroup = HttpApiGroup.make("v2.message")
       description: "Experimental v2 message routes.",
     }),
   )
+  .middleware(InstanceContextMiddleware)
+  .middleware(WorkspaceRoutingMiddleware)
   .middleware(Authorization)

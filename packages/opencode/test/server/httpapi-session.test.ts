@@ -1,4 +1,4 @@
-import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { Effect, Layer } from "effect"
@@ -18,6 +18,9 @@ import { ProjectTable } from "../../src/project/project.sql"
 import { Server } from "../../src/server/server"
 import { PublicApi } from "../../src/server/routes/instance/httpapi/public"
 import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
+import { MessageGroup } from "../../src/server/routes/instance/httpapi/groups/v2/message"
+import { InstanceContextMiddleware } from "../../src/server/routes/instance/httpapi/middleware/instance-context"
+import { WorkspaceRoutingMiddleware } from "../../src/server/routes/instance/httpapi/middleware/workspace-routing"
 import { Session } from "@/session/session"
 import { MessageID, PartID, SessionID, type SessionID as SessionIDType } from "../../src/session/schema"
 import { MessageV2 } from "../../src/session/message-v2"
@@ -50,6 +53,10 @@ const it = testEffect(Layer.mergeAll(instanceStoreLayer, Project.defaultLayer, S
 
 function app() {
   return Server.Default().app
+}
+
+function middlewareKeys(group: typeof MessageGroup) {
+  return Array.from(group.endpoints.messages.middlewares, (item) => item.key)
 }
 
 function pathFor(path: string, params: Record<string, string>) {
@@ -228,6 +235,12 @@ afterEach(async () => {
 })
 
 describe("session HttpApi", () => {
+  test("v2 message reads install workspace routing middleware for routing query fields", () => {
+    const keys = middlewareKeys(MessageGroup)
+    expect(keys).toContain(InstanceContextMiddleware.key)
+    expect(keys).toContain(WorkspaceRoutingMiddleware.key)
+  })
+
   it.instance(
     "returns declared not found errors for read routes",
     () =>
