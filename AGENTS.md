@@ -207,7 +207,7 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
 ### GitHub `@`-Mention Discipline
 
 - Every `@` mention on GitHub is an action, not just text.
-- `@username` notifies that person. `@codex review` and similar phrases trigger the Codex bot. `@claude` triggers its bot too.
+- `@username` notifies that person. `@codex review` and similar phrases trigger the Codex bot.
 - This repo treats `@codex ...` lines in pull requests and issues as commands. Do not write them casually.
 - Do not write long chatty pull-request comments.
 - If a review comment is truly needed, keep it short, technical, and action-focused.
