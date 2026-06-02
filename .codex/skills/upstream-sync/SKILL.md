@@ -91,6 +91,15 @@ git rev-list --count <fork-base>..<pr-head>
 git show --no-patch --pretty=%P <fork-merge-sha>
 ```
 
+## Workflow-Equivalent Validation
+
+Before push or readiness:
+
+- Maintain a current internal workflow timing map from recent GitHub Actions runs for the upstream-sync branch or matching default-branch workflows. Do not guess runtimes.
+- Run every local workflow-equivalent check whose normal local runtime is under 5 minutes.
+- Name each slower workflow with its median hosted duration, then either run it on GitHub or explicitly track it as pending or non-blocking based on checked evidence.
+- Keep workflow timing notes internal. Public PR text should only summarize final relevant check state.
+
 ## Final Review
 
 Before handoff:
