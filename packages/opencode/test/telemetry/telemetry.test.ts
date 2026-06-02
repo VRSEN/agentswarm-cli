@@ -716,28 +716,6 @@ describe("Telemetry", () => {
     expect(JSON.stringify(requests)).not.toContain("provider.connect")
   })
 
-  test("does not send externally registered command telemetry for colliding values", async () => {
-    await using tmp = await tmpdir()
-    const requests: { body: Captured }[] = []
-    enableTelemetry({ stateDir: tmp.path })
-    useFetch(
-      asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
-        return new Response(null, { status: 200 })
-      }),
-    )
-
-    captureCommand({
-      builtin: false,
-      category: "Plugin",
-      source: "palette",
-      value: "docs.open",
-    })
-    await Telemetry.flush()
-
-    expect(requests).toHaveLength(0)
-  })
-
   test("tracks docs click command telemetry with a safe command shape", async () => {
     await using tmp = await tmpdir()
     const requests: { body: Captured }[] = []

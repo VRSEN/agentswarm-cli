@@ -826,7 +826,7 @@ describe("prompt auth rejection handling", () => {
     expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("session_structured_error")
   })
 
-  test("clears the draft after dispatching an untracked config server slash command", async () => {
+  test("clears the draft after dispatching a tracked config server slash command", async () => {
     process.env.OPENAI_API_KEY = "sk-test"
 
     const events = createEventBus()
@@ -940,7 +940,7 @@ describe("prompt auth rejection handling", () => {
     } as any)
     spyOn(SyncContext, "useSync").mockReturnValue({
       data: {
-        command: [{ name: "commit", source: "command", builtin: false }],
+        command: [{ name: "commit", source: "command" }],
         config: {
           model: "agency-swarm/default",
           experimental: {},
@@ -1061,9 +1061,16 @@ describe("prompt auth rejection handling", () => {
       return (properties as Record<string, unknown>).type === "server_command"
     })
     expect(telemetryCall).toBeTruthy()
-    const telemetryProperties = telemetryCall?.[1] as Record<string, unknown> | undefined
-    expect(telemetryCapture.mock.calls.some(([event]) => event === "ui_command_executed")).toBe(false)
-    expect(telemetryProperties?.provider_id).toBe("agency-swarm")
+    const commandTelemetry = telemetryCapture.mock.calls.filter(([event]) => event === "ui_command_executed")
+    expect(commandTelemetry).toHaveLength(1)
+    expect(commandTelemetry[0]?.[1]).toMatchObject({
+      category: "Prompt",
+      command: "commit",
+      keybind: false,
+      source: "slash",
+    })
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toMatch(/refresh|second line/)
+    expect((telemetryCall?.[1] as Record<string, unknown> | undefined)?.provider_id).toBe("agency-swarm")
     expect(appendHistory).toHaveBeenCalledWith({
       input: "/commit refresh\nsecond line",
       parts: [],

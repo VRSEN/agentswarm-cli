@@ -5,7 +5,6 @@ import type { CommandTelemetrySource } from "./command-values"
 export type { CommandTelemetrySource } from "./command-values"
 
 type CommandTelemetryInput = {
-  builtin?: boolean | undefined
   category?: string | undefined
   keybind?: string | undefined
   source: CommandTelemetrySource
@@ -13,7 +12,6 @@ type CommandTelemetryInput = {
 }
 
 export function captureCommand(input: CommandTelemetryInput) {
-  if (input.builtin === false) return
   const value = input.source === "slash" ? normalizeSlashCommandName(input.value) : input.value
   if (!value) return
   if (input.source !== "slash" && !trackedCommandValues.has(value)) return

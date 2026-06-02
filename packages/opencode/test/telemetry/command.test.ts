@@ -31,7 +31,7 @@ describe("command telemetry", () => {
     resetEnv()
   })
 
-  test("tracks builtin slash command telemetry without arguments", async () => {
+  test("tracks allowlisted slash command telemetry without arguments", async () => {
     await using tmp = await tmpdir()
     const requests: Captured[] = []
     enableTelemetry(tmp.path)
@@ -41,7 +41,6 @@ describe("command telemetry", () => {
     }) as typeof fetch
 
     captureCommand({
-      builtin: true,
       category: "Provider",
       source: "slash",
       value: "/auth openai",
@@ -79,7 +78,7 @@ describe("command telemetry", () => {
     expect(JSON.stringify(requests)).not.toContain("production")
   })
 
-  test("tracks trusted builtin command telemetry without arguments", async () => {
+  test("tracks allowlisted command-source slash telemetry by name only", async () => {
     await using tmp = await tmpdir()
     const requests: Captured[] = []
     enableTelemetry(tmp.path)
@@ -89,43 +88,19 @@ describe("command telemetry", () => {
     }) as typeof fetch
 
     captureCommand({
-      builtin: true,
-      category: "System",
-      source: "slash",
-      value: "/review private args",
-    })
-    await Telemetry.flush()
-
-    expect(requests).toHaveLength(1)
-    expect(requests[0].body.properties).toMatchObject({
-      category: "System",
-      command: "review",
-      keybind: false,
-      source: "slash",
-    })
-    expect(JSON.stringify(requests)).not.toContain("private")
-    expect(JSON.stringify(requests)).not.toContain("args")
-  })
-
-  test("does not track non-builtin slash commands with allowlisted names", async () => {
-    await using tmp = await tmpdir()
-    const requests: Captured[] = []
-    enableTelemetry(tmp.path)
-    globalThis.fetch = (async (_url, init) => {
-      requests.push({ body: JSON.parse(String(init?.body)) })
-      return new Response(null, { status: 200 })
-    }) as typeof fetch
-
-    captureCommand({
-      builtin: false,
       category: "Prompt",
       source: "slash",
       value: "/commit private args",
     })
     await Telemetry.flush()
 
-    expect(requests).toHaveLength(0)
-    expect(JSON.stringify(requests)).not.toContain("commit")
+    expect(requests).toHaveLength(1)
+    expect(requests[0].body.properties).toMatchObject({
+      category: "Prompt",
+      command: "commit",
+      keybind: false,
+      source: "slash",
+    })
     expect(JSON.stringify(requests)).not.toContain("private")
     expect(JSON.stringify(requests)).not.toContain("args")
   })

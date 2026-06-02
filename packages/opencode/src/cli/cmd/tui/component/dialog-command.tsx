@@ -49,14 +49,15 @@ function init() {
 
   const isEnabled = (option: CommandOption) => option.enabled !== false
   const isVisible = (option: CommandOption) => isEnabled(option) && !option.hidden
-  const track = (option: CommandOption, source: CommandTelemetrySource) =>
+  const track = (option: CommandOption, source: CommandTelemetrySource) => {
+    if (option.telemetry === false) return
     captureCommand({
-      builtin: option.telemetry !== false,
       category: option.category,
       keybind: option.keybind,
       source,
       value: option.value,
     })
+  }
   const tracked = (option: CommandOption, source: "palette" | "suggested", trackedOption = option) => ({
     ...option,
     onSelect: (dialog: Parameters<NonNullable<CommandOption["onSelect"]>>[0]) => {
@@ -119,12 +120,7 @@ function init() {
           description: option.description ?? option.title,
           aliases: slash.aliases?.map((alias) => "/" + alias),
           onSelect: () => {
-            captureCommand({
-              builtin: option.telemetry !== false,
-              category: option.category,
-              source: "slash",
-              value: slash.name,
-            })
+            track({ ...option, value: slash.name }, "slash")
             option.onSelect?.(dialog)
           },
         }
