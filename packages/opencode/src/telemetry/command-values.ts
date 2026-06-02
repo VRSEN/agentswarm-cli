@@ -13,6 +13,7 @@ export const trackedSlashCommandValues = new Set<string>([
   "agents",
   "auth",
   "compact",
+  "commit",
   "connect",
   "copy",
   "editor",

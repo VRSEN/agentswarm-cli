@@ -78,6 +78,33 @@ describe("command telemetry", () => {
     expect(JSON.stringify(requests)).not.toContain("production")
   })
 
+  test("tracks commit slash command telemetry without arguments", async () => {
+    await using tmp = await tmpdir()
+    const requests: Captured[] = []
+    enableTelemetry(tmp.path)
+    globalThis.fetch = (async (_url, init) => {
+      requests.push({ body: JSON.parse(String(init?.body)) })
+      return new Response(null, { status: 200 })
+    }) as typeof fetch
+
+    captureCommand({
+      category: "System",
+      source: "slash",
+      value: "/commit private args",
+    })
+    await Telemetry.flush()
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0].body.properties).toMatchObject({
+      category: "System",
+      command: "commit",
+      keybind: false,
+      source: "slash",
+    })
+    expect(JSON.stringify(requests)).not.toContain("private")
+    expect(JSON.stringify(requests)).not.toContain("args")
+  })
+
   test("tracks docs open command telemetry", async () => {
     await using tmp = await tmpdir()
     const requests: Captured[] = []
