@@ -91,7 +91,6 @@ const LITELLM_PROVIDER_IDS = new Set([
   "oobabooga",
   "openai",
   "openai_like",
-  "openrouter",
   "ovhcloud",
   "perplexity",
   "petals",
@@ -161,6 +160,8 @@ export function mapProviderIDToLiteLLMProvider(providerID: string): string | und
 const AGENCY_SWARM_PROVIDER_ID = "agency-swarm"
 
 const OPENAI_LITELLM_ID = "openai"
+const OPENROUTER_PROVIDER_ID = "openrouter"
+const OPENROUTER_MODEL_PREFIX = `${OPENROUTER_PROVIDER_ID}/`
 
 const LITELLM_OPENAI_PREFIX = "litellm/openai/"
 
@@ -190,6 +191,7 @@ function stripOpenAILiteLLMRoutePrefixes(t: string, providerID: string): string 
 export function normalizeExplicitClientConfigModel(raw: string): string {
   const t = raw.trim()
   if (!t) return t
+  if (t.startsWith(OPENROUTER_MODEL_PREFIX)) return t
   if (t.startsWith("litellm/")) {
     const afterLitellm = t.slice("litellm/".length)
     if (afterLitellm.startsWith(`${OPENAI_LITELLM_ID}/`)) return afterLitellm.slice(OPENAI_LITELLM_ID.length + 1)
@@ -202,6 +204,10 @@ export function normalizeExplicitClientConfigModel(raw: string): string {
   if (stripped !== t) return stripped
   if (slash !== -1) return `litellm/${t}`
   return t
+}
+
+export function isOpenRouterClientConfigModel(model: string | undefined): boolean {
+  return !!model?.trim().startsWith(OPENROUTER_MODEL_PREFIX)
 }
 
 // TODO(agency-swarm#629): remove after upstream scopes config.base_url per-provider.
@@ -226,7 +232,8 @@ export function isOpenAIBasedLitellmModel(sessionLitellmModel: string | undefine
 
 /**
  * Build `client_config.model` from the CLI session selection.
- * OpenAI models use the bare model id only (e.g. `gpt-4o`). Other providers use `litellm/<provider>/<model>`.
+ * OpenAI models use the bare model id only (e.g. `gpt-4o`). OpenRouter models use direct
+ * `openrouter/<model>` routing. Other providers use `litellm/<provider>/<model>`.
  * Skips when the session model is the agency-swarm placeholder (no LLM provider).
  * The caller-supplied `providerID` decides the route: for OpenRouter-style ids like
  * `openrouter/openai/gpt-5.2` (or bare `openai/gpt-5.2` with `providerID="openrouter"`),
@@ -236,6 +243,10 @@ export function buildLitellmModelForClientConfig(providerID: string, modelID: st
   if (providerID === AGENCY_SWARM_PROVIDER_ID) return undefined
   const t = modelID.trim()
   if (!t) return undefined
+  if (providerID === OPENROUTER_PROVIDER_ID) {
+    if (t.startsWith(OPENROUTER_MODEL_PREFIX)) return t
+    return `${OPENROUTER_MODEL_PREFIX}${t}`
+  }
   const stripped = stripOpenAILiteLLMRoutePrefixes(t, providerID)
   if (stripped !== t) return stripped
   if (t.startsWith("litellm/")) return t

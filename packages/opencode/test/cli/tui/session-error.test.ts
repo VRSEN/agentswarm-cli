@@ -297,6 +297,34 @@ describe("agency session errors", () => {
     ).toBe(false)
   })
 
+  test("framework mode skips auth when forwarding is active and OPENROUTER_API_KEY is set in env", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        forwardUpstreamCredentials: true,
+        env: { OPENROUTER_API_KEY: "sk-openrouter-env" },
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: { baseURL: "https://agency.example.com" },
+            models: {},
+          },
+          {
+            id: "openrouter",
+            name: "OpenRouter",
+            source: "config",
+            env: ["OPENROUTER_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
   test("framework mode skips auth from env even when the primary provider is filtered out", () => {
     // Mirrors SessionAgencySwarm.buildAuthClientConfig()'s direct OPENAI_API_KEY read:
     // the bridge can authenticate via env even when openai is not in the enabled provider list.
@@ -785,12 +813,40 @@ describe("agency session errors", () => {
     ).toBe(false)
   })
 
+  test("framework mode accepts OpenRouter as an upstream provider credential", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "openrouter",
+            name: "OpenRouter",
+            source: "api",
+            env: ["OPENROUTER_API_KEY"],
+            key: "openrouter-key",
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
   test("framework auth supports Agent Swarm upstream providers", () => {
     expect(isSupportedAgencyAuthProvider("openai")).toBe(true)
     expect(isSupportedAgencyAuthProvider("anthropic")).toBe(true)
     expect(isSupportedAgencyAuthProvider("google")).toBe(true)
     expect(isSupportedAgencyAuthProvider("gemini")).toBe(true)
     expect(isSupportedAgencyAuthProvider("xai")).toBe(true)
+    expect(isSupportedAgencyAuthProvider("openrouter")).toBe(true)
     expect(isSupportedAgencyAuthProvider("github-copilot")).toBe(false)
   })
 
@@ -1017,6 +1073,7 @@ describe("isAgencySupportedProvider (/models filter)", () => {
     { id: "gemini", name: "Gemini", source: "config", env: [], options: {}, models: {} },
     { id: "google", name: "Google", source: "config", env: [], options: {}, models: {} },
     { id: "xai", name: "xAI", source: "config", env: [], options: {}, models: {} },
+    { id: "openrouter", name: "OpenRouter", source: "config", env: [], options: {}, models: {} },
     { id: "github-copilot", name: "GitHub Copilot", source: "config", env: [], options: {}, models: {} },
     { id: "openai", name: "OpenAI", source: "config", env: [], options: {}, models: {} },
     { id: "anthropic", name: "Anthropic", source: "config", env: [], options: {}, models: {} },
@@ -1033,6 +1090,7 @@ describe("isAgencySupportedProvider (/models filter)", () => {
       "gemini",
       "google",
       "xai",
+      "openrouter",
       "openai",
       "anthropic",
       "agency-swarm",
@@ -1044,6 +1102,7 @@ describe("isAgencySupportedProvider (/models filter)", () => {
       "gemini",
       "google",
       "xai",
+      "openrouter",
       "github-copilot",
       "openai",
       "anthropic",

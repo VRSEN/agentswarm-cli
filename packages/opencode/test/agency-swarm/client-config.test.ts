@@ -9,6 +9,7 @@ import {
 import {
   buildLitellmModelForClientConfig,
   isOpenAIBasedLitellmModel,
+  isOpenRouterClientConfigModel,
   normalizeExplicitClientConfigModel,
 } from "../../src/agency-swarm/litellm-provider"
 
@@ -101,11 +102,14 @@ describe("agency-swarm client config credentials", () => {
 })
 
 describe("agency-swarm litellm model routing", () => {
-  test("buildLitellmModelForClientConfig keeps the caller provider for OpenRouter-namespaced ids", () => {
+  test("buildLitellmModelForClientConfig uses direct OpenRouter routing", () => {
     expect(buildLitellmModelForClientConfig("openrouter", "openrouter/openai/gpt-5.2")).toBe(
-      "litellm/openrouter/openai/gpt-5.2",
+      "openrouter/openai/gpt-5.2",
     )
-    expect(buildLitellmModelForClientConfig("openrouter", "openai/gpt-5.2")).toBe("litellm/openrouter/openai/gpt-5.2")
+    expect(buildLitellmModelForClientConfig("openrouter", "openai/gpt-5.2")).toBe("openrouter/openai/gpt-5.2")
+    expect(buildLitellmModelForClientConfig("openrouter", "anthropic/claude-sonnet-4.5")).toBe(
+      "openrouter/anthropic/claude-sonnet-4.5",
+    )
   })
 
   test("buildLitellmModelForClientConfig still strips openai/ prefixes when the provider is openai", () => {
@@ -120,7 +124,7 @@ describe("agency-swarm litellm model routing", () => {
   })
 
   test("normalizeExplicitClientConfigModel preserves non-OpenAI provider namespaces", () => {
-    expect(normalizeExplicitClientConfigModel("openrouter/openai/gpt-5.2")).toBe("litellm/openrouter/openai/gpt-5.2")
+    expect(normalizeExplicitClientConfigModel("openrouter/openai/gpt-5.2")).toBe("openrouter/openai/gpt-5.2")
     expect(normalizeExplicitClientConfigModel("litellm/openrouter/openai/gpt-5.2")).toBe(
       "litellm/openrouter/openai/gpt-5.2",
     )
@@ -139,5 +143,11 @@ describe("agency-swarm litellm model routing", () => {
     expect(isOpenAIBasedLitellmModel("litellm/anthropic/claude-sonnet-4-6")).toBe(false)
     expect(isOpenAIBasedLitellmModel("litellm/gemini/gemini-2.5-pro")).toBe(false)
     expect(isOpenAIBasedLitellmModel("anthropic/claude-sonnet-4-6")).toBe(false)
+  })
+
+  test("isOpenRouterClientConfigModel detects direct OpenRouter routes only", () => {
+    expect(isOpenRouterClientConfigModel("openrouter/openai/gpt-5.2")).toBe(true)
+    expect(isOpenRouterClientConfigModel("litellm/openrouter/openai/gpt-5.2")).toBe(false)
+    expect(isOpenRouterClientConfigModel("gpt-5")).toBe(false)
   })
 })

@@ -735,8 +735,54 @@ export namespace SessionAgencySwarm {
       delete out["reasoning_summary"]
       delete out["include"]
       delete out["effort"]
+    } else if (providerID === "openrouter") {
+      normalizeOpenRouterReasoningConfig(out, modelID)
     }
     return Object.keys(out).length > 0 ? out : undefined
+  }
+
+  function normalizeOpenRouterReasoningConfig(out: Record<string, unknown>, modelID: string) {
+    const reasoning = asRecord(out["reasoning"])
+    if (!reasoning) return
+
+    const extraBody = { ...(asRecord(out["extra_body"]) ?? {}) }
+    const extraBodyReasoning = { ...(asRecord(extraBody["reasoning"]) ?? {}) }
+    if (modelID.includes("anthropic/") || modelID.includes("claude")) {
+      const maxTokens = reasoning["max_tokens"]
+      if (typeof maxTokens === "number" && Number.isFinite(maxTokens)) {
+        extraBody["reasoning"] = {
+          ...extraBodyReasoning,
+          max_tokens: Math.max(1, Math.floor(maxTokens)),
+        }
+      } else if (typeof reasoning["effort"] === "string") {
+        extraBody["reasoning"] = {
+          ...extraBodyReasoning,
+          effort: reasoning["effort"],
+        }
+      } else {
+        extraBody["reasoning"] = {
+          ...extraBodyReasoning,
+          enabled: true,
+        }
+      }
+      if (typeof out["max_tokens"] !== "number") {
+        out["__openrouter_default_max_tokens"] = true
+      }
+    } else {
+      extraBody["reasoning"] = {
+        ...reasoning,
+        ...extraBodyReasoning,
+      }
+    }
+    if (typeof out["max_tokens"] !== "number") {
+      out["__openrouter_default_max_tokens"] = true
+    }
+    if (Object.keys(extraBody).length > 0) {
+      out["extra_body"] = extraBody
+    } else {
+      delete out["extra_body"]
+    }
+    delete out["reasoning"]
   }
 
   function normalizeThinkingBudget(out: Record<string, unknown>) {
