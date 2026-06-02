@@ -118,7 +118,15 @@ function init() {
           display: "/" + slash.name,
           description: option.description ?? option.title,
           aliases: slash.aliases?.map((alias) => "/" + alias),
-          onSelect: () => result.trigger(option.value, "slash"),
+          onSelect: () => {
+            captureCommand({
+              builtin: option.telemetry !== false,
+              category: option.category,
+              source: "slash",
+              value: slash.name,
+            })
+            option.onSelect?.(dialog)
+          },
         }
       })
     },

@@ -87,6 +87,7 @@ import { DialogWorkspaceCreate, restoreWorkspaceSession } from "../dialog-worksp
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
 import { useArgs } from "@tui/context/args"
 import { Telemetry } from "@/telemetry/telemetry"
+import { captureCommand } from "@/telemetry/command"
 
 export type PromptProps = {
   sessionID?: string
@@ -1083,7 +1084,6 @@ export function Prompt(props: PromptProps) {
     }
     const productProviderID = frameworkMode() ? AgencySwarmAdapter.PROVIDER_ID : selectedModel.providerID
 
-    // Capture mode before it gets reset
     const currentMode = store.mode
     const variant = local.model.variant.current()
     const serverSlashCommand = inputText.startsWith("/")
@@ -1247,12 +1247,12 @@ export function Prompt(props: PromptProps) {
       })
       setStore("mode", "normal")
     } else if (isServerSlashCommand) {
-      // Parse command from first line, preserve multi-line content in arguments
       const [command, ...firstLineArgs] = firstLine.split(" ")
       const restOfInput = firstLineEnd === -1 ? "" : inputText.slice(firstLineEnd + 1)
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
 
       capturePromptSubmitted("server_command", currentMode)
+      if (serverSlashCommand.source === "command") captureCommand({ category: "Prompt", source: "slash", value: command })
       void sdk.client.session.command({
         sessionID,
         command: command.slice(1),

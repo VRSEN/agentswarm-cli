@@ -257,14 +257,14 @@ For each failure scenario, capture the visible user result and cite the source p
 
 #### Telemetry metrics and privacy contract
 
-- **Trigger:** A release build with telemetry enabled exercises supported fork-owned flows: provider demand, provider auth start or failure, normal TUI prompt task success or failure, docs clicks, and integration request.
+- **Trigger:** A release build with telemetry enabled exercises supported fork-owned flows: provider demand, provider auth start or failure, normal TUI prompt task success or failure, supported slash commands, docs clicks, and integration request.
 - **Boundary:** Telemetry events outside the listed supported flows are not supported.
 - **Boundary:** Agent run internals, artifacts generated, crashes, build or release failures, signup, demo, book-demo, and the Agent Swarm connect funnel are deferred.
 - **Happy-path proof:** Provider demand records only the safe provider family or `custom`; raw model IDs are not sent.
 - **Happy-path proof:** App-start, prompt, and task telemetry report the Agent Swarm product provider bucket in Run mode instead of the visible upstream LLM provider or raw model ID.
 - **Happy-path proof:** Provider auth start and failure events record only safe flow fields such as provider family, auth method, source, and outcome; credential material and raw error text are not sent.
 - **Happy-path proof:** Normal TUI prompt task success and failure metrics record only safe task shape and outcome fields; prompt text, conversation text, source content, tool inputs, and tool outputs are not sent.
-- **Happy-path proof:** Docs-click telemetry records only `command=docs.open` and safe command-shape fields; no other command value is supported.
+- **Happy-path proof:** Command telemetry records docs clicks as `command=docs.open` and supported slash commands as the command name without `/`, while excluding prompt text, command arguments, command bodies, file paths, credentials, and private command names.
 - **Happy-path proof:** Integration requested metrics record the user action without project IDs, file paths, source data, tokens, secrets, environment variables, or external account identifiers.
 - **Happy-path proof:** Sent PostHog events include `$process_person_profile: false`.
 - **Happy-path proof:** Event-list docs enumerate the supported telemetry events, allowed properties, opt-out controls, deferred metrics, and privacy red lines.

@@ -52,7 +52,7 @@ Do not share sessions that contain secrets, private code, private customer data,
 
 ## Telemetry
 
-Release builds may send privacy-safe product analytics to PostHog so maintainers can understand which Agent Swarm TUI features are used. Events cover app start, `/auth` provider setup, docs clicks, prompt submission shape, task success or failure, and selected add-ons. They do not include prompt text, credentials, file paths, tool payloads, message content, raw model IDs, project IDs, session IDs, message IDs, source content, environment variables, raw error text, tool inputs, or tool outputs.
+Release builds may send privacy-safe product analytics to PostHog so maintainers can understand which Agent Swarm TUI features are used. Events cover app start, `/auth` provider setup, supported slash command usage, docs clicks, prompt submission shape, task success or failure, and selected add-ons. They do not include prompt text, slash command arguments, credentials, file paths, tool payloads, message content, raw model IDs, project IDs, session IDs, message IDs, source content, environment variables, raw error text, tool inputs, or tool outputs.
 
 Set `OPEN_SWARM_TELEMETRY=0`, `AGENTSWARM_TELEMETRY=0`, or pass `--no-telemetry` to disable this telemetry.
 
@@ -65,13 +65,13 @@ Supported events and properties:
 - `provider_auth_started`: `provider_id`, `auth_method`, `framework_mode`, `source`.
 - `provider_auth_configured`: `provider_id`, `auth_method`, `framework_mode`, `source`.
 - `provider_auth_failed`: `provider_id`, `auth_method`, `framework_mode`, `source`, `step`, `error_bucket`.
-- `ui_command_executed`: docs clicks only; `category`, `command=docs.open`, `keybind`, `source`.
+- `ui_command_executed`: docs clicks and supported slash commands; `category`, `command` (`docs.open` or the slash command name without `/`), `keybind`, `source`.
 - `ui_prompt_submitted`: `framework_mode`, `has_agent_parts`, `has_editor_selection`, `has_file_parts`, `mode`, `provider_id`, `type`.
 - `task_succeeded`: `framework_mode`, `provider_id`, `mode`, `duration_bucket`, `has_agent_parts`, `has_file_parts`.
 - `task_failed`: `framework_mode`, `provider_id`, `mode`, `duration_bucket`, `has_agent_parts`, `has_file_parts`, `error_bucket`.
 - `integration_requested`: `provider_id`, `integration_id`, `source`, `already_configured`.
 
-Dashboard metrics are derived from those events where possible. `first_run` and D1/D7/D30 retention cohorts use `app_started`; `sessions_per_user` counts `app_started`; `first_task_started` uses `ui_prompt_submitted` with `type=prompt`; `first_successful_task`, `time_to_first_success`, and `tasks_completed` use `task_succeeded`; docs clicks use `ui_command_executed` with `command=docs.open`; `provider_demand` uses provider requested, started, configured, and failed events.
+Dashboard metrics are derived from those events where possible. `first_run` and D1/D7/D30 retention cohorts use `app_started`; `sessions_per_user` counts `app_started`; `first_task_started` uses `ui_prompt_submitted` with `type=prompt`; `first_successful_task`, `time_to_first_success`, and `tasks_completed` use `task_succeeded`; docs clicks use `ui_command_executed` with `command=docs.open`; slash command usage uses `ui_command_executed` with `source=slash`; `provider_demand` uses provider requested, started, configured, and failed events.
 
 Deferred telemetry includes agent run internals, generated artifacts, crashes, build or release failures, signup or demo funnels, book-demo flows, and Agent Swarm connect funnel metrics.
 

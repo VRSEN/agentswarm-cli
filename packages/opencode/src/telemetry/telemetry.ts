@@ -5,7 +5,7 @@ import { Global } from "@opencode-ai/core/global"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { AgencyProduct } from "@/agency-swarm/product"
-import { commandCategories, commandSources, trackedCommandValues } from "./command-values"
+import { commandCategories, commandSources, isTrackedCommandValue } from "./command-values"
 
 declare const AGENTSWARM_POSTHOG_API_KEY: string | undefined
 declare const AGENTSWARM_POSTHOG_HOST: string | undefined
@@ -182,7 +182,7 @@ const eventProperties: Record<TelemetryEvent, Record<string, PropertySpec>> = {
   },
   ui_command_executed: {
     category: stringField(commandCategories),
-    command: stringField(trackedCommandValues),
+    command: stringField(),
     keybind: booleanField,
     source: stringField(commandSources),
   },
@@ -315,7 +315,9 @@ function sanitize(event: TelemetryEvent, input: Record<string, unknown> | undefi
 }
 
 function shouldSend(event: TelemetryEvent, properties: Record<string, SafeValue>) {
-  if (event === "ui_command_executed") return properties.command === "docs.open"
+  if (event === "ui_command_executed") {
+    return typeof properties.command === "string" && isTrackedCommandValue(properties.command, properties.source)
+  }
   return true
 }
 

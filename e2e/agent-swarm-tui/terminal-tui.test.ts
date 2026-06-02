@@ -115,14 +115,12 @@ describe("Agent Swarm terminal TUI e2e", () => {
         OPEN_SWARM_TELEMETRY: undefined,
       },
     })
-
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
     await currentTui.waitFor(
       () => currentTelemetryServer!.events.some((event) => event.event === "app_started"),
       "app_started telemetry event",
       tuiInteractionTimeoutMs,
     )
-
     const appEvent = currentTelemetryServer.events.find((event) => event.event === "app_started")
     expect(appEvent?.properties).toMatchObject({
       "$process_person_profile": false,
@@ -131,15 +129,16 @@ describe("Agent Swarm terminal TUI e2e", () => {
       framework_mode: true,
       provider_id: "agency-swarm",
     })
-
     await driveOpenAIAPIKeyAuth(currentTui, "sk-test-telemetry")
-
     await currentTui.waitFor(
       () => currentTelemetryServer!.events.some((event) => event.event === "provider_auth_configured"),
       "provider_auth_configured telemetry event",
       tuiInteractionTimeoutMs,
     )
-
+    const commandEvent = currentTelemetryServer.events.find((event) => event.event === "ui_command_executed")
+    expect(commandEvent?.properties).toMatchObject({ "$process_person_profile": false, app: "Agent Swarm", command: "auth", source: "slash" })
+    expect(JSON.stringify(commandEvent)).not.toContain("sk-test-telemetry")
+    expect(JSON.stringify(commandEvent)).not.toContain("refresh")
     const requested = currentTelemetryServer.events.find((event) => event.event === "provider_requested")
     expect(requested?.properties).toMatchObject({
       "$process_person_profile": false,
