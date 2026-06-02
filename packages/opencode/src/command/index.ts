@@ -35,6 +35,7 @@ export const Info = Schema.Struct({
   agent: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
   source: Schema.optional(Schema.Literals(["command", "mcp", "skill"])),
+  builtin: Schema.optional(Schema.Boolean),
   // Some command templates are lazy promises from MCP prompt resolution.
   template: Schema.Unknown.annotate({ [ZodOverride]: z.promise(z.string()).or(z.string()) }),
   subtask: Schema.optional(Schema.Boolean),
@@ -84,6 +85,7 @@ export const layer = Layer.effect(
         name: Default.INIT,
         description: "guided AGENTS.md setup",
         source: "command",
+        builtin: true,
         get template() {
           return PROMPT_INITIALIZE.replace("${path}", ctx.worktree)
         },
@@ -93,6 +95,7 @@ export const layer = Layer.effect(
         name: Default.REVIEW,
         description: "review changes [commit|branch|pr], defaults to uncommitted",
         source: "command",
+        builtin: true,
         get template() {
           return PROMPT_REVIEW.replace("${path}", ctx.worktree)
         },
@@ -107,6 +110,7 @@ export const layer = Layer.effect(
           model: command.model,
           description: command.description,
           source: "command",
+          builtin: false,
           get template() {
             return command.template
           },

@@ -534,7 +534,7 @@ describe("prompt auth rejection handling", () => {
       data: {
         info: {
           agent: "builder",
-          finish: "stop",
+          finish: "unknown",
           id: "assistant_success",
           modelID: "default",
           parentID: promptPayload!.messageID,
@@ -826,7 +826,7 @@ describe("prompt auth rejection handling", () => {
     expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("session_structured_error")
   })
 
-  test("clears the draft after dispatching a server slash command", async () => {
+  test("clears the draft after dispatching an untracked config server slash command", async () => {
     process.env.OPENAI_API_KEY = "sk-test"
 
     const events = createEventBus()
@@ -940,7 +940,7 @@ describe("prompt auth rejection handling", () => {
     } as any)
     spyOn(SyncContext, "useSync").mockReturnValue({
       data: {
-        command: [{ name: "auth" }],
+        command: [{ name: "commit", source: "command", builtin: false }],
         config: {
           model: "agency-swarm/default",
           experimental: {},
@@ -1045,7 +1045,7 @@ describe("prompt auth rejection handling", () => {
     expect(promptRef).toBeDefined()
 
     promptRef!.set({
-      input: "/auth refresh\nsecond line",
+      input: "/commit refresh\nsecond line",
       parts: [],
     })
     await flushEffects()
@@ -1062,10 +1062,10 @@ describe("prompt auth rejection handling", () => {
     })
     expect(telemetryCall).toBeTruthy()
     const telemetryProperties = telemetryCall?.[1] as Record<string, unknown> | undefined
-    expect(telemetryProperties?.command).toBeUndefined()
+    expect(telemetryCapture.mock.calls.some(([event]) => event === "ui_command_executed")).toBe(false)
     expect(telemetryProperties?.provider_id).toBe("agency-swarm")
     expect(appendHistory).toHaveBeenCalledWith({
-      input: "/auth refresh\nsecond line",
+      input: "/commit refresh\nsecond line",
       parts: [],
       mode: "normal",
     })

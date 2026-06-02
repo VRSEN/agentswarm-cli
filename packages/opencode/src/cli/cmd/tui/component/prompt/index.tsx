@@ -357,7 +357,7 @@ export function Prompt(props: PromptProps) {
   }
 
   function isFinalAssistantCompletion(info: AssistantMessage, parts: readonly Part[]) {
-    if (info.finish === undefined || ["tool-calls", "unknown", "cancelled"].includes(info.finish)) return false
+    if (info.finish === undefined || ["tool-calls", "cancelled"].includes(info.finish)) return false
     if (info.time.completed === undefined) return false
     if (info.providerID !== AgencySwarmAdapter.PROVIDER_ID && hasLocalToolCalls(parts)) return false
     return true
@@ -1252,7 +1252,7 @@ export function Prompt(props: PromptProps) {
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
 
       capturePromptSubmitted("server_command", currentMode)
-      if (serverSlashCommand.source === "command") captureCommand({ category: "Prompt", source: "slash", value: command })
+      if (serverSlashCommand.source === "command") captureCommand({ builtin: "builtin" in serverSlashCommand && serverSlashCommand.builtin === true, category: "Prompt", source: "slash", value: command })
       void sdk.client.session.command({
         sessionID,
         command: command.slice(1),
