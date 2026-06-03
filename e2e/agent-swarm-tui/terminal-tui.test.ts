@@ -115,25 +115,52 @@ describe("Agent Swarm terminal TUI e2e", () => {
         OPEN_SWARM_TELEMETRY: undefined,
       },
     })
-
     await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
     await currentTui.waitFor(
       () => currentTelemetryServer!.events.some((event) => event.event === "app_started"),
       "app_started telemetry event",
       tuiInteractionTimeoutMs,
     )
-
+    const appEvent = currentTelemetryServer.events.find((event) => event.event === "app_started")
+    expect(appEvent?.properties).toMatchObject({
+      "$process_person_profile": false,
+      app: "Agent Swarm",
+      entrypoint: "tui",
+      framework_mode: true,
+      provider_id: "agency-swarm",
+    })
     await driveOpenAIAPIKeyAuth(currentTui, "sk-test-telemetry")
-
     await currentTui.waitFor(
       () => currentTelemetryServer!.events.some((event) => event.event === "provider_auth_configured"),
       "provider_auth_configured telemetry event",
       tuiInteractionTimeoutMs,
     )
-
+    const commandEvent = currentTelemetryServer.events.find((event) => event.event === "ui_command_executed")
+    expect(commandEvent?.properties).toMatchObject({ "$process_person_profile": false, app: "Agent Swarm", command: "auth", source: "slash" })
+    expect(JSON.stringify(commandEvent)).not.toContain("sk-test-telemetry")
+    expect(JSON.stringify(commandEvent)).not.toContain("refresh")
+    const requested = currentTelemetryServer.events.find((event) => event.event === "provider_requested")
+    expect(requested?.properties).toMatchObject({
+      "$process_person_profile": false,
+      app: "Agent Swarm",
+      connected_before: false,
+      framework_mode: true,
+      provider_id: "openai",
+      source: "auth_dialog",
+    })
+    const started = currentTelemetryServer.events.find((event) => event.event === "provider_auth_started")
+    expect(started?.properties).toMatchObject({
+      "$process_person_profile": false,
+      app: "Agent Swarm",
+      auth_method: "api",
+      framework_mode: true,
+      provider_id: "openai",
+      source: "auth_dialog",
+    })
     const authEvent = currentTelemetryServer.events.find((event) => event.event === "provider_auth_configured")
     expect(authEvent?.api_key).toBe("ph_test")
     expect(authEvent?.properties).toMatchObject({
+      "$process_person_profile": false,
       app: "Agent Swarm",
       auth_method: "api",
       framework_mode: true,
@@ -141,6 +168,66 @@ describe("Agent Swarm terminal TUI e2e", () => {
       source: "auth_dialog",
     })
     expect(JSON.stringify(currentTelemetryServer.events)).not.toContain("sk-test-telemetry")
+  })
+
+  test("run-mode normal prompt emits task telemetry without content or ids", async () => {
+    currentServer = await startAgencyProtocolServer()
+    currentTelemetryServer = startTelemetryServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      config: openAIProviderTestConfig,
+      env: {
+        AGENTSWARM_POSTHOG_API_KEY: "ph_test",
+        AGENTSWARM_POSTHOG_HOST: currentTelemetryServer.url,
+        AGENTSWARM_TELEMETRY: undefined,
+        AGENTSWARM_TELEMETRY_ALLOW_TEST: "1",
+        OPEN_SWARM_TELEMETRY: undefined,
+      },
+    })
+
+    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    currentTui.write("telemetry prompt sentinel\r")
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "agency request for telemetry prompt",
+      tuiInteractionTimeoutMs,
+    )
+    await currentTui.waitFor(
+      () => currentTelemetryServer!.events.some((event) => event.event === "task_succeeded"),
+      "task_succeeded telemetry event",
+      tuiInteractionTimeoutMs,
+    )
+
+    const submittedIndex = currentTelemetryServer.events.findIndex(
+      (event) => event.event === "ui_prompt_submitted" && event.properties?.type === "prompt",
+    )
+    const succeededIndex = currentTelemetryServer.events.findIndex((event) => event.event === "task_succeeded")
+    expect(submittedIndex).toBeGreaterThanOrEqual(0)
+    expect(succeededIndex).toBeGreaterThan(submittedIndex)
+
+    const submitted = currentTelemetryServer.events[submittedIndex]
+    expect(submitted?.properties).toMatchObject({
+      framework_mode: true,
+      has_agent_parts: false,
+      has_file_parts: false,
+      mode: "normal",
+      provider_id: "agency-swarm",
+      type: "prompt",
+    })
+    const succeeded = currentTelemetryServer.events[succeededIndex]
+    expect(succeeded?.properties).toMatchObject({
+      framework_mode: true,
+      has_agent_parts: false,
+      has_file_parts: false,
+      mode: "normal",
+      provider_id: "agency-swarm",
+    })
+    expect(["lt_2s", "2s_10s", "10s_60s", "gte_60s"]).toContain(succeeded?.properties?.duration_bucket)
+    expect(Object.keys(submitted?.properties ?? {})).not.toContain("messageID")
+    expect(Object.keys(submitted?.properties ?? {})).not.toContain("sessionID")
+    expect(Object.keys(succeeded?.properties ?? {})).not.toContain("messageID")
+    expect(Object.keys(succeeded?.properties ?? {})).not.toContain("sessionID")
+    expect(JSON.stringify(currentTelemetryServer.events)).not.toContain("telemetry prompt sentinel")
   })
 
   livePostHogTest("run-mode /auth telemetry reaches live PostHog ingestion", async () => {
@@ -385,10 +472,18 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
   test("Run-mode auth failures open /auth with visible OpenAI model state", async () => {
     currentServer = await startAuthFailureAgencyServer()
+    currentTelemetryServer = startTelemetryServer()
     currentTui = await startTui({
       baseURL: currentServer.baseURL,
       args: ["--model", latestOpenAITestModel],
       config: openAIProviderTestConfig,
+      env: {
+        AGENTSWARM_POSTHOG_API_KEY: "ph_test",
+        AGENTSWARM_POSTHOG_HOST: currentTelemetryServer.url,
+        AGENTSWARM_TELEMETRY: undefined,
+        AGENTSWARM_TELEMETRY_ALLOW_TEST: "1",
+        OPEN_SWARM_TELEMETRY: undefined,
+      },
     })
 
     await currentTui.waitForText(latestOpenAITestModelLabel, tuiReadyTimeoutMs)
@@ -397,6 +492,22 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     expect(screen).toContain("OpenAI")
     expect(screen).not.toContain("Connect a provider")
+    await currentTui.waitFor(
+      () => currentTelemetryServer!.events.some((event) => event.event === "task_failed"),
+      "task_failed telemetry event",
+      tuiInteractionTimeoutMs,
+    )
+    const failed = currentTelemetryServer.events.find((event) => event.event === "task_failed")
+    expect(failed?.properties).toMatchObject({
+      error_bucket: "auth_rejected",
+      framework_mode: true,
+      has_agent_parts: false,
+      has_file_parts: false,
+      mode: "normal",
+      provider_id: "agency-swarm",
+    })
+    expect(JSON.stringify(currentTelemetryServer.events)).not.toContain("trigger upstream auth failure")
+    expect(JSON.stringify(currentTelemetryServer.events)).not.toContain("Invalid API key for OpenAI")
   })
 
   test("/new keeps Run mode usable and starts the next Agency request without old chat history", async () => {

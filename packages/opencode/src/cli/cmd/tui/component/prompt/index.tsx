@@ -48,7 +48,7 @@ import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import * as Editor from "@tui/util/editor"
 import { useExit } from "../../context/exit"
 import * as Clipboard from "../../util/clipboard"
-import type { AssistantMessage, FilePart, UserMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, FilePart, Part, UserMessage } from "@opencode-ai/sdk/v2"
 import { TuiEvent } from "../../event"
 import { iife } from "@/util/iife"
 import { Locale } from "@/util"
@@ -87,6 +87,7 @@ import { DialogWorkspaceCreate, restoreWorkspaceSession } from "../dialog-worksp
 import { DialogWorkspaceUnavailable } from "../dialog-workspace-unavailable"
 import { useArgs } from "@tui/context/args"
 import { Telemetry } from "@/telemetry/telemetry"
+import { captureCommand } from "@/telemetry/command"
 
 export type PromptProps = {
   sessionID?: string
@@ -118,6 +119,19 @@ const money = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 })
+
+type TaskTelemetryProperties = {
+  framework_mode: boolean
+  has_agent_parts: boolean
+  has_file_parts: boolean
+  mode: "normal"
+  provider_id: string
+}
+
+type TaskTelemetryState = {
+  properties: TaskTelemetryProperties
+  started: number
+}
 
 function randomIndex(count: number) {
   if (count <= 0) return 0
@@ -177,6 +191,7 @@ export function Prompt(props: PromptProps) {
     | undefined
   >()
   const assistantMessagesByID = new Map<string, AgencyAssistantMessageInfo>()
+  const taskTelemetryByMessageID = new Map<string, TaskTelemetryState>()
   const activeOrgName = createMemo(() => sync.data.console_state.activeOrgName)
   const canSwitchOrgs = createMemo(() => sync.data.console_state.switchableOrgCount > 1)
   const frameworkMode = createMemo(() =>
@@ -312,11 +327,101 @@ export function Prompt(props: PromptProps) {
     })
   }
 
+  function captureTaskSucceeded(messageID: string) {
+    const task = taskTelemetryByMessageID.get(messageID)
+    if (!task) return
+    taskTelemetryByMessageID.delete(messageID)
+    void Telemetry.capture("task_succeeded", {
+      ...task.properties,
+      duration_bucket: Telemetry.durationBucket(Date.now() - task.started),
+    })
+  }
+
+  function captureTaskFailed(messageID: string, error: unknown) {
+    const task = taskTelemetryByMessageID.get(messageID)
+    if (!task) return
+    taskTelemetryByMessageID.delete(messageID)
+    void Telemetry.capture("task_failed", {
+      ...task.properties,
+      duration_bucket: Telemetry.durationBucket(Date.now() - task.started),
+      error_bucket: Telemetry.errorBucket(error),
+    })
+  }
+
+  function hasLocalToolCalls(parts: readonly Part[]) {
+    return parts.some((part) => part.type === "tool" && part.metadata?.providerExecuted !== true)
+  }
+
+  function isCancelledAssistantCompletion(info: AssistantMessage) {
+    return info.finish === "cancelled" || info.error?.name === "MessageAbortedError"
+  }
+
+  function isFinalAssistantCompletion(info: AssistantMessage, parts: readonly Part[]) {
+    if (info.finish === undefined || ["tool-calls", "cancelled"].includes(info.finish)) return false
+    if (info.time.completed === undefined) return false
+    if (info.providerID !== AgencySwarmAdapter.PROVIDER_ID && hasLocalToolCalls(parts)) return false
+    return true
+  }
+
+  function taskError(error: AssistantMessage["error"]) {
+    return error?.data ?? error
+  }
+
+  function sdkError(error: unknown, result: { response?: { status?: number } }) {
+    return {
+      data: error,
+      status: result.response?.status,
+    }
+  }
+
+  function captureTaskFromAssistant(info: AssistantMessage, parts: readonly Part[]) {
+    const task = taskTelemetryByMessageID.get(info.parentID)
+    if (!task) return
+    if (isCancelledAssistantCompletion(info)) {
+      taskTelemetryByMessageID.delete(info.parentID)
+      return
+    }
+    if (info.error) {
+      captureTaskFailed(info.parentID, taskError(info.error))
+      return
+    }
+    if (isFinalAssistantCompletion(info, parts)) captureTaskSucceeded(info.parentID)
+  }
+
+  function captureTaskCompleted(
+    messageID: string,
+    result: Awaited<ReturnType<typeof sdk.client.session.prompt>> | undefined,
+  ) {
+    if (result && "error" in result && result.error) {
+      captureTaskFailed(messageID, sdkError(result.error, result))
+      return
+    }
+    const info = result?.data?.info
+    if (!info) {
+      captureTaskFailed(messageID, undefined)
+      return
+    }
+    if (isCancelledAssistantCompletion(info)) {
+      taskTelemetryByMessageID.delete(messageID)
+      return
+    }
+    if (info?.error) {
+      captureTaskFailed(messageID, taskError(info.error))
+      return
+    }
+    if (isFinalAssistantCompletion(info, result?.data?.parts ?? [])) {
+      captureTaskSucceeded(messageID)
+      return
+    }
+    captureTaskFailed(messageID, undefined)
+  }
+
   onCleanup(
     event.on("message.updated", (evt) => {
       const info = evt.properties.info
-      assistantMessagesByID.set(info.id, info)
       const parts = sync.data.part?.[info.id] ?? []
+      if (info.role === "assistant") captureTaskFromAssistant(info, parts)
+      assistantMessagesByID.set(info.id, info)
       adoptAgencyHandoffRecipient(info, parts)
     }),
   )
@@ -979,7 +1084,6 @@ export function Prompt(props: PromptProps) {
     }
     const productProviderID = frameworkMode() ? AgencySwarmAdapter.PROVIDER_ID : selectedModel.providerID
 
-    // Capture mode before it gets reset
     const currentMode = store.mode
     const variant = local.model.variant.current()
     const serverSlashCommand = inputText.startsWith("/")
@@ -1143,12 +1247,12 @@ export function Prompt(props: PromptProps) {
       })
       setStore("mode", "normal")
     } else if (isServerSlashCommand) {
-      // Parse command from first line, preserve multi-line content in arguments
       const [command, ...firstLineArgs] = firstLine.split(" ")
       const restOfInput = firstLineEnd === -1 ? "" : inputText.slice(firstLineEnd + 1)
       const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
 
       capturePromptSubmitted("server_command", currentMode)
+      if (serverSlashCommand.source === "command") captureCommand({ category: "Prompt", source: "slash", value: command })
       void sdk.client.session.command({
         sessionID,
         command: command.slice(1),
@@ -1191,45 +1295,59 @@ export function Prompt(props: PromptProps) {
         ],
       }
       capturePromptSubmitted("prompt", currentMode)
-      sdk.client.session.prompt(promptPayload).catch((error) => {
-        setStore("prompt", savedPrompt)
-        input.setText(savedPrompt.input)
-        restoreExtmarksFromParts(savedPrompt.parts)
-        const message = toErrorMessage(error)
-        const shouldReopenAuth = shouldOpenAgencyAuthDialog({
-          providerID: productProviderID,
-          message,
-        })
-        if (navigateTimer) {
-          clearTimeout(navigateTimer)
-          navigateTimer = undefined
-        }
-        if (createdSessionID && shouldReopenAuth) {
-          if (navigatedToCreatedSession) {
-            route.navigate({
-              type: "home",
-              prompt: submittedPrompt,
+      taskTelemetryByMessageID.set(messageID, {
+        started: Date.now(),
+        properties: {
+          framework_mode: frameworkMode(),
+          has_agent_parts: nonTextParts.some((part) => part.type === "agent"),
+          has_file_parts: nonTextParts.some((part) => part.type === "file"),
+          mode: "normal",
+          provider_id: productProviderID,
+        },
+      })
+      const task = sdk.client.session.prompt(promptPayload)
+      void task
+        .then((result) => captureTaskCompleted(messageID, result))
+        .catch((error) => {
+          captureTaskFailed(messageID, error)
+          setStore("prompt", savedPrompt)
+          input.setText(savedPrompt.input)
+          restoreExtmarksFromParts(savedPrompt.parts)
+          const message = toErrorMessage(error)
+          const shouldReopenAuth = shouldOpenAgencyAuthDialog({
+            providerID: productProviderID,
+            message,
+          })
+          if (navigateTimer) {
+            clearTimeout(navigateTimer)
+            navigateTimer = undefined
+          }
+          if (createdSessionID && shouldReopenAuth) {
+            if (navigatedToCreatedSession) {
+              route.navigate({
+                type: "home",
+                prompt: submittedPrompt,
+              })
+            }
+            void sdk.client.session.delete({
+              sessionID: createdSessionID,
             })
           }
-          void sdk.client.session.delete({
-            sessionID: createdSessionID,
-          })
-        }
-        if (shouldReopenAuth) {
+          if (shouldReopenAuth) {
+            toast.show({
+              variant: "error",
+              message: describeAgencyAuthFailure(message),
+              duration: 5000,
+            })
+            dialog.replace(() => <DialogAuth />)
+            return
+          }
           toast.show({
             variant: "error",
-            message: describeAgencyAuthFailure(message),
+            message,
             duration: 5000,
           })
-          dialog.replace(() => <DialogAuth />)
-          return
-        }
-        toast.show({
-          variant: "error",
-          message,
-          duration: 5000,
         })
-      })
     }
 
     clearSubmittedPrompt(currentMode)

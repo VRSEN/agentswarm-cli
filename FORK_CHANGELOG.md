@@ -241,10 +241,11 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
   - Added by: `fd2f678b`
 
 - **Privacy-safe product telemetry for TUI feature usage**
-  - Intent: learn which Agent Swarm TUI features users use without collecting prompts, command arguments, file paths, session content, or raw workspace data.
-  - Behavior: npm release builds can send PostHog events for app start, provider auth setup, command use, route changes, and prompt submission shape when the release build includes the PostHog capture key. Users can disable this with `OPEN_SWARM_TELEMETRY=0`, `AGENTSWARM_TELEMETRY=0`, or `--no-telemetry`.
-  - Implementation: `Telemetry` in `packages/opencode/src/telemetry/telemetry.ts`, TUI command/prompt/app hooks, and release-time `POSTHOG_API_KEY`/`POSTHOG_HOST` injection in `.github/workflows/publish-npm-on-release.yml`.
-  - Reference: PR #226
+  - Intent: learn which Agent Swarm TUI features users use and which setup paths need support without collecting prompts, command arguments, file paths, session content, raw workspace data, raw content, or raw IDs.
+  - Behavior: npm release builds can send PostHog events for provider demand, provider auth started/failed outcomes, task success/failure for normal TUI prompts, supported slash command usage, docs clicks, and integration requested when the release build includes the PostHog capture key. Users can disable this with `OPEN_SWARM_TELEMETRY=0`, `AGENTSWARM_TELEMETRY=0`, or `--no-telemetry`.
+  - Privacy: telemetry uses strict event and property allowlists; unknown events or properties are dropped or bucketed, provider and integration values are allowlisted, and captured properties exclude raw prompts, slash command arguments, command bodies, credentials, paths, project IDs, session IDs, message IDs, raw model IDs, source content, environment values, raw error text, tool inputs, and tool outputs.
+  - Documentation: `README.md` lists the supported events and properties and the derived dashboard metrics for first run, retention, sessions per user, first task, first successful task, time to first success, completed tasks, docs clicks, and provider demand.
+  - Implementation: `Telemetry` in `packages/opencode/src/telemetry/telemetry.ts`, command value allowlists in `packages/opencode/src/telemetry/command-values.ts`, TUI auth/prompt/add-on hooks, README event documentation, and release-time `POSTHOG_API_KEY`/`POSTHOG_HOST` injection in `.github/workflows/publish-npm-on-release.yml`.
 
 ## Install/Upgrade
 

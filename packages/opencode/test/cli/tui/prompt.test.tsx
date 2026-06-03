@@ -64,20 +64,228 @@ describe("prompt auth rejection handling", () => {
     delete process.env.OPENAI_API_KEY
   })
 
+  async function renderTelemetryPrompt(input: {
+    events: ReturnType<typeof createEventBus>
+    frameworkMode?: boolean
+    prompt: (input: { messageID: string; sessionID: string }) => Promise<unknown>
+    sessionID: string
+    workspaceID: string
+  }) {
+    process.env.OPENAI_API_KEY = "sk-test"
+    const agency = input.frameworkMode ?? true
+    const model = agency ? "agency-swarm/default" : "openai/gpt-4.1"
+    const providerID = agency ? "agency-swarm" : "openai"
+    const modelID = agency ? "default" : "gpt-4.1"
+    const parts: Record<string, unknown[]> = {}
+
+    const promptSession = spyOn(
+      {
+        prompt: input.prompt,
+      },
+      "prompt",
+    )
+
+    spyOn(AgencySwarmRunSession, "sync").mockResolvedValue(undefined)
+    spyOn(AutocompleteModule, "Autocomplete").mockImplementation((props: any) => {
+      props.ref?.({
+        onInput() {},
+        onKeyDown() {},
+        visible: false,
+      })
+      return <box />
+    })
+    spyOn(CommandDialogModule, "useCommandDialog").mockReturnValue({
+      register: () => () => {},
+      slashes: () => [],
+      trigger: () => {},
+    } as any)
+    spyOn(ExitContext, "useExit").mockReturnValue(
+      Object.assign(async () => {}, {
+        message: {
+          set: () => () => {},
+          clear: () => {},
+          get: () => undefined,
+        },
+      }) as any,
+    )
+    spyOn(AgencySwarmConnectionContext, "useAgencySwarmConnection").mockReturnValue({
+      requiresReconnect: () => false,
+      openConnectDialog: () => false,
+      status: () => "connected",
+      baseURL: () => undefined,
+      failureCount: () => 0,
+      frameworkMode: () => agency,
+    } as any)
+    spyOn(ArgsContext, "useArgs").mockReturnValue({} as any)
+    spyOn(EditorContext, "useEditorContext").mockReturnValue({
+      enabled: () => false,
+      connected: () => false,
+      selection: () => undefined,
+      onMention: () => () => {},
+      server: () => undefined,
+    } as any)
+    spyOn(EventContext, "useEvent").mockReturnValue({
+      subscribe: () => () => {},
+      on: input.events.on,
+    } as any)
+    spyOn(ProjectContext, "useProject").mockReturnValue({
+      workspace: { current: () => undefined, status: () => undefined },
+      instance: { directory: () => "/tmp" },
+    } as any)
+    spyOn(KeybindContext, "useKeybind").mockReturnValue({
+      leader: false,
+      match: () => false,
+      print: () => "",
+    } as any)
+    spyOn(KVContext, "useKV").mockReturnValue({
+      get: (_key: string, fallback?: unknown) => fallback,
+    } as any)
+    spyOn(LocalContext, "useLocal").mockReturnValue({
+      agent: {
+        current: () => ({
+          name: "builder",
+          model: {
+            providerID,
+            modelID,
+          },
+        }),
+        list: () => [{ name: "builder" }],
+        set: () => {},
+        color: () => RGBA.fromHex("#38bdf8"),
+      },
+      model: {
+        current: () => ({
+          providerID,
+          modelID,
+        }),
+        parsed: () => ({
+          provider: agency ? "Agency Swarm" : "OpenAI",
+          model: modelID,
+        }),
+        set: () => {},
+        variant: {
+          current: () => undefined,
+          list: () => [],
+          set: () => {},
+        },
+      },
+    } as any)
+    spyOn(SDKContext, "useSDK").mockReturnValue({
+      client: {
+        session: {
+          prompt: promptSession,
+        },
+      },
+      event: input.events,
+    } as any)
+    spyOn(SyncContext, "useSync").mockReturnValue({
+      data: {
+        command: [],
+        config: {
+          model,
+          experimental: {},
+        },
+        console_state: {
+          activeOrgName: "",
+          consoleManagedProviders: [],
+          switchableOrgCount: 0,
+        },
+        message: {},
+        part: parts,
+        provider: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+        ],
+        provider_auth: {},
+        provider_next: {
+          all: [],
+          connected: [],
+          default: {},
+        },
+        session_status: {},
+      },
+      session: { get: () => undefined },
+    } as any)
+    spyOn(ThemeContext, "useTheme").mockReturnValue({
+      theme: {
+        _hasSelectedListItemText: false,
+        accent: RGBA.fromHex("#14b8a6"),
+        background: RGBA.fromHex("#020617"),
+        backgroundElement: RGBA.fromHex("#111827"),
+        backgroundPanel: RGBA.fromHex("#0f172a"),
+        border: RGBA.fromHex("#334155"),
+        error: RGBA.fromHex("#ef4444"),
+        primary: RGBA.fromHex("#38bdf8"),
+        selectedListItemText: RGBA.fromHex("#f8fafc"),
+        success: RGBA.fromHex("#22c55e"),
+        text: RGBA.fromHex("#f8fafc"),
+        textMuted: RGBA.fromHex("#94a3b8"),
+        warning: RGBA.fromHex("#f59e0b"),
+      },
+      syntax: () => ({
+        getStyleId: () => 1,
+      }),
+    } as any)
+    spyOn(TuiConfigContext, "useTuiConfig").mockReturnValue({} as any)
+    spyOn(PromptHistoryModule, "usePromptHistory").mockReturnValue({
+      move: () => undefined,
+      append: () => {},
+    } as any)
+    spyOn(PromptStashModule, "usePromptStash").mockReturnValue({
+      list: () => [],
+      push: () => {},
+      pop: () => undefined,
+      remove: () => {},
+    } as any)
+    spyOn(TextareaKeybindingsModule, "useTextareaKeybindings").mockReturnValue(() => [] as any)
+    spyOn(ToastModule, "useToast").mockReturnValue({
+      show: () => {},
+      error: () => {},
+      currentToast: null,
+    } as any)
+
+    const { Prompt } = await import("../../../src/cli/cmd/tui/component/prompt")
+
+    let promptRef: PromptRef | undefined
+
+    await testRender(() => (
+      <RouteProvider>
+        <DialogProvider>
+          <Prompt
+            ref={(value) => (promptRef = value)}
+            sessionID={input.sessionID}
+            workspaceID={input.workspaceID}
+            placeholders={{ normal: [] }}
+          />
+        </DialogProvider>
+      </RouteProvider>
+    ))
+
+    expect(promptRef).toBeDefined()
+    return { parts, promptRef: promptRef!, promptSession }
+  }
+
   test("clears the draft as soon as the prompt request starts", async () => {
     process.env.OPENAI_API_KEY = "sk-test"
 
     const events = createEventBus()
-    let resolvePrompt!: () => void
-    const promptFinished = new Promise<void>((resolve) => {
+    let resolvePrompt!: (result: unknown) => void
+    const promptFinished = new Promise<unknown>((resolve) => {
       resolvePrompt = resolve
     })
     const promptSession = spyOn(
       {
-        prompt: () => promptFinished,
+        prompt: (_input: { messageID: string; sessionID: string }) => promptFinished,
       },
       "prompt",
     )
+    const telemetryCapture = spyOn(Telemetry, "capture").mockResolvedValue(false)
 
     spyOn(AgencySwarmRunSession, "sync").mockResolvedValue(undefined)
     spyOn(AutocompleteModule, "Autocomplete").mockImplementation((props: any) => {
@@ -120,7 +328,7 @@ describe("prompt auth rejection handling", () => {
     } as any)
     spyOn(EventContext, "useEvent").mockReturnValue({
       subscribe: () => () => {},
-      on: () => () => {},
+      on: events.on,
     } as any)
     spyOn(ProjectContext, "useProject").mockReturnValue({
       workspace: { current: () => undefined, status: () => undefined },
@@ -297,13 +505,328 @@ describe("prompt auth rejection handling", () => {
       input: "",
       parts: [],
     })
+    const promptPayload = promptSession.mock.calls[0]?.[0] as
+      | {
+          messageID: string
+          sessionID: string
+        }
+      | undefined
+    expect(promptPayload).toBeDefined()
+    events.emit("message.updated", {
+      properties: {
+        info: {
+          agent: "builder",
+          finish: "tool-calls",
+          id: "assistant_tool_calls",
+          modelID: "default",
+          parentID: promptPayload!.messageID,
+          providerID: "agency-swarm",
+          role: "assistant",
+          sessionID: promptPayload!.sessionID,
+        },
+      },
+    })
+    await flushEffects()
+    expect(telemetryCapture.mock.calls.some(([event]) => event === "task_succeeded")).toBe(false)
+    expect(telemetryCapture.mock.calls.some(([event]) => event === "task_failed")).toBe(false)
 
-    resolvePrompt()
+    resolvePrompt({
+      data: {
+        info: {
+          agent: "builder",
+          finish: "unknown",
+          id: "assistant_success",
+          modelID: "default",
+          parentID: promptPayload!.messageID,
+          providerID: "agency-swarm",
+          role: "assistant",
+          sessionID: promptPayload!.sessionID,
+          time: { created: 1, completed: 2 },
+        },
+      },
+    })
     await promptFinished
     await flushEffects()
+
+    const submitted = telemetryCapture.mock.calls.find(([event]) => event === "ui_prompt_submitted")
+    expect(submitted?.[1]).toMatchObject({
+      framework_mode: true,
+      mode: "normal",
+      provider_id: "agency-swarm",
+      type: "prompt",
+    })
+    const succeeded = telemetryCapture.mock.calls.find(([event]) => event === "task_succeeded")
+    expect(succeeded?.[1]).toMatchObject({
+      framework_mode: true,
+      has_agent_parts: false,
+      has_file_parts: false,
+      mode: "normal",
+      provider_id: "agency-swarm",
+    })
+    expect((succeeded?.[1] as Record<string, unknown> | undefined)?.duration_bucket).toBeDefined()
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("clear right away")
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("session_immediate_clear")
   })
 
-  test("clears the draft after dispatching a server slash command", async () => {
+  test("drops task telemetry when the assistant run is cancelled", async () => {
+    const events = createEventBus()
+    const telemetryCapture = spyOn(Telemetry, "capture").mockResolvedValue(false)
+    const { promptRef, promptSession } = await renderTelemetryPrompt({
+      events,
+      sessionID: "session_cancelled_task",
+      workspaceID: "workspace_cancelled_task",
+      prompt: async () => ({
+        data: {
+          info: {
+            agent: "builder",
+            finish: "cancelled",
+            id: "assistant_cancelled_task",
+            modelID: "default",
+            parentID: "parent_cancelled_task",
+            providerID: "agency-swarm",
+            role: "assistant",
+            sessionID: "session_cancelled_task",
+            time: { created: 1, completed: 2 },
+          },
+          parts: [],
+        },
+      }),
+    })
+
+    promptRef.set({
+      input: "cancel this private prompt",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+    await flushEffects()
+
+    expect(promptSession).toHaveBeenCalledTimes(1)
+    expect(telemetryCapture.mock.calls.some(([event]) => event === "task_succeeded")).toBe(false)
+    expect(telemetryCapture.mock.calls.some(([event]) => event === "task_failed")).toBe(false)
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("cancel this private prompt")
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("session_cancelled_task")
+  })
+
+  test("waits for the final assistant turn when a stopped turn still has local tool calls", async () => {
+    const events = createEventBus()
+    let resolvePrompt!: (result: unknown) => void
+    const promptFinished = new Promise<unknown>((resolve) => {
+      resolvePrompt = resolve
+    })
+    const telemetryCapture = spyOn(Telemetry, "capture").mockResolvedValue(false)
+    const { parts, promptRef, promptSession } = await renderTelemetryPrompt({
+      events,
+      frameworkMode: false,
+      sessionID: "session_tool_loop",
+      workspaceID: "workspace_tool_loop",
+      prompt: async () => promptFinished,
+    })
+
+    promptRef.set({
+      input: "run a tool first",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    const promptPayload = promptSession.mock.calls[0]?.[0] as
+      | {
+          messageID: string
+          sessionID: string
+        }
+      | undefined
+    expect(promptPayload).toBeDefined()
+
+    const assistantID = "assistant_stop_with_tool"
+    parts[assistantID] = [
+      {
+        id: "part_local_tool",
+        sessionID: promptPayload!.sessionID,
+        messageID: assistantID,
+        type: "tool",
+        callID: "tool_local",
+        tool: "bash",
+        state: {
+          status: "completed",
+          input: {},
+          output: "private tool output",
+          title: "Bash",
+          metadata: {},
+          time: { start: 1, end: 2 },
+        },
+      },
+    ]
+    events.emit("message.updated", {
+      properties: {
+        info: {
+          agent: "builder",
+          cost: 0,
+          finish: "stop",
+          id: assistantID,
+          mode: "builder",
+          modelID: "gpt-4.1",
+          parentID: promptPayload!.messageID,
+          path: { cwd: "/tmp", root: "/tmp" },
+          providerID: "openai",
+          role: "assistant",
+          sessionID: promptPayload!.sessionID,
+          time: { created: 1, completed: 2 },
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+      },
+    })
+    await flushEffects()
+
+    expect(telemetryCapture.mock.calls.some(([event]) => event === "task_succeeded")).toBe(false)
+    expect(telemetryCapture.mock.calls.some(([event]) => event === "task_failed")).toBe(false)
+
+    resolvePrompt({
+      data: {
+        info: {
+          agent: "builder",
+          cost: 0,
+          finish: "stop",
+          id: "assistant_final_success",
+          mode: "builder",
+          modelID: "gpt-4.1",
+          parentID: promptPayload!.messageID,
+          path: { cwd: "/tmp", root: "/tmp" },
+          providerID: "openai",
+          role: "assistant",
+          sessionID: promptPayload!.sessionID,
+          time: { created: 3, completed: 4 },
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [],
+      },
+    })
+    await promptFinished
+    await flushEffects()
+
+    const succeeded = telemetryCapture.mock.calls.find(([event]) => event === "task_succeeded")
+    expect(succeeded?.[1]).toMatchObject({
+      framework_mode: false,
+      has_agent_parts: false,
+      has_file_parts: false,
+      mode: "normal",
+      provider_id: "openai",
+    })
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("private tool output")
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("session_tool_loop")
+  })
+
+  test("uses SDK response status for resolved prompt error telemetry", async () => {
+    const events = createEventBus()
+    const telemetryCapture = spyOn(Telemetry, "capture").mockResolvedValue(false)
+    const rawError = "private provider failure for /Users/nick/private/project"
+    const { promptRef, promptSession } = await renderTelemetryPrompt({
+      events,
+      sessionID: "session_sdk_error",
+      workspaceID: "workspace_sdk_error",
+      prompt: async () => ({
+        data: undefined,
+        error: rawError,
+        response: new Response(null, { status: 503 }),
+      }),
+    })
+
+    promptRef.set({
+      input: "prompt text that must stay private",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+    await flushEffects()
+
+    expect(promptSession).toHaveBeenCalledTimes(1)
+    expect(telemetryCapture.mock.calls.some(([event]) => event === "task_succeeded")).toBe(false)
+    const failed = telemetryCapture.mock.calls.find(([event]) => event === "task_failed")
+    expect(failed?.[1]).toMatchObject({
+      error_bucket: "server",
+      framework_mode: true,
+      has_agent_parts: false,
+      has_file_parts: false,
+      mode: "normal",
+      provider_id: "agency-swarm",
+    })
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain(rawError)
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("prompt text that must stay private")
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("session_sdk_error")
+  })
+
+  test("uses structured assistant error status for task failure buckets", async () => {
+    const events = createEventBus()
+    const telemetryCapture = spyOn(Telemetry, "capture").mockResolvedValue(false)
+    const rawError = "private backend stack trace for /Users/nick/project"
+    const { promptRef, promptSession } = await renderTelemetryPrompt({
+      events,
+      sessionID: "session_structured_error",
+      workspaceID: "workspace_structured_error",
+      prompt: async () => ({
+        data: {
+          info: {
+            agent: "builder",
+            cost: 0,
+            error: {
+              name: "APIError",
+              data: {
+                message: rawError,
+                statusCode: 502,
+                isRetryable: true,
+                responseBody: "private response body",
+              },
+            },
+            finish: "error",
+            id: "assistant_structured_error",
+            mode: "builder",
+            modelID: "default",
+            parentID: "parent_structured_error",
+            path: { cwd: "/tmp", root: "/tmp" },
+            providerID: "agency-swarm",
+            role: "assistant",
+            sessionID: "session_structured_error",
+            time: { created: 1, completed: 2 },
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          },
+          parts: [],
+        },
+      }),
+    })
+
+    promptRef.set({
+      input: "prompt text that must stay private",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+    await flushEffects()
+
+    expect(promptSession).toHaveBeenCalledTimes(1)
+    const failed = telemetryCapture.mock.calls.find(([event]) => event === "task_failed")
+    expect(failed?.[1]).toMatchObject({
+      error_bucket: "server",
+      framework_mode: true,
+      has_agent_parts: false,
+      has_file_parts: false,
+      mode: "normal",
+      provider_id: "agency-swarm",
+    })
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain(rawError)
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("private response body")
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("prompt text that must stay private")
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("session_structured_error")
+  })
+
+  test("clears the draft after dispatching a tracked config server slash command", async () => {
     process.env.OPENAI_API_KEY = "sk-test"
 
     const events = createEventBus()
@@ -417,7 +940,7 @@ describe("prompt auth rejection handling", () => {
     } as any)
     spyOn(SyncContext, "useSync").mockReturnValue({
       data: {
-        command: [{ name: "auth" }],
+        command: [{ name: "commit", source: "command" }],
         config: {
           model: "agency-swarm/default",
           experimental: {},
@@ -522,7 +1045,7 @@ describe("prompt auth rejection handling", () => {
     expect(promptRef).toBeDefined()
 
     promptRef!.set({
-      input: "/auth refresh\nsecond line",
+      input: "/commit refresh\nsecond line",
       parts: [],
     })
     await flushEffects()
@@ -538,11 +1061,18 @@ describe("prompt auth rejection handling", () => {
       return (properties as Record<string, unknown>).type === "server_command"
     })
     expect(telemetryCall).toBeTruthy()
-    const telemetryProperties = telemetryCall?.[1] as Record<string, unknown> | undefined
-    expect(telemetryProperties?.command).toBeUndefined()
-    expect(telemetryProperties?.provider_id).toBe("agency-swarm")
+    const commandTelemetry = telemetryCapture.mock.calls.filter(([event]) => event === "ui_command_executed")
+    expect(commandTelemetry).toHaveLength(1)
+    expect(commandTelemetry[0]?.[1]).toMatchObject({
+      category: "Prompt",
+      command: "commit",
+      keybind: false,
+      source: "slash",
+    })
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toMatch(/refresh|second line/)
+    expect((telemetryCall?.[1] as Record<string, unknown> | undefined)?.provider_id).toBe("agency-swarm")
     expect(appendHistory).toHaveBeenCalledWith({
-      input: "/auth refresh\nsecond line",
+      input: "/commit refresh\nsecond line",
       parts: [],
       mode: "normal",
     })
@@ -560,6 +1090,7 @@ describe("prompt auth rejection handling", () => {
     const toasts: Array<{ duration?: number; variant?: string; message?: string }> = []
     const events = createEventBus()
     const promptError = new Error("Streaming request failed (403): Invalid API key for OpenAI")
+    const telemetryCapture = spyOn(Telemetry, "capture").mockResolvedValue(false)
     const createSession = spyOn(
       {
         create: async () => ({
@@ -838,5 +1369,17 @@ describe("prompt auth rejection handling", () => {
       message: "The current provider credential was rejected. Run /auth to update it.",
       duration: 5000,
     })
+    const failed = telemetryCapture.mock.calls.find(([event]) => event === "task_failed")
+    expect(failed?.[1]).toMatchObject({
+      error_bucket: "auth_rejected",
+      framework_mode: true,
+      has_agent_parts: false,
+      has_file_parts: false,
+      mode: "normal",
+      provider_id: "agency-swarm",
+    })
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("Invalid API key for OpenAI")
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("recover this draft")
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("session_auth_race")
   })
 })

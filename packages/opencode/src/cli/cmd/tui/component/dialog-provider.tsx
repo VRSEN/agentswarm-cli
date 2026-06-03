@@ -56,6 +56,52 @@ function captureProviderAuthConfigured(input: {
   })
 }
 
+function captureProviderRequested(input: { providerID: string; frameworkMode: boolean; connectedBefore: boolean }) {
+  void Telemetry.capture("provider_requested", {
+    connected_before: input.connectedBefore,
+    framework_mode: input.frameworkMode,
+    provider_id: input.providerID,
+    source: "auth_dialog",
+  })
+}
+
+function captureProviderAuthStarted(input: {
+  providerID: string
+  authMethod: "api" | "oauth"
+  frameworkMode: boolean
+}) {
+  void Telemetry.capture("provider_auth_started", {
+    auth_method: input.authMethod,
+    framework_mode: input.frameworkMode,
+    provider_id: input.providerID,
+    source: "auth_dialog",
+  })
+}
+
+function captureProviderAuthFailed(input: {
+  providerID: string
+  authMethod: "api" | "oauth"
+  frameworkMode: boolean
+  step: "api_key_save" | "oauth_authorize" | "oauth_callback" | "post_auth_refresh"
+  error: unknown
+}) {
+  void Telemetry.capture("provider_auth_failed", {
+    auth_method: input.authMethod,
+    error_bucket: Telemetry.errorBucket(input.error),
+    framework_mode: input.frameworkMode,
+    provider_id: input.providerID,
+    source: "auth_dialog",
+    step: input.step,
+  })
+}
+
+function sdkError(error: unknown, result: { response?: { status?: number } }) {
+  return {
+    data: error,
+    status: result.response?.status,
+  }
+}
+
 export function createDialogProviderOptions() {
   return createDialogProviderOptionsWithFilter()
 }
@@ -135,6 +181,12 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
           ) : undefined,
           async onSelect() {
             if (consoleManaged) return
+            const selectedFrameworkMode = frameworkMode()
+            captureProviderRequested({
+              providerID: provider.id,
+              frameworkMode: selectedFrameworkMode,
+              connectedBefore: connected,
+            })
 
             const methods = getVisibleProviderAuthMethods(
               provider.id,
@@ -177,6 +229,11 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
             if (index == null) return
             const method = visibleMethods[index]
             if (method.type === "oauth") {
+              captureProviderAuthStarted({
+                providerID: provider.id,
+                authMethod: "oauth",
+                frameworkMode: selectedFrameworkMode,
+              })
               let inputs: Record<string, string> | undefined
               if (method.prompts?.length) {
                 const value = await PromptsMethod({
@@ -193,6 +250,13 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
                 inputs,
               })
               if (result.error) {
+                captureProviderAuthFailed({
+                  providerID: provider.id,
+                  authMethod: "oauth",
+                  frameworkMode: selectedFrameworkMode,
+                  step: "oauth_authorize",
+                  error: sdkError(result.error, result),
+                })
                 log.error("provider oauth authorize failed", {
                   providerID: provider.id,
                   method: method.label,
@@ -228,6 +292,11 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
               }
             }
             if (method.type === "api") {
+              captureProviderAuthStarted({
+                providerID: provider.id,
+                authMethod: "api",
+                frameworkMode: selectedFrameworkMode,
+              })
               let metadata: Record<string, string> | undefined
               if (method.prompts?.length) {
                 const value = await PromptsMethod({ dialog, prompts: method.prompts })
@@ -849,6 +918,13 @@ function AutoMethod(props: AutoMethodProps) {
     })
     if (result.error) {
       const message = toErrorMessage(result.error)
+      captureProviderAuthFailed({
+        providerID: props.providerID,
+        authMethod: "oauth",
+        frameworkMode: frameworkMode(),
+        step: "oauth_callback",
+        error: sdkError(result.error, result),
+      })
       log.error("provider oauth callback failed", {
         providerID: props.providerID,
         frameworkMode: frameworkMode(),
@@ -876,6 +952,13 @@ function AutoMethod(props: AutoMethodProps) {
       finishProviderAuth({ providerID: props.providerID, frameworkMode: frameworkMode(), dialog })
     } catch (error) {
       const message = toErrorMessage(error)
+      captureProviderAuthFailed({
+        providerID: props.providerID,
+        authMethod: "oauth",
+        frameworkMode: frameworkMode(),
+        step: "post_auth_refresh",
+        error,
+      })
       log.error("provider oauth post-callback bootstrap failed", {
         providerID: props.providerID,
         frameworkMode: frameworkMode(),
@@ -944,12 +1027,12 @@ function CodeMethod(props: CodeMethodProps) {
       title={props.title}
       placeholder="Authorization code"
       onConfirm={async (value) => {
-        const { error } = await sdk.client.provider.oauth.callback({
+        const result = await sdk.client.provider.oauth.callback({
           providerID: props.providerID,
           method: props.index,
           code: value,
         })
-        if (!error) {
+        if (!result.error) {
           try {
             await refreshAfterProviderAuth({
               sessionStatus: () => sync.data.session_status,
@@ -964,6 +1047,13 @@ function CodeMethod(props: CodeMethodProps) {
             finishProviderAuth({ providerID: props.providerID, frameworkMode: frameworkMode(), dialog })
           } catch (error) {
             const message = toErrorMessage(error)
+            captureProviderAuthFailed({
+              providerID: props.providerID,
+              authMethod: "oauth",
+              frameworkMode: frameworkMode(),
+              step: "post_auth_refresh",
+              error,
+            })
             log.error("provider oauth code-flow bootstrap failed", {
               providerID: props.providerID,
               frameworkMode: frameworkMode(),
@@ -978,7 +1068,14 @@ function CodeMethod(props: CodeMethodProps) {
           }
           return
         }
-        const message = toErrorMessage(error)
+        const message = toErrorMessage(result.error)
+        captureProviderAuthFailed({
+          providerID: props.providerID,
+          authMethod: "oauth",
+          frameworkMode: frameworkMode(),
+          step: "oauth_callback",
+          error: sdkError(result.error, result),
+        })
         log.error("provider oauth code callback failed", {
           providerID: props.providerID,
           frameworkMode: frameworkMode(),
@@ -1073,6 +1170,13 @@ function ApiMethod(props: ApiMethodProps) {
         })
         if (result.error) {
           const message = toErrorMessage(result.error)
+          captureProviderAuthFailed({
+            providerID: props.providerID,
+            authMethod: "api",
+            frameworkMode: frameworkMode(),
+            step: "api_key_save",
+            error: sdkError(result.error, result),
+          })
           log.error("provider api credential save failed", {
             providerID: props.providerID,
             frameworkMode: frameworkMode(),
@@ -1100,6 +1204,13 @@ function ApiMethod(props: ApiMethodProps) {
           finishProviderAuth({ providerID: props.providerID, frameworkMode: frameworkMode(), dialog })
         } catch (error) {
           const message = toErrorMessage(error)
+          captureProviderAuthFailed({
+            providerID: props.providerID,
+            authMethod: "api",
+            frameworkMode: frameworkMode(),
+            step: "post_auth_refresh",
+            error,
+          })
           log.error("provider api auth bootstrap failed", {
             providerID: props.providerID,
             frameworkMode: frameworkMode(),

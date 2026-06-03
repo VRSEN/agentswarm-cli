@@ -5,6 +5,7 @@ import { Global } from "@opencode-ai/core/global"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { AgencyProduct } from "@/agency-swarm/product"
+import { commandCategories, commandSources, isTrackedCommandValue } from "./command-values"
 
 declare const AGENTSWARM_POSTHOG_API_KEY: string | undefined
 declare const AGENTSWARM_POSTHOG_HOST: string | undefined
@@ -13,7 +14,6 @@ const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com"
 const STATE_FILE = "telemetry.json"
 const FALSE_VALUES = new Set(["0", "false", "off", "no"])
 const REQUEST_TIMEOUT_MS = 2_000
-const sessionID = crypto.randomUUID()
 const publicProviderIDs = new Set([
   "agency-swarm",
   "amazon-bedrock",
@@ -21,35 +21,72 @@ const publicProviderIDs = new Set([
   "azure",
   "deepseek",
   "github-copilot",
+  "gitlab",
   "google",
   "google-vertex",
   "groq",
   "litellm",
   "lmstudio",
+  "mistral",
   "ollama",
   "opencode",
   "opencode-go",
   "openai",
+  "openrouter",
   "xai",
+])
+const publicIntegrationIDs = new Set([
+  "anthropic",
+  "composio",
+  "fal",
+  "google",
+  "pexels",
+  "pixabay",
+  "search",
+  "unsplash",
 ])
 
 const allowedEvents = new Set([
   "app_started",
+  "integration_requested",
   "provider_auth_configured",
+  "provider_auth_failed",
+  "provider_auth_started",
+  "provider_requested",
+  "task_failed",
+  "task_succeeded",
   "ui_command_executed",
   "ui_prompt_submitted",
-  "ui_route_changed",
 ])
-
-const baseProperties = new Set(["app", "arch", "channel", "platform", "terminal", "telemetry_session_id", "version"])
 
 type TelemetryEvent =
   | "app_started"
+  | "integration_requested"
   | "provider_auth_configured"
+  | "provider_auth_failed"
+  | "provider_auth_started"
+  | "provider_requested"
+  | "task_failed"
+  | "task_succeeded"
   | "ui_command_executed"
   | "ui_prompt_submitted"
-  | "ui_route_changed"
-type SafeValue = string | number | boolean
+type SafeValue = string | boolean
+export type TelemetryDurationBucket = "lt_2s" | "2s_10s" | "10s_60s" | "gte_60s" | "unknown"
+export type TelemetryErrorBucket = "auth_rejected" | "network" | "server" | "timeout" | "unknown"
+type PropertySpec =
+  | {
+      type: "boolean"
+    }
+  | {
+      type: "integration_id"
+    }
+  | {
+      type: "provider_id"
+    }
+  | {
+      type: "string"
+      values?: ReadonlySet<string>
+    }
 type Pending = {
   abort: () => void
   promise: Promise<void>
@@ -60,20 +97,104 @@ type InstallID = {
   value: Promise<string>
 }
 
-const eventProperties: Record<TelemetryEvent, Set<string>> = {
-  app_started: new Set(["entrypoint", "framework_mode", "provider_id"]),
-  provider_auth_configured: new Set(["auth_method", "framework_mode", "provider_id", "source"]),
-  ui_command_executed: new Set(["category", "command", "keybind", "source"]),
-  ui_prompt_submitted: new Set([
-    "framework_mode",
-    "has_agent_parts",
-    "has_editor_selection",
-    "has_file_parts",
-    "mode",
-    "provider_id",
-    "type",
-  ]),
-  ui_route_changed: new Set(["route", "to_route"]),
+const authMethods = new Set(["api", "oauth"])
+const authDialogSources = new Set(["auth_dialog"])
+const booleanField = { type: "boolean" } satisfies PropertySpec
+const providerIDField = { type: "provider_id" } satisfies PropertySpec
+const integrationIDField = { type: "integration_id" } satisfies PropertySpec
+const durationBuckets = new Set(["lt_2s", "2s_10s", "10s_60s", "gte_60s", "unknown"])
+const errorBuckets = new Set(["auth_rejected", "network", "server", "timeout", "unknown"])
+const platforms = new Set(["aix", "darwin", "freebsd", "linux", "openbsd", "sunos", "win32"])
+const promptModes = new Set(["normal", "shell"])
+const promptTypes = new Set(["prompt", "server_command", "shell"])
+const terminalClients = new Set(["app", "cli", "desktop"])
+
+function stringField(values?: ReadonlySet<string>): PropertySpec {
+  return {
+    type: "string",
+    values,
+  }
+}
+
+const baseProperties: Record<string, PropertySpec> = {
+  app: stringField(),
+  arch: stringField(),
+  channel: stringField(),
+  platform: stringField(platforms),
+  terminal: stringField(terminalClients),
+  version: stringField(),
+}
+
+const eventProperties: Record<TelemetryEvent, Record<string, PropertySpec>> = {
+  app_started: {
+    entrypoint: stringField(new Set(["tui"])),
+    framework_mode: booleanField,
+    provider_id: providerIDField,
+  },
+  integration_requested: {
+    already_configured: booleanField,
+    integration_id: integrationIDField,
+    provider_id: providerIDField,
+    source: stringField(new Set(["addons_dialog"])),
+  },
+  provider_auth_configured: {
+    auth_method: stringField(authMethods),
+    framework_mode: booleanField,
+    provider_id: providerIDField,
+    source: stringField(authDialogSources),
+  },
+  provider_auth_failed: {
+    auth_method: stringField(authMethods),
+    error_bucket: stringField(errorBuckets),
+    framework_mode: booleanField,
+    provider_id: providerIDField,
+    source: stringField(authDialogSources),
+    step: stringField(new Set(["api_key_save", "oauth_authorize", "oauth_callback", "post_auth_refresh"])),
+  },
+  provider_auth_started: {
+    auth_method: stringField(authMethods),
+    framework_mode: booleanField,
+    provider_id: providerIDField,
+    source: stringField(authDialogSources),
+  },
+  provider_requested: {
+    connected_before: booleanField,
+    framework_mode: booleanField,
+    provider_id: providerIDField,
+    source: stringField(authDialogSources),
+  },
+  task_failed: {
+    duration_bucket: stringField(durationBuckets),
+    error_bucket: stringField(errorBuckets),
+    framework_mode: booleanField,
+    has_agent_parts: booleanField,
+    has_file_parts: booleanField,
+    mode: stringField(new Set(["normal"])),
+    provider_id: providerIDField,
+  },
+  task_succeeded: {
+    duration_bucket: stringField(durationBuckets),
+    framework_mode: booleanField,
+    has_agent_parts: booleanField,
+    has_file_parts: booleanField,
+    mode: stringField(new Set(["normal"])),
+    provider_id: providerIDField,
+  },
+  ui_command_executed: {
+    category: stringField(commandCategories),
+    command: stringField(),
+    keybind: booleanField,
+    source: stringField(commandSources),
+  },
+  ui_prompt_submitted: {
+    framework_mode: booleanField,
+    has_agent_parts: booleanField,
+    has_editor_selection: booleanField,
+    has_file_parts: booleanField,
+    mode: stringField(promptModes),
+    provider_id: providerIDField,
+    type: stringField(promptTypes),
+  },
 }
 
 let installID: InstallID | undefined
@@ -151,30 +272,38 @@ function safeString(value: string) {
   return trimmed
 }
 
-function safeValue(key: string, value: unknown, allowed: Set<string>): SafeValue | undefined {
-  if (!allowed.has(key)) return undefined
-  if (typeof value === "boolean") return value
-  if (typeof value === "number") return Number.isFinite(value) ? value : undefined
-  if (typeof value === "string") {
-    const safe = safeString(value)
-    if (key === "provider_id") return safe ? (publicProviderIDs.has(safe) ? safe : "custom") : undefined
-    return safe
-  }
+function safeValue(spec: PropertySpec, value: unknown): SafeValue | undefined {
+  if (spec.type === "boolean") return typeof value === "boolean" ? value : undefined
+  if (typeof value !== "string") return undefined
+
+  const safe = safeString(value)
+  if (!safe) return undefined
+  if (spec.type === "provider_id") return publicProviderIDs.has(safe) ? safe : "custom"
+  if (spec.type === "integration_id") return publicIntegrationIDs.has(safe) ? safe : "custom"
+  if (!spec.values || spec.values.has(safe)) return safe
   return undefined
 }
 
-function assignSafe(output: Record<string, SafeValue>, allowed: Set<string>, key: string, value: unknown) {
-  const safe = safeValue(key, value, allowed)
+function assignSafe(
+  output: Record<string, SafeValue>,
+  specs: Record<string, PropertySpec>,
+  key: string,
+  value: unknown,
+) {
+  if (!Object.prototype.hasOwnProperty.call(specs, key)) return
+  const spec = specs[key]
+  const safe = safeValue(spec, value)
   if (safe !== undefined) output[key] = safe
 }
 
 function sanitize(event: TelemetryEvent, input: Record<string, unknown> | undefined) {
-  const output: Record<string, SafeValue> = {}
+  const output: Record<string, SafeValue> = {
+    $process_person_profile: false,
+  }
   assignSafe(output, baseProperties, "app", AgencyProduct.name)
   assignSafe(output, baseProperties, "arch", os.arch())
   assignSafe(output, baseProperties, "channel", InstallationChannel)
   assignSafe(output, baseProperties, "platform", os.platform())
-  assignSafe(output, baseProperties, "telemetry_session_id", sessionID)
   assignSafe(output, baseProperties, "version", InstallationVersion)
   assignSafe(output, baseProperties, "terminal", Flag.OPENCODE_CLIENT)
 
@@ -185,12 +314,22 @@ function sanitize(event: TelemetryEvent, input: Record<string, unknown> | undefi
   return output
 }
 
+function shouldSend(event: TelemetryEvent, properties: Record<string, SafeValue>) {
+  if (event === "ui_command_executed") {
+    return typeof properties.command === "string" && isTrackedCommandValue(properties.command, properties.source)
+  }
+  return true
+}
+
 export async function capture(event: TelemetryEvent, properties?: Record<string, unknown>) {
   if (!allowedEvents.has(event)) return false
   if (isDisabledByEnvironment()) return false
 
   const { apiKey, host } = config()
   if (!apiKey) return false
+
+  const safe = sanitize(event, properties)
+  if (!shouldSend(event, safe)) return false
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
@@ -200,7 +339,7 @@ export async function capture(event: TelemetryEvent, properties?: Record<string,
       api_key: apiKey,
       distinct_id: await anonymousInstallID(),
       event,
-      properties: sanitize(event, properties),
+      properties: safe,
     }
 
     try {
@@ -256,8 +395,75 @@ export function isEnabled() {
   return !!config().apiKey && !isDisabledByEnvironment()
 }
 
+export function durationBucket(ms: number): TelemetryDurationBucket {
+  if (!Number.isFinite(ms) || ms < 0) return "unknown"
+  if (ms < 2_000) return "lt_2s"
+  if (ms < 10_000) return "2s_10s"
+  if (ms < 60_000) return "10s_60s"
+  return "gte_60s"
+}
+
+export function errorBucket(error: unknown): TelemetryErrorBucket {
+  const status = errorStatus(error)
+  if (status === 401 || status === 403) return "auth_rejected"
+  if (status !== undefined && status >= 500) return "server"
+
+  const message = errorMessage(error)
+  if (!message) return "unknown"
+  if (/timeout|timed out|\babort/i.test(message)) return "timeout"
+  if (/ECONN|ENOTFOUND|EAI_AGAIN|fetch failed|network|socket|dns/i.test(message)) return "network"
+  if (
+    /unauthori[sz]ed|forbidden|invalid api key|auth failed|authentication|credential|access token|\b401\b|\b403\b/i.test(
+      message,
+    )
+  ) {
+    return "auth_rejected"
+  }
+  if (/\b5\d\d\b|internal server|bad gateway|service unavailable/i.test(message)) return "server"
+  return "unknown"
+}
+
+function errorStatus(error: unknown): number | undefined {
+  for (const item of errorPayloads(error)) {
+    if (!isRecord(item)) continue
+    for (const key of ["status", "statusCode", "code"]) {
+      const value = item[key]
+      if (typeof value === "number" && Number.isInteger(value)) return value
+    }
+  }
+  return undefined
+}
+
+function errorMessage(error: unknown): string | undefined {
+  for (const item of errorPayloads(error)) {
+    const message = messageFrom(item)
+    if (message) return message
+  }
+  return undefined
+}
+
+function errorPayloads(error: unknown) {
+  if (!isRecord(error)) return [error]
+  const data = error["data"]
+  return data === undefined ? [error] : [data, error]
+}
+
+function messageFrom(value: unknown) {
+  if (typeof value === "string") return value
+  if (value instanceof Error) return value.message
+  if (!isRecord(value)) return undefined
+  const message = value["message"]
+  return typeof message === "string" ? message : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object"
+}
+
 export const Telemetry = {
   capture,
+  durationBucket,
+  errorBucket,
   flush,
   isEnabled,
 }

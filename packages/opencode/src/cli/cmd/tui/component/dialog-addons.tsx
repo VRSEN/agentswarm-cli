@@ -6,6 +6,7 @@ import { DialogPrompt } from "../ui/dialog-prompt"
 import { readEnvKey, writeEnvKeys } from "../util/env-file"
 import { errorMessage as toErrorMessage } from "@/util/error"
 import { AgencyProduct } from "@/agency-swarm/product"
+import { Telemetry } from "@/telemetry/telemetry"
 
 function keys(addons: AgencyProduct.Addon[]) {
   return [...new Set(addons.flatMap((addon) => addon.keys))]
@@ -45,6 +46,14 @@ export function DialogAddons(props: { providerID: string; onDone: () => void; er
     if (picked.length === 0) {
       props.onDone()
       return
+    }
+    for (const addon of picked) {
+      void Telemetry.capture("integration_requested", {
+        already_configured: configured(addon),
+        integration_id: addon.id,
+        provider_id: props.providerID,
+        source: "addons_dialog",
+      })
     }
     const values: [string, string][] = []
     for (const key of keys(picked)) {
