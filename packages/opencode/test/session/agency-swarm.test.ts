@@ -6878,6 +6878,178 @@ describe("session.agency-swarm", () => {
     expect(deltas).toEqual(["The current time is 10:00 AM."])
   })
 
+  test("stream does not duplicate response-scoped message replay when LiteLLM changes item id", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: {
+              type: "message",
+              id: "call_as_message",
+              provider_data: { response_id: "response_same_message" },
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "call_as_message",
+            output_index: "0",
+            delta: "The current time is 07:29.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.done",
+            item_id: "call_as_message",
+            output_index: "0",
+            text: "The current time is 07:29.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: {
+              type: "message",
+              id: "call_as_message",
+              content: [{ type: "output_text", text: "The current time is 07:29." }],
+              provider_data: { response_id: "response_same_message" },
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "message_output_created",
+          item: {
+            raw_item: {
+              type: "message",
+              id: "msg_agent_run_changed_id",
+              content: [{ type: "output_text", text: "The current time is 07:29." }],
+              provider_data: { response_id: "response_same_message" },
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "text-delta") {
+        deltas.push(event.text)
+      }
+    }
+
+    expect(deltas).toEqual(["The current time is 07:29."])
+  })
+
+  test("stream keeps repeated assistant text from a different provider response", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "message", id: "msg_first", provider_data: { response_id: "response_first" } },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_first",
+            output_index: "0",
+            delta: "OK",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.done",
+            item_id: "msg_first",
+            output_index: "0",
+            text: "OK",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: {
+              type: "message",
+              id: "msg_first",
+              content: [{ type: "output_text", text: "OK" }],
+              provider_data: { response_id: "response_first" },
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "message_output_created",
+          item: {
+            raw_item: {
+              type: "message",
+              id: "msg_second",
+              content: [{ type: "output_text", text: "OK" }],
+              provider_data: { response_id: "response_second" },
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "text-delta") {
+        deltas.push(event.text)
+      }
+    }
+
+    expect(deltas).toEqual(["OK", "OK"])
+  })
+
   test("stream keeps both distinct short assistant messages in the same run (no body-only dedupe)", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
@@ -7032,6 +7204,94 @@ describe("session.agency-swarm", () => {
     }
 
     expect(deltas).toEqual(["Find the right file first."])
+  })
+
+  test("stream does not duplicate response-scoped reasoning replay when LiteLLM changes item id", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: {
+              type: "reasoning",
+              id: "reasoning_raw",
+              provider_data: { response_id: "response_same_reasoning" },
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "reasoning_raw",
+            summary_index: "0",
+            output_index: "0",
+            delta: "The tool returned a timestamp.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "reasoning_raw",
+            summary_index: "0",
+            output_index: "0",
+            text: "The tool returned a timestamp.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: {
+              type: "reasoning",
+              id: "reasoning_raw",
+              summary: [{ text: "The tool returned a timestamp." }],
+              provider_data: { response_id: "response_same_reasoning" },
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "reasoning_item_created",
+          item: {
+            raw_item: {
+              type: "reasoning",
+              id: "reasoning_changed",
+              summary: [{ text: "The tool returned a timestamp." }],
+              provider_data: { response_id: "response_same_reasoning" },
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") deltas.push(event.text)
+    }
+
+    expect(deltas).toEqual(["The tool returned a timestamp."])
   })
 
   test("stream does not duplicate tool input when tool_called follows output_item.added", async () => {
