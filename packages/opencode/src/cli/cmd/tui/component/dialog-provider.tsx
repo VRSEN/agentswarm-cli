@@ -273,7 +273,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
             if (consoleManaged) return
             const selectedFrameworkMode = frameworkMode()
             captureProviderRequested({
-              providerID: provider.id,
+              providerID,
               frameworkMode: selectedFrameworkMode,
               connectedBefore: connected,
             })
@@ -320,7 +320,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
             const method = visibleMethods[index]
             if (method.type === "oauth") {
               captureProviderAuthStarted({
-                providerID: provider.id,
+                providerID,
                 authMethod: "oauth",
                 frameworkMode: selectedFrameworkMode,
               })
@@ -341,7 +341,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
               })
               if (result.error) {
                 captureProviderAuthFailed({
-                  providerID: provider.id,
+                  providerID,
                   authMethod: "oauth",
                   frameworkMode: selectedFrameworkMode,
                   step: "oauth_authorize",
@@ -373,7 +373,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
             }
             if (method.type === "api") {
               captureProviderAuthStarted({
-                providerID: provider.id,
+                providerID,
                 authMethod: "api",
                 frameworkMode: selectedFrameworkMode,
               })

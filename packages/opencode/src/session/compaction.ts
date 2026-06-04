@@ -2,7 +2,7 @@ import { BusEvent } from "@/bus/bus-event"
 import { Bus } from "@/bus"
 import * as Session from "./session"
 import { SessionID, MessageID, PartID } from "./schema"
-import { Provider } from "@/provider/provider"
+import { Provider, parseModel, sort } from "@/provider/provider"
 import { MessageV2 } from "./message-v2"
 import { Token } from "@/util/token"
 import * as Log from "@opencode-ai/core/util/log"
@@ -21,6 +21,7 @@ import { serviceUse } from "@/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { SyncEvent } from "@/sync"
 import { SessionEvent } from "@/v2/session-event"
+import { SessionAgencySwarm } from "./agency-swarm"
 
 const log = Log.create({ service: "session.compaction" })
 
@@ -250,6 +251,38 @@ export const layer: Layer.Layer<
       return Token.estimate(JSON.stringify(msgs))
     })
 
+    const resolveModel = Effect.fn("SessionCompaction.resolveModel")(function* (input: {
+      agent: Agent.Info
+      fallback: { providerID: ProviderID; modelID: ModelID }
+    }) {
+      if (input.agent.model) {
+        return yield* provider.getModel(input.agent.model.providerID, input.agent.model.modelID).pipe(Effect.orDie)
+      }
+
+      if (input.fallback.providerID !== SessionAgencySwarm.PROVIDER_ID) {
+        return yield* provider.getModel(input.fallback.providerID, input.fallback.modelID).pipe(Effect.orDie)
+      }
+
+      const cfg = yield* config.get()
+      if (cfg.small_model) {
+        const small = parseModel(cfg.small_model)
+        if (small.providerID !== SessionAgencySwarm.PROVIDER_ID) {
+          const model = yield* provider
+            .getModel(small.providerID, small.modelID)
+            .pipe(Effect.catchTag("ProviderModelNotFoundError", () => Effect.succeed(undefined)))
+          if (model) return model
+        }
+      }
+
+      const providers = yield* provider.list()
+      for (const info of Object.values(providers).filter((item) => item.id !== SessionAgencySwarm.PROVIDER_ID)) {
+        const [model] = sort(Object.values(info.models))
+        if (model) return model
+      }
+
+      return yield* provider.getModel(input.fallback.providerID, input.fallback.modelID).pipe(Effect.orDie)
+    })
+
     const select = Effect.fn("SessionCompaction.select")(function* (input: {
       messages: MessageV2.WithParts[]
       cfg: Config.Info
@@ -389,9 +422,7 @@ export const layer: Layer.Layer<
       }
 
       const agent = yield* agents.get("compaction")
-      const model = agent.model
-        ? yield* provider.getModel(agent.model.providerID, agent.model.modelID).pipe(Effect.orDie)
-        : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)
+      const model = yield* resolveModel({ agent, fallback: userMessage.model })
       const cfg = yield* config.get()
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
       const prior = completedCompactions(history)

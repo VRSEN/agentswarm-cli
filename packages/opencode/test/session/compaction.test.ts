@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import { APICallError } from "ai"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { Bus } from "../../src/bus"
@@ -868,6 +869,79 @@ describe("session.compaction.process", () => {
       expect(result).toBe("continue")
       expect(seen).toBe(true)
     }),
+  )
+
+  itCompaction.instance(
+    "uses a real provider model when user model is the Agency Swarm fallback",
+    () => {
+      const stub = llm()
+      const summaryModel = createModel({ context: 100_000, output: 32_000 })
+      const summaryInfo = ProviderTest.info({}, summaryModel)
+      const agencyProviderID = ProviderID.make(AgencySwarmAdapter.PROVIDER_ID)
+      const agencyModelID = ModelID.make(AgencySwarmAdapter.DEFAULT_MODEL_ID)
+      const agencyModel = ProviderTest.model({
+        id: agencyModelID,
+        providerID: agencyProviderID,
+        name: "Agency Swarm Default",
+      })
+      const agencyInfo = ProviderTest.info({ id: agencyProviderID, name: "Agency Swarm" }, agencyModel)
+      const provider = ProviderTest.fake({
+        model: summaryModel,
+        info: summaryInfo,
+        list: Effect.fn("TestProvider.list")(() =>
+          Effect.succeed({
+            [agencyInfo.id]: agencyInfo,
+            [summaryInfo.id]: summaryInfo,
+          }),
+        ),
+        getModel: Effect.fn("TestProvider.getModel")((providerID, modelID) => {
+          if (providerID === summaryModel.providerID && modelID === summaryModel.id) return Effect.succeed(summaryModel)
+          return Effect.die(new Error(`Unexpected compaction model: ${providerID}/${modelID}`))
+        }),
+      })
+      let captured: Provider.Model | undefined
+      stub.push(reply("summary", (input) => (captured = input.model)))
+
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        const msg = yield* ssn.updateMessage({
+          id: MessageID.ascending(),
+          role: "user",
+          sessionID: session.id,
+          agent: "build",
+          model: { providerID: agencyProviderID, modelID: agencyModelID },
+          time: { created: Date.now() },
+        })
+        yield* ssn.updatePart({
+          id: PartID.ascending(),
+          messageID: msg.id,
+          sessionID: session.id,
+          type: "text",
+          text: "compact this",
+        })
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+
+        yield* SessionCompaction.use.process({
+          parentID: msg.id,
+          messages: msgs,
+          sessionID: session.id,
+          auto: false,
+        })
+
+        const summary = (yield* ssn.messages({ sessionID: session.id })).find(
+          (item) => item.info.role === "assistant" && item.info.summary,
+        )
+        expect(captured?.providerID).toBe(summaryModel.providerID)
+        expect(captured?.id).toBe(summaryModel.id)
+        expect(summary?.info.role).toBe("assistant")
+        if (summary?.info.role === "assistant") {
+          expect(summary.info.providerID).toBe(summaryModel.providerID)
+          expect(summary.info.modelID).toBe(summaryModel.id)
+        }
+      }).pipe(withCompaction({ llm: stub.layer, provider }))
+    },
+    { git: true },
   )
 
   itCompaction.instance(
