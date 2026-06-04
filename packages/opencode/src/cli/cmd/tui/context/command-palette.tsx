@@ -44,11 +44,13 @@ function isSuggestedPaletteCommand(entry: PaletteCommandEntry) {
 
 function track(entry: PaletteCommandEntry | undefined, source: CommandTelemetrySource, keybind = false) {
   if (!entry) return
+  const value =
+    source === "slash" && typeof entry.command.slashName === "string" ? entry.command.slashName : entry.command.name
   captureCommand({
     category: typeof entry.command.category === "string" ? entry.command.category : undefined,
     keybind: keybind ? "true" : undefined,
     source,
-    value: entry.command.name,
+    value,
   })
 }
 
