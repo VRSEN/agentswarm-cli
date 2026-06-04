@@ -14,11 +14,15 @@ import { DialogVariant } from "./dialog-variant"
 import { isAgencySupportedProvider, isAgencySwarmFrameworkMode } from "../session-error"
 import * as fuzzysort from "fuzzysort"
 import { useConnected } from "./use-connected"
+import { AgencySwarmOllama } from "@/agency-swarm/ollama"
+import { useToast } from "../ui/toast"
+import { downloadOllamaModel } from "./download-ollama-model"
 
 export function DialogModel(props: { providerID?: string }) {
   const local = useLocal()
   const sync = useSync()
   const dialog = useDialog()
+  const toast = useToast()
   const [query, setQuery] = createSignal("")
 
   const rawConnected = useConnected()
@@ -41,7 +45,7 @@ export function DialogModel(props: { providerID?: string }) {
   const enabledProviders = createMemo(() =>
     frameworkMode
       ? sync.data.provider.filter((provider) => isAgencySupportedProvider(provider.id))
-      : sync.data.provider,
+      : sync.data.provider.filter((provider) => provider.id !== AgencySwarmOllama.PROVIDER_ID),
   )
   // Treat framework mode as "not connected" when no agency-supported provider is usable,
   // so the disconnected fallback (filtered popular providers) keeps `/models` actionable
@@ -73,7 +77,7 @@ export function DialogModel(props: { providerID?: string }) {
             disabled: provider.id === "opencode" && model.id.includes("-nano"),
             footer: model.cost?.input === 0 && provider.id === "opencode" ? "Free" : undefined,
             onSelect: () => {
-              onSelect(provider.id, model.id)
+              void onSelect(provider.id, model.id)
             },
           },
         ]
@@ -110,7 +114,7 @@ export function DialogModel(props: { providerID?: string }) {
             disabled: provider.id === "opencode" && model.includes("-nano"),
             footer: info.cost?.input === 0 && provider.id === "opencode" ? "Free" : undefined,
             onSelect() {
-              onSelect(provider.id, model)
+              void onSelect(provider.id, model)
             },
           })),
           filter((x) => {
@@ -160,7 +164,50 @@ export function DialogModel(props: { providerID?: string }) {
     return value.name
   })
 
-  function onSelect(providerID: string, modelID: string) {
+  async function onSelect(providerID: string, modelID: string) {
+    if (frameworkMode && providerID === AgencySwarmOllama.PROVIDER_ID) {
+      try {
+        await AgencySwarmOllama.ensure(modelID, {
+          onServerStart() {
+            toast.show({
+              variant: "info",
+              message: "Starting Ollama server...",
+              duration: 5000,
+            })
+          },
+        })
+      } catch (error) {
+        if (AgencySwarmOllama.isMissingModelError(error)) {
+          const downloaded = await downloadOllamaModel({
+            dialog,
+            toast,
+            modelID,
+          })
+          if (!downloaded) return
+        } else {
+          toast.show({
+            variant: "warning",
+            message: error instanceof Error ? error.message : String(error),
+            duration: 8000,
+          })
+          return
+        }
+      }
+      try {
+        await AgencySwarmOllama.ensure(modelID)
+      } catch (error) {
+        toast.show({
+          variant: "warning",
+          message: AgencySwarmOllama.isMissingModelError(error)
+            ? AgencySwarmOllama.formatMissingModelInstallHint(modelID)
+            : error instanceof Error
+              ? error.message
+              : String(error),
+          duration: 8000,
+        })
+        return
+      }
+    }
     local.model.set({ providerID, modelID }, { recent: true, explicit: true })
     const list = local.model.variant.list()
     const cur = local.model.variant.selected()

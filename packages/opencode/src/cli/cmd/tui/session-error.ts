@@ -1,5 +1,6 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { hasClientConfigCredential } from "@/agency-swarm/client-config"
+import { AgencySwarmOllama } from "@/agency-swarm/ollama"
 import { isAgencySwarmRunMode, type AgencySwarmRunModeInput } from "@/agency-swarm/run-mode"
 import { isLocalAgencyURL } from "@/session/agency-swarm-client-config"
 import { Flag } from "@opencode-ai/core/flag/flag"
@@ -26,6 +27,7 @@ const log = Log.create({ service: "tui.session-error" })
  */
 export function isAgencySupportedProvider(providerID: string) {
   if (providerID === AgencySwarmAdapter.PROVIDER_ID) return true
+  if (providerID === AgencySwarmOllama.PROVIDER_ID) return true
   return (AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS as readonly string[]).includes(providerID)
 }
 
@@ -173,6 +175,7 @@ export function shouldOpenStartupAuthDialog(input: {
   providers: Provider[]
   providerAuth?: ProviderAuthMap
   frameworkMode: boolean
+  currentProviderID?: string
   /** Override for the upstream-credential forwarding path; when undefined the value is inferred from env + provider options. */
   forwardUpstreamCredentials?: boolean
   /** Process env snapshot; production callers pass `process.env`, tests pass a controlled map. */
@@ -182,6 +185,7 @@ export function shouldOpenStartupAuthDialog(input: {
 
   const env = input.env ?? {}
   const agencyProvider = input.providers.find((provider) => provider.id === AgencySwarmAdapter.PROVIDER_ID)
+  if (input.currentProviderID === AgencySwarmOllama.PROVIDER_ID) return false
   const forwardingActive = isForwardUpstreamCredentialsActive(input.providers, input.forwardUpstreamCredentials)
 
   // Explicit client_config on the agency-swarm provider carries upstream creds and satisfies either mode.
@@ -209,6 +213,7 @@ export function shouldBlockAgencyPromptSend(input: {
     providers: input.providers,
     providerAuth: input.providerAuth,
     frameworkMode: true,
+    currentProviderID: input.currentProviderID,
     env: input.env,
   })
 }

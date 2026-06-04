@@ -55,7 +55,7 @@ import { PromptStashProvider } from "./component/prompt/stash"
 import { AgencySwarmConnectionProvider } from "@tui/context/agency-swarm-connection"
 import { DialogAlert } from "./ui/dialog-alert"
 import { DialogConfirm } from "./ui/dialog-confirm"
-import { ToastProvider, useToast } from "./ui/toast"
+import { Toast, ToastProvider, useToast } from "./ui/toast"
 import { ExitProvider, useExit } from "./context/exit"
 import { Session as SessionApi } from "@/session/session"
 import { TuiEvent } from "./event"
@@ -74,6 +74,7 @@ import { FormatError, FormatUnknownError } from "@/cli/error"
 import { CommandPaletteProvider, useCommandPalette } from "./context/command-palette"
 import { OpencodeKeymapProvider, registerOpencodeKeymap, useBindings, useOpencodeKeymap } from "./keymap"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { AgencySwarmOllama } from "@/agency-swarm/ollama"
 import { AgencyProduct } from "@/agency-swarm/product"
 import {
   describeAgencyAuthFailure,
@@ -195,6 +196,7 @@ export function tui(input: {
     }
     const onBeforeExit = async () => {
       offKeymap()
+      AgencySwarmOllama.shutdown()
       await TuiPluginRuntime.dispose()
       await Telemetry.flush({ timeoutMs: 500 })
       TuiAudio.dispose()
@@ -1161,6 +1163,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         <TuiPluginRuntime.Slot name="app" />
       </Show>
       <StartupLoading ready={ready} themed={themePaintReady} />
+      <Toast />
     </box>
   )
 }
