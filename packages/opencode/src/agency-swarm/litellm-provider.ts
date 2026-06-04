@@ -142,6 +142,7 @@ const PROVIDER_ALIASES: Record<string, string> = {
   "google-vertex": "vertex_ai",
   lmstudio: "lm_studio",
   nova: "amazon_nova",
+  ollama: "ollama_chat",
   "sap-ai-core": "sap",
   togetherai: "together_ai",
   vercel: "vercel_ai_gateway",

@@ -145,6 +145,33 @@ describe("agency session errors", () => {
     ).toBe(true)
   })
 
+  test("framework mode skips provider auth when Ollama is selected", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        currentProviderID: "ollama",
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+          {
+            id: "ollama",
+            name: "Ollama",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(false)
+  })
+
   test("framework mode skips local provider auth for remote agency-swarm backends", () => {
     expect(
       shouldOpenStartupAuthDialog({
@@ -1103,6 +1130,7 @@ describe("isAgencySupportedProvider (/models filter)", () => {
     { id: "xai", name: "xAI", source: "config", env: [], options: {}, models: {} },
     { id: "openrouter", name: "OpenRouter", source: "config", env: [], options: {}, models: {} },
     { id: "github-copilot", name: "GitHub Copilot", source: "config", env: [], options: {}, models: {} },
+    { id: "ollama", name: "Ollama", source: "config", env: [], options: {}, models: {} },
     { id: "openai", name: "OpenAI", source: "config", env: [], options: {}, models: {} },
     { id: "anthropic", name: "Anthropic", source: "config", env: [], options: {}, models: {} },
     { id: "agency-swarm", name: "Agent Swarm", source: "config", env: [], options: {}, models: {} },
@@ -1119,6 +1147,7 @@ describe("isAgencySupportedProvider (/models filter)", () => {
       "google",
       "xai",
       "openrouter",
+      "ollama",
       "openai",
       "anthropic",
       "agency-swarm",
@@ -1132,6 +1161,7 @@ describe("isAgencySupportedProvider (/models filter)", () => {
       "xai",
       "openrouter",
       "github-copilot",
+      "ollama",
       "openai",
       "anthropic",
       "agency-swarm",

@@ -123,6 +123,11 @@ describe("agency-swarm litellm model routing", () => {
     expect(buildLitellmModelForClientConfig("anthropic", "anthropic/claude-3")).toBe("litellm/anthropic/claude-3")
   })
 
+  test("buildLitellmModelForClientConfig routes Ollama selections through ollama_chat", () => {
+    expect(buildLitellmModelForClientConfig("ollama", "gemma4:e4b")).toBe("litellm/ollama_chat/gemma4:e4b")
+    expect(buildLitellmModelForClientConfig("ollama", "ollama_chat/gemma4:e4b")).toBe("litellm/ollama_chat/gemma4:e4b")
+  })
+
   test("normalizeExplicitClientConfigModel preserves non-OpenAI provider namespaces", () => {
     expect(normalizeExplicitClientConfigModel("openrouter/openai/gpt-5.2")).toBe("openrouter/openai/gpt-5.2")
     expect(normalizeExplicitClientConfigModel("litellm/openrouter/openai/gpt-5.2")).toBe(
