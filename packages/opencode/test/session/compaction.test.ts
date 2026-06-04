@@ -46,6 +46,10 @@ const ref = {
   providerID: ProviderID.make("test"),
   modelID: ModelID.make("test-model"),
 }
+const agencyRef = {
+  providerID: ProviderID.make(AgencySwarmAdapter.PROVIDER_ID),
+  modelID: ModelID.make(AgencySwarmAdapter.DEFAULT_MODEL_ID),
+}
 
 afterEach(() => {
   mock.restore()
@@ -83,7 +87,7 @@ function createModel(opts: {
 
 const wide = () => ProviderTest.fake({ model: createModel({ context: 100_000, output: 32_000 }) })
 
-function createUserMessage(sessionID: SessionID, text: string) {
+function createUserMessage(sessionID: SessionID, text: string, model = ref) {
   return Effect.gen(function* () {
     const ssn = yield* SessionNs.Service
     const msg = yield* ssn.updateMessage({
@@ -91,7 +95,7 @@ function createUserMessage(sessionID: SessionID, text: string) {
       role: "user",
       sessionID,
       agent: "build",
-      model: ref,
+      model,
       time: { created: Date.now() },
     })
     yield* ssn.updatePart({
@@ -872,28 +876,13 @@ describe("session.compaction.process", () => {
   )
 
   itCompaction.instance(
-    "uses a real provider model when user model is the Agency Swarm fallback",
+    "uses configured small model when user model is Agency Swarm Default",
     () => {
       const stub = llm()
       const summaryModel = createModel({ context: 100_000, output: 32_000 })
-      const summaryInfo = ProviderTest.info({}, summaryModel)
-      const agencyProviderID = ProviderID.make(AgencySwarmAdapter.PROVIDER_ID)
-      const agencyModelID = ModelID.make(AgencySwarmAdapter.DEFAULT_MODEL_ID)
-      const agencyModel = ProviderTest.model({
-        id: agencyModelID,
-        providerID: agencyProviderID,
-        name: "Agency Swarm Default",
-      })
-      const agencyInfo = ProviderTest.info({ id: agencyProviderID, name: "Agency Swarm" }, agencyModel)
       const provider = ProviderTest.fake({
         model: summaryModel,
-        info: summaryInfo,
-        list: Effect.fn("TestProvider.list")(() =>
-          Effect.succeed({
-            [agencyInfo.id]: agencyInfo,
-            [summaryInfo.id]: summaryInfo,
-          }),
-        ),
+        list: Effect.fn("TestProvider.list")(() => Effect.die(new Error("Provider list should not be used"))),
         getModel: Effect.fn("TestProvider.getModel")((providerID, modelID) => {
           if (providerID === summaryModel.providerID && modelID === summaryModel.id) return Effect.succeed(summaryModel)
           return Effect.die(new Error(`Unexpected compaction model: ${providerID}/${modelID}`))
@@ -905,21 +894,7 @@ describe("session.compaction.process", () => {
       return Effect.gen(function* () {
         const ssn = yield* SessionNs.Service
         const session = yield* ssn.create({})
-        const msg = yield* ssn.updateMessage({
-          id: MessageID.ascending(),
-          role: "user",
-          sessionID: session.id,
-          agent: "build",
-          model: { providerID: agencyProviderID, modelID: agencyModelID },
-          time: { created: Date.now() },
-        })
-        yield* ssn.updatePart({
-          id: PartID.ascending(),
-          messageID: msg.id,
-          sessionID: session.id,
-          type: "text",
-          text: "compact this",
-        })
+        const msg = yield* createUserMessage(session.id, "compact this", agencyRef)
         const msgs = yield* ssn.messages({ sessionID: session.id })
 
         yield* SessionCompaction.use.process({
@@ -940,6 +915,111 @@ describe("session.compaction.process", () => {
           expect(summary.info.modelID).toBe(summaryModel.id)
         }
       }).pipe(withCompaction({ llm: stub.layer, provider }))
+    },
+    { git: true, config: { small_model: "test/test-model" } },
+  )
+
+  itCompaction.instance(
+    "uses configured compaction agent model when user model is Agency Swarm Default",
+    () => {
+      const stub = llm()
+      const summaryModel = createModel({ context: 100_000, output: 32_000 })
+      const provider = ProviderTest.fake({
+        model: summaryModel,
+        list: Effect.fn("TestProvider.list")(() => Effect.die(new Error("Provider list should not be used"))),
+        getModel: Effect.fn("TestProvider.getModel")((providerID, modelID) => {
+          if (providerID === summaryModel.providerID && modelID === summaryModel.id) return Effect.succeed(summaryModel)
+          return Effect.die(new Error(`Unexpected compaction model: ${providerID}/${modelID}`))
+        }),
+      })
+      let captured: Provider.Model | undefined
+      stub.push(reply("summary", (input) => (captured = input.model)))
+
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        const msg = yield* createUserMessage(session.id, "compact this", agencyRef)
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+
+        yield* SessionCompaction.use.process({
+          parentID: msg.id,
+          messages: msgs,
+          sessionID: session.id,
+          auto: false,
+        })
+
+        const summary = (yield* ssn.messages({ sessionID: session.id })).find(
+          (item) => item.info.role === "assistant" && item.info.summary,
+        )
+        expect(captured?.providerID).toBe(summaryModel.providerID)
+        expect(captured?.id).toBe(summaryModel.id)
+        expect(summary?.info.role).toBe("assistant")
+        if (summary?.info.role === "assistant") {
+          expect(summary.info.providerID).toBe(summaryModel.providerID)
+          expect(summary.info.modelID).toBe(summaryModel.id)
+        }
+      }).pipe(withCompaction({ llm: stub.layer, provider }))
+    },
+    { git: true, config: { agent: { compaction: { model: "test/test-model" } } } },
+  )
+
+  itCompaction.instance(
+    "does not select provider-list fallback for Agency Swarm Default compaction",
+    () => {
+      const openaiProviderID = ProviderID.make("openai")
+      const unsupportedModelID = ModelID.make("gpt-5.5-pro")
+      const unsupported = ProviderTest.model({
+        id: unsupportedModelID,
+        providerID: openaiProviderID,
+        name: "GPT-5.5 Pro",
+      })
+      const agencyModel = ProviderTest.model({
+        id: agencyRef.modelID,
+        providerID: agencyRef.providerID,
+        name: "Agency Swarm Default",
+      })
+      const unsupportedInfo = ProviderTest.info({ id: openaiProviderID, name: "OpenAI" }, unsupported)
+      const agencyInfo = ProviderTest.info({ id: agencyRef.providerID, name: "Agency Swarm" }, agencyModel)
+      const provider = ProviderTest.fake({
+        model: unsupported,
+        info: unsupportedInfo,
+        list: Effect.fn("TestProvider.list")(() =>
+          Effect.succeed({
+            [agencyInfo.id]: agencyInfo,
+            [unsupportedInfo.id]: unsupportedInfo,
+          }),
+        ),
+        getModel: Effect.fn("TestProvider.getModel")((providerID, modelID) =>
+          Effect.die(new Error(`Unexpected compaction model: ${providerID}/${modelID}`)),
+        ),
+      })
+
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        const msg = yield* createUserMessage(session.id, "compact this", agencyRef)
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+
+        const result = yield* SessionCompaction.use.process({
+          parentID: msg.id,
+          messages: msgs,
+          sessionID: session.id,
+          auto: false,
+        })
+
+        const summary = (yield* ssn.messages({ sessionID: session.id })).find(
+          (item) => item.info.role === "assistant" && item.info.summary,
+        )
+        expect(result).toBe("stop")
+        expect(summary?.info.role).toBe("assistant")
+        if (summary?.info.role === "assistant") {
+          expect(summary.info.providerID).toBe(agencyRef.providerID)
+          expect(summary.info.modelID).toBe(agencyRef.modelID)
+          expect(summary.info.finish).toBe("error")
+          expect(JSON.stringify(summary.info.error)).toContain("No real compaction model is configured")
+          expect(JSON.stringify(summary.info.error)).not.toContain("gpt-5.5-pro")
+        }
+      }).pipe(withCompaction({ provider }))
     },
     { git: true },
   )

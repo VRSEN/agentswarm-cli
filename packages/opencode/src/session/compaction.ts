@@ -2,7 +2,7 @@ import { BusEvent } from "@/bus/bus-event"
 import { Bus } from "@/bus"
 import * as Session from "./session"
 import { SessionID, MessageID, PartID } from "./schema"
-import { Provider, parseModel, sort } from "@/provider/provider"
+import { Provider, parseModel } from "@/provider/provider"
 import { MessageV2 } from "./message-v2"
 import { Token } from "@/util/token"
 import * as Log from "@opencode-ai/core/util/log"
@@ -41,6 +41,8 @@ const PRUNE_PROTECTED_TOOLS = ["skill"]
 const DEFAULT_TAIL_TURNS = 2
 const MIN_PRESERVE_RECENT_TOKENS = 2_000
 const MAX_PRESERVE_RECENT_TOKENS = 8_000
+const AGENCY_COMPACTION_MODEL_ERROR =
+  "No real compaction model is configured for Agency Swarm Default. Set small_model or agent.compaction.model to a non-Agency Swarm model before running /compact."
 const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
 <template>
 ## Goal
@@ -254,8 +256,9 @@ export const layer: Layer.Layer<
     const resolveModel = Effect.fn("SessionCompaction.resolveModel")(function* (input: {
       agent: Agent.Info
       fallback: { providerID: ProviderID; modelID: ModelID }
+      cfg: Config.Info
     }) {
-      if (input.agent.model) {
+      if (input.agent.model && input.agent.model.providerID !== SessionAgencySwarm.PROVIDER_ID) {
         return yield* provider.getModel(input.agent.model.providerID, input.agent.model.modelID).pipe(Effect.orDie)
       }
 
@@ -263,9 +266,8 @@ export const layer: Layer.Layer<
         return yield* provider.getModel(input.fallback.providerID, input.fallback.modelID).pipe(Effect.orDie)
       }
 
-      const cfg = yield* config.get()
-      if (cfg.small_model) {
-        const small = parseModel(cfg.small_model)
+      if (input.cfg.small_model) {
+        const small = parseModel(input.cfg.small_model)
         if (small.providerID !== SessionAgencySwarm.PROVIDER_ID) {
           const model = yield* provider
             .getModel(small.providerID, small.modelID)
@@ -274,13 +276,7 @@ export const layer: Layer.Layer<
         }
       }
 
-      const providers = yield* provider.list()
-      for (const info of Object.values(providers).filter((item) => item.id !== SessionAgencySwarm.PROVIDER_ID)) {
-        const [model] = sort(Object.values(info.models))
-        if (model) return model
-      }
-
-      return yield* provider.getModel(input.fallback.providerID, input.fallback.modelID).pipe(Effect.orDie)
+      return undefined
     })
 
     const select = Effect.fn("SessionCompaction.select")(function* (input: {
@@ -421,9 +417,44 @@ export const layer: Layer.Layer<
         }
       }
 
-      const agent = yield* agents.get("compaction")
-      const model = yield* resolveModel({ agent, fallback: userMessage.model })
       const cfg = yield* config.get()
+      const ctx = yield* InstanceState.context
+      const agent = yield* agents.get("compaction")
+      const model = yield* resolveModel({ agent, fallback: userMessage.model, cfg })
+      if (!model) {
+        yield* session.updateMessage({
+          id: MessageID.ascending(),
+          role: "assistant",
+          parentID: input.parentID,
+          sessionID: input.sessionID,
+          mode: "compaction",
+          agent: "compaction",
+          variant: userMessage.model.variant,
+          summary: true,
+          path: {
+            cwd: ctx.directory,
+            root: ctx.worktree,
+          },
+          cost: 0,
+          tokens: {
+            output: 0,
+            input: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          modelID: userMessage.model.modelID,
+          providerID: userMessage.model.providerID,
+          time: {
+            created: Date.now(),
+          },
+          finish: "error",
+          error: new MessageV2.APIError({
+            message: AGENCY_COMPACTION_MODEL_ERROR,
+            isRetryable: false,
+          }).toObject(),
+        })
+        return "stop"
+      }
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
       const prior = completedCompactions(history)
       const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))
@@ -446,7 +477,6 @@ export const layer: Layer.Layer<
         stripMedia: true,
         toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
       })
-      const ctx = yield* InstanceState.context
       const msg: MessageV2.Assistant = {
         id: MessageID.ascending(),
         role: "assistant",
