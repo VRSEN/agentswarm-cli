@@ -153,6 +153,7 @@ describe("prompt auth rejection handling", () => {
       enabled: () => false,
       connected: () => false,
       selection: () => undefined,
+      labelState: () => undefined,
       onMention: () => () => {},
       server: () => undefined,
     } as any)
@@ -264,7 +265,7 @@ describe("prompt auth rejection handling", () => {
         getStyleId: () => 1,
       }),
     } as any)
-    spyOn(TuiConfigContext, "useTuiConfig").mockReturnValue({} as any)
+    spyOn(TuiConfigContext, "useTuiConfig").mockReturnValue(testTuiConfig)
     spyOn(PromptHistoryModule, "usePromptHistory").mockReturnValue({
       move: () => undefined,
       append: () => {},
@@ -287,16 +288,20 @@ describe("prompt auth rejection handling", () => {
     let promptRef: PromptRef | undefined
 
     await testRender(() => (
-      <RouteProvider>
-        <DialogProvider>
-          <Prompt
-            ref={(value) => (promptRef = value)}
-            sessionID={input.sessionID}
-            workspaceID={input.workspaceID}
-            placeholders={{ normal: [] }}
-          />
-        </DialogProvider>
-      </RouteProvider>
+      <TestKeymapProvider>
+        <RouteProvider>
+          <DialogProvider>
+            <CommandPaletteProvider>
+              <Prompt
+                ref={(value) => (promptRef = value)}
+                sessionID={input.sessionID}
+                workspaceID={input.workspaceID}
+                placeholders={{ normal: [] }}
+              />
+            </CommandPaletteProvider>
+          </DialogProvider>
+        </RouteProvider>
+      </TestKeymapProvider>
     ))
 
     expect(promptRef).toBeDefined()
@@ -1184,7 +1189,7 @@ describe("prompt auth rejection handling", () => {
       {
         prompt: async () => {
           await Bun.sleep(75)
-          return { error: promptError }
+          return { error: promptError, response: new Response(null, { status: 403 }) }
         },
       },
       "prompt",
