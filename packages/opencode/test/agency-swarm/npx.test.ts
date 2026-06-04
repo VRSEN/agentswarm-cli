@@ -2525,8 +2525,12 @@ describe("agency-swarm npx onboarding", () => {
     const realClearTimeout = globalThis.clearTimeout
     const killSignals: Array<string | undefined> = []
     const canaryStderr = createTextOutputStream("importing openai types...\n")
-    let resolveCanary!: (code: number) => void
+    let resolveCanary: ((code: number) => void) | undefined
     let canaryStarted = false
+    let resolveCanaryStarted!: () => void
+    const canaryStartedPromise = new Promise<void>((resolve) => {
+      resolveCanaryStarted = resolve
+    })
 
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     spyOn(globalThis, "setTimeout").mockImplementation(((fn: TimerHandler) => {
@@ -2574,6 +2578,7 @@ describe("agency-swarm npx onboarding", () => {
       }
       if (isCanaryCommand(cmd)) {
         canaryStarted = true
+        resolveCanaryStarted()
         return {
           exited: new Promise<number>((resolve) => {
             resolveCanary = resolve
@@ -2584,7 +2589,7 @@ describe("agency-swarm npx onboarding", () => {
             killSignals.push(signal)
             if (signal === "SIGKILL") {
               canaryStderr.close()
-              resolveCanary(1)
+              resolveCanary?.(1)
             }
           },
         } as never
@@ -2597,22 +2602,29 @@ describe("agency-swarm npx onboarding", () => {
       agencyFile: path.join(dir.path, "agency.py"),
       moduleName: "agency",
     })
-    const pending = Symbol("pending")
-    const outcome = await Promise.race([
+    const canaryStartedResult = await Promise.race([
+      canaryStartedPromise.then(() => true),
       launch.then(
-        () => "resolved",
+        () => new Error("prepareProjectLaunch resolved before the import canary started"),
         (error) => error,
       ),
-      new Promise((resolve) => realSetTimeout(() => resolve(pending), 20)),
+      new Promise((resolve) =>
+        realSetTimeout(() => resolve(new Error("Timed out waiting for the import canary to start")), 1000),
+      ),
+    ])
+    if (canaryStartedResult !== true) throw canaryStartedResult
+
+    const outcome = await Promise.race([
+      launch.catch((error) => error),
+      new Promise((resolve) =>
+        realSetTimeout(() => {
+          canaryStderr.close()
+          resolveCanary?.(1)
+          resolve(new Error("Timed out waiting for the import canary timeout failure"))
+        }, 1000),
+      ),
     ])
 
-    if (outcome === pending) {
-      canaryStderr.close()
-      resolveCanary(1)
-      await launch.catch(() => undefined)
-    }
-
-    expect(outcome).not.toBe(pending)
     expect(outcome).toBeInstanceOf(Error)
     if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
     expect(killSignals).toEqual([undefined, "SIGKILL"])
