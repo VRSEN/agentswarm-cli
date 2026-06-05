@@ -76,6 +76,7 @@ After conflict resolution:
 
 Before presenting the sync as ready:
 
+- Refresh any sync PR branch onto the live fork default branch after fetching current refs. If rebasing or rebuilding is unsafe, stop and escalate before merge-readiness.
 - Record the upstream commit count from the last present upstream commit to the requested target.
 - Record branch commits from the fork base to the PR head.
 - Inspect the merge commit parents and confirm the upstream parent matches the requested target commit.
@@ -114,3 +115,8 @@ Before handoff:
 - Verify public PR text is short, technical, and reviewer-focused.
 - Keep internal analysis documents private unless the user approves publication.
 - Report blockers as concrete alignment, evidence, or source-of-truth gaps.
+
+## Skill Maintenance
+
+- Keep this repo skill current whenever the upstream-sync SOP changes or a sync proves a better route.
+- Do not call upstream-sync process work complete while known SOP improvements live only in notes, chat, or review comments.
