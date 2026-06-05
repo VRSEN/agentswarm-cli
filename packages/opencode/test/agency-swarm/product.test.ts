@@ -311,4 +311,25 @@ describe("AgencyProduct.tips", () => {
     expect(tips).toContain("Use {highlight}/agents{/highlight} to pick the active swarm or agent from live metadata")
     expect(tips.join("\n")).not.toContain("recipient")
   })
+
+  test("filters skipped tips before rewrites and from function output", () => {
+    type Shortcuts = { modelList: () => string }
+    type Tip = string | ((shortcuts: Shortcuts) => string | undefined)
+
+    const tips = AgencyProduct.tips<Tip>([
+      "Run {highlight}opencode serve{/highlight} for headless API access to OpenCode",
+      "Run {highlight}opencode auth list{/highlight} to see all configured providers",
+      (shortcuts) =>
+        `Use {highlight}/models{/highlight} or {highlight}${shortcuts.modelList()}{/highlight} to see and switch between available AI models`,
+    ])
+
+    const rendered = tips.flatMap((item) => {
+      const value = typeof item === "string" ? item : item({ modelList: () => "ctrl+m" })
+      return value ? [value] : []
+    })
+
+    expect(rendered.join("\n")).not.toContain("opencode serve")
+    expect(rendered.join("\n")).not.toContain("{highlight}/models{/highlight}")
+    expect(rendered).toContain("Run {highlight}agentswarm auth list{/highlight} to see configured provider credentials")
+  })
 })

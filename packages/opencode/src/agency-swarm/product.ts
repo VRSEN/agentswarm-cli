@@ -347,7 +347,7 @@ export namespace AgencyProduct {
     "Press {highlight}Ctrl+X E{/highlight} or {highlight}/editor{/highlight}",
     "Run {highlight}/init{/highlight}",
     "Use {highlight}/review{/highlight}",
-    "Run {highlight}/models{/highlight}",
+    "{highlight}/models{/highlight}",
     "Add {highlight}.md{/highlight} files to {highlight}.agentswarm/agent/{/highlight}",
     "Use {highlight}@agent-name{/highlight} in prompts to invoke specialized subagents",
     "Run {highlight}/connect{/highlight} to add API keys for 75+ supported LLM providers",
@@ -383,27 +383,54 @@ export namespace AgencyProduct {
     ["{highlight}opencode debug config{/highlight}", `{highlight}${cmd} debug config{/highlight}`],
   ] as const
 
-  export function tips(input: string[]) {
+  type TipFunction = (...args: unknown[]) => unknown
+
+  function skipped(value: string) {
+    return skip.some((text) => value.includes(text))
+  }
+
+  function rewrite(value: string) {
+    let next = value
+    for (const [from, to] of swap) next = next.replaceAll(from, to)
+    if (next.includes("{highlight}/compact{/highlight}")) {
+      next = next.replace("long sessions near context limits", "long agency-swarm sessions near context limits")
+    }
+    if (next.includes("{highlight}opencode auth list{/highlight}")) {
+      next = `Run {highlight}${cmd} auth list{/highlight} to see configured provider credentials`
+    }
+    return next
+  }
+
+  function transform<T>(item: T): T | undefined {
+    if (typeof item === "string") {
+      if (skipped(item)) return undefined
+      return rewrite(item) as T
+    }
+    if (typeof item === "function") {
+      const fn = item as TipFunction
+      return ((...args: unknown[]) => {
+        const value = fn(...args)
+        if (typeof value !== "string") return value
+        if (skipped(value)) return undefined
+        return rewrite(value)
+      }) as T
+    }
+    return item
+  }
+
+  export function tips<T>(input: T[]): T[] {
     const seen = new Set<string>()
-    const list = input
-      .filter((item) => !skip.some((text) => item.includes(text)))
-      .map((item) => {
-        let next = item
-        for (const [from, to] of swap) next = next.replaceAll(from, to)
-        if (next.includes("{highlight}/compact{/highlight}")) {
-          next = next.replace("long sessions near context limits", "long agency-swarm sessions near context limits")
-        }
-        if (next.includes("{highlight}opencode auth list{/highlight}")) {
-          next = `Run {highlight}${cmd} auth list{/highlight} to see configured provider credentials`
-        }
-        return next
-      })
-      .concat(add)
-      .filter((item) => {
-        if (seen.has(item)) return false
-        seen.add(item)
-        return true
-      })
+    const base = input.reduce<T[]>((acc, item) => {
+      const next = transform(item)
+      if (next !== undefined) acc.push(next)
+      return acc
+    }, [])
+    const list = base.concat(add as T[]).filter((item) => {
+      if (typeof item !== "string") return true
+      if (seen.has(item)) return false
+      seen.add(item)
+      return true
+    })
     return list
   }
 }

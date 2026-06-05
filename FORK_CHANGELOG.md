@@ -41,7 +41,7 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 - Upstream commit already present before this sync: `35734b42fe3094c41b09ec81d3836944a8dd1d89`.
 - Prior fork merge commit carrying that upstream commit: `8c24d21569620713c438b68e38a6a53fbbc66b68`.
 - Current fork merge commit: `d404bc35242aa53d77df8ecde8fda154e8ada9cc`.
-- Fork base parent for the current merge: `597d7c0613116b9da6586d5dc8f30de43aa624cf`.
+- Fork base parent for the current merge: `c99369015dad55f6e3cfed384b177687a4e25470`.
 
 ## Branding/Packaging
 
