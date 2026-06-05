@@ -35,9 +35,10 @@ import { Telemetry } from "@/telemetry/telemetry"
 const PROVIDER_PRIORITY: Record<string, number> = {
   openai: 0,
   anthropic: 1,
-  "github-copilot": 2,
-  google: 3,
-  "opencode-go": 4,
+  openrouter: 2,
+  "github-copilot": 3,
+  google: 4,
+  "opencode-go": 5,
   opencode: 100,
 }
 
@@ -164,6 +165,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
           return {
             opencode: "(Recommended)",
             anthropic: "(API key)",
+            openrouter: "(API key)",
             openai: "(Browser sign-in or API key)",
             "opencode-go": "Low cost subscription for everyone",
           }[provider.id]

@@ -6,12 +6,19 @@ import { Log } from "@/util"
 import { hasStoredProviderCredential } from "@tui/util/provider-auth"
 import type { Provider, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 
-export const AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS = ["openai", "anthropic"] as const
+export const AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS = [
+  "openai",
+  "anthropic",
+  "google",
+  "gemini",
+  "xai",
+  "openrouter",
+] as const
 const log = Log.create({ service: "tui.session-error" })
 
 /**
  * True when a provider id is usable in Agent Swarm framework mode: either the
- * `agency-swarm` provider itself or one of the primary upstream auth providers
+ * `agency-swarm` provider itself or one of the supported upstream auth providers
  * (`AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS`) that `shouldBlockAgencyPromptSubmit`
  * actually accepts. Surfaces like `/models` use this to avoid dead-end selections
  * the send guard would immediately block.
@@ -89,7 +96,7 @@ function usesLocalAgencyProviderAuth(providers: Provider[]) {
 }
 
 /**
- * Forwarding upstream credentials means the agency-swarm call depends on locally stored OpenAI/Anthropic
+ * Forwarding upstream credentials means the agency-swarm call depends on locally stored upstream provider
  * credentials even against non-loopback base URLs (e.g. `host.docker.internal`, remote bridges).
  * Active when the env flag is set, the caller passes the override, or the agency-swarm provider opts in.
  */
@@ -131,7 +138,9 @@ function hasSupportedAgencyCredential(
   if (providerMatch) return true
   // Mirror the bridge's direct env reads (SessionAgencySwarm.buildAuthClientConfig): primary-provider env vars
   // are upstream creds even when the provider is filtered out of the enabled list.
-  return AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS.some((id) => isNonEmptyEnv(env[envNameForPrimaryProvider(id)]))
+  return AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS.some((id) =>
+    envNamesForPrimaryProvider(id).some((name) => isNonEmptyEnv(env[name])),
+  )
 }
 
 function hasEnvCredentialForProvider(provider: AuthProvider | Provider, env: Record<string, string | undefined>) {
@@ -142,8 +151,21 @@ function isNonEmptyEnv(value: string | undefined) {
   return typeof value === "string" && value.trim().length > 0
 }
 
-function envNameForPrimaryProvider(id: (typeof AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS)[number]) {
-  return id === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY"
+function envNamesForPrimaryProvider(id: (typeof AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS)[number]) {
+  switch (id) {
+    case "openai":
+      return ["OPENAI_API_KEY"]
+    case "anthropic":
+      return ["ANTHROPIC_API_KEY"]
+    case "google":
+      return ["GOOGLE_API_KEY", "GEMINI_API_KEY"]
+    case "gemini":
+      return ["GEMINI_API_KEY", "GOOGLE_API_KEY"]
+    case "xai":
+      return ["XAI_API_KEY"]
+    case "openrouter":
+      return ["OPENROUTER_API_KEY"]
+  }
 }
 
 function hasExplicitAgencyClientConfig(provider: Provider | undefined) {

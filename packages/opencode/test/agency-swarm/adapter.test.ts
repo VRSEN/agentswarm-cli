@@ -190,6 +190,11 @@ describe("agency-swarm.adapter", () => {
         litellmKeys: {
           anthropic: "ant-secret",
         },
+        modelSettingsExtraArgs: {
+          reasoning_effort: "high",
+          reasoning_summary: "auto",
+          include: ["reasoning.encrypted_content"],
+        },
       },
     })) {
       // consume stream
@@ -216,6 +221,11 @@ describe("agency-swarm.adapter", () => {
         },
         litellm_keys: {
           anthropic: "ant-secret",
+        },
+        model_settings_extra_args: {
+          reasoning_effort: "high",
+          reasoning_summary: "auto",
+          include: ["reasoning.encrypted_content"],
         },
       },
     })

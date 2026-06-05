@@ -1224,6 +1224,402 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream forwards selected OpenRouter model and key through direct client config", async () => {
+    mockHistory()
+    spyOn(Auth, "all").mockImplementation(async () => ({
+      openai: { type: "api", key: "stored-openai" } as any,
+      openrouter: { type: "api", key: "stored-openrouter" } as any,
+    })) as typeof Auth.all
+    spyOn(Env, "all").mockImplementation(() => ({
+      OPENAI_API_KEY: "env-openai",
+      OPENROUTER_API_KEY: "env-openrouter",
+    })) as typeof Env.all
+    spyOn(Provider, "list").mockImplementation(async () => ({
+      openai: {
+        id: "openai",
+        name: "OpenAI",
+        source: "api",
+        env: ["OPENAI_API_KEY"],
+        options: {},
+        models: {},
+      },
+      openrouter: {
+        id: "openrouter",
+        name: "OpenRouter",
+        source: "api",
+        env: ["OPENROUTER_API_KEY"],
+        options: {},
+        models: {},
+      },
+    })) as typeof Provider.list
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      agency_swarm_version: "1.9.3",
+      metadata: { agents: ["AgentA"] },
+      nodes: [],
+    })) as typeof AgencySwarmAdapter.getMetadata
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = { providerID: "openrouter", modelID: "anthropic/claude-sonnet-4.5" }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "env-openrouter",
+      model: "openrouter/anthropic/claude-sonnet-4.5",
+    })
+  })
+
+  test("stream caps OpenRouter Claude max tokens for free tier keys", async () => {
+    mockHistory()
+    globalThis.fetch = mock(async () => Response.json({ data: { is_free_tier: true } })) as unknown as typeof fetch
+    spyOn(Auth, "all").mockImplementation(async () => ({
+      openrouter: { type: "api", key: "stored-openrouter" } as any,
+    })) as typeof Auth.all
+    spyOn(Env, "all").mockImplementation(() => ({
+      OPENROUTER_API_KEY: "env-openrouter",
+    })) as typeof Env.all
+    spyOn(Provider, "list").mockImplementation(async () => ({
+      openrouter: {
+        id: "openrouter",
+        name: "OpenRouter",
+        source: "api",
+        env: ["OPENROUTER_API_KEY"],
+        options: {},
+        models: {},
+      },
+    })) as typeof Provider.list
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      agency_swarm_version: "1.9.3",
+      metadata: { agents: ["AgentA"] },
+      nodes: [],
+    })) as typeof AgencySwarmAdapter.getMetadata
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = {
+      providerID: "openrouter",
+      modelID: "anthropic/claude-sonnet-4.5",
+      variantOptions: {
+        reasoning: { effort: "high" },
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "env-openrouter",
+      model: "openrouter/anthropic/claude-sonnet-4.5",
+      model_settings_extra_args: {
+        extra_body: {
+          reasoning: {
+            effort: "high",
+          },
+        },
+        max_tokens: 2500,
+      },
+    })
+  })
+
+  test("stream leaves OpenRouter Claude max tokens unset for paid tier keys", async () => {
+    mockHistory()
+    globalThis.fetch = mock(async () => Response.json({ data: { is_free_tier: false } })) as unknown as typeof fetch
+    spyOn(Auth, "all").mockImplementation(async () => ({
+      openrouter: { type: "api", key: "stored-openrouter" } as any,
+    })) as typeof Auth.all
+    spyOn(Env, "all").mockImplementation(() => ({
+      OPENROUTER_API_KEY: "env-openrouter",
+    })) as typeof Env.all
+    spyOn(Provider, "list").mockImplementation(async () => ({
+      openrouter: {
+        id: "openrouter",
+        name: "OpenRouter",
+        source: "api",
+        env: ["OPENROUTER_API_KEY"],
+        options: {},
+        models: {},
+      },
+    })) as typeof Provider.list
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      agency_swarm_version: "1.9.3",
+      metadata: { agents: ["AgentA"] },
+      nodes: [],
+    })) as typeof AgencySwarmAdapter.getMetadata
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = {
+      providerID: "openrouter",
+      modelID: "anthropic/claude-sonnet-4.5",
+      variantOptions: {
+        reasoning: { effort: "high" },
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "env-openrouter",
+      model: "openrouter/anthropic/claude-sonnet-4.5",
+      model_settings_extra_args: {
+        extra_body: {
+          reasoning: {
+            effort: "high",
+          },
+        },
+      },
+    })
+  })
+
+  test("stream forwards OpenRouter reasoning effort for non-Claude models", async () => {
+    mockHistory()
+    globalThis.fetch = mock(async () => Response.json({ data: { is_free_tier: true } })) as unknown as typeof fetch
+    spyOn(Auth, "all").mockImplementation(async () => ({
+      openrouter: { type: "api", key: "stored-openrouter" } as any,
+    })) as typeof Auth.all
+    spyOn(Env, "all").mockImplementation(() => ({
+      OPENROUTER_API_KEY: "env-openrouter",
+    })) as typeof Env.all
+    spyOn(Provider, "list").mockImplementation(async () => ({
+      openrouter: {
+        id: "openrouter",
+        name: "OpenRouter",
+        source: "api",
+        env: ["OPENROUTER_API_KEY"],
+        options: {},
+        models: {},
+      },
+    })) as typeof Provider.list
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      agency_swarm_version: "1.9.3",
+      metadata: { agents: ["AgentA"] },
+      nodes: [],
+    })) as typeof AgencySwarmAdapter.getMetadata
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = {
+      providerID: "openrouter",
+      modelID: "openai/gpt-5.4",
+      variantOptions: {
+        reasoning: { effort: "high" },
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      api_key: "env-openrouter",
+      model: "openrouter/openai/gpt-5.4",
+      model_settings_extra_args: {
+        extra_body: {
+          reasoning: {
+            effort: "high",
+          },
+        },
+        max_tokens: 2500,
+      },
+    })
+  })
+
+  test("stream forwards selected model variant settings to agency client config", async () => {
+    mockHistory()
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = {
+      providerID: "openai",
+      modelID: "gpt-5.4",
+      variantOptions: {
+        reasoningEffort: "high",
+        reasoningSummary: "auto",
+        include: ["reasoning.encrypted_content"],
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      model: "gpt-5.4",
+      model_settings_extra_args: {
+        reasoning_effort: "high",
+        reasoning_summary: "auto",
+        include: ["reasoning.encrypted_content"],
+      },
+    })
+  })
+
+  test("stream forwards selected xAI Grok reasoning effort to agency client config", async () => {
+    mockHistory()
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = {
+      providerID: "xai",
+      modelID: "grok-4.3",
+      variantOptions: {
+        reasoningEffort: "high",
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      model: "litellm/xai/grok-4.3",
+      model_settings_extra_args: {
+        reasoning_effort: "high",
+      },
+    })
+  })
+
+  test("stream maps anthropic model variant effort to litellm reasoning effort", async () => {
+    mockHistory()
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = {
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4-6",
+      variantOptions: {
+        thinking: { type: "adaptive" },
+        effort: "high",
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      model: "litellm/anthropic/claude-sonnet-4-6",
+      model_settings_extra_args: {
+        thinking: { type: "adaptive" },
+        reasoning_effort: "high",
+      },
+    })
+  })
+
+  test("stream maps gemini thinking config to litellm thinking", async () => {
+    mockHistory()
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = {
+      providerID: "google",
+      modelID: "gemini-2.5-pro",
+      variantOptions: {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingBudget: 16000,
+        },
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      model: "litellm/gemini/gemini-2.5-pro",
+      model_settings_extra_args: {
+        thinking: { type: "enabled", budget_tokens: 16000 },
+        reasoning_effort: "high",
+      },
+    })
+  })
+
+  test("stream maps top-level gemini thinking level to litellm reasoning effort", async () => {
+    mockHistory()
+
+    let captured: Record<string, unknown> | undefined
+    AgencySwarmAdapter.streamRun = async function* (input) {
+      captured = input.clientConfig
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.sessionModel = {
+      providerID: "google",
+      modelID: "gemini-3.5-flash",
+      variantOptions: {
+        includeThoughts: true,
+        thinkingLevel: "high",
+      },
+    }
+
+    const stream = await SessionAgencySwarm.stream(input)
+    for await (const _event of stream.fullStream) {
+      // consume
+    }
+
+    expect(captured).toEqual({
+      model: "litellm/gemini/gemini-3.5-flash",
+      model_settings_extra_args: {
+        reasoning_effort: "high",
+      },
+    })
+  })
+
   test("stream forwards stored API auth to remote URL when forwardUpstreamCredentials is true", async () => {
     mockHistory()
     spyOn(Auth, "all").mockImplementation(async () => ({
@@ -2181,7 +2577,7 @@ describe("session.agency-swarm", () => {
     }
   })
 
-  test("explicit client_config.model overrides session-derived model", async () => {
+  test("session UI model overrides explicit client_config.model for the current turn", async () => {
     mockHistory()
     spyOn(Auth, "all").mockImplementation(async () => ({})) as typeof Auth.all
     spyOn(Env, "all").mockImplementation(() => ({})) as typeof Env.all
@@ -2239,7 +2635,7 @@ describe("session.agency-swarm", () => {
       }
 
       expect(body?.["client_config"]).toEqual({
-        model: "gpt-4o",
+        model: "litellm/anthropic/claude-sonnet-4-5",
       })
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
@@ -6416,6 +6812,244 @@ describe("session.agency-swarm", () => {
     expect(deltas).toEqual(["Hi, there!"])
   })
 
+  test("stream does not duplicate text when message_output_created replays open output_text", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "message", id: "msg_open_run_item_replay" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_open_run_item_replay",
+            output_index: "0",
+            delta: "The current time is 10:00 AM.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "message_output_created",
+          item: {
+            raw_item: {
+              type: "message",
+              id: "msg_open_run_item_replay",
+              content: [{ type: "output_text", text: "The current time is 10:00 AM." }],
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: { type: "message", id: "msg_open_run_item_replay" },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "text-delta") {
+        deltas.push(event.text)
+      }
+    }
+
+    expect(deltas).toEqual(["The current time is 10:00 AM."])
+  })
+
+  test("stream does not duplicate response-scoped message replay when LiteLLM changes item id", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: {
+              type: "message",
+              id: "call_as_message",
+              provider_data: { response_id: "response_same_message" },
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "call_as_message",
+            output_index: "0",
+            delta: "The current time is 07:29.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.done",
+            item_id: "call_as_message",
+            output_index: "0",
+            text: "The current time is 07:29.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: {
+              type: "message",
+              id: "call_as_message",
+              content: [{ type: "output_text", text: "The current time is 07:29." }],
+              provider_data: { response_id: "response_same_message" },
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "message_output_created",
+          item: {
+            raw_item: {
+              type: "message",
+              id: "msg_agent_run_changed_id",
+              content: [{ type: "output_text", text: "The current time is 07:29." }],
+              provider_data: { response_id: "response_same_message" },
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "text-delta") {
+        deltas.push(event.text)
+      }
+    }
+
+    expect(deltas).toEqual(["The current time is 07:29."])
+  })
+
+  test("stream keeps repeated assistant text from a different provider response", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "message", id: "msg_first", provider_data: { response_id: "response_first" } },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_first",
+            output_index: "0",
+            delta: "OK",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.done",
+            item_id: "msg_first",
+            output_index: "0",
+            text: "OK",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: {
+              type: "message",
+              id: "msg_first",
+              content: [{ type: "output_text", text: "OK" }],
+              provider_data: { response_id: "response_first" },
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "message_output_created",
+          item: {
+            raw_item: {
+              type: "message",
+              id: "msg_second",
+              content: [{ type: "output_text", text: "OK" }],
+              provider_data: { response_id: "response_second" },
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "text-delta") {
+        deltas.push(event.text)
+      }
+    }
+
+    expect(deltas).toEqual(["OK", "OK"])
+  })
+
   test("stream keeps both distinct short assistant messages in the same run (no body-only dedupe)", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
@@ -6570,6 +7204,94 @@ describe("session.agency-swarm", () => {
     }
 
     expect(deltas).toEqual(["Find the right file first."])
+  })
+
+  test("stream does not duplicate response-scoped reasoning replay when LiteLLM changes item id", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: {
+              type: "reasoning",
+              id: "reasoning_raw",
+              provider_data: { response_id: "response_same_reasoning" },
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "reasoning_raw",
+            summary_index: "0",
+            output_index: "0",
+            delta: "The tool returned a timestamp.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "reasoning_raw",
+            summary_index: "0",
+            output_index: "0",
+            text: "The tool returned a timestamp.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: {
+              type: "reasoning",
+              id: "reasoning_raw",
+              summary: [{ text: "The tool returned a timestamp." }],
+              provider_data: { response_id: "response_same_reasoning" },
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "reasoning_item_created",
+          item: {
+            raw_item: {
+              type: "reasoning",
+              id: "reasoning_changed",
+              summary: [{ text: "The tool returned a timestamp." }],
+              provider_data: { response_id: "response_same_reasoning" },
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") deltas.push(event.text)
+    }
+
+    expect(deltas).toEqual(["The tool returned a timestamp."])
   })
 
   test("stream does not duplicate tool input when tool_called follows output_item.added", async () => {

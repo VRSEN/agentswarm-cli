@@ -658,8 +658,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       value: "variant.cycle",
       keybind: "variant_cycle",
       category: "Agent",
-      enabled: !frameworkMode(),
-      hidden: frameworkMode(),
+      enabled: local.model.variant.list().length > 0,
+      hidden: local.model.variant.list().length === 0,
       onSelect: () => {
         local.model.variant.cycle()
       },
@@ -669,8 +669,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       value: "variant.list",
       keybind: "variant_list",
       category: "Agent",
-      enabled: !frameworkMode(),
-      hidden: frameworkMode() || local.model.variant.list().length === 0,
+      enabled: local.model.variant.list().length > 0,
+      hidden: local.model.variant.list().length === 0,
       slash: {
         name: "variants",
       },

@@ -58,6 +58,8 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   const reasoningBuffer = new Map<string, string>()
   const reasoningOpen = new Set<string>()
   const reasoningByItem = new Map<string, Set<string>>()
+  const responseTextReplay = new Map<string, Set<string>>()
+  const responseReasoningReplay = new Map<string, Set<string>>()
 
   let usage: Usage | undefined
   let lastTextItemID: string | undefined
@@ -82,6 +84,41 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     const key = textKey(itemID, index)
     const current = textBuffer.get(key) || ""
     return current === text && !textOpen.has(key)
+  }
+
+  const replayTextKey = (text: string) => {
+    const normalized = text.trim()
+    return normalized ? normalized : undefined
+  }
+
+  const providerResponseID = (item: Record<string, unknown> | undefined) => {
+    return asString(asRecord(item?.["provider_data"])?.["response_id"])
+  }
+
+  const rememberResponseReplay = (
+    store: Map<string, Set<string>>,
+    item: Record<string, unknown> | undefined,
+    text: string | undefined,
+  ) => {
+    const responseID = providerResponseID(item)
+    const key = text ? replayTextKey(text) : undefined
+    if (!responseID || !key) return
+    const existing = store.get(responseID)
+    if (existing) {
+      existing.add(key)
+    } else {
+      store.set(responseID, new Set([key]))
+    }
+  }
+
+  const hasResponseReplay = (
+    store: Map<string, Set<string>>,
+    item: Record<string, unknown> | undefined,
+    text: string,
+  ) => {
+    const responseID = providerResponseID(item)
+    const key = replayTextKey(text)
+    return !!responseID && !!key && store.get(responseID)?.has(key) === true
   }
 
   const agentUpdatedHandoffMetadata = (agent: string | undefined) => {
@@ -698,12 +735,18 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     if (itemType === "message") {
       const itemID = asString(item["id"]) || lastTextItemID
       if (!itemID) return []
+      rememberResponseReplay(responseTextReplay, item, extractMessageText(item))
       return finishText(itemID, textIndex.get(itemID) ?? 0, undefined, eventMeta, outputMeta(outputIndex))
     }
 
     if (itemType === "reasoning") {
       const itemID = asString(item["id"]) || lastReasoningItemID
       if (!itemID) return []
+      const summary = Array.isArray(item["summary"]) ? item["summary"] : []
+      for (const raw of summary) {
+        const record = asRecord(raw)
+        rememberResponseReplay(responseReasoningReplay, item, asString(record?.["text"]) || undefined)
+      }
       return Array.from(reasoningByItem.get(itemID) ?? [])
         .filter((value) => reasoningOpen.has(value))
         .flatMap((key) => {
@@ -801,6 +844,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       if (!itemID) return []
       const text = extractMessageText(rawItem)
       if (!text) return []
+      if (hasResponseReplay(responseTextReplay, rawItem, text)) {
+        return []
+      }
       const index = 0
       if (shouldSkipDuplicateAssistantText(itemID, index, text)) {
         return []
@@ -825,6 +871,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     return summary.flatMap((raw, index) => {
       const record = asRecord(raw)
       const text = asString(record?.["text"]) || undefined
+      if (text && hasResponseReplay(responseReasoningReplay, rawItem, text)) return []
       return finishReasoning(itemID, index, text, eventMeta, { source: "run_item_stream_event" })
     })
   }
@@ -1069,6 +1116,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       if (!itemID) continue
       const text = extractMessageText(message)
       if (!text) continue
+      if (hasResponseReplay(responseTextReplay, message, text)) continue
       if (shouldSkipDuplicateAssistantText(itemID, 0, text)) continue
       parts.push(
         ...finishText(itemID, 0, text, messageMeta, {

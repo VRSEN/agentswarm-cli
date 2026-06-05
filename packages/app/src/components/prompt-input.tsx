@@ -1574,7 +1574,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         </TooltipKeybind>
                       </Show>
                     </div>
-                    <Show when={variants().length > 2}>
+                    <Show when={variants().length > 1}>
                       <div
                         data-component="prompt-variant-control"
                         style={providersShouldFadeIn() ? { animation: "fade-in 0.3s" } : undefined}

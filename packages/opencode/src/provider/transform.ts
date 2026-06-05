@@ -421,6 +421,9 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
 
   const id = model.id.toLowerCase()
   const adaptiveEfforts = anthropicAdaptiveEfforts(model.api.id)
+  function isGrok43(id: string): boolean {
+    return id.includes("grok-4.3") || id.includes("grok-4-3")
+  }
   if (
     id.includes("deepseek-chat") ||
     id.includes("deepseek-reasoner") ||
@@ -447,6 +450,13 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
       low: { reasoningEffort: "low" },
       high: { reasoningEffort: "high" },
     }
+  }
+  if (id.includes("grok") && isGrok43(id)) {
+    const efforts = ["none", ...WIDELY_SUPPORTED_EFFORTS]
+    if (model.api.npm === "@openrouter/ai-sdk-provider") {
+      return Object.fromEntries(efforts.map((effort) => [effort, { reasoning: { effort } }]))
+    }
+    return Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }]))
   }
   if (id.includes("grok")) return {}
 

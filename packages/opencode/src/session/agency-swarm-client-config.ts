@@ -7,6 +7,7 @@ import {
 } from "@/agency-swarm/client-config"
 import {
   isOpenAIBasedLitellmModel,
+  isOpenRouterClientConfigModel,
   mapProviderIDToLiteLLMProvider,
   normalizeExplicitClientConfigModel,
   OPENAI_BASED_LITELLM_PROVIDERS,
@@ -22,29 +23,88 @@ import { asRecord, asString } from "./agency-swarm-utils"
 
 const log = Log.create({ service: "session.agency-swarm" })
 const STRUCTURED_ATTACHMENT_MESSAGE_MIN_VERSION = "1.9.6"
+const OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
+const OPENROUTER_FREE_TIER_MAX_TOKENS = 2500
 
-function finalizeClientConfig(
+async function finalizeClientConfig(
   merged: Record<string, unknown> | undefined,
   explicitForModel: Record<string, unknown> | undefined,
   sessionLitellmModel: string | undefined,
-): Record<string, unknown> | undefined {
+  sessionModelSettingsExtraArgs: Record<string, unknown> | undefined,
+): Promise<Record<string, unknown> | undefined> {
   const explicitModel = explicitForModel && asString(explicitForModel["model"])
-  if (merged && Object.keys(merged).length > 0) {
-    const out = { ...merged }
-    if (explicitModel) {
-      out["model"] = normalizeExplicitClientConfigModel(explicitModel)
-    } else if (sessionLitellmModel) {
-      out["model"] = sessionLitellmModel
+  const applySessionSettings = async (out: Record<string, unknown>) => {
+    if (sessionModelSettingsExtraArgs && Object.keys(sessionModelSettingsExtraArgs).length > 0) {
+      out["model_settings_extra_args"] = {
+        ...(asRecord(out["model_settings_extra_args"]) ?? {}),
+        ...sessionModelSettingsExtraArgs,
+      }
     }
+    await applyOpenRouterTokenPolicy(out)
     return out
   }
+  if (merged && Object.keys(merged).length > 0) {
+    const out = { ...merged }
+    if (sessionLitellmModel) {
+      out["model"] = sessionLitellmModel
+    } else if (explicitModel) {
+      out["model"] = normalizeExplicitClientConfigModel(explicitModel)
+    }
+    return applySessionSettings(out)
+  }
   if (explicitModel) {
-    return { model: normalizeExplicitClientConfigModel(explicitModel) }
+    return applySessionSettings({ model: normalizeExplicitClientConfigModel(explicitModel) })
   }
   if (sessionLitellmModel) {
-    return { model: sessionLitellmModel }
+    return applySessionSettings({ model: sessionLitellmModel })
+  }
+  if (sessionModelSettingsExtraArgs && Object.keys(sessionModelSettingsExtraArgs).length > 0) {
+    return applySessionSettings({})
   }
   return undefined
+}
+
+async function applyOpenRouterTokenPolicy(out: Record<string, unknown>) {
+  const model = asString(out["model"])
+  if (!model || !isOpenRouterClientConfigModel(model)) return
+
+  const modelSettings = asRecord(out["model_settings_extra_args"])
+  if (!modelSettings || modelSettings["__openrouter_default_max_tokens"] !== true) return
+
+  delete modelSettings["__openrouter_default_max_tokens"]
+  const apiKey = asString(out["api_key"]) ?? asString(out["apiKey"])
+  const freeTier = await isOpenRouterFreeTier(apiKey)
+  if (freeTier) {
+    modelSettings["max_tokens"] = OPENROUTER_FREE_TIER_MAX_TOKENS
+  } else {
+    delete modelSettings["max_tokens"]
+  }
+  if (Object.keys(modelSettings).length === 0) {
+    delete out["model_settings_extra_args"]
+  }
+}
+
+async function isOpenRouterFreeTier(apiKey: string | undefined): Promise<boolean> {
+  if (!apiKey) return true
+  try {
+    const response = await fetch(OPENROUTER_KEY_URL, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      signal: AbortSignal.timeout(3000),
+    })
+    if (!response.ok) return true
+    const payload = asRecord(await response.json().catch(() => undefined))
+    const data = asRecord(payload?.["data"])
+    const isFreeTier = data?.["is_free_tier"]
+    return isFreeTier !== false
+  } catch (error) {
+    log.warn("failed to inspect OpenRouter key tier; using free-tier token cap", {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return true
+  }
 }
 
 export async function resolveClientConfig(
@@ -55,19 +115,23 @@ export async function resolveClientConfig(
   config: Record<string, unknown> | undefined,
   forwardUpstreamCredentials?: boolean,
   sessionLitellmModel?: string,
+  sessionModelSettingsExtraArgs?: Record<string, unknown>,
 ): Promise<Record<string, unknown> | undefined> {
   const explicit = asRecord(config)
   const explicitUpstreamBaseURL = readConfiguredBaseURL(explicit)
   const explicitModel = explicit && asString(explicit["model"])
-  const requestedModel = explicitModel ? normalizeExplicitClientConfigModel(explicitModel) : sessionLitellmModel
+  const requestedModel =
+    sessionLitellmModel ?? (explicitModel ? normalizeExplicitClientConfigModel(explicitModel) : undefined)
   const forwardGenerated =
     isLocalAgencyURL(baseURL) || Flag.AGENTSWARM_FORWARD_UPSTREAM_CREDENTIALS || forwardUpstreamCredentials === true
-  const skipOpenAIApiKey = hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config)
+  const targetOpenRouter = isOpenRouterClientConfigModel(requestedModel)
+  const skipOpenAIApiKey = hasExplicitOpenAIApiKey(config) || !!readCredentialHeaders(config) || targetOpenRouter
   const rawGenerated = forwardGenerated
     ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), await getEnvForClientConfig(), {
         skipOpenAIApiKeyInjection: skipOpenAIApiKey,
         skipOpenAIOAuthFromStored: hasExplicitOpenAIClientConfig(config),
         allowStoredOpenAIOAuth: !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
+        targetOpenRouter,
       })
     : undefined
   const generated =
@@ -93,14 +157,14 @@ export async function resolveClientConfig(
         : rawGenerated
       : rawGenerated
   if (!config) {
-    return finalizeClientConfig(generated, undefined, sessionLitellmModel)
+    return await finalizeClientConfig(generated, undefined, sessionLitellmModel, sessionModelSettingsExtraArgs)
   }
   if (!generated) {
-    return finalizeClientConfig(explicit, explicit, sessionLitellmModel)
+    return await finalizeClientConfig(explicit, explicit, sessionLitellmModel, sessionModelSettingsExtraArgs)
   }
 
   if (!explicit) {
-    return finalizeClientConfig(generated, undefined, sessionLitellmModel)
+    return await finalizeClientConfig(generated, undefined, sessionLitellmModel, sessionModelSettingsExtraArgs)
   }
 
   const merged: Record<string, unknown> = {
@@ -142,7 +206,7 @@ export async function resolveClientConfig(
   }
   delete merged["defaultHeaders"]
 
-  return finalizeClientConfig(merged, explicit, sessionLitellmModel)
+  return await finalizeClientConfig(merged, explicit, sessionLitellmModel, sessionModelSettingsExtraArgs)
 }
 
 async function buildAuthClientConfig(
@@ -153,6 +217,7 @@ async function buildAuthClientConfig(
     skipOpenAIApiKeyInjection: boolean
     skipOpenAIOAuthFromStored: boolean
     allowStoredOpenAIOAuth: boolean
+    targetOpenRouter: boolean
   },
 ): Promise<Record<string, unknown> | undefined> {
   const payload: Record<string, unknown> = {}
@@ -165,6 +230,11 @@ async function buildAuthClientConfig(
 
     if (providerID === "openai") {
       if (!options.skipOpenAIApiKeyInjection) payload["api_key"] = key
+      continue
+    }
+
+    if (providerID === "openrouter") {
+      if (options.targetOpenRouter) payload["api_key"] = key
       continue
     }
 
@@ -196,6 +266,11 @@ async function buildAuthClientConfig(
       continue
     }
 
+    if (providerID === "openrouter") {
+      if (options.targetOpenRouter) payload["api_key"] = auth.key
+      continue
+    }
+
     const litellmProvider = mapProviderIDToLiteLLMProvider(providerID)
     if (!litellmProvider) continue
     litellmKeys[litellmProvider] = auth.key
@@ -207,6 +282,14 @@ async function buildAuthClientConfig(
 
   if (!options.skipOpenAIApiKeyInjection && !payload["api_key"]) {
     const fromEnv = env["OPENAI_API_KEY"]
+    if (typeof fromEnv === "string") {
+      const trimmed = fromEnv.trim()
+      if (trimmed) payload["api_key"] = trimmed
+    }
+  }
+
+  if (options.targetOpenRouter && !payload["api_key"]) {
+    const fromEnv = env["OPENROUTER_API_KEY"]
     if (typeof fromEnv === "string") {
       const trimmed = fromEnv.trim()
       if (trimmed) payload["api_key"] = trimmed
