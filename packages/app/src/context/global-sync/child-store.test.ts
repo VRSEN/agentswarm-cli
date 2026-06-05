@@ -115,4 +115,28 @@ describe("createChildStoreManager", () => {
       dispose()
     })
   })
+
+  test("keeps cached workspace providers when a refetch fails", () => {
+    const global = provider("global-provider")
+    const workspace = provider("workspace-provider")
+    queries = [
+      { isLoading: false },
+      { isLoading: false },
+      { isLoading: false },
+      { isLoading: false, data: workspace, error: new Error("provider refetch failed") },
+    ]
+
+    createRoot((dispose) => {
+      const owner = getOwner()
+      if (!owner) throw new Error("owner required")
+
+      const store = manager(owner, global)
+      const [state] = store.ensureChild("/repo")
+
+      expect(state.provider).toBe(workspace)
+      expect(state.provider.all.map((item) => item.id)).toEqual(["workspace-provider"])
+
+      dispose()
+    })
+  })
 })

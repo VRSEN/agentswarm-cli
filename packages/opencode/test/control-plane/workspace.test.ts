@@ -990,7 +990,7 @@ describe("workspace CRUD", () => {
     })
   })
 
-  it.live("sessionWarp keeps previous owner when target replay fails", () => {
+  it.live("sessionWarp claims the target owner before target replay fails", () => {
     return Effect.gen(function* () {
       yield* HttpServer.serveEffect()(
         Effect.gen(function* () {
@@ -1023,7 +1023,7 @@ describe("workspace CRUD", () => {
               Effect.map((exit) => expect(exit._tag).toBe("Failure")),
             )
 
-            expect(sessionSequenceOwner(session.id)).toBe(previous.id)
+            expect(sessionSequenceOwner(session.id)).toBe(target.id)
           }),
         { git: true },
       )

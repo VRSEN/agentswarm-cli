@@ -724,6 +724,8 @@ export const layer = Layer.effect(
           return
         }
 
+        yield* claimPreviousSession(input.workspaceID)
+
         const rows = yield* db((db) =>
           db
             .select({
@@ -823,7 +825,6 @@ export const layer = Layer.effect(
             body,
           })
         }
-        yield* claimPreviousSession(input.workspaceID)
 
         log.info("session warp complete", {
           workspaceID: input.workspaceID,
