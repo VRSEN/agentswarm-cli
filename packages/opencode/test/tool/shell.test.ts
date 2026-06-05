@@ -1133,7 +1133,7 @@ describe("tool.shell abort", () => {
         const updates: string[] = []
         const result = yield* run(
           {
-            command: `echo first && sleep 0.1 && echo second`,
+            command: `echo first && sleep 1 && echo second`,
             description: "Streaming test",
           },
           {
@@ -1147,7 +1147,7 @@ describe("tool.shell abort", () => {
         )
         expect(result.output).toContain("first")
         expect(result.output).toContain("second")
-        expect(updates.length).toBeGreaterThan(1)
+        expect(updates.some((output) => output.includes("first") && !output.includes("second"))).toBe(true)
       }),
     ),
   )
