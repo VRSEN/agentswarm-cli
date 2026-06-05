@@ -42,6 +42,7 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 - Treat `dev` and other shared long-lived fork branches as append-only. Do not force-push, rebase, or rewrite their published history unless the user explicitly asks for that exact recovery.
 - A stale-branch mistake is severity one. If a pull request comes from the wrong base, wrong diff, or wrong artifact, stop product work and do a full live audit before you mutate pull requests again.
 - To sync the fork default branch, merge upstream OpenCode `dev` into the fork default branch, or do the reverse equivalent, then fast-forward push. Avoid restacking published commit series.
+- For upstream tag or range sync work, load `.codex/skills/upstream-sync/SKILL.md` before planning, merging, resolving conflicts, or reviewing the sync.
 - If a rewrite is explicitly approved as an emergency exception, make backup refs first and save proof that compares the old commit range to the new one before and after.
 - Sync workflow:
   - verify local remote URLs point to the expected upstream and fork repositories

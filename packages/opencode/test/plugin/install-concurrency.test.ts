@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
 
-import { Process } from "../../src/util"
-import { Filesystem } from "../../src/util"
+import { Process } from "@/util/process"
+import { Filesystem } from "@/util/filesystem"
 import { tmpdir } from "../fixture/fixture"
 import { AgencyBrand } from "../../src/agency-swarm/brand"
 

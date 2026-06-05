@@ -1,12 +1,13 @@
 import { Effect, Layer, Schema, Context, Stream } from "effect"
-import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { withTransientReadRetry } from "@/util/effect-http-client"
+import { errorMessage } from "@/util/error"
+import { ChildProcess } from "effect/unstable/process"
+import { AppProcess } from "@opencode-ai/core/process"
 import path from "path"
-import z from "zod"
 import { BusEvent } from "@/bus/bus-event"
-import { Flag } from "@opencode-ai/core/flag/flag"
-import { Log } from "../util"
-
+import * as Log from "@opencode-ai/core/util/log"
+import { makeRuntime } from "@opencode-ai/core/effect/runtime"
 import semver from "semver"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { InstallationDistribution } from "./distribution"
@@ -43,17 +44,17 @@ export function getReleaseType(current: string, latest: string): ReleaseType {
   return "patch"
 }
 
-export const Info = z
-  .object({
-    version: z.string(),
-    latest: z.string(),
-  })
-  .meta({
-    ref: "InstallationInfo",
-  })
-export type Info = z.infer<typeof Info>
+export const Info = Schema.Struct({
+  version: Schema.String,
+  latest: Schema.String,
+}).annotate({ identifier: "InstallationInfo" })
+export type Info = Schema.Schema.Type<typeof Info>
 
-export const USER_AGENT = `${InstallationDistribution.packageName}/${InstallationChannel}/${InstallationVersion}/${Flag.OPENCODE_CLIENT}`
+export function userAgent(client = "cli") {
+  return `${InstallationDistribution.packageName}/${InstallationChannel}/${InstallationVersion}/${client}`
+}
+
+export const USER_AGENT = userAgent()
 
 export function isPreview() {
   return InstallationChannel !== "latest"
@@ -71,6 +72,18 @@ function unsupportedUpgradeMethod(method: Method) {
   return `${InstallationDistribution.packageName} does not support ${method} upgrades. Use npm instead.`
 }
 
+// Response schemas for external version APIs
+const GitHubRelease = Schema.Struct({ tag_name: Schema.String })
+const NpmPackage = Schema.Struct({ version: Schema.String })
+const BrewFormula = Schema.Struct({ versions: Schema.Struct({ stable: Schema.String }) })
+const BrewInfoV2 = Schema.Struct({
+  formulae: Schema.Array(Schema.Struct({ versions: Schema.Struct({ stable: Schema.String }) })),
+})
+const ChocoPackage = Schema.Struct({
+  d: Schema.Struct({ results: Schema.Array(Schema.Struct({ Version: Schema.String })) }),
+})
+const ScoopManifest = NpmPackage
+
 export interface Interface {
   readonly info: () => Effect.Effect<Info>
   readonly method: () => Effect.Effect<Method>
@@ -80,47 +93,71 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Installation") {}
 
-export const layer: Layer.Layer<Service, never, ChildProcessSpawner.ChildProcessSpawner> = Layer.effect(
+export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Service> = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    const http = yield* HttpClient.HttpClient
+    const httpOk = HttpClient.filterStatusOk(withTransientReadRetry(http))
+    const appProcess = yield* AppProcess.Service
 
     const text = Effect.fnUntraced(
       function* (cmd: string[], opts?: { cwd?: string; env?: Record<string, string> }) {
-        const proc = ChildProcess.make(cmd[0], cmd.slice(1), {
-          cwd: opts?.cwd,
-          env: opts?.env,
-          extendEnv: true,
-        })
-        const handle = yield* spawner.spawn(proc)
-        const out = yield* Stream.mkString(Stream.decodeText(handle.stdout))
-        yield* handle.exitCode
-        return out
+        const result = yield* appProcess.run(
+          ChildProcess.make(cmd[0], cmd.slice(1), {
+            cwd: opts?.cwd,
+            env: opts?.env,
+            extendEnv: true,
+          }),
+        )
+        return result.stdout.toString("utf8")
       },
-      Effect.scoped,
       Effect.catch(() => Effect.succeed("")),
     )
 
     const run = Effect.fnUntraced(
       function* (cmd: string[], opts?: { cwd?: string; env?: Record<string, string> }) {
-        const proc = ChildProcess.make(cmd[0], cmd.slice(1), {
-          cwd: opts?.cwd,
-          env: opts?.env,
-          extendEnv: true,
-        })
-        const handle = yield* spawner.spawn(proc)
-        const [stdout, stderr] = yield* Effect.all(
-          [Stream.mkString(Stream.decodeText(handle.stdout)), Stream.mkString(Stream.decodeText(handle.stderr))],
-          { concurrency: 2 },
+        const result = yield* appProcess.run(
+          ChildProcess.make(cmd[0], cmd.slice(1), {
+            cwd: opts?.cwd,
+            env: opts?.env,
+            extendEnv: true,
+          }),
         )
-        const code = yield* handle.exitCode
-        return { code, stdout, stderr }
+        return {
+          code: result.exitCode,
+          stdout: result.stdout.toString("utf8"),
+          stderr: result.stderr.toString("utf8"),
+        }
       },
-      Effect.scoped,
-      Effect.catch(() => Effect.succeed({ code: ChildProcessSpawner.ExitCode(1), stdout: "", stderr: "" })),
+      Effect.catch((err) => Effect.succeed({ code: 1, stdout: "", stderr: errorMessage(err) })),
     )
 
-    // Use npm's resolver so registries, mirrors, auth, proxies, and dist-tags match upgrade behavior.
+    const getBrewFormula = Effect.fnUntraced(function* () {
+      const tapFormula = yield* text(["brew", "list", "--formula", "anomalyco/tap/opencode"])
+      if (tapFormula.includes("opencode")) return "anomalyco/tap/opencode"
+      const coreFormula = yield* text(["brew", "list", "--formula", "opencode"])
+      if (coreFormula.includes("opencode")) return "opencode"
+      return "opencode"
+    })
+
+    const upgradeCurl = Effect.fnUntraced(function* (target: string) {
+      const response = yield* httpOk.execute(HttpClientRequest.get("https://opencode.ai/install"))
+      const body = yield* response.text
+      const bodyBytes = new TextEncoder().encode(body)
+      const result = yield* appProcess.run(
+        ChildProcess.make("bash", [], {
+          stdin: Stream.make(bodyBytes),
+          env: { VERSION: target },
+          extendEnv: true,
+        }),
+      )
+      return {
+        code: result.exitCode,
+        stdout: result.stdout.toString("utf8"),
+        stderr: result.stderr.toString("utf8"),
+      }
+    }, Effect.orDie)
+
     const viewVersion = Effect.fnUntraced(function* (spec: string) {
       const result = yield* run(["npm", "view", spec, "version", "--json"])
       if (result.code !== 0 || !result.stdout.trim()) {
@@ -148,9 +185,9 @@ export const layer: Layer.Layer<Service, never, ChildProcessSpawner.ChildProcess
           { name: "yarn", command: () => text(["yarn", "global", "list"]) },
           { name: "pnpm", command: () => text(["pnpm", "list", "-g", "--depth=0"]) },
           { name: "bun", command: () => text(["bun", "pm", "ls", "-g"]) },
-          { name: "brew", command: () => text(["brew", "list", "--formula", "opencode"]) },
-          { name: "scoop", command: () => text(["scoop", "list", "opencode"]) },
-          { name: "choco", command: () => text(["choco", "list", "--limit-output", "opencode"]) },
+          { name: "brew", command: () => text(["brew", "list", "--formula", InstallationDistribution.packageName]) },
+          { name: "scoop", command: () => text(["scoop", "list", InstallationDistribution.packageName]) },
+          { name: "choco", command: () => text(["choco", "list", "--limit-output", InstallationDistribution.packageName]) },
         ]
 
         checks.sort((a, b) => {
@@ -172,8 +209,9 @@ export const layer: Layer.Layer<Service, never, ChildProcessSpawner.ChildProcess
       }),
       latest: Effect.fn("Installation.latest")(function* (installMethod?: Method) {
         const detectedMethod = installMethod || (yield* result.method())
+        const lookupMethod = detectedMethod === "unknown" ? "npm" : detectedMethod
 
-        if (detectedMethod !== "npm") {
+        if (lookupMethod !== "npm") {
           return yield* new UpgradeFailedError({
             stderr: unsupportedUpgradeMethod(detectedMethod),
           })
@@ -182,36 +220,20 @@ export const layer: Layer.Layer<Service, never, ChildProcessSpawner.ChildProcess
         return yield* viewVersion(`${InstallationDistribution.packageName}@${InstallationChannel}`)
       }, Effect.orDie),
       upgrade: Effect.fn("Installation.upgrade")(function* (m: Method, target: string) {
-        let upgradeResult: { code: ChildProcessSpawner.ExitCode; stdout: string; stderr: string } | undefined
+        let upgradeResult: { code: number; stdout: string; stderr: string } | undefined
         switch (m) {
           case "curl":
-            return yield* new UpgradeFailedError({
-              stderr: unsupportedUpgradeMethod("curl"),
-            })
+            return yield* new UpgradeFailedError({ stderr: unsupportedUpgradeMethod("curl") })
           case "npm":
             upgradeResult = yield* run(["npm", "install", "-g", `${InstallationDistribution.packageName}@${target}`])
             break
           case "pnpm":
           case "bun":
           case "yarn":
-            return yield* new UpgradeFailedError({
-              stderr: unsupportedUpgradeMethod(m),
-            })
           case "brew":
-            return yield* new UpgradeFailedError({
-              stderr: unsupportedUpgradeMethod("brew"),
-            })
-            break
           case "choco":
-            return yield* new UpgradeFailedError({
-              stderr: unsupportedUpgradeMethod("choco"),
-            })
-            break
           case "scoop":
-            return yield* new UpgradeFailedError({
-              stderr: unsupportedUpgradeMethod("scoop"),
-            })
-            break
+            return yield* new UpgradeFailedError({ stderr: unsupportedUpgradeMethod(m) })
           case "unknown":
             upgradeResult = yield* run(["npm", "install", "-g", `${InstallationDistribution.packageName}@${target}`])
             break
@@ -219,7 +241,7 @@ export const layer: Layer.Layer<Service, never, ChildProcessSpawner.ChildProcess
             return yield* new UpgradeFailedError({ stderr: `Unknown method: ${m}` })
         }
         if (!upgradeResult || upgradeResult.code !== 0) {
-          const stderr = upgradeResult?.stderr || ""
+          const stderr = upgradeResult?.stderr || upgradeResult?.stdout || `Failed to install ${InstallationDistribution.packageName}@${target}`
           return yield* new UpgradeFailedError({ stderr })
         }
         log.info("upgraded", {
@@ -236,6 +258,12 @@ export const layer: Layer.Layer<Service, never, ChildProcessSpawner.ChildProcess
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(CrossSpawnSpawner.defaultLayer))
+export const defaultLayer = layer.pipe(Layer.provide(FetchHttpClient.layer), Layer.provide(AppProcess.defaultLayer))
+
+const { runPromise } = makeRuntime(Service, defaultLayer)
+
+export const latest = (...args: Parameters<Interface["latest"]>) => runPromise((s) => s.latest(...args))
+export const method = () => runPromise((s) => s.method())
+export const upgrade = (...args: Parameters<Interface["upgrade"]>) => runPromise((s) => s.upgrade(...args))
 
 export * as Installation from "."

@@ -9,9 +9,9 @@ import { Link } from "../ui/link"
 import { useTheme } from "../context/theme"
 import { useLocal } from "@tui/context/local"
 import { TextAttributes } from "@opentui/core"
+import { useKeyboard } from "@opentui/solid"
 import type { ProviderAuthAuthorization, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
 import { DialogModel } from "./dialog-model"
-import { useKeyboard } from "@opentui/solid"
 import * as Clipboard from "@tui/util/clipboard"
 import { useToast } from "../ui/toast"
 import { CONSOLE_MANAGED_ICON, isConsoleManagedProvider } from "@tui/util/provider-origin"
@@ -22,15 +22,17 @@ import {
 } from "@tui/util/provider-auth"
 import { refreshAfterProviderAuth } from "@tui/util/provider-auth-refresh"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { AgencyBrand } from "@/agency-swarm/brand"
 import { AgencyProduct } from "@/agency-swarm/product"
 import { isAgencySwarmFrameworkMode, isSupportedAgencyAuthProvider } from "../session-error"
 import { errorMessage as toErrorMessage } from "@/util/error"
-import { Log } from "@/util"
+import { Log } from "@opencode-ai/core/util/log"
 import open from "open"
 import type { Provider } from "@opencode-ai/sdk/v2"
 import { useConnected } from "./use-connected"
 import { DialogAddons } from "./dialog-addons"
 import { Telemetry } from "@/telemetry/telemetry"
+import { useBindings } from "../keymap"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
   openai: 0,
@@ -103,6 +105,61 @@ function sdkError(error: unknown, result: { response?: { status?: number } }) {
   }
 }
 
+const CUSTOM_PROVIDER_OPTION_VALUE = "__opencode_custom_provider__"
+const CUSTOM_PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
+
+type ProviderOptionBase = {
+  title: string
+  value: string
+  description?: string
+  category: string
+}
+
+type ProviderOption =
+  | (ProviderOptionBase & {
+      type: "provider"
+      providerID: string
+    })
+  | (ProviderOptionBase & {
+      type: "custom"
+    })
+
+export function providerOptions(list: { id: string; name: string }[]): ProviderOption[] {
+  return [
+    ...pipe(
+      list,
+      sortBy((x) => PROVIDER_PRIORITY[x.id] ?? 99),
+      map((provider) => ({
+        type: "provider" as const,
+        title: provider.name,
+        value: provider.id,
+        providerID: provider.id,
+        description: {
+          opencode: "(Recommended)",
+          anthropic: "(API key)",
+          openrouter: "(API key)",
+          openai: "(Browser sign-in or API key)",
+          "opencode-go": "Low cost subscription for everyone",
+        }[provider.id],
+        category: provider.id in PROVIDER_PRIORITY ? "Popular" : "Providers",
+      })),
+    ),
+    {
+      type: "custom",
+      title: "Other",
+      value: CUSTOM_PROVIDER_OPTION_VALUE,
+      description: "Custom provider",
+      category: "Providers",
+    },
+  ]
+}
+
+export function normalizeCustomProviderID(value: string) {
+  const providerID = value.trim().replace(/^@ai-sdk\//, "")
+  if (!CUSTOM_PROVIDER_ID.test(providerID)) return
+  return providerID
+}
+
 export function createDialogProviderOptions() {
   return createDialogProviderOptionsWithFilter()
 }
@@ -142,57 +199,90 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
       agentModel: local.agent.current()?.model,
     }),
   )
-  const options = createMemo(() => {
-    return pipe(
-      sync.data.provider_next.all,
-      (items) => {
-        const allowedIDs = allowed()
-        return allowedIDs ? items.filter((item) => allowedIDs.has(item.id)) : items
-      },
-      sortBy((x) => PROVIDER_PRIORITY[x.id] ?? 99),
-      map((provider) => {
-        const consoleManaged = isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, provider.id)
-        const connected = sync.data.provider_next.connected.includes(provider.id)
 
-        const storedAuthMethod = connected ? getStoredProviderAuthMethod(provider) : undefined
+  async function promptCustomProviderID(): Promise<string | undefined> {
+    const value = await DialogPrompt.show(dialog, "Other", {
+      placeholder: "Provider id",
+      description: () => (
+        <text fg={theme.textMuted}>
+          This only stores a credential. Configure the provider in {AgencyBrand.config}.json to use it.
+        </text>
+      ),
+    })
+    if (value === null) return
+
+    const providerID = normalizeCustomProviderID(value)
+    if (providerID) return providerID
+
+    toast.show({
+      variant: "error",
+      message:
+        "Provider ids must start with a lowercase letter or number and only use lowercase letters, numbers, hyphens, and underscores",
+    })
+    return promptCustomProviderID()
+  }
+
+  const options = createMemo(() => {
+    const allowedIDs = allowed()
+    const providers = allowedIDs
+      ? sync.data.provider_next.all.filter((item) => allowedIDs.has(item.id))
+      : sync.data.provider_next.all
+    return pipe(
+      providerOptions(providers),
+      (items) => (allowedIDs ? items.filter((item) => item.type !== "custom") : items),
+      map((provider) => {
+        if (provider.type === "custom") {
+          return {
+            title: provider.title,
+            value: provider.value,
+            description: provider.description,
+            category: provider.category,
+            async onSelect() {
+              const providerID = await promptCustomProviderID()
+              if (!providerID) return
+              return dialog.replace(() => <ApiMethod providerID={providerID} title="API key" custom />)
+            },
+          }
+        }
+
+        const providerID = provider.providerID
+        const consoleManaged = isConsoleManagedProvider(sync.data.console_state.consoleManagedProviders, providerID)
+        const connected = sync.data.provider_next.connected.includes(providerID)
+
+        const stored = sync.data.provider_next.all.find((item) => item.id === providerID)
+        const storedAuthMethod = connected && stored ? getStoredProviderAuthMethod(stored) : undefined
         const description = ((): string | undefined => {
-          if (provider.id === "openai" && storedAuthMethod) {
+          if (providerID === "openai" && storedAuthMethod) {
             if (storedAuthMethod === "oauth") return "(Browser sign-in)"
             if (storedAuthMethod === "api") return "(API key)"
             if (storedAuthMethod === "env") return "(API key from env)"
             if (storedAuthMethod === "config") return "(API key from config)"
           }
-          return {
-            opencode: "(Recommended)",
-            anthropic: "(API key)",
-            openrouter: "(API key)",
-            openai: "(Browser sign-in or API key)",
-            "opencode-go": "Low cost subscription for everyone",
-          }[provider.id]
+          return provider.description
         })()
         return {
-          title: provider.name,
-          value: provider.id,
+          title: provider.title,
+          value: provider.value,
           description,
           footer: consoleManaged ? sync.data.console_state.activeOrgName : undefined,
-          category: provider.id in PROVIDER_PRIORITY ? "Popular" : "Other",
-          gutter: consoleManaged ? (
-            <text fg={theme.textMuted}>{CONSOLE_MANAGED_ICON}</text>
-          ) : connected && onboarded() ? (
-            <text fg={theme.success}>✓</text>
-          ) : undefined,
+          category: provider.category,
+          gutter: consoleManaged
+            ? () => <text fg={theme.textMuted}>{CONSOLE_MANAGED_ICON}</text>
+            : connected && onboarded()
+              ? () => <text fg={theme.success}>✓</text>
+              : undefined,
           async onSelect() {
             if (consoleManaged) return
             const selectedFrameworkMode = frameworkMode()
             captureProviderRequested({
-              providerID: provider.id,
+              providerID,
               frameworkMode: selectedFrameworkMode,
               connectedBefore: connected,
             })
 
             const methods = getVisibleProviderAuthMethods(
-              provider.id,
-              sync.data.provider_auth[provider.id] ?? [
+              providerID,
+              sync.data.provider_auth[providerID] ?? [
                 {
                   type: "api",
                   label: "API key",
@@ -216,7 +306,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
                 dialog.replace(
                   () => (
                     <DialogSelect
-                      title={`Select ${provider.name} auth method`}
+                      title={`Select ${provider.title} auth method`}
                       options={visibleMethods.map((x, index) => ({
                         title: x.label,
                         value: index,
@@ -232,7 +322,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
             const method = visibleMethods[index]
             if (method.type === "oauth") {
               captureProviderAuthStarted({
-                providerID: provider.id,
+                providerID,
                 authMethod: "oauth",
                 frameworkMode: selectedFrameworkMode,
               })
@@ -247,20 +337,20 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
               }
 
               const result = await sdk.client.provider.oauth.authorize({
-                providerID: provider.id,
+                providerID,
                 method: index,
                 inputs,
               })
               if (result.error) {
                 captureProviderAuthFailed({
-                  providerID: provider.id,
+                  providerID,
                   authMethod: "oauth",
                   frameworkMode: selectedFrameworkMode,
                   step: "oauth_authorize",
                   error: sdkError(result.error, result),
                 })
                 log.error("provider oauth authorize failed", {
-                  providerID: provider.id,
+                  providerID,
                   method: method.label,
                   frameworkMode: frameworkMode(),
                   error: toErrorMessage(result.error),
@@ -274,28 +364,18 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
               }
               if (result.data?.method === "code") {
                 dialog.replace(() => (
-                  <CodeMethod
-                    providerID={provider.id}
-                    title={method.label}
-                    index={index}
-                    authorization={result.data!}
-                  />
+                  <CodeMethod providerID={providerID} title={method.label} index={index} authorization={result.data!} />
                 ))
               }
               if (result.data?.method === "auto") {
                 dialog.replace(() => (
-                  <AutoMethod
-                    providerID={provider.id}
-                    title={method.label}
-                    index={index}
-                    authorization={result.data!}
-                  />
+                  <AutoMethod providerID={providerID} title={method.label} index={index} authorization={result.data!} />
                 ))
               }
             }
             if (method.type === "api") {
               captureProviderAuthStarted({
-                providerID: provider.id,
+                providerID,
                 authMethod: "api",
                 frameworkMode: selectedFrameworkMode,
               })
@@ -306,7 +386,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
                 metadata = value
               }
               return dialog.replace(() => (
-                <ApiMethod providerID={provider.id} title={method.label} metadata={metadata} />
+                <ApiMethod providerID={providerID} title={method.label} metadata={metadata} />
               ))
             }
           },
@@ -492,6 +572,30 @@ type Option =
       kind: "status"
     }
 
+export function agencyConnectServerOptions(input: {
+  options: Record<string, unknown>
+  baseURL: string
+  currentBaseURL: string
+  localServers: string[]
+  discoveryTimeoutMs: number
+  configToken?: string
+}) {
+  const sameServer = input.currentBaseURL === input.baseURL
+  const nextOptions: Record<string, unknown> = {
+    ...input.options,
+    baseURL: input.baseURL,
+    localServers: normalizeLocalServers([...input.localServers, input.baseURL]),
+    discoveryTimeoutMs: input.discoveryTimeoutMs,
+    agency: sameServer ? (readString(input.options["agency"]) ?? null) : null,
+    recipientAgent: sameServer
+      ? (readString(input.options["recipientAgent"]) ?? readString(input.options["recipient_agent"]) ?? null)
+      : null,
+    recipient_agent: sameServer ? (readString(input.options["recipient_agent"]) ?? null) : null,
+  }
+  if (!input.configToken) nextOptions["token"] = null
+  return nextOptions
+}
+
 export function DialogAgencySwarmConnect() {
   const dialog = useDialog()
   const sdk = useSDK()
@@ -662,19 +766,14 @@ export function DialogAgencySwarmConnect() {
       return
     }
 
-    const sameServer = current.baseURL === baseURL
-    const remembered = normalizeLocalServers([...current.localServers, baseURL])
-    const nextOptions: Record<string, unknown> = {
-      ...current.options,
+    const nextOptions = agencyConnectServerOptions({
+      options: current.options,
       baseURL,
-      localServers: remembered,
+      currentBaseURL: current.baseURL,
+      localServers: current.localServers,
       discoveryTimeoutMs: current.discoveryTimeoutMs,
-      agency: sameServer ? (readString(current.options["agency"]) ?? null) : null,
-      recipientAgent: sameServer
-        ? (readString(current.options["recipientAgent"]) ?? readString(current.options["recipient_agent"]) ?? null)
-        : null,
-    }
-    if (!current.configToken) nextOptions["token"] = null
+      configToken: current.configToken,
+    })
 
     await sdk.client.global.config.update(
       {
@@ -889,14 +988,22 @@ function AutoMethod(props: AutoMethodProps) {
     }),
   )
 
-  useKeyboard((evt) => {
-    if (evt.name === "c" && !evt.ctrl && !evt.meta) {
-      const code = props.authorization.instructions.match(/[A-Z0-9]{4}-[A-Z0-9]{4,5}/)?.[0] ?? props.authorization.url
-      Clipboard.copy(code)
-        .then(() => toast.show({ message: "Copied to clipboard", variant: "info" }))
-        .catch(toast.error)
-    }
-  })
+  useBindings(() => ({
+    bindings: [
+      {
+        key: "c",
+        desc: "Copy provider code",
+        group: "Dialog",
+        cmd: () => {
+          const code =
+            props.authorization.instructions.match(/[A-Z0-9]{4}-[A-Z0-9]{4,5}/)?.[0] ?? props.authorization.url
+          Clipboard.copy(code)
+            .then(() => toast.show({ message: "Copied to clipboard", variant: "info" }))
+            .catch(toast.error)
+        },
+      },
+    ],
+  }))
 
   onMount(async () => {
     if (frameworkMode()) {
@@ -1105,6 +1212,7 @@ interface ApiMethodProps {
   providerID: string
   title: string
   metadata?: Record<string, string>
+  custom?: boolean
 }
 function ApiMethod(props: ApiMethodProps) {
   const dialog = useDialog()
@@ -1203,6 +1311,14 @@ function ApiMethod(props: ApiMethodProps) {
             authMethod: "api",
             frameworkMode: frameworkMode(),
           })
+          if (props.custom && !sync.data.provider_next.all.some((provider) => provider.id === props.providerID)) {
+            toast.show({
+              variant: "info",
+              message: `Saved credential for ${props.providerID}. Configure it in ${AgencyBrand.config}.json to use it.`,
+            })
+            dialog.clear()
+            return
+          }
           finishProviderAuth({ providerID: props.providerID, frameworkMode: frameworkMode(), dialog })
         } catch (error) {
           const message = toErrorMessage(error)

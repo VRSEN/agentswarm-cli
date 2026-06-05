@@ -1,10 +1,9 @@
-import z from "zod"
 import { EOL } from "os"
-import { NamedError } from "@opencode-ai/core/util/error"
+import { Schema } from "effect"
 import { logo as glyphs } from "./logo"
 import { AgencyProduct } from "../agency-swarm/product"
 
-export const CancelledError = NamedError.create("UICancelledError", z.void())
+export class CancelledError extends Schema.TaggedErrorClass<CancelledError>()("UICancelledError", {}) {}
 
 export const Style = {
   TEXT_HIGHLIGHT: "\x1b[96m",

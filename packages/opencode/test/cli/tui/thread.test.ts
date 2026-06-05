@@ -3,15 +3,15 @@ import fs from "fs/promises"
 import path from "path"
 import { tmpdir } from "../../fixture/fixture"
 import * as App from "../../../src/cli/cmd/tui/app"
-import { Rpc } from "../../../src/util"
+import { Rpc } from "../../../src/util/rpc"
 import { UI } from "../../../src/cli/ui"
 import * as Timeout from "../../../src/util/timeout"
 import * as Network from "../../../src/cli/network"
 import * as Win32 from "../../../src/cli/cmd/tui/win32"
-import { TuiConfig } from "../../../src/cli/cmd/tui/config/tui"
 import { AgencyProduct } from "../../../src/agency-swarm/product"
 import * as Npx from "../../../src/agency-swarm/npx"
 import { AgencySwarmRunSession } from "../../../src/agency-swarm/run-session"
+import { resolveThreadDirectory } from "../../../src/cli/cmd/tui/thread"
 
 const stop = new Error("stop")
 const seen = {
@@ -39,7 +39,7 @@ function setup() {
   }))
   spyOn(UI, "error").mockImplementation(() => {})
   spyOn(Timeout, "withTimeout").mockImplementation((input) => input)
-  spyOn(Network, "resolveNetworkOptions").mockResolvedValue({
+  spyOn(Network, "resolveNetworkOptionsNoConfig").mockReturnValue({
     mdns: false,
     port: 0,
     hostname: "127.0.0.1",
@@ -79,41 +79,14 @@ describe("tui thread", () => {
   }
 
   async function check(project?: string) {
-    setup()
     await using tmp = await tmpdir({ git: true })
-    const cwd = process.cwd()
-    const pwd = process.env.PWD
-    const worker = globalThis.Worker
-    const tty = Object.getOwnPropertyDescriptor(process.stdin, "isTTY")
     const link = path.join(path.dirname(tmp.path), path.basename(tmp.path) + "-link")
     const type = process.platform === "win32" ? "junction" : "dir"
-    seen.tui.length = 0
-    await fs.symlink(tmp.path, link, type)
-
-    Object.defineProperty(process.stdin, "isTTY", {
-      configurable: true,
-      value: true,
-    })
-    globalThis.Worker = class extends EventTarget {
-      onerror = null
-      onmessage = null
-      onmessageerror = null
-      postMessage() {}
-      terminate() {}
-    } as unknown as typeof Worker
 
     try {
-      process.chdir(tmp.path)
-      process.env.PWD = link
-      await expect(call(project)).rejects.toBe(stop)
-      expect(seen.tui[0]).toBe(tmp.path)
+      await fs.symlink(tmp.path, link, type)
+      expect(resolveThreadDirectory(project, link, tmp.path)).toBe(tmp.path)
     } finally {
-      process.chdir(cwd)
-      if (pwd === undefined) delete process.env.PWD
-      else process.env.PWD = pwd
-      if (tty) Object.defineProperty(process.stdin, "isTTY", tty)
-      else delete (process.stdin as { isTTY?: boolean }).isTTY
-      globalThis.Worker = worker
       await fs.rm(link, { recursive: true, force: true }).catch(() => undefined)
     }
   }

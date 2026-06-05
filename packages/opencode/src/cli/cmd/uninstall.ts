@@ -1,7 +1,6 @@
 import type { Argv } from "yargs"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
-import { AppRuntime } from "@/effect/app-runtime"
 import { Installation } from "../../installation"
 import { InstallationDistribution } from "@/installation/distribution"
 import { AgencyProduct } from "@/agency-swarm/product"
@@ -9,8 +8,8 @@ import { Global } from "@opencode-ai/core/global"
 import fs from "fs/promises"
 import path from "path"
 import os from "os"
-import { Filesystem } from "../../util"
-import { Process } from "../../util"
+import { Filesystem } from "@/util/filesystem"
+import { Process } from "@/util/process"
 
 interface UninstallArgs {
   keepConfig: boolean
@@ -60,7 +59,7 @@ export const UninstallCommand = {
     UI.empty()
     prompts.intro(`Uninstall ${AgencyProduct.name}`)
 
-    const method = await AppRuntime.runPromise(Installation.Service.use((svc) => svc.method()))
+    const method = await Installation.method()
     prompts.log.info(`Installation method: ${method}`)
 
     const targets = await collectRemovalTargets(args, method)
