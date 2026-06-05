@@ -7,6 +7,18 @@ description: Use for agentswarm-cli upstream OpenCode sync work, including upstr
 
 Use this repo skill when syncing `agentswarm-cli` with upstream OpenCode, preparing an upstream tag or range merge, reviewing an upstream-sync branch, or resolving upstream-sync conflicts.
 
+## Quick Start
+
+Use this as the operator summary checklist for a normal upstream sync. It does not replace the detailed gates below.
+
+1. Confirm the requested upstream tag or range, worktree, branch, remotes, and clean or known-dirty state.
+2. Fetch the fork and upstream remotes, then record the upstream target commit, last upstream commit already present in the fork, and fork merge commit that carried it.
+3. Read the relevant bounded sections of `USER_FLOWS.md` and `FORK_CHANGELOG.md`, then assign the required separate upstream-analysis worker before any merge attempt.
+4. Merge only the requested upstream target in an isolated worktree, follow upstream structure first, and keep only the smallest accounted fork patches.
+5. Reconcile the final fork delta against the requested upstream target, run workflow-equivalent checks, and use scoped final review surfaces.
+6. After the upstream merge and runtime conflict-resolution commits are stable, add the required small `FORK_CHANGELOG.md` follow-up that records the exact upstream-sync merge commit.
+7. Before handoff, update this skill if the sync exposed a better route, missing step, or changed rule.
+
 ## Core Model
 
 - The final tree must be equivalent to the requested upstream OpenCode target plus the accounted fork patches from `USER_FLOWS.md` and `FORK_CHANGELOG.md`.
@@ -119,4 +131,4 @@ Before handoff:
 ## Skill Maintenance
 
 - Keep this repo skill current whenever the upstream-sync SOP changes or a sync proves a better route.
-- Do not call upstream-sync process work complete while known SOP improvements live only in notes, chat, or review comments.
+- Upstream-sync work is incomplete if known SOP improvements remain only in notes, chat, review comments, or other internal artifacts instead of this skill.
