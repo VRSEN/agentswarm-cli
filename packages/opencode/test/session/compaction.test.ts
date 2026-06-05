@@ -1016,6 +1016,7 @@ describe("session.compaction.process", () => {
           expect(summary.info.providerID).toBe(agencyRef.providerID)
           expect(summary.info.modelID).toBe(agencyRef.modelID)
           expect(summary.info.finish).toBe("error")
+          expect(summary.info.time.completed).toBeNumber()
           expect(JSON.stringify(summary.info.error)).toContain("No real compaction model is configured")
           expect(JSON.stringify(summary.info.error)).not.toContain("gpt-5.5-pro")
         }

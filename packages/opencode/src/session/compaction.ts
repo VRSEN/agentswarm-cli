@@ -446,6 +446,7 @@ export const layer: Layer.Layer<
           providerID: userMessage.model.providerID,
           time: {
             created: Date.now(),
+            completed: Date.now(),
           },
           finish: "error",
           error: new MessageV2.APIError({
