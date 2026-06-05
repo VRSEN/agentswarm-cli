@@ -404,7 +404,9 @@ export namespace AgencyProduct {
   function transform<T>(item: T): T | undefined {
     if (typeof item === "string") {
       if (skipped(item)) return undefined
-      return rewrite(item) as T
+      const next = rewrite(item)
+      if (skipped(next)) return undefined
+      return next as T
     }
     if (typeof item === "function") {
       const fn = item as TipFunction
@@ -412,7 +414,9 @@ export namespace AgencyProduct {
         const value = fn(...args)
         if (typeof value !== "string") return value
         if (skipped(value)) return undefined
-        return rewrite(value)
+        const next = rewrite(value)
+        if (skipped(next)) return undefined
+        return next
       }) as T
     }
     return item

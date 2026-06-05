@@ -319,6 +319,8 @@ describe("AgencyProduct.tips", () => {
     const tips = AgencyProduct.tips<Tip>([
       "Run {highlight}opencode serve{/highlight} for headless API access to OpenCode",
       "Run {highlight}opencode auth list{/highlight} to see all configured providers",
+      "Add {highlight}.md{/highlight} files to {highlight}.opencode/agents/{/highlight} for specialized AI personas",
+      "Run {highlight}opencode agent create{/highlight} to make a new agent",
       (shortcuts) =>
         `Use {highlight}/models{/highlight} or {highlight}${shortcuts.modelList()}{/highlight} to see and switch between available AI models`,
     ])
@@ -329,6 +331,8 @@ describe("AgencyProduct.tips", () => {
     })
 
     expect(rendered.join("\n")).not.toContain("opencode serve")
+    expect(rendered.join("\n")).not.toContain(".agentswarm/agent")
+    expect(rendered.join("\n")).not.toContain("agentswarm agent create")
     expect(rendered.join("\n")).not.toContain("{highlight}/models{/highlight}")
     expect(rendered).toContain("Run {highlight}agentswarm auth list{/highlight} to see configured provider credentials")
   })
