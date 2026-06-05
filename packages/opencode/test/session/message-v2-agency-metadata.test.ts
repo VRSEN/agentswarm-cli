@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { MessageV2 } from "../../src/session/message-v2"
-import type { Provider } from "../../src/provider"
+import type { Provider } from "../../src/provider/index"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 

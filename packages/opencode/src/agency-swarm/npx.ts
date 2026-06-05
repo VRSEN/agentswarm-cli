@@ -213,12 +213,12 @@ async function getResumeSession(
   if (sessions) {
     return Array.from(sessions).find((item) => item.id === sessionID)
   }
-  const { Session } = await import("@/session")
+  const { Session } = await import("@/session/index")
   return Session.get(SessionID.make(sessionID)).catch(() => undefined)
 }
 
 async function listResumeSessions(directory: string) {
-  const { Session } = await import("@/session")
+  const { Session } = await import("@/session/index")
   const start = Date.now() - 30 * 24 * 60 * 60 * 1000
   return Array.from(Session.listGlobal({ directory, roots: true, start, limit: 1 }))
 }
@@ -363,7 +363,7 @@ async function isLegacyAgencySwarmRunSession(sessionID: Session.Info["id"]) {
 }
 
 async function getLatestSessionProviderID(sessionID: Session.Info["id"]) {
-  const { Session } = await import("@/session")
+  const { Session } = await import("@/session/index")
   const [latest] = await Session.messages({ sessionID, limit: 1 }).catch(() => [])
   if (!latest) return
   return latest.info.role === "user" ? latest.info.model.providerID : latest.info.providerID
