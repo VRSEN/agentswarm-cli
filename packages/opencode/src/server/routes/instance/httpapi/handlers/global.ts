@@ -4,6 +4,7 @@ import { EffectBridge } from "@/effect/bridge"
 import { Bus } from "@/bus"
 import { Installation } from "@/installation"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
+import { resolveGlobalUpgrade } from "@/server/routes/global"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import * as Log from "@opencode-ai/core/util/log"
 import { Effect, Queue, Schema } from "effect"
@@ -96,35 +97,24 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const upgrade = Effect.fn("GlobalHttpApi.upgrade")(function* (ctx: { payload: typeof GlobalUpgradeInput.Type }) {
-      const method = yield* installation.method()
-      if (method === "unknown") {
+      const result = yield* resolveGlobalUpgrade(installation, ctx.payload.target)
+      if (!result.success) {
         return {
-          status: 400,
-          body: { success: false as const, error: "Unknown installation method" },
+          status: result.status,
+          body: {
+            success: false as const,
+            error: result.error,
+          },
         }
       }
-      const target = ctx.payload.target || (yield* installation.latest(method))
-      const result = yield* installation.upgrade(method, target).pipe(
-        Effect.as({ status: 200, body: { success: true as const, version: target } }),
-        Effect.catch((err) =>
-          Effect.succeed({
-            status: 500,
-            body: {
-              success: false as const,
-              error: err instanceof Error ? err.message : String(err),
-            },
-          }),
-        ),
-      )
-      if (!result.body.success) return result
       GlobalBus.emit("event", {
         directory: "global",
         payload: {
           type: Installation.Event.Updated.type,
-          properties: { version: target },
+          properties: { version: result.version },
         },
       })
-      return result
+      return { status: result.status, body: { success: true as const, version: result.version } }
     })
 
     const upgradeRaw = Effect.fn("GlobalHttpApi.upgradeRaw")(function* (ctx: {

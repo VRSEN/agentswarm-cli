@@ -1,6 +1,6 @@
 import { Storage } from "@/storage/storage"
 import { Global } from "@opencode-ai/core/global"
-import { Log } from "@/util"
+import { Log } from "@opencode-ai/core/util/log"
 import path from "path"
 import { AgencySwarmAdapter } from "./adapter"
 

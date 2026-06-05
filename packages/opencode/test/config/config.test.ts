@@ -155,7 +155,7 @@ test("creates global jsonc config with schema when no global configs exist", asy
       },
     })
 
-    const content = await Filesystem.readText(path.join(tmp.path, "opencode.jsonc"))
+    const content = await Filesystem.readText(path.join(tmp.path, "agentswarm.jsonc"))
     expect(content).toContain('"$schema": "https://opencode.ai/config.json"')
   } finally {
     ;(Global.Path as { config: string }).config = prev
@@ -180,7 +180,7 @@ test("does not create global config when OPENCODE_CONFIG_DIR is set", async () =
       },
     })
 
-    expect(await Filesystem.exists(path.join(tmp.path, "opencode.jsonc"))).toBe(false)
+    expect(await Filesystem.exists(path.join(tmp.path, "agentswarm.jsonc"))).toBe(false)
   } finally {
     ;(Global.Path as { config: string }).config = prevConfig
     if (prevEnv === undefined) delete process.env.OPENCODE_CONFIG_DIR

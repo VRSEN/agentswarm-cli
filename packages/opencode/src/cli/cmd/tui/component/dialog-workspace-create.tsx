@@ -42,7 +42,9 @@ export function recentConnectedWorkspaces<WorkspaceInfo extends { id: string; ti
   limit?: number
   omitWorkspaceID?: string
 }) {
-  const allWorkspaces = input.workspaces.filter((workspace) => input.status(workspace.id) === "connected")
+  const allWorkspaces = input.workspaces
+    .filter((workspace) => workspace.id !== input.omitWorkspaceID)
+    .filter((workspace) => input.status(workspace.id) === "connected")
   const workspaces = allWorkspaces.toSorted((a, b) => Number(b.timeUsed) - Number(a.timeUsed))
   const recent = workspaces.slice(0, input.limit ?? 3)
 

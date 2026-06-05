@@ -194,11 +194,15 @@ const live: Layer.Layer<
 
       const tools = resolveTools(input)
 
-      // GitHub Copilot may require the tools parameter when message history contains
-      // tool calls but no tools are active (e.g. compaction). Inject a stub tool that
-      // is never meant to be invoked. LiteLLM-backed providers are excluded.
+      const isLiteLLMProxy =
+        item.options?.["litellmProxy"] === true ||
+        input.model.providerID.toLowerCase().includes("litellm") ||
+        input.model.api.id.toLowerCase().includes("litellm")
+
+      // Some providers reject history with tool calls unless a tools parameter is
+      // present, even when no tools are active during compaction or replay.
       if (
-        input.model.providerID.includes("github-copilot") &&
+        (isLiteLLMProxy || input.model.providerID.includes("github-copilot")) &&
         Object.keys(tools).length === 0 &&
         hasToolCalls(input.messages)
       ) {

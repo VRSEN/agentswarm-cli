@@ -947,12 +947,14 @@ export type AuthStatus = "authenticated" | "expired" | "not_authenticated"
 
 // --- Per-service runtime ---
 
-export const defaultLayer = layer.pipe(
-  Layer.provide(McpAuth.layer),
-  Layer.provide(Bus.layer),
-  Layer.provide(Config.defaultLayer),
-  Layer.provide(CrossSpawnSpawner.defaultLayer),
-  Layer.provide(AppFileSystem.defaultLayer),
+export const defaultLayer = Layer.suspend(() =>
+  layer.pipe(
+    Layer.provide(McpAuth.layer),
+    Layer.provide(Bus.layer),
+    Layer.provide(Config.defaultLayer),
+    Layer.provide(CrossSpawnSpawner.defaultLayer),
+    Layer.provide(AppFileSystem.defaultLayer),
+  ),
 )
 
 export * as MCP from "."

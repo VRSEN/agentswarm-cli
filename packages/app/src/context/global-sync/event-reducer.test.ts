@@ -424,6 +424,40 @@ describe("applyDirectoryEvent", () => {
     expect(store.part[messageID]).toBeUndefined()
   })
 
+  test("seeds streaming text deltas from an existing part after reconnect", () => {
+    const sessionID = "ses_1"
+    const messageID = "msg_1"
+    const [store, setStore] = createStore(
+      baseState({
+        part: {
+          [messageID]: [
+            {
+              ...textPart("prt_1", sessionID, messageID),
+              text: "loaded prefix",
+            } as Part,
+          ],
+        },
+      }),
+    )
+
+    applyDirectoryEvent({
+      event: {
+        type: "message.part.delta",
+        properties: { messageID, partID: "prt_1", field: "text", delta: " and streamed suffix" },
+      },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    expect(store.part_text_accum_delta.prt_1).toBe("loaded prefix and streamed suffix")
+    const updated = store.part[messageID]?.find((x) => x.id === "prt_1")
+    expect(updated?.type).toBe("text")
+    if (updated?.type === "text") expect(updated.text).toBe("loaded prefix and streamed suffix")
+  })
+
   test("tracks permission and question request lifecycles", () => {
     const sessionID = "ses_1"
     const [store, setStore] = createStore(

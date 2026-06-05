@@ -88,6 +88,20 @@ describe("session.agency-swarm", () => {
       options,
       abort: abort.signal,
     } as Parameters<typeof SessionAgencySwarm.stream>[0]
+    input.loadSessionMessages = async () => {
+      try {
+        return await Session.messages({ sessionID: input.sessionID })
+      } catch {
+        return [input.userMessage]
+      }
+    }
+    input.updateSessionMessage = async (message) => {
+      try {
+        return await Session.updateMessage(message)
+      } catch {
+        return message
+      }
+    }
 
     return {
       input,

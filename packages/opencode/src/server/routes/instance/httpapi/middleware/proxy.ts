@@ -17,16 +17,34 @@ function requestBody(request: HttpServerRequest.HttpServerRequest) {
   })
 }
 
+type BunWebSocketConstructor = new (url: string, init?: { headers?: Record<string, string> }) => globalThis.WebSocket
+
+function outboundWebSocket(request: HttpServerRequest.HttpServerRequest, target: string | URL, extra?: HeadersInit) {
+  const url = ProxyUtil.websocketTargetURL(target)
+  if (!extra) {
+    return Socket.makeWebSocket(url, {
+      protocols: ProxyUtil.websocketProtocols(request.headers),
+    })
+  }
+  const headers = Object.fromEntries(ProxyUtil.headers(request.headers as HeadersInit, extra).entries())
+  const Ctor = globalThis.WebSocket as unknown as BunWebSocketConstructor
+  return Socket.fromWebSocket(
+    Effect.acquireRelease(
+      Effect.sync(() => new Ctor(url, { headers })),
+      (ws) => Effect.sync(() => ws.close(1000)),
+    ),
+  )
+}
+
 export function websocket(
   request: HttpServerRequest.HttpServerRequest,
   target: string | URL,
+  extra?: HeadersInit,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, never, Socket.WebSocketConstructor> {
   return Effect.scoped(
     Effect.gen(function* () {
       const inbound = yield* Effect.orDie(request.upgrade)
-      const outbound = yield* Socket.makeWebSocket(ProxyUtil.websocketTargetURL(target), {
-        protocols: ProxyUtil.websocketProtocols(request.headers),
-      })
+      const outbound = yield* outboundWebSocket(request, target, extra)
       const writeInbound = yield* inbound.writer
       const writeOutbound = yield* outbound.writer
       const closeSocket = (socket: Socket.Socket, write: (event: Socket.CloseEvent) => Effect.Effect<void, unknown>) =>

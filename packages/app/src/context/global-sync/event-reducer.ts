@@ -279,13 +279,15 @@ export function applyDirectoryEvent(input: {
       if (!parts) break
       const result = Binary.search(parts, props.partID, (p) => p.id)
       if (!result.found) break
-      input.setStore("part_text_accum_delta", props.partID, (existing) => (existing ?? "") + props.delta)
+      const part = parts[result.index]
+      const field = props.field as keyof typeof part
+      const seed = typeof part[field] === "string" ? part[field] : ""
+      input.setStore("part_text_accum_delta", props.partID, (existing) => (existing ?? seed) + props.delta)
       input.setStore(
         "part",
         props.messageID,
         produce((draft) => {
           const part = draft[result.index]
-          const field = props.field as keyof typeof part
           const existing = part[field] as string | undefined
           ;(part[field] as string) = (existing ?? "") + props.delta
         }),

@@ -1,5 +1,6 @@
 import { Config } from "@/config/config"
 import { BusEvent } from "@/bus/bus-event"
+import { initProjectors } from "@/server/projectors"
 import { SyncEvent } from "@/sync"
 import "@/server/event"
 import { Schema } from "effect"
@@ -10,6 +11,8 @@ const GlobalHealth = Schema.Struct({
   healthy: Schema.Literal(true),
   version: Schema.String,
 })
+
+initProjectors()
 
 const GlobalEventSchema = Schema.Struct({
   directory: Schema.String,

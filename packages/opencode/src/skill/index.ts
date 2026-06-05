@@ -296,13 +296,15 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(
-  Layer.provide(Discovery.defaultLayer),
-  Layer.provide(Config.defaultLayer),
-  Layer.provide(Bus.layer),
-  Layer.provide(AppFileSystem.defaultLayer),
-  Layer.provide(Global.layer),
-  Layer.provide(RuntimeFlags.defaultLayer),
+export const defaultLayer = Layer.suspend(() =>
+  layer.pipe(
+    Layer.provide(Discovery.defaultLayer),
+    Layer.provide(Config.defaultLayer),
+    Layer.provide(Bus.layer),
+    Layer.provide(AppFileSystem.defaultLayer),
+    Layer.provide(Global.layer),
+    Layer.provide(RuntimeFlags.defaultLayer),
+  ),
 )
 
 export function fmt(list: Info[], opts: { verbose: boolean }) {

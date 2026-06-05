@@ -165,7 +165,7 @@ export async function handler(
               Object.fromEntries(
                 Object.entries(obj).flatMap(([k, v]) => {
                   if (Array.isArray(v)) return [[k, v]]
-                  if (typeof v === "object") return [[k, replacer(v)]]
+                  if (v !== null && typeof v === "object") return [[k, replacer(v)]]
                   if (typeof v === "string") {
                     if (v === "$ip") return [[k, ip]]
                     if (v === "$workspace") return authInfo?.workspaceID ? [[k, authInfo?.workspaceID]] : []
@@ -180,6 +180,11 @@ export async function handler(
               )
             return replacer(providerInfo.payloadModifier ?? {})
           })(),
+          ...Object.fromEntries(
+            Object.entries(providerInfo.payloadMappings ?? {})
+              .map(([k, v]) => [k, input.request.headers.get(v)])
+              .filter((entry): entry is [string, string] => !!entry[1]),
+          ),
         }),
       )
       logger.debug("REQUEST URL: " + reqUrl)
@@ -305,15 +310,16 @@ export async function handler(
             reader?.read().then(async ({ done, value: rawValue }) => {
               if (done) {
                 const timestampLastByte = Date.now()
-                logger.metric({
-                  response_length: responseLength,
-                  "timestamp.last_byte": timestampLastByte,
-                })
                 dataDumper?.flush()
                 await rateLimiter?.track()
                 const usage = usageParser.retrieve()
-                if (usage) {
-                  const usageInfo = providerInfo.normalizeUsage(usage)
+                const usageInfo = usage ? providerInfo.normalizeUsage(usage) : undefined
+                logger.metric({
+                  response_length: responseLength,
+                  "timestamp.last_byte": timestampLastByte,
+                  "tps.output": calculateOutputTps(timestampFirstByte, timestampLastByte, usageInfo?.outputTokens),
+                })
+                if (usageInfo) {
                   const costInfo = calculateCost(modelInfo, usageInfo)
                   await trialLimiter?.track(usageInfo)
                   await modelTpmLimiter?.track(providerInfo.id, providerInfo.model, usageInfo)
@@ -909,6 +915,10 @@ export async function handler(
 
     const inputCost = modelCost.input * inputTokens * 100
     const outputCost = modelCost.output * outputTokens * 100
+    const reasoningCost = (() => {
+      if (!reasoningTokens) return undefined
+      return modelCost.output * reasoningTokens * 100
+    })()
     const cacheReadCost = (() => {
       if (!cacheReadTokens) return undefined
       if (!modelCost.cacheRead) return undefined
@@ -925,11 +935,17 @@ export async function handler(
       return modelCost.cacheWrite1h * cacheWrite1hTokens * 100
     })()
     const totalCostInCent =
-      inputCost + outputCost + (cacheReadCost ?? 0) + (cacheWrite5mCost ?? 0) + (cacheWrite1hCost ?? 0)
+      inputCost +
+      outputCost +
+      (reasoningCost ?? 0) +
+      (cacheReadCost ?? 0) +
+      (cacheWrite5mCost ?? 0) +
+      (cacheWrite1hCost ?? 0)
     return {
       totalCostInCent,
       inputCost,
       outputCost,
+      reasoningCost,
       cacheReadCost,
       cacheWrite5mCost,
       cacheWrite1hCost,
@@ -951,7 +967,8 @@ export async function handler(
   ) {
     const { inputTokens, outputTokens, reasoningTokens, cacheReadTokens, cacheWrite5mTokens, cacheWrite1hTokens } =
       usageInfo
-    const { totalCostInCent, inputCost, outputCost, cacheReadCost, cacheWrite5mCost, cacheWrite1hCost } = costInfo
+    const { totalCostInCent, inputCost, outputCost, reasoningCost, cacheReadCost, cacheWrite5mCost, cacheWrite1hCost } =
+      costInfo
 
     logger.metric({
       "tokens.input": inputTokens,
@@ -962,12 +979,14 @@ export async function handler(
       "tokens.cache_write_1h": cacheWrite1hTokens,
       "cost.input.microcents": centsToMicroCents(inputCost),
       "cost.output.microcents": centsToMicroCents(outputCost),
+      "cost.reasoning.microcents": reasoningCost ? centsToMicroCents(reasoningCost) : undefined,
       "cost.cache_read.microcents": cacheReadCost ? centsToMicroCents(cacheReadCost) : undefined,
       "cost.cache_write.microcents": cacheWrite5mCost ? centsToMicroCents(cacheWrite5mCost) : undefined,
       "cost.total.microcents": centsToMicroCents(totalCostInCent),
       // deprecated - remove after May 20, 2026
       "cost.input": Math.round(inputCost),
       "cost.output": Math.round(outputCost),
+      "cost.reasoning": reasoningCost ? Math.round(reasoningCost) : undefined,
       "cost.cache_read": cacheReadCost ? Math.round(cacheReadCost) : undefined,
       "cost.cache_write_5m": cacheWrite5mCost ? Math.round(cacheWrite5mCost) : undefined,
       "cost.cache_write_1h": cacheWrite1hCost ? Math.round(cacheWrite1hCost) : undefined,
@@ -1118,6 +1137,13 @@ export async function handler(
     )
 
     return { costInMicroCents: cost }
+  }
+
+  function calculateOutputTps(tsFirstByte: number, tsLastByte: number, outputTokens: number | undefined) {
+    if (!outputTokens) return undefined
+    const duration = tsLastByte - tsFirstByte
+    if (tsFirstByte <= 0 || duration <= 0) return undefined
+    return (outputTokens / duration) * 1000
   }
 
   async function reload(billingSource: BillingSource, authInfo: AuthInfo, costInfo: CostInfo) {

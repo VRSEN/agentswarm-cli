@@ -23,7 +23,7 @@ import { SessionTable } from "@/session/session.sql"
 import { SyncEvent } from "@/sync"
 import { EventSequenceTable } from "@/sync/event.sql"
 import { resetDatabase } from "../fixture/db"
-import { disposeAllInstances, provideTmpdirInstance, TestInstance, tmpdir } from "../fixture/fixture"
+import { disposeAllInstances, provideTmpdirInstance, TestInstance, tmpdir, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { registerAdapter } from "../../src/control-plane/adapters"
 import { WorkspaceID } from "../../src/control-plane/schema"
@@ -379,6 +379,16 @@ function sessionSequenceOwner(sessionID: SessionID) {
       .where(eq(EventSequenceTable.aggregate_id, sessionID))
       .get(),
   )?.ownerID
+}
+
+function claimSessionOwner(sessionID: SessionID, ownerID: string) {
+  Database.use((db) =>
+    db
+      .update(EventSequenceTable)
+      .set({ owner_id: ownerID })
+      .where(eq(EventSequenceTable.aggregate_id, sessionID))
+      .run(),
+  )
 }
 
 function sessionUpdatedType() {
@@ -878,6 +888,41 @@ describe("workspace CRUD", () => {
   )
 
   it.instance(
+    "sessionWarp applies local project patch to local target workspace",
+    () => {
+      return Effect.gen(function* () {
+        const { directory: dir } = yield* TestInstance
+        const instance = yield* InstanceRef
+        if (!instance) return yield* Effect.die(new Error("missing test instance"))
+        const workspace = yield* Workspace.Service
+        const sessionSvc = yield* SessionNs.Service
+        const targetType = unique("warp-patch-target-from-local")
+        const targetRoot = yield* tmpdirScoped()
+        const targetDir = path.join(targetRoot, "warp-patch-target-from-local")
+        yield* Effect.promise(async () => {
+          await fs.writeFile(path.join(dir, "tracked.txt"), "base\n")
+          await $`git add tracked.txt`.cwd(dir).quiet()
+          await $`git commit -m "base file"`.cwd(dir).quiet()
+          await fs.writeFile(path.join(dir, "tracked.txt"), "changed\n")
+          await fs.writeFile(path.join(dir, "new.txt"), "new\n")
+          await initGitRepo(targetDir)
+        })
+
+        const target = workspaceInfo(instance.project.id, targetType)
+        insertWorkspace(target)
+        registerAdapter(instance.project.id, targetType, localAdapter(targetDir, { createDir: false }).adapter)
+        const session = yield* sessionSvc.create({})
+
+        yield* workspace.sessionWarp({ workspaceID: target.id, sessionID: session.id, copyChanges: true })
+
+        expect(yield* Effect.promise(() => fs.readFile(path.join(targetDir, "tracked.txt"), "utf8"))).toBe("changed\n")
+        expect(yield* Effect.promise(() => fs.readFile(path.join(targetDir, "new.txt"), "utf8"))).toBe("new\n")
+      })
+    },
+    { git: true },
+  )
+
+  it.instance(
     "sessionWarp detaches a session to the local project and claims project ownership",
     () => {
       return Effect.gen(function* () {
@@ -942,6 +987,101 @@ describe("workspace CRUD", () => {
       ).toBeNull()
       expect(sessionSequenceOwner(session.id)).toBe(projectID)
       expect(sessionSequenceOwner(session.id)).not.toBe(workspaceProjectID)
+    })
+  })
+
+  it.live("sessionWarp keeps previous owner when target replay fails", () => {
+    return Effect.gen(function* () {
+      yield* HttpServer.serveEffect()(
+        Effect.gen(function* () {
+          const req = yield* HttpServerRequest.HttpServerRequest
+          if (new URL(req.url, "http://localhost").pathname === "/warp-target/sync/replay") {
+            return HttpServerResponse.text("replay failed", { status: 500 })
+          }
+          return HttpServerResponse.text("unexpected", { status: 500 })
+        }),
+      )
+      const url = yield* serverUrl()
+      yield* provideTmpdirInstance(
+        () =>
+          Effect.gen(function* () {
+            const workspace = yield* Workspace.Service
+            const sessionSvc = yield* SessionNs.Service
+            const previousType = unique("warp-failed-prev")
+            const targetType = unique("warp-failed-target")
+            const previous = workspaceInfo(Instance.project.id, previousType)
+            const target = workspaceInfo(Instance.project.id, targetType, { directory: "remote-target-dir" })
+            insertWorkspace(previous)
+            insertWorkspace(target)
+            registerAdapter(Instance.project.id, previousType, localAdapter("/unused").adapter)
+            registerAdapter(Instance.project.id, targetType, remoteAdapter(`${url}/warp-target`).adapter)
+            const session = yield* sessionSvc.create({})
+            attachSessionToWorkspace(session.id, previous.id)
+            claimSessionOwner(session.id, previous.id)
+
+            yield* Effect.exit(workspace.sessionWarp({ workspaceID: target.id, sessionID: session.id })).pipe(
+              Effect.map((exit) => expect(exit._tag).toBe("Failure")),
+            )
+
+            expect(sessionSequenceOwner(session.id)).toBe(previous.id)
+          }),
+        { git: true },
+      )
+    })
+  })
+
+  it.live("sessionWarp fails when copied remote patch is not applied", () => {
+    const calls: FetchCall[] = []
+    return Effect.gen(function* () {
+      yield* HttpServer.serveEffect()(
+        Effect.gen(function* () {
+          const req = yield* HttpServerRequest.HttpServerRequest
+          const bodyText = yield* req.text
+          const call = {
+            url: new URL(req.url, "http://localhost"),
+            method: req.method,
+            headers: new Headers(req.headers),
+            bodyText,
+            json: bodyText ? JSON.parse(bodyText) : undefined,
+          }
+          calls.push(call)
+          if (call.url.pathname === "/apply-source/sync/history") return yield* HttpServerResponse.json([])
+          if (call.url.pathname === "/apply-source/vcs/diff/raw") return HttpServerResponse.text("remote patch")
+          if (call.url.pathname === "/apply-target/vcs/apply") return yield* HttpServerResponse.json({ applied: false })
+          return HttpServerResponse.text("unexpected", { status: 500 })
+        }),
+      )
+      const url = yield* serverUrl()
+      yield* provideTmpdirInstance(
+        () =>
+          Effect.gen(function* () {
+            const workspace = yield* Workspace.Service
+            const sessionSvc = yield* SessionNs.Service
+            const previousType = unique("warp-copy-fail-source")
+            const targetType = unique("warp-copy-fail-target")
+            const previous = workspaceInfo(Instance.project.id, previousType)
+            const target = workspaceInfo(Instance.project.id, targetType, { directory: "remote-target-dir" })
+            insertWorkspace(previous)
+            insertWorkspace(target)
+            registerAdapter(Instance.project.id, previousType, remoteAdapter(`${url}/apply-source`).adapter)
+            registerAdapter(Instance.project.id, targetType, remoteAdapter(`${url}/apply-target`).adapter)
+            const session = yield* sessionSvc.create({})
+            attachSessionToWorkspace(session.id, previous.id)
+            claimSessionOwner(session.id, previous.id)
+
+            yield* Effect.exit(
+              workspace.sessionWarp({ workspaceID: target.id, sessionID: session.id, copyChanges: true }),
+            ).pipe(Effect.map((exit) => expect(exit._tag).toBe("Failure")))
+
+            expect(calls.map((call) => `${call.method} ${call.url.pathname}`)).toEqual([
+              "POST /apply-source/sync/history",
+              "GET /apply-source/vcs/diff/raw",
+              "POST /apply-target/vcs/apply",
+            ])
+            expect(sessionSequenceOwner(session.id)).toBe(previous.id)
+          }),
+        { git: true },
+      )
     })
   })
 
@@ -1357,6 +1497,7 @@ describe("workspace sync state", () => {
               attachSessionToWorkspace(session.id, info.id)
               historySessionID = session.id
               historyNextSeq = (sessionSequence(session.id) ?? -1) + 1
+              claimSessionOwner(session.id, info.id)
 
               yield* workspace.startWorkspaceSyncing(Instance.project.id)
 
@@ -1505,6 +1646,7 @@ describe("workspace sync state", () => {
               attachSessionToWorkspace(session.id, info.id)
               sseSessionID = session.id
               sseNextSeq = (sessionSequence(session.id) ?? -1) + 1
+              claimSessionOwner(session.id, info.id)
 
               yield* workspace.startWorkspaceSyncing(Instance.project.id)
 

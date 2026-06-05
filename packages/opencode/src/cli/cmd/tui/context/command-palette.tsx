@@ -9,6 +9,7 @@ import {
   useOpencodeKeymap,
 } from "../keymap"
 import { useTuiConfig } from "./tui-config"
+import { captureCommand, type CommandTelemetrySource } from "@/telemetry/command"
 
 type SlashEntry = {
   display: string
@@ -18,7 +19,7 @@ type SlashEntry = {
 }
 
 type CommandPaletteContext = {
-  run(command: string): void
+  run(command: string, source?: CommandTelemetrySource): void
   show(): void
   slashes: Accessor<readonly SlashEntry[]>
   suspend(enabled: boolean): void
@@ -41,6 +42,18 @@ function isSuggestedPaletteCommand(entry: PaletteCommandEntry) {
   return false
 }
 
+function track(entry: PaletteCommandEntry | undefined, source: CommandTelemetrySource, keybind = false) {
+  if (!entry) return
+  const value =
+    source === "slash" && typeof entry.command.slashName === "string" ? entry.command.slashName : entry.command.name
+  captureCommand({
+    category: typeof entry.command.category === "string" ? entry.command.category : undefined,
+    keybind: keybind ? "true" : undefined,
+    source,
+    value,
+  })
+}
+
 export function CommandPaletteProvider(props: ParentProps) {
   const dialog = useDialog()
   const keymap = useOpencodeKeymap()
@@ -54,7 +67,11 @@ export function CommandPaletteProvider(props: ParentProps) {
       .filter(isVisiblePaletteCommand),
   )
 
-  const run = (command: string) => {
+  const run = (command: string, source: CommandTelemetrySource = "programmatic") => {
+    track(
+      entries().find((entry) => entry.command.name === command),
+      source,
+    )
     keymap.dispatchCommand(command)
   }
 
@@ -74,7 +91,7 @@ export function CommandPaletteProvider(props: ParentProps) {
         aliases: Array.isArray(slashAliases)
           ? slashAliases.filter((alias): alias is string => typeof alias === "string").map((alias) => `/${alias}`)
           : undefined,
-        onSelect: () => run(entry.command.name),
+        onSelect: () => run(entry.command.name, "slash"),
       }
     }),
   )
@@ -103,7 +120,7 @@ export function useCommandPalette() {
   return value
 }
 
-function CommandPaletteDialog(props: { run(command: string): void }) {
+function CommandPaletteDialog(props: { run(command: string, source?: CommandTelemetrySource): void }) {
   const config = useTuiConfig()
   const entries = useKeymapSelector((keymap: OpenTuiKeymap) => {
     const query = {
@@ -132,10 +149,11 @@ function CommandPaletteDialog(props: { run(command: string): void }) {
       category: typeof entry.command.category === "string" ? entry.command.category : undefined,
       footer: formatKeyBindings(entry.bindings, config),
       value: entry.command.name,
+      entry,
       suggested: isSuggestedPaletteCommand(entry),
       onSelect: (dialog: DialogContext) => {
         dialog.clear()
-        props.run(entry.command.name)
+        props.run(entry.command.name, "palette")
       },
     })),
   )
@@ -150,6 +168,10 @@ function CommandPaletteDialog(props: { run(command: string): void }) {
           ...option,
           value: `suggested:${option.value}`,
           category: "Suggested",
+          onSelect: (dialog: DialogContext) => {
+            dialog.clear()
+            props.run(option.entry.command.name, "suggested")
+          },
         })),
       ...options(),
     ]

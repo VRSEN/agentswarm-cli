@@ -111,7 +111,9 @@ describe("cross-spawn spawner", () => {
             ChildProcess.make(process.execPath, ["-e", "process.stdout.write(process.cwd())"], { cwd: tmp.path }),
           ),
         )
-        expect(out).toBe(tmp.path)
+        const actual = yield* Effect.promise(() => fs.realpath(out))
+        const expected = yield* Effect.promise(() => fs.realpath(tmp.path))
+        expect(actual).toBe(expected)
       }),
     )
 

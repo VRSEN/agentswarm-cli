@@ -63,6 +63,13 @@ let write = (msg: any) => {
   return msg.length
 }
 
+function emit(msg: string) {
+  try {
+    const result = write(msg)
+    if (result instanceof Promise) void result.catch(() => {})
+  } catch {}
+}
+
 export async function init(options: Options) {
   if (options.level) level = options.level
   void cleanup(Global.Path.log)
@@ -76,6 +83,7 @@ export async function init(options: Options) {
   if (shouldTruncate) await fs.truncate(logpath).catch(() => {})
   if (options.dev && runID) process.env[initializedRunID] = runID
   const stream = createWriteStream(logpath, { flags: "a" })
+  stream.on("error", () => {})
   write = async (msg: any) => {
     return new Promise((resolve, reject) => {
       stream.write(msg, (err) => {
@@ -142,22 +150,22 @@ export function create(tags?: Record<string, any>) {
   const result: Logger = {
     debug(message?: any, extra?: Record<string, any>) {
       if (shouldLog("DEBUG")) {
-        write("DEBUG " + build(message, extra))
+        emit("DEBUG " + build(message, extra))
       }
     },
     info(message?: any, extra?: Record<string, any>) {
       if (shouldLog("INFO")) {
-        write("INFO  " + build(message, extra))
+        emit("INFO  " + build(message, extra))
       }
     },
     error(message?: any, extra?: Record<string, any>) {
       if (shouldLog("ERROR")) {
-        write("ERROR " + build(message, extra))
+        emit("ERROR " + build(message, extra))
       }
     },
     warn(message?: any, extra?: Record<string, any>) {
       if (shouldLog("WARN")) {
-        write("WARN  " + build(message, extra))
+        emit("WARN  " + build(message, extra))
       }
     },
     tag(key: string, value: string) {

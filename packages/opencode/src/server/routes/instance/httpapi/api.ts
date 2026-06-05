@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import { HttpApi } from "effect/unstable/httpapi"
 import { BusEvent } from "@/bus/bus-event"
+import { initProjectors } from "@/server/projectors"
 import { SyncEvent } from "@/sync"
 import { ConfigApi } from "./groups/config"
 import { ControlApi } from "./groups/control"
@@ -24,6 +25,7 @@ import { Authorization } from "./middleware/authorization"
 import { SchemaErrorMiddleware } from "./middleware/schema-error"
 
 // SSE event schemas built from the BusEvent/SyncEvent registries.
+initProjectors()
 const EventSchema = Schema.Union(BusEvent.effectPayloads()).annotate({ identifier: "Event" })
 const SyncEventSchemas = SyncEvent.effectPayloads()
 

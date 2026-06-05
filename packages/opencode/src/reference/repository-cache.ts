@@ -28,12 +28,27 @@ function statusForRepository(input: { reuse: boolean; refresh?: boolean; branchM
   return "cached" as const
 }
 
+function remoteDefaultBranch(input: string) {
+  const name = input.match(/^ref:\s+refs\/heads\/([^\s]+)\s+HEAD$/m)?.[1]
+  if (!name) return
+  validateRepositoryBranch(name)
+  return { name, ref: `origin/${name}` }
+}
+
+const remoteDefault = Effect.fn("RepositoryCache.remoteDefault")(function* (cwd: string, git: Git.Interface) {
+  const result = yield* git.run(["ls-remote", "--symref", "origin", "HEAD"], { cwd })
+  if (result.exitCode !== 0) return
+  return remoteDefaultBranch(result.text())
+})
+
 function resetTarget(input: {
   requestedBranch?: string
+  defaultBranch?: string
   remoteHead: { code: number; stdout: string }
   branch: { code: number; stdout: string }
 }) {
   if (input.requestedBranch) return `origin/${input.requestedBranch}`
+  if (input.defaultBranch) return `origin/${input.defaultBranch}`
   if (input.remoteHead.code === 0 && input.remoteHead.stdout) {
     return input.remoteHead.stdout.replace(/^refs\/remotes\//, "")
   }
@@ -79,10 +94,18 @@ export const ensure = Effect.fn("RepositoryCache.ensure")(function* (
         }
 
         const currentBranch = hasGitDir ? yield* services.git.branch(localPath) : undefined
+        const defaultBranch =
+          reuse && !input.branch
+            ? ((yield* remoteDefault(localPath, services.git)) ?? (yield* services.git.defaultBranch(localPath)))
+            : undefined
         const status = statusForRepository({
           reuse,
           refresh: input.refresh,
-          branchMatches: input.branch ? currentBranch === input.branch : undefined,
+          branchMatches: input.branch
+            ? currentBranch === input.branch
+            : defaultBranch
+              ? currentBranch === defaultBranch.name
+              : undefined,
         })
 
         if (status === "cloned") {
@@ -111,11 +134,33 @@ export const ensure = Effect.fn("RepositoryCache.ensure")(function* (
               )
             }
           }
+          if (!input.branch) {
+            const branch = (yield* remoteDefault(localPath, services.git)) ?? (yield* services.git.defaultBranch(localPath))
+            if (branch) {
+              const ref = `+refs/heads/${branch.name}:refs/remotes/origin/${branch.name}`
+              const fetchBranch = yield* services.git.run(["fetch", "origin", ref], { cwd: localPath })
+              if (fetchBranch.exitCode !== 0) {
+                throw new Error(
+                  fetchBranch.stderr.toString().trim() ||
+                    fetchBranch.text().trim() ||
+                    `Failed to fetch ${branch.name}`,
+                )
+              }
+
+              const checkout = yield* services.git.run(["checkout", "-B", branch.name, branch.ref], { cwd: localPath })
+              if (checkout.exitCode !== 0) {
+                throw new Error(
+                  checkout.stderr.toString().trim() || checkout.text().trim() || `Failed to checkout ${branch.name}`,
+                )
+              }
+            }
+          }
 
           const remoteHead = yield* services.git.run(["symbolic-ref", "refs/remotes/origin/HEAD"], { cwd: localPath })
           const branch = yield* services.git.run(["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: localPath })
           const target = resetTarget({
             requestedBranch: input.branch,
+            defaultBranch: input.branch ? undefined : branch.exitCode === 0 ? branch.text().trim() : undefined,
             remoteHead: { code: remoteHead.exitCode, stdout: remoteHead.text().trim() },
             branch: { code: branch.exitCode, stdout: branch.text().trim() },
           })

@@ -40,6 +40,7 @@ describe("HttpApi compression", () => {
       })
       expect(response.status).toBe(200)
       expect(response.headers.get("content-encoding")).toBe("gzip")
+      expect(response.headers.get("vary")).toContain("Accept-Encoding")
       const compressed = new Uint8Array(await response.arrayBuffer())
       const decompressed = gunzipSync(compressed)
       const json = JSON.parse(new TextDecoder().decode(decompressed))
@@ -68,6 +69,14 @@ describe("HttpApi compression", () => {
       expect(response.headers.get("content-encoding")).toBe("gzip")
     })
 
+    test("prefers the acceptable encoding with the highest weight", async () => {
+      await using tmp = await tmpdir({ config: fatConfig() })
+      const response = await app().request("/config", {
+        headers: { "x-opencode-directory": tmp.path, "accept-encoding": "gzip;q=0.2, deflate;q=1" },
+      })
+      expect(response.headers.get("content-encoding")).toBe("deflate")
+    })
+
     test("does not include the original Content-Length when compressed", async () => {
       await using tmp = await tmpdir({ config: fatConfig() })
       const response = await app().request("/config", {
@@ -93,6 +102,14 @@ describe("HttpApi compression", () => {
       await using tmp = await tmpdir({ config: fatConfig() })
       const response = await app().request("/config", {
         headers: { "x-opencode-directory": tmp.path, "accept-encoding": "br" },
+      })
+      expect(response.headers.get("content-encoding")).toBeNull()
+    })
+
+    test("when supported encodings are disabled", async () => {
+      await using tmp = await tmpdir({ config: fatConfig() })
+      const response = await app().request("/config", {
+        headers: { "x-opencode-directory": tmp.path, "accept-encoding": "gzip;q=0, deflate;q=0" },
       })
       expect(response.headers.get("content-encoding")).toBeNull()
     })

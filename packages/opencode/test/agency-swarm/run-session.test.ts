@@ -25,7 +25,7 @@ describe("agency-swarm run session state", () => {
     expect(writeJson.mock.calls[0]?.[1]).toEqual({
       ses_123: {
         mode: "local-project",
-        directory: "/tmp/project",
+        directory: Filesystem.resolve("/tmp/project"),
       },
     })
     expect(writeJson.mock.calls[0]?.[2]).toBe(0o600)

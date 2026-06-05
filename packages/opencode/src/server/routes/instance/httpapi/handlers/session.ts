@@ -8,8 +8,8 @@ import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
+import { removeMessageAllowingQueued } from "@/session/queued-message"
 import { SessionRevert } from "@/session/revert"
-import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
@@ -49,7 +49,6 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const promptSvc = yield* SessionPrompt.Service
     const revertSvc = yield* SessionRevert.Service
     const compactSvc = yield* SessionCompaction.Service
-    const runState = yield* SessionRunState.Service
     const agentSvc = yield* Agent.Service
     const permissionSvc = yield* Permission.Service
     const statusSvc = yield* SessionStatus.Service
@@ -272,7 +271,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         },
         auto: ctx.payload.auto ?? false,
       })
-      yield* promptSvc.loop({ sessionID: ctx.params.sessionID })
+      yield* promptSvc
+        .loop({ sessionID: ctx.params.sessionID })
+        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
       return true
     })
 
@@ -358,8 +359,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID; messageID: MessageID }
     }) {
       yield* requireSession(ctx.params.sessionID)
-      yield* SessionError.mapBusy(runState.assertNotBusy(ctx.params.sessionID))
-      yield* session.removeMessage(ctx.params)
+      yield* removeMessageAllowingQueued(ctx.params).pipe(SessionError.mapStorageNotFound, SessionError.mapBusy)
       return true
     })
 

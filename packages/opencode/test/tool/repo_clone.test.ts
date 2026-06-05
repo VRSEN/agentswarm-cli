@@ -1,6 +1,7 @@
 import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import { pathToFileURL } from "node:url"
+import { writeFile } from "node:fs/promises"
 import { Cause, Effect, Exit, Layer } from "effect"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Agent } from "../../src/agent/agent"
@@ -12,6 +13,7 @@ import { Truncate } from "../../src/tool/truncate"
 import { RepoCloneTool } from "../../src/tool/repo_clone"
 import { disposeAllInstances, provideTmpdirInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { githubBase, githubBaseUrl } from "../lib/github-base"
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -62,21 +64,6 @@ const git = Effect.fn("RepoCloneToolTest.git")(function* (cwd: string, args: str
   })
 })
 
-const githubBase = <A, E, R>(url: string, self: Effect.Effect<A, E, R>) =>
-  Effect.acquireUseRelease(
-    Effect.sync(() => {
-      const previous = process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL
-      process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL = url
-      return previous
-    }),
-    () => self,
-    (previous) =>
-      Effect.sync(() => {
-        if (previous) process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL = previous
-        else delete process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL
-      }),
-  )
-
 describe("tool.repo_clone", () => {
   it.live("clones a repo into the managed cache and reuses it on subsequent calls", () =>
     provideTmpdirInstance((_dir) =>
@@ -87,16 +74,16 @@ describe("tool.repo_clone", () => {
         const remoteDir = path.join(remoteRoot, "owner")
         const remoteRepo = path.join(remoteDir, "repo.git")
 
-        yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "v1\n"))
-        yield* git(source, ["add", "."])
+        yield* Effect.promise(() => writeFile(path.join(source, "README.md"), "v1\n"))
+        yield* git(source, ["add", "-A"])
         yield* git(source, ["commit", "-m", "add readme"])
         yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)
         yield* git(remoteRoot, ["clone", "--bare", source, remoteRepo])
 
         const tool = yield* init()
-        const cloned = yield* githubBase(`file://${remoteRoot}/`, tool.execute({ repository: "owner/repo" }, ctx))
+        const cloned = yield* githubBase(githubBaseUrl(remoteRoot), tool.execute({ repository: "owner/repo" }, ctx))
         const cached = yield* githubBase(
-          `file://${remoteRoot}/`,
+          githubBaseUrl(remoteRoot),
           tool.execute({ repository: "https://github.com/owner/repo.git" }, ctx),
         )
 
@@ -117,8 +104,8 @@ describe("tool.repo_clone", () => {
         const remoteDir = path.join(remoteRoot, "owner")
         const remoteRepo = path.join(remoteDir, "repo.git")
 
-        yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "v1\n"))
-        yield* git(source, ["add", "."])
+        yield* Effect.promise(() => writeFile(path.join(source, "README.md"), "v1\n"))
+        yield* git(source, ["add", "-A"])
         yield* git(source, ["commit", "-m", "add readme"])
         yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)
         yield* git(remoteRoot, ["clone", "--bare", source, remoteRepo])
@@ -128,15 +115,15 @@ describe("tool.repo_clone", () => {
         yield* git(source, ["push", "-u", "origin", `${branch}:${branch}`])
 
         const tool = yield* init()
-        const first = yield* githubBase(`file://${remoteRoot}/`, tool.execute({ repository: "owner/repo" }, ctx))
+        const first = yield* githubBase(githubBaseUrl(remoteRoot), tool.execute({ repository: "owner/repo" }, ctx))
 
-        yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "v2\n"))
-        yield* git(source, ["add", "."])
+        yield* Effect.promise(() => writeFile(path.join(source, "README.md"), "v2\n"))
+        yield* git(source, ["add", "-A"])
         yield* git(source, ["commit", "-m", "update readme"])
         yield* git(source, ["push", "origin", `${branch}:${branch}`])
 
         const refreshed = yield* githubBase(
-          `file://${remoteRoot}/`,
+          githubBaseUrl(remoteRoot),
           tool.execute({ repository: "owner/repo", refresh: true }, ctx),
         )
 
@@ -156,25 +143,60 @@ describe("tool.repo_clone", () => {
         const remoteDir = path.join(remoteRoot, "owner")
         const remoteRepo = path.join(remoteDir, "repo.git")
 
-        yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "main\n"))
-        yield* git(source, ["add", "."])
+        yield* Effect.promise(() => writeFile(path.join(source, "README.md"), "main\n"))
+        yield* git(source, ["add", "-A"])
         yield* git(source, ["commit", "-m", "add readme"])
         yield* git(source, ["checkout", "-b", "docs"])
-        yield* Effect.promise(() => Bun.write(path.join(source, "DOCS.md"), "docs\n"))
-        yield* git(source, ["add", "."])
+        yield* Effect.promise(() => writeFile(path.join(source, "DOCS.md"), "docs\n"))
+        yield* git(source, ["add", "-A"])
         yield* git(source, ["commit", "-m", "add docs"])
         yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)
         yield* git(remoteRoot, ["clone", "--bare", source, remoteRepo])
 
         const tool = yield* init()
         const result = yield* githubBase(
-          `file://${remoteRoot}/`,
+          githubBaseUrl(remoteRoot),
           tool.execute({ repository: "owner/repo", branch: "docs" }, ctx),
         )
 
         expect(result.metadata.status).toBe("cloned")
         expect(result.metadata.branch).toBe("docs")
         expect(yield* fs.readFileString(path.join(result.metadata.localPath, "DOCS.md"))).toBe("docs\n")
+      }),
+    ),
+  )
+
+  it.live("refreshes a configured branch clone back to the default branch", () =>
+    provideTmpdirInstance((_dir) =>
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const source = yield* tmpdirScoped({ git: true })
+        const remoteRoot = yield* tmpdirScoped()
+        const remoteDir = path.join(remoteRoot, "owner")
+        const remoteRepo = path.join(remoteDir, "repo.git")
+
+        yield* git(source, ["branch", "-M", "main"])
+        yield* Effect.promise(() => writeFile(path.join(source, "README.md"), "main\n"))
+        yield* git(source, ["add", "-A"])
+        yield* git(source, ["commit", "-m", "add readme"])
+        yield* git(source, ["checkout", "-b", "docs"])
+        yield* Effect.promise(() => writeFile(path.join(source, "DOCS.md"), "docs\n"))
+        yield* git(source, ["add", "-A"])
+        yield* git(source, ["commit", "-m", "add docs"])
+        yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)
+        yield* git(remoteRoot, ["clone", "--bare", source, remoteRepo])
+        yield* git(remoteRepo, ["symbolic-ref", "HEAD", "refs/heads/main"])
+
+        const tool = yield* init()
+        const docs = yield* githubBase(githubBaseUrl(remoteRoot), tool.execute({ repository: "owner/repo", branch: "docs" }, ctx))
+        const main = yield* githubBase(githubBaseUrl(remoteRoot), tool.execute({ repository: "owner/repo" }, ctx))
+
+        expect(docs.metadata.status).toBe("cloned")
+        expect(docs.metadata.branch).toBe("docs")
+        expect(main.metadata.status).toBe("refreshed")
+        expect(main.metadata.branch).toBe("main")
+        expect(yield* fs.readFileString(path.join(main.metadata.localPath, "README.md"))).toBe("main\n")
+        expect(yield* fs.existsSafe(path.join(main.metadata.localPath, "DOCS.md"))).toBe(false)
       }),
     ),
   )

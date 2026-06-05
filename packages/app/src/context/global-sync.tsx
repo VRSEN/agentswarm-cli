@@ -109,7 +109,7 @@ function createGlobalSync() {
 
   const [globalStore, setGlobalStore] = createStore<GlobalStore>({
     get ready() {
-      return bootstrap.isPending
+      return bootstrap.isSuccess
     },
     project: [],
     session_todo: {},
@@ -221,7 +221,7 @@ function createGlobalSync() {
     translate: language.t,
     queryOptions: queryOptionsApi,
     global: {
-      provider: globalStore.provider,
+      provider: () => globalStore.provider,
     },
   })
 
@@ -422,7 +422,10 @@ function createGlobalSync() {
 
   const updateConfigMutation = useMutation(() => ({
     mutationFn: (config: Config) => globalSDK.client.global.config.update({ config }),
-    onSuccess: () => bootstrap.refetch(),
+    onSuccess: async () => {
+      await bootstrap.refetch()
+      await Promise.all(Object.keys(children.children).map((directory) => bootstrapInstance(directory)))
+    },
   }))
 
   return {

@@ -50,11 +50,11 @@ function decodeCredential(input: string) {
       Effect.match({
         onFailure: emptyCredential,
         onSuccess: (header) => {
-          const parts = header.split(":")
-          if (parts.length !== 2) return emptyCredential()
+          const index = header.indexOf(":")
+          if (index === -1) return emptyCredential()
           return {
-            username: parts[0],
-            password: Redacted.make(parts[1]),
+            username: header.slice(0, index),
+            password: Redacted.make(header.slice(index + 1)),
           }
         },
       }),

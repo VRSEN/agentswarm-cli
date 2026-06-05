@@ -122,9 +122,6 @@ export const layer = Layer.effect(
 
     return Service.of({
       language: Effect.fn("AISDK.language")(function* (model) {
-        const key = `${model.providerID}/${model.id}/${model.options.variant ?? "default"}`
-        const existing = languages.get(key)
-        if (existing) return existing
         if (model.endpoint.type !== "aisdk")
           return yield* new InitError({
             providerID: model.providerID,
@@ -137,6 +134,15 @@ export const layer = Layer.effect(
           endpoint: model.endpoint,
           options,
         })
+        const key = JSON.stringify({
+          providerID: model.providerID,
+          id: model.id,
+          apiID: model.apiID,
+          variant: model.options.variant ?? "default",
+          sdkKey,
+        })
+        const existing = languages.get(key)
+        if (existing) return existing
         const sdk =
           sdks.get(sdkKey) ??
           (yield* plugin

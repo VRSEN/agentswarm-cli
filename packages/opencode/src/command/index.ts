@@ -172,10 +172,12 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(
-  Layer.provide(Config.defaultLayer),
-  Layer.provide(MCP.defaultLayer),
-  Layer.provide(Skill.defaultLayer),
+export const defaultLayer = Layer.suspend(() =>
+  layer.pipe(
+    Layer.provide(Config.defaultLayer),
+    Layer.provide(MCP.defaultLayer),
+    Layer.provide(Skill.defaultLayer),
+  ),
 )
 
 export * as Command from "."

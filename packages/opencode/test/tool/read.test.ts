@@ -1,5 +1,5 @@
 import { afterEach, describe, expect } from "bun:test"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import path from "path"
 import { Agent } from "../../src/agent/agent"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -13,13 +13,14 @@ import { Permission } from "../../src/permission"
 import { Instance } from "../../src/project/instance"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Instruction } from "../../src/session/instruction"
-import { ReadTool } from "../../src/tool/read"
+import { Parameters, ReadTool } from "../../src/tool/read"
 import { Truncate } from "@/tool/truncate"
 import { Tool } from "@/tool/tool"
 import { Filesystem } from "@/util/filesystem"
 import { disposeAllInstances, provideInstance, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { Reference } from "@/reference/reference"
+import { githubBase, githubBaseUrl } from "../lib/github-base"
 
 const FIXTURES_DIR = path.join(import.meta.dir, "fixtures")
 
@@ -97,20 +98,6 @@ const fail = Effect.fn("ReadToolTest.fail")(function* (
 const full = (p: string) => (process.platform === "win32" ? Filesystem.normalizePath(p) : p)
 const glob = (p: string) =>
   process.platform === "win32" ? Filesystem.normalizePathPattern(p) : p.replaceAll("\\", "/")
-const githubBase = <A, E, R>(url: string, self: Effect.Effect<A, E, R>) =>
-  Effect.acquireUseRelease(
-    Effect.sync(() => {
-      const previous = process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL
-      process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL = url
-      return previous
-    }),
-    () => self,
-    (previous) =>
-      Effect.sync(() => {
-        if (previous) process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL = previous
-        else delete process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL
-      }),
-  )
 const git = Effect.fn("ReadToolTest.git")(function* (cwd: string, args: string[]) {
   return yield* Effect.promise(async () => {
     const proc = Bun.spawn(["git", ...args], {
@@ -193,10 +180,9 @@ describe("tool.read external_directory permission", () => {
 
         const { items, next } = asks()
         const target = path.join(dir, "test.txt")
-        const alt = target
-          .replace(/^[A-Za-z]:/, "")
-          .replaceAll("\\", "/")
-          .toLowerCase()
+        const root = path.parse(target).root
+        const drive = root.replace(/[:\\/]+$/, "").toLowerCase()
+        const alt = `/${drive}/${target.slice(root.length).replaceAll("\\", "/")}`.toLowerCase()
 
         yield* exec(dir, { filePath: alt }, next)
         const read = items.find((item) => item.permission === "read")
@@ -287,7 +273,7 @@ describe("tool.read external_directory permission", () => {
 
       const { items, next } = asks()
       const result = yield* githubBase(
-        `file://${remoteRoot}/`,
+        githubBaseUrl(remoteRoot),
         exec(dir, { filePath: path.join(cache, "notes.md") }, next),
       )
       const ext = items.find((item) => item.permission === "external_directory")
@@ -409,6 +395,12 @@ describe("tool.read truncation", () => {
       expect(result.output).toContain("line14")
       expect(result.output).not.toContain("line0")
       expect(result.output).not.toContain("line15")
+    }),
+  )
+
+  it.live("rejects zero offset in parameter schema", () =>
+    Effect.sync(() => {
+      expect(() => Schema.decodeUnknownSync(Parameters)({ filePath: "/tmp/offset.txt", offset: 0 })).toThrow()
     }),
   )
 

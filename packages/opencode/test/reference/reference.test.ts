@@ -4,12 +4,14 @@ import { Effect, Layer } from "effect"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Global } from "@opencode-ai/core/global"
+import { writeFile } from "node:fs/promises"
 import { Config } from "../../src/config/config"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { Git } from "../../src/git"
 import { Reference } from "../../src/reference/reference"
 import { disposeAllInstances, provideTmpdirInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { githubBase, githubBaseUrl } from "../lib/github-base"
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -34,21 +36,6 @@ const scout = testEffect(
     referenceLayer({ experimentalScout: true }),
   ),
 )
-
-const githubBase = <A, E, R>(url: string, self: Effect.Effect<A, E, R>) =>
-  Effect.acquireUseRelease(
-    Effect.sync(() => {
-      const previous = process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL
-      process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL = url
-      return previous
-    }),
-    () => self,
-    (previous) =>
-      Effect.sync(() => {
-        if (previous) process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL = previous
-        else delete process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL
-      }),
-  )
 
 const git = Effect.fn("ReferenceTest.git")(function* (cwd: string, args: string[]) {
   return yield* Effect.promise(async () => {
@@ -108,6 +95,20 @@ describe("reference", () => {
     }),
   )
 
+  it.live("resolves Windows absolute string references as local", () =>
+    Effect.gen(function* () {
+      const resolved = Reference.resolve({
+        name: "docs",
+        reference: "C:\\docs",
+        directory: "C:\\workspace\\repo",
+        worktree: "C:\\workspace\\repo",
+      })
+
+      expect(resolved.kind).toBe("local")
+      if (resolved.kind === "local") expect(resolved.path).toBe("C:\\docs")
+    }),
+  )
+
   it.live("marks same-cache references with different branches invalid", () =>
     Effect.gen(function* () {
       const root = path.resolve("opencode-reference-root")
@@ -144,7 +145,7 @@ describe("reference", () => {
           const remoteDir = path.join(remoteRoot, "opencode-reference-test")
           const remoteRepo = path.join(remoteDir, "repo.git")
 
-          yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "configured\n"))
+          yield* Effect.promise(() => writeFile(path.join(source, "README.md"), "configured\n"))
           yield* git(source, ["add", "."])
           yield* git(source, ["commit", "-m", "add readme"])
           yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)
@@ -152,7 +153,7 @@ describe("reference", () => {
 
           const reference = yield* Reference.Service
           yield* githubBase(
-            `file://${remoteRoot}/`,
+            githubBaseUrl(remoteRoot),
             Effect.gen(function* () {
               yield* reference.init()
               yield* waitForContent(fs, path.join(cache, "README.md"), "configured\n")
@@ -176,6 +177,26 @@ describe("reference", () => {
     ),
   )
 
+  scout.live("contains configured local references", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const docs = path.join(path.dirname(dir), "docs")
+          const reference = yield* Reference.Service
+
+          expect(yield* reference.contains(path.join(docs, "README.md"))).toBe(true)
+          expect(yield* reference.contains(path.join(dir, "README.md"))).toBe(false)
+        }),
+      {
+        config: {
+          reference: {
+            docs: { path: "../docs" },
+          },
+        },
+      },
+    ),
+  )
+
   scout.live("refreshes configured git references on new instance init", () =>
     Effect.gen(function* () {
       const fs = yield* AppFileSystem.Service
@@ -188,14 +209,14 @@ describe("reference", () => {
       const remoteDir = path.join(remoteRoot, "opencode-reference-refresh")
       const remoteRepo = path.join(remoteDir, "repo.git")
 
-      yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "v1\n"))
+      yield* Effect.promise(() => writeFile(path.join(source, "README.md"), "v1\n"))
       yield* git(source, ["add", "."])
       yield* git(source, ["commit", "-m", "add readme"])
       yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)
       yield* git(remoteRoot, ["clone", "--bare", source, remoteRepo])
 
       yield* githubBase(
-        `file://${remoteRoot}/`,
+        githubBaseUrl(remoteRoot),
         provideTmpdirInstance(
           (_dir) =>
             Effect.gen(function* () {
@@ -215,13 +236,13 @@ describe("reference", () => {
 
       const branch = yield* git(source, ["branch", "--show-current"])
       yield* git(source, ["remote", "add", "origin", remoteRepo])
-      yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "v2\n"))
+      yield* Effect.promise(() => writeFile(path.join(source, "README.md"), "v2\n"))
       yield* git(source, ["add", "."])
       yield* git(source, ["commit", "-m", "update readme"])
       yield* git(source, ["push", "origin", `${branch}:${branch}`])
 
       yield* githubBase(
-        `file://${remoteRoot}/`,
+        githubBaseUrl(remoteRoot),
         provideTmpdirInstance(
           (_dir) =>
             Effect.gen(function* () {

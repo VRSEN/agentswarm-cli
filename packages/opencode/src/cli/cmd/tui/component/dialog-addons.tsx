@@ -102,7 +102,7 @@ export function DialogAddons(props: { providerID: string; onDone: () => void; er
       title: addon.title,
       value: addon.id,
       description: configured(addon) ? "configured" : addon.keys.join(", "),
-      gutter: (
+      gutter: () => (
         <text fg={selected().has(addon.id) ? theme.success : theme.textMuted}>
           {selected().has(addon.id) ? "✓" : "○"}
         </text>

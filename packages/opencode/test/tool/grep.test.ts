@@ -115,7 +115,7 @@ describe("tool.grep", () => {
     }),
   )
 
-  it.instance("does not ask for external_directory when alias path is allowed", () =>
+  it.instance("asks for external_directory on resolved symlink targets", () =>
     Effect.gen(function* () {
       if (process.platform === "win32") return
 
@@ -160,7 +160,9 @@ describe("tool.grep", () => {
       )
 
       expect(result.metadata.matches).toBe(1)
-      expect(requests.find((req) => req.permission === "external_directory")).toBeUndefined()
+      const external = requests.find((req) => req.permission === "external_directory")
+      expect(external).toBeDefined()
+      expect(external?.patterns).toContain(path.join(AppFileSystem.resolve(real), "*").replaceAll("\\", "/"))
     }),
   )
 })

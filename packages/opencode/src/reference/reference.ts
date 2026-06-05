@@ -48,11 +48,19 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Reference") {}
 
+function isAbsolute(value: string) {
+  return path.isAbsolute(value) || path.win32.isAbsolute(value)
+}
+
 export function referencePath(input: { directory: string; worktree: string; value: string }) {
   if (input.value.startsWith("~/")) return path.join(Global.Path.home, input.value.slice(2))
-  return path.isAbsolute(input.value)
+  return isAbsolute(input.value)
     ? input.value
     : path.resolve(input.worktree === "/" ? input.directory : input.worktree, input.value)
+}
+
+function isLocalReference(value: string) {
+  return value.startsWith(".") || value.startsWith("/") || value.startsWith("~") || path.win32.isAbsolute(value)
 }
 
 function resolveGit(
@@ -97,7 +105,7 @@ export function resolve(input: {
   worktree: string
 }): Resolved {
   if (typeof input.reference === "string") {
-    if (input.reference.startsWith(".") || input.reference.startsWith("/") || input.reference.startsWith("~")) {
+    if (isLocalReference(input.reference)) {
       return { name: input.name, kind: "local", path: referencePath({ ...input, value: input.reference }) }
     }
     return resolveGit({ name: input.name, repository: input.reference })
@@ -224,7 +232,7 @@ export const layer = Layer.effect(
         const full = normalizedTarget(target)
         if (!full) return false
         return yield* InstanceState.use(state, (s) =>
-          s.references.some((reference) => reference.kind === "git" && containsReferencePath(reference.path, full)),
+          s.references.some((reference) => reference.kind !== "invalid" && containsReferencePath(reference.path, full)),
         )
       }),
     })

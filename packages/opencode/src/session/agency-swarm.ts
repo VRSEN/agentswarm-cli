@@ -2,10 +2,9 @@ import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencySwarmHistory } from "@/agency-swarm/history"
 import { buildLitellmModelForClientConfig } from "@/agency-swarm/litellm-provider"
 import { Provider } from "@/provider/provider"
-import { Session } from "@/session"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionID } from "@/session/schema"
-import { Log } from "@/util"
+import { Log } from "@opencode-ai/core/util/log"
 import {
   isLocalAgencyURL,
   resolveClientConfig,
@@ -77,6 +76,8 @@ export namespace SessionAgencySwarm {
     /** Session UI model for this turn; forwarded as `client_config.model` (bare id for OpenAI, else `litellm/...`) for server-side override. */
     sessionModel?: { providerID: string; modelID: string; variantOptions?: Record<string, unknown> }
     recipientAgent?: string
+    loadSessionMessages: () => Promise<MessageV2.WithParts[]>
+    updateSessionMessage: <T extends MessageV2.Info>(message: T) => Promise<T>
   }
 
   export function optionsFromProvider(provider: Provider.Info | undefined): RuntimeOptions {
@@ -235,7 +236,8 @@ export namespace SessionAgencySwarm {
       isAborted: () => streamAborted,
       handleRunID,
       persistMessages: persistHistoryMessages,
-      applyAssistantLabel: (metadata) => applyAssistantLabel(input.assistantMessage, metadata),
+      applyAssistantLabel: (metadata) =>
+        applyAssistantLabel(input.assistantMessage, metadata, input.updateSessionMessage),
     })
 
     async function handleRunID(nextRunID: string) {
@@ -365,7 +367,8 @@ export namespace SessionAgencySwarm {
       let sessionMessages: MessageV2.WithParts[] | undefined
 
       const history = await AgencySwarmHistory.load(scope)
-      const chatHistory = await Session.messages({ sessionID: input.sessionID })
+      const chatHistory = await input
+        .loadSessionMessages()
         .then((msgs) => {
           sessionMessages = msgs
           const compacted = compactHistory({ msgs, currentID: input.userMessage.info.id })
@@ -417,6 +420,7 @@ export namespace SessionAgencySwarm {
           resolveHandoffRecipientFromHistory(chatHistory) ?? resolveHandoffRecipientFromHistory(history.chat_history),
         configuredRecipient: input.options.recipientAgent,
         configuredRecipientSelectedAt: input.options.recipientAgentSelectedAt,
+        loadSessionMessages: input.loadSessionMessages,
       })
       const sessionLitellmModel =
         input.sessionModel &&
@@ -543,7 +547,7 @@ export namespace SessionAgencySwarm {
           }
 
           const eventMeta = extractEventMeta(frame.payload)
-          await applyAssistantLabel(input.assistantMessage, eventMeta)
+          await applyAssistantLabel(input.assistantMessage, eventMeta, input.updateSessionMessage)
 
           const kind = asString(frame.payload["type"])
           if (kind === "error") {
@@ -560,7 +564,7 @@ export namespace SessionAgencySwarm {
               events.recordAgentUpdatedHandoff(maybeName)
               input.assistantMessage.agent = maybeName
               input.assistantMessage.mode = maybeName
-              await Session.updateMessage(input.assistantMessage)
+              await input.updateSessionMessage(input.assistantMessage)
               await AgencySwarmHistory.appendMessages(scope, [
                 {
                   type: "handoff_output_item",
@@ -690,12 +694,16 @@ export namespace SessionAgencySwarm {
     }
   }
 
-  async function applyAssistantLabel(message: MessageV2.Assistant, metadata: AgencySwarmEventMeta) {
+  async function applyAssistantLabel(
+    message: MessageV2.Assistant,
+    metadata: AgencySwarmEventMeta,
+    updateSessionMessage: StreamInput["updateSessionMessage"],
+  ) {
     if (!metadata.agent) return
     if (metadata.agent === message.agent) return
     message.agent = metadata.agent
     message.mode = metadata.agent
-    await Session.updateMessage(message)
+    await updateSessionMessage(message)
   }
 
   function asBoolean(value: unknown): boolean | undefined {
@@ -819,8 +827,12 @@ export namespace SessionAgencySwarm {
     historyRecipient?: string
     configuredRecipient?: string
     configuredRecipientSelectedAt?: number
+    loadSessionMessages: () => Promise<MessageV2.WithParts[]>
   }): Promise<string | undefined> {
-    const sessionRecipient = await resolveSessionRecipient(input.sessionID)
+    const sessionRecipient = await resolveSessionRecipient({
+      sessionID: input.sessionID,
+      loadSessionMessages: input.loadSessionMessages,
+    })
     if (
       !input.configuredRecipient &&
       input.configuredRecipientSelectedAt &&
@@ -918,9 +930,12 @@ export namespace SessionAgencySwarm {
     }
   }
 
-  async function resolveSessionRecipient(sessionID: SessionID) {
+  async function resolveSessionRecipient(input: {
+    sessionID: SessionID
+    loadSessionMessages: () => Promise<MessageV2.WithParts[]>
+  }) {
     try {
-      const messages = await Session.messages({ sessionID })
+      const messages = await input.loadSessionMessages()
       const last = messages.findLast((item) => {
         if (item.info.role !== "assistant") return false
         if (item.info.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
@@ -937,7 +952,7 @@ export namespace SessionAgencySwarm {
       }
     } catch (error) {
       log.warn("unable to load session recipient; skipping recipient override", {
-        sessionID,
+        sessionID: input.sessionID,
         error: error instanceof Error ? error.message : String(error),
       })
       return undefined

@@ -181,11 +181,12 @@ const startRemoteWorkspaceHttpServer = <E, R>(
     }),
   )
 
-const listenRemoteWebSocket = () =>
+const listenRemoteWebSocket = (capture?: (headers: Record<string, string>) => void) =>
   listenAdditionalServer((request) => {
     const sync = syncResponse(request)
     if (sync) return sync
     if (requestURL(request).pathname !== "/base/probe") return Effect.succeed(HttpServerResponse.empty({ status: 404 }))
+    capture?.(request.headers)
     return echoWebSocket(request)
   })
 
@@ -256,7 +257,9 @@ describe("HttpApi workspace routing middleware", () => {
         Layer.build,
       )
 
-      const response = yield* HttpClientRequest.patch(`/probe?workspace=${workspace.id}&keep=yes`).pipe(
+      const response = yield* HttpClientRequest.patch(
+        `/probe?workspace=${workspace.id}&directory=${encodeURIComponent("/secret/query")}&keep=yes`,
+      ).pipe(
         HttpClientRequest.setHeaders({
           "content-type": "application/json",
           "x-opencode-directory": "/secret/path",
@@ -274,6 +277,7 @@ describe("HttpApi workspace routing middleware", () => {
       expect(forwardedURL?.pathname).toBe("/base/probe")
       expect(forwardedURL?.searchParams.get("keep")).toBe("yes")
       expect(forwardedURL?.searchParams.get("workspace")).toBeNull()
+      expect(forwardedURL?.searchParams.get("directory")).toBeNull()
       expect(forwarded?.method).toBe("PATCH")
       expect(forwarded?.headers["content-type"]).toBe("application/json")
       expect(forwarded?.headers["x-target-auth"]).toBe("secret")
@@ -368,12 +372,16 @@ describe("HttpApi workspace routing middleware", () => {
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
       const project = yield* Project.use.fromDirectory(dir)
-      const remoteUrl = yield* listenRemoteWebSocket()
+      let forwardedHeaders: Record<string, string> | undefined
+      const remoteUrl = yield* listenRemoteWebSocket((headers) => {
+        forwardedHeaders = headers
+      })
       const workspace = yield* createRemoteWorkspace({
         dir,
         projectID: project.project.id,
         type: "remote-websocket-target",
         url: `${remoteUrl}/base`,
+        headers: { "x-target-auth": "secret" },
       })
 
       // The client connects to the local test server. The middleware should
@@ -396,6 +404,7 @@ describe("HttpApi workspace routing middleware", () => {
       const write = yield* socket.writer
 
       expect(yield* Queue.take(messages)).toBe("protocol:chat")
+      expect(forwardedHeaders?.["x-target-auth"]).toBe("secret")
       yield* write("hello")
       expect(yield* Queue.take(messages)).toBe("echo:hello")
     }),

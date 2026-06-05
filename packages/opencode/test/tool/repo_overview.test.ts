@@ -116,6 +116,23 @@ describe("tool.repo_overview", () => {
     ),
   )
 
+  it.live("only reports src entrypoints that exist", () =>
+    provideTmpdirInstance((_dir) =>
+      Effect.gen(function* () {
+        const repo = yield* tmpdirScoped({ git: true })
+        const fs = yield* AppFileSystem.Service
+        yield* fs.writeWithDirs(path.join(repo, "package.json"), JSON.stringify({ name: "src-only" }, null, 2))
+        yield* fs.writeWithDirs(path.join(repo, "src", "worker.ts"), "export const worker = true\n")
+
+        const tool = yield* init()
+        const result = yield* tool.execute({ path: repo }, ctx)
+
+        expect(result.metadata.entrypoints).not.toContain("file: src/index.ts")
+        expect(result.metadata.entrypoints).not.toContain("file: src/main.ts")
+      }),
+    ),
+  )
+
   it.live("fails clearly when a repository is not cloned", () =>
     provideTmpdirInstance((_dir) =>
       Effect.gen(function* () {

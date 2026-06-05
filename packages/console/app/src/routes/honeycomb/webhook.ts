@@ -82,8 +82,6 @@ export async function POST(input: APIEvent) {
   }
 
   const body = await input.request.json()
-  console.log(body, JSON.stringify(body, null, 2))
-
   const parsed = honeycombWebhookPayload.safeParse(body)
 
   if (!parsed.success) {

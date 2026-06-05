@@ -71,6 +71,7 @@ describe("ProxyUtil", () => {
           "x-opencode-directory": "/home/user/project",
           "x-opencode-workspace": "ws_123",
           "accept-encoding": "gzip",
+          authorization: "Basic local-secret",
           "x-custom": "keep",
         },
       })
@@ -78,14 +79,20 @@ describe("ProxyUtil", () => {
       expect(result.get("x-opencode-directory")).toBeNull()
       expect(result.get("x-opencode-workspace")).toBeNull()
       expect(result.get("accept-encoding")).toBeNull()
+      expect(result.get("authorization")).toBeNull()
       expect(result.get("x-custom")).toBe("keep")
     })
 
     test("merges extra headers", () => {
       const req = new Request("http://localhost", {
-        headers: { "content-type": "application/json" },
+        headers: { authorization: "Basic local-secret", "content-type": "application/json" },
       })
-      const result = ProxyUtil.headers(req, { "x-auth": "token", "content-type": "text/plain" })
+      const result = ProxyUtil.headers(req, {
+        authorization: "Bearer target-secret",
+        "x-auth": "token",
+        "content-type": "text/plain",
+      })
+      expect(result.get("authorization")).toBe("Bearer target-secret")
       expect(result.get("x-auth")).toBe("token")
       expect(result.get("content-type")).toBe("text/plain")
     })

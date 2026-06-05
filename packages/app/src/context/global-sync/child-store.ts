@@ -27,7 +27,7 @@ export function createChildStoreManager(input: {
   translate: (key: string, vars?: Record<string, string | number>) => string
   queryOptions: QueryOptionsApi
   global: {
-    provider: ProviderListResponse
+    provider: () => ProviderListResponse
   }
 }) {
   const children: Record<string, [Store<State>, SetStoreFunction<State>]> = {}
@@ -192,9 +192,10 @@ export function createChildStoreManager(input: {
             get provider() {
               const EMPTY = { all: [], connected: [], default: {} }
               if (providerQuery.isLoading) return EMPTY
-              if (providerQuery.data?.all.length === 0 && input.global.provider.all.length > 0)
-                return input.global.provider
-              return providerQuery.data ?? EMPTY
+              const provider = input.global.provider()
+              if (providerQuery.error || !providerQuery.data) return provider
+              if (providerQuery.data?.all.length === 0 && provider.all.length > 0) return provider
+              return providerQuery.data
             },
             config: {},
             get path() {

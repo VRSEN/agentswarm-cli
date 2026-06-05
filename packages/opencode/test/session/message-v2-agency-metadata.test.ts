@@ -57,13 +57,13 @@ const model: Provider.Model = {
 
 describe("session.message-v2 Agency metadata", () => {
   test("drops flat assistant metadata before model prompt conversion", async () => {
-    const assistantID = "m-assistant"
+    const assistantID = MessageID.make("msg_assistant")
     const input: MessageV2.WithParts[] = [
       {
         info: assistantInfo(assistantID),
         parts: [
           {
-            ...basePart(assistantID, "r1"),
+            ...basePart(assistantID, "prt_reasoning"),
             type: "reasoning",
             text: "thinking",
             time: { start: 0 },
@@ -81,7 +81,7 @@ describe("session.message-v2 Agency metadata", () => {
             },
           },
           {
-            ...basePart(assistantID, "t1"),
+            ...basePart(assistantID, "prt_answer"),
             type: "text",
             text: "answer",
             metadata: {
@@ -90,7 +90,7 @@ describe("session.message-v2 Agency metadata", () => {
             },
           },
           {
-            ...basePart(assistantID, "t2"),
+            ...basePart(assistantID, "prt_flat"),
             type: "text",
             text: "flat only",
             metadata: {
@@ -123,13 +123,13 @@ describe("session.message-v2 Agency metadata", () => {
   })
 
   test("drops flat Agency tool metadata before model prompt conversion", async () => {
-    const assistantID = "m-tool-assistant"
+    const assistantID = MessageID.make("msg_tool_assistant")
     const input: MessageV2.WithParts[] = [
       {
         info: assistantInfo(assistantID),
         parts: [
           {
-            ...basePart(assistantID, "tool-1"),
+            ...basePart(assistantID, "prt_tool_1"),
             type: "tool",
             callID: "call_1",
             tool: "send_message",
@@ -177,7 +177,7 @@ describe("session.message-v2 Agency metadata", () => {
   })
 })
 
-function assistantInfo(id: string): MessageV2.Assistant {
+function assistantInfo(id: MessageID): MessageV2.Assistant {
   return {
     id,
     sessionID,
@@ -199,10 +199,10 @@ function assistantInfo(id: string): MessageV2.Assistant {
   } as unknown as MessageV2.Assistant
 }
 
-function basePart(messageID: string, id: string) {
+function basePart(messageID: MessageID, id: string) {
   return {
     id: PartID.make(id),
     sessionID,
-    messageID: MessageID.make(messageID),
+    messageID,
   }
 }

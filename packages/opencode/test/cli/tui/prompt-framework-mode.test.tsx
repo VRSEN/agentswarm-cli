@@ -1,10 +1,13 @@
 /** @jsxImportSource @opentui/solid */
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { RGBA } from "@opentui/core"
-import { testRender } from "@opentui/solid"
+import { testRender, useRenderer } from "@opentui/solid"
+import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
+import { type ParentProps } from "solid-js"
 import * as AgencySwarmConnectionContext from "../../../src/cli/cmd/tui/context/agency-swarm-connection"
 import * as ArgsContext from "../../../src/cli/cmd/tui/context/args"
 import * as CommandDialogModule from "../../../src/cli/cmd/tui/component/dialog-command"
+import { CommandPaletteProvider } from "../../../src/cli/cmd/tui/context/command-palette"
 import * as ExitContext from "../../../src/cli/cmd/tui/context/exit"
 import * as EditorContext from "../../../src/cli/cmd/tui/context/editor"
 import * as EventContext from "../../../src/cli/cmd/tui/context/event"
@@ -16,6 +19,7 @@ import { RouteProvider } from "../../../src/cli/cmd/tui/context/route"
 import * as SDKContext from "../../../src/cli/cmd/tui/context/sdk"
 import * as SyncContext from "../../../src/cli/cmd/tui/context/sync"
 import * as ThemeContext from "../../../src/cli/cmd/tui/context/theme"
+import * as TuiConfigContext from "../../../src/cli/cmd/tui/context/tui-config"
 import * as PromptHistoryModule from "../../../src/cli/cmd/tui/component/prompt/history"
 import * as PromptStashModule from "../../../src/cli/cmd/tui/component/prompt/stash"
 import * as TextareaKeybindingsModule from "../../../src/cli/cmd/tui/component/textarea-keybindings"
@@ -24,6 +28,20 @@ import * as AutocompleteModule from "../../../src/cli/cmd/tui/component/prompt/a
 import { DialogProvider } from "../../../src/cli/cmd/tui/ui/dialog"
 import { AgencySwarmAdapter } from "../../../src/agency-swarm/adapter"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
+import { OpencodeKeymapProvider } from "../../../src/cli/cmd/tui/keymap"
+
+function TestKeymapProvider(props: ParentProps) {
+  const renderer = useRenderer()
+  return <OpencodeKeymapProvider keymap={createDefaultOpenTuiKeymap(renderer)}>{props.children}</OpencodeKeymapProvider>
+}
+
+const testTuiConfig = {
+  keybinds: {
+    get: () => [],
+    gather: () => [],
+  },
+  leader_timeout: 1000,
+} as any
 
 function flushEffects() {
   return Promise.resolve().then(() => Promise.resolve())
@@ -93,6 +111,7 @@ describe("prompt framework-mode footer", () => {
       enabled: () => false,
       connected: () => false,
       selection: () => undefined,
+      labelState: () => "none",
       onMention: () => () => {},
       server: () => undefined,
     } as any)
@@ -268,6 +287,8 @@ describe("prompt framework-mode footer", () => {
     spyOn(ProjectContext, "useProject").mockReturnValue({
       workspace: {
         current: () => undefined,
+        get: () => undefined,
+        list: () => [],
         status: () => undefined,
       },
       instance: {
@@ -280,16 +301,21 @@ describe("prompt framework-mode footer", () => {
       error: () => {},
       currentToast: null,
     } as any)
+    spyOn(TuiConfigContext, "useTuiConfig").mockReturnValue(testTuiConfig)
 
     const { Prompt } = await import("../../../src/cli/cmd/tui/component/prompt")
 
     const rendered = await testRender(
       () => (
-        <RouteProvider>
-          <DialogProvider>
-            <Prompt sessionID="session_1" showPlaceholder={false} ref={(ref) => (promptRef = ref)} />
-          </DialogProvider>
-        </RouteProvider>
+        <TestKeymapProvider>
+          <RouteProvider>
+            <DialogProvider>
+              <CommandPaletteProvider>
+                <Prompt sessionID="session_1" showPlaceholder={false} ref={(ref) => (promptRef = ref)} />
+              </CommandPaletteProvider>
+            </DialogProvider>
+          </RouteProvider>
+        </TestKeymapProvider>
       ),
       { width: 100, height: 20 },
     )
@@ -299,7 +325,7 @@ describe("prompt framework-mode footer", () => {
 
     const frame = rendered.captureCharFrame()
     expect(frame).toContain("Orchestrator")
-    expect(frame).toContain("tab agents")
+    expect(frame).toContain("agents")
     expect(frame).not.toContain("orchestrator-slug")
     expect(frame).not.toContain("Agent Builder")
     expect(frame).not.toContain("recipients")

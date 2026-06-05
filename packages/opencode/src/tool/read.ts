@@ -1,5 +1,5 @@
 import { Effect, Option, Schema, Scope, Stream } from "effect"
-import { NonNegativeInt } from "@opencode-ai/core/schema"
+import { NonNegativeInt, PositiveInt } from "@opencode-ai/core/schema"
 import * as path from "path"
 import * as Tool from "./tool"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -26,7 +26,7 @@ const SUPPORTED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "
 // unchanged; purely CLI-facing uses must now send numbers rather than strings.
 export const Parameters = Schema.Struct({
   filePath: Schema.String.annotate({ description: "The absolute path to the file or directory to read" }),
-  offset: Schema.optional(NonNegativeInt).annotate({
+  offset: Schema.optional(PositiveInt).annotate({
     description: "The line number to start reading from (1-indexed)",
   }),
   limit: Schema.optional(NonNegativeInt).annotate({
@@ -111,12 +111,13 @@ export const ReadTool = Tool.define(
       // Note: prefer manual TextDecoder over Stream.decodeText — when the source stream
       // ends without flushing, decodeText drops the final unterminated line. We also
       // avoid Stream.runForEachWhile (it currently swallows the final unterminated
-      // line of the upstream splitLines pipeline) and instead toggle a `done` flag
-      // and ignore subsequent lines.
+      // line of the upstream splitLines pipeline) and instead terminate the stream
+      // after `done` flips.
       const decoder = new TextDecoder("utf-8")
       yield* fs.stream(filepath).pipe(
         Stream.map((bytes) => decoder.decode(bytes, { stream: true })),
         Stream.splitLines,
+        Stream.takeUntil(() => flags.done),
         Stream.runForEach((text) =>
           Effect.sync(() => {
             if (flags.done) return

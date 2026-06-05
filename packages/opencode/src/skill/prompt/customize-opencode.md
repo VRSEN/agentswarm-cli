@@ -358,9 +358,10 @@ When a user's config is broken and opencode won't start, these env vars help:
   inject inline JSON as a final local-scope merge.
 - `OPENCODE_DISABLE_DEFAULT_PLUGINS=1`: skip default plugins.
 - `OPENCODE_PURE=1`: skip external plugins entirely.
-- `OPENCODE_DISABLE_EXTERNAL_SKILLS=1`,
-  `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`: skip the external skill scans under
+- `OPENCODE_DISABLE_EXTERNAL_SKILLS=1`: skip the external skill scans under
   `~/.claude/` and `~/.agents/`.
+- `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`: skip only Claude Code skill scans
+  under `~/.claude/`.
 
 ## When proposing edits
 

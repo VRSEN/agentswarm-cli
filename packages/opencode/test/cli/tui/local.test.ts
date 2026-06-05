@@ -171,6 +171,36 @@ describe("tui local model selection", () => {
     })
   })
 
+  test("falls back when configured agency-swarm is filtered out", () => {
+    expect(
+      selectCurrentModel({
+        agentModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+        },
+        providers: [
+          {
+            id: "openai",
+            models: {
+              "gpt-5": {},
+            },
+          },
+        ],
+        configModel: "agency-swarm/default",
+        configuredProviders: {
+          "agency-swarm": {
+            name: "Agency Swarm",
+            options: {},
+          },
+        },
+        enabledProviders: ["openai"],
+      }),
+    ).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5",
+    })
+  })
+
   test("prefers configured agency-swarm over stale stored model state", () => {
     expect(
       selectCurrentModel({

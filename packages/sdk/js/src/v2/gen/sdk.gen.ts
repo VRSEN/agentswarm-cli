@@ -201,13 +201,16 @@ import type {
   V2ProviderGetErrors,
   V2ProviderGetResponses,
   V2ProviderListResponses,
+  V2SessionCompactErrors,
   V2SessionCompactResponses,
   V2SessionContextResponses,
   V2SessionListErrors,
   V2SessionListResponses,
   V2SessionMessagesErrors,
   V2SessionMessagesResponses,
+  V2SessionPromptErrors,
   V2SessionPromptResponses,
+  V2SessionWaitErrors,
   V2SessionWaitResponses,
   VcsApplyErrors,
   VcsApplyResponses,
@@ -2548,6 +2551,7 @@ export class Pty extends HeyApiClient {
       ptyID: string
       directory?: string
       workspace?: string
+      cursor?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2559,6 +2563,7 @@ export class Pty extends HeyApiClient {
             { in: "path", key: "ptyID" },
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "query", key: "cursor" },
           ],
         },
       ],
@@ -4208,9 +4213,9 @@ export class Session3 extends HeyApiClient {
   }
 
   /**
-   * Send v2 message
+   * Unsupported v2 message action
    *
-   * Create a v2 session message and queue it for the agent loop.
+   * This v2 session action is not implemented yet and returns 501 NotImplemented.
    */
   public prompt<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4236,7 +4241,7 @@ export class Session3 extends HeyApiClient {
         },
       ],
     )
-    return (options?.client ?? this.client).post<V2SessionPromptResponses, unknown, ThrowOnError>({
+    return (options?.client ?? this.client).post<V2SessionPromptResponses, V2SessionPromptErrors, ThrowOnError>({
       url: "/api/session/{sessionID}/prompt",
       ...options,
       ...params,
@@ -4249,9 +4254,9 @@ export class Session3 extends HeyApiClient {
   }
 
   /**
-   * Compact v2 session
+   * Unsupported v2 compact action
    *
-   * Compact a v2 session conversation.
+   * This v2 session action is not implemented yet and returns 501 NotImplemented.
    */
   public compact<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4273,7 +4278,7 @@ export class Session3 extends HeyApiClient {
         },
       ],
     )
-    return (options?.client ?? this.client).post<V2SessionCompactResponses, unknown, ThrowOnError>({
+    return (options?.client ?? this.client).post<V2SessionCompactResponses, V2SessionCompactErrors, ThrowOnError>({
       url: "/api/session/{sessionID}/compact",
       ...options,
       ...params,
@@ -4281,9 +4286,9 @@ export class Session3 extends HeyApiClient {
   }
 
   /**
-   * Wait for v2 session
+   * Unsupported v2 wait action
    *
-   * Wait for a v2 session agent loop to become idle.
+   * This v2 session action is not implemented yet and returns 501 NotImplemented.
    */
   public wait<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4305,7 +4310,7 @@ export class Session3 extends HeyApiClient {
         },
       ],
     )
-    return (options?.client ?? this.client).post<V2SessionWaitResponses, unknown, ThrowOnError>({
+    return (options?.client ?? this.client).post<V2SessionWaitResponses, V2SessionWaitErrors, ThrowOnError>({
       url: "/api/session/{sessionID}/wait",
       ...options,
       ...params,

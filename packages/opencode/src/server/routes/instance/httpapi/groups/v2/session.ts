@@ -5,7 +5,12 @@ import { SessionV2 } from "@/v2/session"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../../middleware/authorization"
-import { WorkspaceRoutingQuery, WorkspaceRoutingQueryFields } from "../../middleware/workspace-routing"
+import { InstanceContextMiddleware } from "../../middleware/instance-context"
+import {
+  WorkspaceRoutingMiddleware,
+  WorkspaceRoutingQuery,
+  WorkspaceRoutingQueryFields,
+} from "../../middleware/workspace-routing"
 import { QueryBoolean } from "../query"
 
 export const SessionsQuery = Schema.Struct({
@@ -60,11 +65,12 @@ export const SessionGroup = HttpApiGroup.make("v2.session")
         delivery: SessionV2.Delivery.pipe(Schema.optional),
       }),
       success: SessionMessage.Message,
+      error: HttpApiError.NotImplemented,
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "v2.session.prompt",
-        summary: "Send v2 message",
-        description: "Create a v2 session message and queue it for the agent loop.",
+        summary: "Unsupported v2 message action",
+        description: "This v2 session action is not implemented yet and returns 501 NotImplemented.",
       }),
     ),
   )
@@ -73,11 +79,12 @@ export const SessionGroup = HttpApiGroup.make("v2.session")
       params: { sessionID: SessionID },
       query: WorkspaceRoutingQuery,
       success: HttpApiSchema.NoContent,
+      error: HttpApiError.NotImplemented,
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "v2.session.compact",
-        summary: "Compact v2 session",
-        description: "Compact a v2 session conversation.",
+        summary: "Unsupported v2 compact action",
+        description: "This v2 session action is not implemented yet and returns 501 NotImplemented.",
       }),
     ),
   )
@@ -86,11 +93,12 @@ export const SessionGroup = HttpApiGroup.make("v2.session")
       params: { sessionID: SessionID },
       query: WorkspaceRoutingQuery,
       success: HttpApiSchema.NoContent,
+      error: HttpApiError.NotImplemented,
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "v2.session.wait",
-        summary: "Wait for v2 session",
-        description: "Wait for a v2 session agent loop to become idle.",
+        summary: "Unsupported v2 wait action",
+        description: "This v2 session action is not implemented yet and returns 501 NotImplemented.",
       }),
     ),
   )
@@ -113,4 +121,6 @@ export const SessionGroup = HttpApiGroup.make("v2.session")
       description: "Experimental v2 routes.",
     }),
   )
+  .middleware(InstanceContextMiddleware)
+  .middleware(WorkspaceRoutingMiddleware)
   .middleware(Authorization)

@@ -3,11 +3,13 @@ import { SessionID } from "@/session/schema"
 import { WorkspaceID } from "@/control-plane/schema"
 import { and, asc, desc, eq, gt, gte, isNull, like, lt, or, type SQL } from "@/storage/db"
 import * as Database from "@/storage/db"
-import { Context, DateTime, Effect, Layer, Option, Schema } from "effect"
+import { Context, DateTime, Effect, Layer, Schema } from "effect"
+import { HttpApiError } from "effect/unstable/httpapi"
 import { SessionMessage } from "./session-message"
 import type { Prompt } from "@opencode-ai/core/session-prompt"
 import { EventV2 } from "./event"
 import { ProjectID } from "@/project/schema"
+import { InstanceState } from "@/effect/instance-state"
 import { SessionEvent } from "./session-event"
 import { V2Schema } from "@opencode-ai/core/v2-schema"
 import { optionalOmitUndefined } from "@opencode-ai/core/schema"
@@ -104,7 +106,7 @@ export interface Interface {
     sessionID: SessionID
     prompt: Prompt
     delivery?: Delivery
-  }) => Effect.Effect<SessionMessage.User, never>
+  }) => Effect.Effect<SessionMessage.User, HttpApiError.NotImplemented>
   readonly shell: (input: { id?: EventV2.ID; sessionID: SessionID; command: string }) => Effect.Effect<void, never>
   readonly skill: (input: { id?: EventV2.ID; sessionID: SessionID; skill: string }) => Effect.Effect<void, never>
   readonly subagent: (input: {
@@ -113,11 +115,11 @@ export interface Interface {
     prompt: Prompt
     agent: string
     model?: ModelV2.Ref
-  }) => Effect.Effect<void, NotFoundError>
+  }) => Effect.Effect<void, NotFoundError | HttpApiError.NotImplemented>
   readonly switchAgent: (input: { sessionID: SessionID; agent: string }) => Effect.Effect<void, never>
   readonly switchModel: (input: { sessionID: SessionID; model: ModelV2.Ref }) => Effect.Effect<void, never>
-  readonly compact: (sessionID: SessionID) => Effect.Effect<void, never>
-  readonly wait: (sessionID: SessionID) => Effect.Effect<void, never>
+  readonly compact: (sessionID: SessionID) => Effect.Effect<void, HttpApiError.NotImplemented>
+  readonly wait: (sessionID: SessionID) => Effect.Effect<void, HttpApiError.NotImplemented>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/v2/Session") {}
@@ -175,12 +177,13 @@ export const layer = Layer.effect(
         return fromRow(row)
       }),
       list: Effect.fn("V2Session.list")(function* (input) {
+        const ctx = yield* InstanceState.context
         const direction = input.cursor?.direction ?? "next"
         let order = input.order ?? "desc"
         // Query the adjacent rows in reverse, then flip them back into the requested order below.
         if (direction === "previous" && order === "asc") order = "desc"
         if (direction === "previous" && order === "desc") order = "asc"
-        const conditions: SQL[] = []
+        const conditions: SQL[] = [eq(SessionTable.project_id, ctx.project.id)]
         if (input.directory) conditions.push(eq(SessionTable.directory, input.directory))
         if (input.path)
           conditions.push(or(eq(SessionTable.path, input.path), like(SessionTable.path, `${input.path}/%`))!)
@@ -287,7 +290,7 @@ export const layer = Layer.effect(
         return rows.map((row) => decode(row))
       }),
       prompt: Effect.fn("V2Session.prompt")(function* (_input) {
-        return {} as any
+        return yield* new HttpApiError.NotImplemented({})
       }),
       shell: Effect.fn("V2Session.shell")(function* (_input) {}),
       skill: Effect.fn("V2Session.skill")(function* (_input) {}),
@@ -306,28 +309,15 @@ export const layer = Layer.effect(
         })
       }),
       subagent: Effect.fn("V2Session.subagent")(function* (input) {
-        const parent = yield* result.get(input.parentID)
-        const child = yield* result.create({
-          agent: input.agent,
-          model: input.model,
-          parentID: input.parentID,
-          workspaceID: parent.workspaceID,
-        })
-        yield* result.prompt({
-          prompt: input.prompt,
-          sessionID: child.id,
-        })
-        yield* Effect.gen(function* () {
-          yield* result.wait(child.id)
-          const messages = yield* result.messages({ sessionID: child.id, order: "desc" })
-          const assistant = messages.find((msg) => msg.type === "assistant")
-          if (!assistant) return
-          const text = assistant.content.findLast((part) => part.type === "text")
-          if (!text) return
-        }).pipe(Effect.forkChild())
+        yield* result.get(input.parentID)
+        return yield* new HttpApiError.NotImplemented({})
       }),
-      compact: Effect.fn("V2Session.compact")(function* (_sessionID) {}),
-      wait: Effect.fn("V2Session.wait")(function* (_sessionID) {}),
+      compact: Effect.fn("V2Session.compact")(function* (_sessionID) {
+        return yield* new HttpApiError.NotImplemented({})
+      }),
+      wait: Effect.fn("V2Session.wait")(function* (_sessionID) {
+        return yield* new HttpApiError.NotImplemented({})
+      }),
     })
 
     return result

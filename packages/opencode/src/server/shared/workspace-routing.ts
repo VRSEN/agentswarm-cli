@@ -32,5 +32,6 @@ export function workspaceProxyURL(target: string | URL, requestURL: URL) {
   proxyURL.search = requestURL.search
   proxyURL.hash = requestURL.hash
   proxyURL.searchParams.delete("workspace")
+  proxyURL.searchParams.delete("directory")
   return proxyURL
 }

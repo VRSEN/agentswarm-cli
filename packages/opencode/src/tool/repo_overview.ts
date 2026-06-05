@@ -224,12 +224,13 @@ export const RepoOverviewTool = Tool.define<typeof Parameters, Metadata, AppFile
               : []),
           ]
 
+          const srcEntries = topLevel.has("src")
+            ? yield* fs.readDirectoryEntries(path.join(target.path, "src")).pipe(Effect.orElseSucceed(() => []))
+            : []
           const common = commonEntrypoints(
             new Set([
               ...topLevel,
-              ...entries
-                .filter((entry) => entry.name === "src")
-                .flatMap(() => ["src/index.ts", "src/index.tsx", "src/index.js", "src/main.ts", "src/main.js"]),
+              ...srcEntries.map((entry) => `src/${entry.name}`),
             ]),
           )
           const structureResult = yield* structure(target.path, depth)

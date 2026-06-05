@@ -368,6 +368,26 @@ describe("ProviderTransform.options - gpt-5 reasoningEffort", () => {
     expect(result.reasoningEffort).toBeUndefined()
   })
 
+  test("openai-compatible gpt-5 should not set reasoningSummary", () => {
+    const model = createModel("gpt-5.2")
+    model.id = "litellm/gpt-5.2"
+    model.providerID = "litellm"
+    model.api = {
+      id: "gpt-5.2",
+      url: "https://litellm.example/v1",
+      npm: "@ai-sdk/openai-compatible",
+    }
+
+    const result = ProviderTransform.options({
+      model,
+      sessionID,
+      providerOptions: {},
+    })
+
+    expect(result.reasoningEffort).toBe("medium")
+    expect(result.reasoningSummary).toBeUndefined()
+  })
+
   test("gpt-5.5 should NOT set reasoningEffort", () => {
     const result = ProviderTransform.options({
       model: createModel("gpt-5.5"),

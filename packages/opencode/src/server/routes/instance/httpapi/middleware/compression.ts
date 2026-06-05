@@ -1,6 +1,6 @@
 import { deflateSync, gzipSync } from "node:zlib"
 import { Effect } from "effect"
-import { HttpBody, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpBody, HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 
 // Keep the server's compressible content-type set stable across HTTP backend changes.
 const COMPRESSIBLE_CONTENT_TYPE_REGEX =
@@ -17,10 +17,39 @@ type Encoding = "gzip" | "deflate"
 
 function pickEncoding(acceptEncoding: string | undefined): Encoding | undefined {
   if (!acceptEncoding) return undefined
-  const lower = acceptEncoding.toLowerCase()
-  if (lower.includes("gzip")) return "gzip"
-  if (lower.includes("deflate")) return "deflate"
-  return undefined
+  const explicit = new Map<string, number>()
+  let wildcard: number | undefined
+
+  for (const entry of acceptEncoding.split(",")) {
+    const [rawEncoding, ...params] = entry.split(";")
+    const encoding = rawEncoding?.trim().toLowerCase()
+    if (!encoding) continue
+    const q = params
+      .map((param) => param.trim().toLowerCase())
+      .find((param) => param.startsWith("q="))
+      ?.slice(2)
+    const weight = q === undefined ? 1 : Number(q)
+    if (!Number.isFinite(weight) || weight <= 0) {
+      explicit.set(encoding, 0)
+      continue
+    }
+    if (encoding === "*") wildcard = weight
+    else explicit.set(encoding, weight)
+  }
+
+  const gzip = explicit.has("gzip") ? explicit.get("gzip")! : wildcard
+  const deflate = explicit.has("deflate") ? explicit.get("deflate")! : wildcard
+  if ((gzip ?? 0) <= 0 && (deflate ?? 0) <= 0) return undefined
+  if ((gzip ?? 0) >= (deflate ?? 0)) return "gzip"
+  return "deflate"
+}
+
+function setVaryAcceptEncoding(response: HttpServerResponse.HttpServerResponse) {
+  const vary = response.headers.vary
+  if (!vary) return HttpServerResponse.setHeader(response, "vary", "Accept-Encoding")
+  const values = vary.split(",").map((value) => value.trim().toLowerCase())
+  if (values.includes("*") || values.includes("accept-encoding")) return response
+  return HttpServerResponse.setHeader(response, "vary", `${vary}, Accept-Encoding`)
 }
 
 function pathOf(url: string): string {
@@ -55,10 +84,14 @@ export const compressionLayer = HttpRouter.middleware<{ handles: unknown }>()((e
     if (!encoding) return response
 
     const compressed = encoding === "gzip" ? gzipSync(body.body) : deflateSync(body.body)
-    return HttpServerResponse.setHeader(
+    const encoded = HttpServerResponse.setHeader(
       HttpServerResponse.setBody(response, HttpBody.uint8Array(compressed, contentType)),
       "content-encoding",
       encoding,
     )
+    yield* HttpEffect.appendPreResponseHandler((_request, response) =>
+      Effect.succeed(response.headers["content-encoding"] ? setVaryAcceptEncoding(response) : response),
+    )
+    return setVaryAcceptEncoding(encoded)
   }),
 ).layer

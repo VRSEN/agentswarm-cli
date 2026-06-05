@@ -111,8 +111,14 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
   return result
 }
 
+type ScopedTmpDirOptions<E = never, R = never> = {
+  git?: boolean
+  config?: Partial<Config.Info> | (() => Partial<Config.Info>)
+  init?: (directory: string) => Effect.Effect<void, E, R>
+}
+
 /** Effectful scoped tmpdir. Cleaned up when the scope closes. Make sure these stay in sync */
-export function tmpdirScoped(options?: { git?: boolean; config?: Partial<Config.Info> }) {
+export function tmpdirScoped<E = never, R = never>(options?: ScopedTmpDirOptions<E, R>) {
   return Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const dirpath = sanitizePath(path.join(os.tmpdir(), "opencode-test-" + Math.random().toString(36).slice(2)))
@@ -139,13 +145,16 @@ export function tmpdirScoped(options?: { git?: boolean; config?: Partial<Config.
     }
 
     if (options?.config) {
+      const resolved = typeof options.config === "function" ? options.config() : options.config
       yield* Effect.promise(() =>
         fs.writeFile(
           path.join(dir, "opencode.json"),
-          JSON.stringify({ $schema: "https://opencode.ai/config.json", ...options.config }),
+          JSON.stringify({ $schema: "https://opencode.ai/config.json", ...resolved }),
         ),
       )
     }
+
+    if (options?.init) yield* options.init(dir)
 
     return dir
   })
@@ -165,7 +174,7 @@ export const provideInstance =
 
 export function provideTmpdirInstance<A, E, R>(
   self: (path: string) => Effect.Effect<A, E, R>,
-  options?: { git?: boolean; config?: Partial<Config.Info> },
+  options?: ScopedTmpDirOptions,
 ) {
   return Effect.gen(function* () {
     const path = yield* tmpdirScoped(options)
@@ -189,7 +198,7 @@ export function provideTmpdirInstance<A, E, R>(
 export class TestInstance extends Context.Service<TestInstance, { readonly directory: string }>()("@test/Instance") {}
 
 export const withTmpdirInstance =
-  (options?: { git?: boolean; config?: Partial<Config.Info> }) =>
+  <E2 = never, R2 = never>(options?: ScopedTmpDirOptions<E2, R2>) =>
   <A, E, R>(self: Effect.Effect<A, E, R>) =>
     Effect.gen(function* () {
       const directory = yield* tmpdirScoped(options)

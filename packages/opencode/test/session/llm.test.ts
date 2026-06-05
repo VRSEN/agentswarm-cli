@@ -415,6 +415,111 @@ describe("session.llm.stream", () => {
     })
   })
 
+  test("injects noop tool for LiteLLM proxy history with no active tools", async () => {
+    const server = state.server
+    if (!server) {
+      throw new Error("Server not initialized")
+    }
+
+    const providerID = "litellm-proxy"
+    const source = await loadFixture("openai", "gpt-4o")
+    const model = source.model
+
+    const request = waitRequest(
+      "/chat/completions",
+      new Response(createChatStream("Hello"), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    )
+
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(
+          path.join(dir, "opencode.json"),
+          JSON.stringify({
+            $schema: "https://opencode.ai/config.json",
+            enabled_providers: [providerID],
+            provider: {
+              [providerID]: {
+                name: "LiteLLM Proxy",
+                npm: "@ai-sdk/openai-compatible",
+                api: `${server.url.origin}/v1`,
+                models: {
+                  [model.id]: configModel(model),
+                },
+                options: {
+                  apiKey: "test-key",
+                  baseURL: `${server.url.origin}/v1`,
+                  litellmProxy: true,
+                },
+              },
+            },
+          }),
+        )
+      },
+    })
+
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const resolved = await getModel(ProviderID.make(providerID), ModelID.make(model.id))
+        const sessionID = SessionID.make("session-test-litellm-noop")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+        const user = {
+          id: MessageID.make("msg_user-litellm-noop"),
+          sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: agent.name,
+          model: { providerID: ProviderID.make(providerID), modelID: resolved.id },
+        } satisfies MessageV2.User
+
+        await drain({
+          user,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["You are a helpful assistant."],
+          messages: [
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "tool-call",
+                  toolCallId: "call-1",
+                  toolName: "read",
+                  input: { filePath: "README.md" },
+                },
+              ],
+            },
+            {
+              role: "tool",
+              content: [
+                {
+                  type: "tool-result",
+                  toolCallId: "call-1",
+                  toolName: "read",
+                  output: { type: "text", value: "done" },
+                },
+              ],
+            },
+          ] as ModelMessage[],
+          tools: {},
+        })
+
+        const capture = await request
+        const tools = capture.body.tools as Array<{ function?: { name?: string } }> | undefined
+        expect(tools?.some((item) => item.function?.name === "_noop")).toBe(true)
+      },
+    })
+  })
+
   test("service stream cancellation cancels provider response body promptly", async () => {
     const server = state.server
     if (!server) throw new Error("Server not initialized")

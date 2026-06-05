@@ -140,7 +140,7 @@ export const PtyConnectApi = HttpApi.make("pty-connect").add(
     .add(
       HttpApiEndpoint.get("connect", PtyPaths.connect, {
         params: Params,
-        query: WorkspaceRoutingQuery,
+        query: CursorQuery,
         success: described(Schema.Boolean, "Connected session"),
         error: [HttpApiError.Forbidden, HttpApiError.NotFound],
       }).annotateMerge(

@@ -114,7 +114,8 @@ function proxyRemote(
     }
     const proxyURL = workspaceProxyURL(target.url, url)
     const headers = request.headers as Record<string, string>
-    if (headers["upgrade"]?.toLowerCase() === "websocket") return yield* HttpApiProxy.websocket(request, proxyURL)
+    if (headers["upgrade"]?.toLowerCase() === "websocket")
+      return yield* HttpApiProxy.websocket(request, proxyURL, target.headers)
     const response = yield* HttpApiProxy.http(client, proxyURL, target.headers, request)
     const sync = Fence.parse(new Headers(response.headers))
     if (sync) {

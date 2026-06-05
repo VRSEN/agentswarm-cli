@@ -141,9 +141,10 @@ describe("containsPath", () => {
     "returns false for path outside both directory and worktree",
     () =>
       Effect.gen(function* () {
+        const test = yield* TestInstance
         const ctx = yield* InstanceState.context
-        expect(containsPath("/etc/passwd", ctx)).toBe(false)
-        expect(containsPath("/tmp/other-project", ctx)).toBe(false)
+        expect(containsPath(path.join(path.dirname(ctx.worktree), "outside-project", "passwd"), ctx)).toBe(false)
+        expect(containsPath(path.join(path.dirname(test.directory), "other-project", "file.txt"), ctx)).toBe(false)
       }),
     { git: true },
   )
@@ -167,7 +168,7 @@ describe("containsPath", () => {
         const ctx = yield* InstanceState.context
         expect(ctx.directory).toBe(ctx.worktree)
         expect(containsPath(path.join(test.directory, "file.txt"), ctx)).toBe(true)
-        expect(containsPath("/etc/passwd", ctx)).toBe(false)
+        expect(containsPath(path.join(path.dirname(ctx.worktree), "outside-project", "passwd"), ctx)).toBe(false)
       }),
     { git: true },
   )
@@ -178,8 +179,8 @@ describe("containsPath", () => {
       const ctx = yield* InstanceState.context
       // worktree is "/" for non-git projects, but containsPath should NOT allow all paths
       expect(containsPath(path.join(test.directory, "file.txt"), ctx)).toBe(true)
-      expect(containsPath("/etc/passwd", ctx)).toBe(false)
-      expect(containsPath("/tmp/other", ctx)).toBe(false)
+      expect(containsPath(path.join(path.parse(test.directory).root, "outside-project", "passwd"), ctx)).toBe(false)
+      expect(containsPath(path.join(path.dirname(test.directory), "other"), ctx)).toBe(false)
     }),
   )
 })

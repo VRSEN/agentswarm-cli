@@ -117,6 +117,8 @@ describe("util.flock", () => {
     const active = path.join(tmp.path, "active")
     const key = "flock:stress"
     const n = 16
+    // Stale recovery is tested separately; this test only proves live-owner exclusion.
+    const staleMs = 60_000
 
     const out = await Promise.all(
       Array.from({ length: n }, () =>
@@ -126,14 +128,18 @@ describe("util.flock", () => {
           done,
           active,
           holdMs: 30,
-          staleMs: 1_000,
+          staleMs,
           timeoutMs: 15_000,
         }),
       ),
     )
 
-    expect(out.map((x) => x.code)).toEqual(Array.from({ length: n }, () => 0))
-    expect(out.map((x) => x.stderr.toString()).filter(Boolean)).toEqual([])
+    const failed = out.flatMap((x, index) => {
+      const stderr = x.stderr.toString()
+      if (x.code === 0 && stderr === "") return []
+      return [{ index, code: x.code, stderr }]
+    })
+    expect(failed).toEqual([])
 
     const lines = (await fs.readFile(done, "utf8"))
       .split("\n")

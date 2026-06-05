@@ -391,7 +391,7 @@ export const layer = Layer.effect(
                       type: event.type,
                       data: event.data,
                     },
-                    { publish: true },
+                    { publish: true, ownerID: space.id },
                   ),
                 { discard: true },
               ),
@@ -440,7 +440,7 @@ export const layer = Layer.effect(
               if (payload.type === "server.heartbeat") return
 
               if (payload.type === "sync" && payload.syncEvent) {
-                const failed = yield* sync.replay(payload.syncEvent).pipe(
+                const failed = yield* sync.replay(payload.syncEvent, { publish: false, ownerID: space.id }).pipe(
                   Effect.as(false),
                   Effect.catchCause((error) =>
                     Effect.sync(() => {
@@ -619,53 +619,49 @@ export const layer = Layer.effect(
             .get(),
         )
 
-        if (current?.workspaceID) {
-          const previous = yield* get(current.workspaceID)
-          if (previous) {
-            const adapter = getAdapter(previous.projectID, previous.type)
-            const target = yield* EffectBridge.fromPromise(() => adapter.target(previous))
+        const previous = current?.workspaceID ? yield* get(current.workspaceID) : undefined
+        const claimPreviousSession = (ownerID: string | undefined) =>
+          previous && ownerID ? sync.claim(input.sessionID, ownerID) : Effect.void
 
-            if (target.type === "remote") {
-              yield* syncHistory(previous, target.url, target.headers).pipe(
-                Effect.catch((error) =>
-                  Effect.sync(() => {
-                    log.warn("session warp final source sync failed", {
-                      workspaceID: previous.id,
-                      sessionID: input.sessionID,
-                      error: errorData(error),
-                    })
-                  }),
-                ),
-              )
-            } else {
-              yield* prompt.cancel(input.sessionID)
-            }
+        if (previous) {
+          const adapter = getAdapter(previous.projectID, previous.type)
+          const target = yield* EffectBridge.fromPromise(() => adapter.target(previous))
 
-            // "claim" this session so any future events coming from
-            // the old workspace are ignored
-            yield* sync.claim(input.sessionID, input.workspaceID ?? previous.projectID)
+          if (target.type === "remote") {
+            yield* syncHistory(previous, target.url, target.headers).pipe(
+              Effect.catch((error) =>
+                Effect.sync(() => {
+                  log.warn("session warp final source sync failed", {
+                    workspaceID: previous.id,
+                    sessionID: input.sessionID,
+                    error: errorData(error),
+                  })
+                }),
+              ),
+            )
+          } else {
+            yield* prompt.cancel(input.sessionID)
           }
         }
 
-        const sourcePatch =
-          input.copyChanges && current?.workspaceID
-            ? yield* runInWorkspace({
-                workspaceID: current?.workspaceID ?? undefined,
-                local: () => vcs.diffRaw(),
-                remote: ({ target }) =>
-                  HttpClientRequest.get(route(target.url, "/vcs/diff/raw"), {
-                    headers: new Headers(target.headers),
-                  }),
-                fallback: "",
-                response: "text",
-              }).pipe(Effect.provide(InstanceStore.defaultLayer.pipe(Layer.provide(InstanceBootstrap.defaultLayer))))
-            : ""
+        const sourcePatch = input.copyChanges
+          ? yield* runInWorkspace({
+              workspaceID: current?.workspaceID ?? undefined,
+              local: () => vcs.diffRaw(),
+              remote: ({ target }) =>
+                HttpClientRequest.get(route(target.url, "/vcs/diff/raw"), {
+                  headers: new Headers(target.headers),
+                }),
+              fallback: "",
+              response: "text",
+            }).pipe(Effect.provide(InstanceStore.defaultLayer.pipe(Layer.provide(InstanceBootstrap.defaultLayer))))
+          : ""
 
         if (sourcePatch) {
           // Attempt to apply the file changes to the new workspace.
           // We intentionally do first so if it fails we don't warp
           // the session.
-          yield* runInWorkspace({
+          const applied = yield* runInWorkspace({
             workspaceID: input.workspaceID ?? undefined,
             local: () => vcs.apply({ patch: sourcePatch }),
             remote: ({ target }) =>
@@ -675,6 +671,12 @@ export const layer = Layer.effect(
               }),
             fallback: { applied: false },
           }).pipe(Effect.provide(InstanceStore.defaultLayer.pipe(Layer.provide(InstanceBootstrap.defaultLayer))))
+          if (!applied.applied) {
+            return yield* new Vcs.PatchApplyError({
+              message: "Patch can't be applied",
+              reason: "not-clean",
+            })
+          }
         }
 
         if (input.workspaceID === null) {
@@ -684,6 +686,7 @@ export const layer = Layer.effect(
               workspaceID: null,
             },
           })
+          yield* claimPreviousSession(previous?.projectID)
 
           log.info("session warp complete", {
             workspaceID: input.workspaceID,
@@ -711,6 +714,7 @@ export const layer = Layer.effect(
               workspaceID: input.workspaceID,
             },
           })
+          yield* claimPreviousSession(input.workspaceID)
 
           log.info("session warp complete", {
             workspaceID: input.workspaceID,
@@ -819,6 +823,7 @@ export const layer = Layer.effect(
             body,
           })
         }
+        yield* claimPreviousSession(input.workspaceID)
 
         log.info("session warp complete", {
           workspaceID: input.workspaceID,

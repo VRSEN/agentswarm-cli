@@ -15,15 +15,21 @@ export const corsVaryFix = HttpRouter.middleware(
     Effect.gen(function* () {
       const response = yield* effect
       const allowOrigin = response.headers["access-control-allow-origin"]
-      if (!allowOrigin || allowOrigin === "*") return response
+      const required = [
+        allowOrigin && allowOrigin !== "*" ? "Origin" : undefined,
+        response.headers["content-encoding"] ? "Accept-Encoding" : undefined,
+      ].filter((value): value is string => !!value)
+      if (required.length === 0) return response
 
       const vary = response.headers["vary"]
-      if (!vary) return HttpServerResponse.setHeader(response, "vary", "Origin")
+      if (!vary) return HttpServerResponse.setHeader(response, "vary", required.join(", "))
 
       const tokens = vary.split(",").map((s) => s.trim().toLowerCase())
-      if (tokens.includes("origin") || tokens.includes("*")) return response
+      if (tokens.includes("*")) return response
+      const missing = required.filter((value) => !tokens.includes(value.toLowerCase()))
+      if (missing.length === 0) return response
 
-      return HttpServerResponse.setHeader(response, "vary", `${vary}, Origin`)
+      return HttpServerResponse.setHeader(response, "vary", `${vary}, ${missing.join(", ")}`)
     }),
   { global: true },
 )

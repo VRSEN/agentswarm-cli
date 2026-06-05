@@ -128,7 +128,7 @@ export function DialogSessionList() {
       .map((x) => x.id)
   }
 
-  const [browseOrder] = createSignal<string[]>(orderByRecency(sync.data.session))
+  const browseOrder = createMemo(() => orderByRecency(sync.data.session))
 
   const RECENT_LIMIT = 5
 

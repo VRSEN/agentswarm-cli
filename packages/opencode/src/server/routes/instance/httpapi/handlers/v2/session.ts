@@ -1,6 +1,7 @@
 import { WorkspaceID } from "@/control-plane/schema"
 import { SessionV2 } from "@/v2/session"
 import { Effect, Schema } from "effect"
+import * as DateTime from "effect/DateTime"
 import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../../api"
 
@@ -19,6 +20,7 @@ const SessionCursor = Schema.Struct({
   search: Schema.String.pipe(Schema.optional),
 })
 type SessionCursor = typeof SessionCursor.Type
+type SessionCursorFilters = Pick<SessionCursor, "directory" | "path" | "workspaceID" | "roots" | "start" | "search">
 
 const decodeCursor = Schema.decodeUnknownSync(SessionCursor)
 
@@ -48,14 +50,19 @@ function hasCursorRoutingMismatch(
 }
 
 const sessionCursor = {
-  encode(
-    session: SessionV2.Info,
-    order: "asc" | "desc",
-    direction: "previous" | "next",
-    filters: Pick<SessionCursor, "directory" | "path" | "workspaceID" | "roots" | "start" | "search">,
-  ) {
+  filters(input: SessionCursorFilters): SessionCursorFilters {
+    return {
+      directory: input.directory,
+      path: input.path,
+      workspaceID: input.workspaceID,
+      roots: input.roots,
+      start: input.start,
+      search: input.search,
+    }
+  },
+  encode(session: SessionV2.Info, order: "asc" | "desc", direction: "previous" | "next", filters: SessionCursorFilters) {
     return Buffer.from(
-      JSON.stringify({ id: session.id, time: session.time.created, order, direction, ...filters }),
+      JSON.stringify({ ...filters, id: session.id, time: DateTime.toEpochMillis(session.time.created), order, direction }),
     ).toString("base64url")
   },
   decode(input: string) {
@@ -78,14 +85,16 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "v2.session
           })
           if (hasCursorRoutingMismatch(ctx.query, decoded)) return yield* new HttpApiError.BadRequest({})
           const order = decoded?.order ?? ctx.query.order ?? "desc"
-          const filters = decoded ?? {
-            directory: ctx.query.directory,
-            path: ctx.query.path,
-            workspaceID: ctx.query.workspace ? WorkspaceID.make(ctx.query.workspace) : undefined,
-            roots: ctx.query.roots,
-            start: ctx.query.start,
-            search: ctx.query.search,
-          }
+          const filters = sessionCursor.filters(
+            decoded ?? {
+              directory: ctx.query.directory,
+              path: ctx.query.path,
+              workspaceID: ctx.query.workspace ? WorkspaceID.make(ctx.query.workspace) : undefined,
+              roots: ctx.query.roots,
+              start: ctx.query.start,
+              search: ctx.query.search,
+            },
+          )
           const sessions = yield* session.list({
             limit: ctx.query.limit ?? DefaultSessionsLimit,
             order,

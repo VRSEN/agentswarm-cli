@@ -29,7 +29,13 @@ export class ApiKeyCredential extends Schema.Class<ApiKeyCredential>("AuthV2.Api
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 }) {}
 
-export const Credential = Schema.Union([OAuthCredential, ApiKeyCredential])
+export class WellKnownCredential extends Schema.Class<WellKnownCredential>("AuthV2.WellKnownCredential")({
+  type: Schema.Literal("wellknown"),
+  key: Schema.String,
+  token: Schema.String,
+}) {}
+
+export const Credential = Schema.Union([OAuthCredential, ApiKeyCredential, WellKnownCredential])
   .pipe(Schema.toTaggedUnion("type"))
   .annotate({
     identifier: "AuthV2.Credential",
@@ -127,13 +133,10 @@ export const layer = Layer.effect(
         const raw = parseAuthContent()
         if (raw && typeof raw === "object") {
           if ("version" in raw && raw.version === 2) return raw as Writable
-          return yield* writeMigrated(raw as Record<string, unknown>)
+          return migrate(raw as Record<string, unknown>)
         }
         return { version: 2, accounts: {}, active: {} }
       }
-
-      const legacy = yield* fsys.readJson(legacyFile).pipe(Effect.orElseSucceed(() => null))
-      if (legacy && typeof legacy === "object") return yield* writeMigrated(legacy as Record<string, unknown>)
 
       const raw = yield* fsys.readJson(file).pipe(Effect.orElseSucceed(() => null))
 
@@ -141,6 +144,9 @@ export const layer = Layer.effect(
         if ("version" in raw && raw.version === 2) return raw as Writable
         return yield* writeMigrated(raw as Record<string, unknown>)
       }
+
+      const legacy = yield* fsys.readJson(legacyFile).pipe(Effect.orElseSucceed(() => null))
+      if (legacy && typeof legacy === "object") return yield* writeMigrated(legacy as Record<string, unknown>)
 
       return { version: 2, accounts: {}, active: {} }
     })

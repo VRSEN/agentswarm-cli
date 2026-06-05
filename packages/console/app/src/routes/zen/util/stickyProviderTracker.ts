@@ -1,5 +1,7 @@
-import { Database, eq } from "@opencode-ai/console-core/drizzle/index.js"
+import { Database, eq, sql } from "@opencode-ai/console-core/drizzle/index.js"
 import { ModelStickyProviderTable } from "@opencode-ai/console-core/schema/ip.sql.js"
+
+const STICKY_PROVIDER_TTL_MS = 86_400_000
 
 export function createStickyTracker(modelId: string, stickyProvider: "strict" | "prefer" | undefined, session: string) {
   if (!stickyProvider) return
@@ -13,17 +15,21 @@ export function createStickyTracker(modelId: string, stickyProvider: "strict" | 
         tx
           .select({
             providerId: ModelStickyProviderTable.providerId,
+            timeUpdated: ModelStickyProviderTable.timeUpdated,
           })
           .from(ModelStickyProviderTable)
           .where(eq(ModelStickyProviderTable.id, id))
           .limit(1),
       )
-      _providerId = data[0]?.providerId
+      const row = data[0]
+      if (!row || Date.now() - row.timeUpdated.getTime() > STICKY_PROVIDER_TTL_MS) {
+        _providerId = undefined
+        return _providerId
+      }
+      _providerId = row.providerId
       return _providerId
     },
     set: async (providerId: string) => {
-      if (_providerId === providerId) return
-
       await Database.use((tx) =>
         tx
           .insert(ModelStickyProviderTable)
@@ -34,9 +40,11 @@ export function createStickyTracker(modelId: string, stickyProvider: "strict" | 
           .onDuplicateKeyUpdate({
             set: {
               providerId,
+              timeUpdated: sql`CURRENT_TIMESTAMP(3)`,
             },
           }),
       )
+      _providerId = providerId
     },
   }
 }

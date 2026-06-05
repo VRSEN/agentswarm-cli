@@ -70,7 +70,7 @@ const scenarios: Scenario[] = [
     .seeded(() =>
       Effect.promise(() =>
         Bun.write(
-          path.join(exerciseConfigDirectory, "opencode.jsonc"),
+          path.join(exerciseConfigDirectory, "agentswarm.jsonc"),
           JSON.stringify({ username: "httpapi-global" }, null, 2),
         ),
       ),
@@ -83,7 +83,7 @@ const scenarios: Scenario[] = [
           object(body)
           check(body.username === "httpapi-global", "global config update should return patched config")
           const text = yield* Effect.promise(() =>
-            Bun.file(path.join(exerciseConfigDirectory, "opencode.jsonc")).text(),
+            Bun.file(path.join(exerciseConfigDirectory, "agentswarm.jsonc")).text(),
           )
           check(text.includes('"username": "httpapi-global"'), "global config update should write isolated config file")
         }),
@@ -752,14 +752,14 @@ const scenarios: Scenario[] = [
       path: route("/api/session/{sessionID}/compact", { sessionID: "ses_httpapi_missing" }),
       headers: ctx.headers(),
     }))
-    .status(204, undefined, "none"),
+    .status(501, undefined, "none"),
   http.protected
     .post("/api/session/{sessionID}/wait", "v2.session.wait")
     .at((ctx) => ({
       path: route("/api/session/{sessionID}/wait", { sessionID: "ses_httpapi_missing" }),
       headers: ctx.headers(),
     }))
-    .status(204, undefined, "none"),
+    .status(501, undefined, "none"),
   http.protected
     .get("/session", "session.list")
     .seeded((ctx) => ctx.session({ title: "List me" }))

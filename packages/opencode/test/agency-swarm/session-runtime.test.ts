@@ -520,6 +520,8 @@ describe("session.agency-swarm runtime history", () => {
       },
       abort: abort.signal,
     } as Parameters<typeof SessionAgencySwarm.stream>[0]
+    input.loadSessionMessages = () => Session.messages({ sessionID: input.sessionID })
+    input.updateSessionMessage = (message) => Session.updateMessage(message)
     return {
       input,
       triggerCancel: () => abort.abort(),
