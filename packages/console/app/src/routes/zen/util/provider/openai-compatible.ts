@@ -71,7 +71,7 @@ export const oaCompatHelper: ProviderHelper = ({ adjustCacheUsage }) => ({
 
     return {
       inputTokens: inputTokens - (cacheReadTokens ?? 0),
-      outputTokens,
+      outputTokens: outputTokens - (reasoningTokens ?? 0),
       reasoningTokens,
       cacheReadTokens,
       cacheWrite5mTokens: cacheWriteTokens,
