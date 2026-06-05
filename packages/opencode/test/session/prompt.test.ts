@@ -32,7 +32,7 @@ import { SessionSummary } from "../../src/session/summary"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
 import { SessionPrompt } from "../../src/session/prompt"
-import { removeMessageAllowingQueued } from "../../src/session/queued-message"
+import { isQueuedAfterActiveAssistant, removeMessageAllowingQueued } from "../../src/session/queued-message"
 import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
@@ -356,6 +356,44 @@ function makeHttp(input?: { processor?: "blocking" }) {
 const it = testEffect(makeHttp())
 const race = testEffect(makeHttp({ processor: "blocking" }))
 const unix = process.platform !== "win32" ? it.instance : it.instance.skip
+
+it.effect(
+  "queued delete predicate uses message order instead of message ids",
+  Effect.sync(() => {
+    const sessionID = SessionID.descending()
+    const oldUser: MessageV2.User = {
+      id: MessageID.make("msg-z"),
+      sessionID,
+      role: "user",
+      time: { created: Date.now() },
+      agent: "build",
+      model: ref,
+    }
+    const active: MessageV2.Assistant = {
+      id: MessageID.make("msg-y"),
+      sessionID,
+      role: "assistant",
+      parentID: oldUser.id,
+      mode: "build",
+      agent: "build",
+      path: { cwd: "/tmp", root: "/tmp" },
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      modelID: ref.modelID,
+      providerID: ref.providerID,
+      time: { created: Date.now() },
+    }
+    const newUser: MessageV2.User = {
+      ...oldUser,
+      id: MessageID.make("msg-a"),
+    }
+    const msg = (info: MessageV2.Info): MessageV2.WithParts => ({ info, parts: [] })
+    const messages = [msg(oldUser), msg(active), msg(newUser)]
+
+    expect(isQueuedAfterActiveAssistant({ messages, messageID: oldUser.id })).toBe(false)
+    expect(isQueuedAfterActiveAssistant({ messages, messageID: newUser.id })).toBe(true)
+  }),
+)
 
 // Config that registers a custom "test" provider with a "test-model" model
 // so provider model lookup succeeds inside the loop.
@@ -1945,10 +1983,19 @@ unix(
       yield* waitForBusy(chat.id)
 
       const loop = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
-      yield* Effect.sleep("50 millis")
-
-      const messages = yield* sessions.messages({ sessionID: chat.id })
-      const queued = messages.findLast((message) => message.info.role === "user")
+      yield* pollWithTimeout(
+        Effect.sync(() => (loop.currentOpCount > 0 && loop.pollUnsafe() === undefined ? true : undefined)),
+        "timed out waiting for loop to queue behind shell",
+        "3 seconds",
+      )
+      const queued = yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const messages = yield* sessions.messages({ sessionID: chat.id })
+          return messages.findLast((message) => message.info.role === "user")
+        }),
+        "timed out waiting for shell user message",
+        "3 seconds",
+      )
       expect(queued?.info.role).toBe("user")
 
       const deleted = yield* removeMessageAllowingQueued({
