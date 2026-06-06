@@ -61,6 +61,12 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 - If the remote is unavailable, you may continue, but say that you are assuming the branch is already synced.
 - Keep pull-request branches linear on top of their base branch. Rebase onto the live base branch; do not merge the base branch into a pull-request branch.
 - Before opening a pull request, open and satisfy the live repo rules: `CONTRIBUTING.md`, `.github/pull_request_template.md`, `.github/workflows/pr-standards.yml`, `.github/workflows/compliance-close.yml`, and any workflow that will gate the touched change.
+- Before opening or relying on a pull request, check the full PR compliance contract:
+  - The title must match `^(feat|fix|docs|chore|refactor|test)(\([a-zA-Z0-9-]+\))?:`.
+  - For PRs whose title does not start with `docs:`, `refactor:`, or `feat:` or scoped variants like `docs(scope):`, `refactor(scope):`, or `feat(scope):`, link an existing issue in the issue section with `Closes #<number>`, `Fixes #<number>`, or `Resolves #<number>`; never leave `Closes #`.
+  - Keep all required template sections, check at least one type box, write real verification, and check checklist items only when true.
+  - After creating or editing a PR, read live bot comments, labels, and checks; fix compliance comments within the 2-hour window or escalate before it can close.
+  - Do not call a PR ready or mergeable while any compliance comment, needed label, or unresolved repo-gate issue remains.
 - Build-impact changes must go through a pull request before they reach the fork default branch. Build-impact includes runtime code, packaging, release scripts, generated binaries, dependency manifests or lockfiles, CI/build workflows, and tests or harnesses that gate shipped behavior. Direct default-branch commits for build-impact changes are forbidden unless the user explicitly approves an emergency exception for that exact change.
 - Pull-request-specific work includes comment review, thread replies, issue-link checks, pull-request body edits, outside-signal polling, and other GitHub-side mutations. Keep those checks tied to the live pull request, current head SHA, and repo gates.
 - Before requesting merge approval, verify the final diff, source/base/head SHAs, required checks, unresolved threads, and official review findings. The latest head is merge-ready only with a clean current-head local Codex review, green required checks, and zero unresolved threads.
