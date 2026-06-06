@@ -173,6 +173,34 @@ describe("agency session errors", () => {
     ).toBe(false)
   })
 
+  test("framework mode opens auth for docker-local agency-swarm backends", () => {
+    expect(
+      shouldOpenStartupAuthDialog({
+        frameworkMode: true,
+        providers: [
+          {
+            id: "agency-swarm",
+            name: "Agency Swarm",
+            source: "config",
+            env: [],
+            options: {
+              baseURL: "http://host.docker.internal:8000",
+            },
+            models: {},
+          },
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "config",
+            env: ["OPENAI_API_KEY"],
+            options: {},
+            models: {},
+          },
+        ],
+      }),
+    ).toBe(true)
+  })
+
   test("framework mode opens auth for non-loopback base URL when forwardUpstreamCredentials is on", () => {
     expect(
       shouldOpenStartupAuthDialog({

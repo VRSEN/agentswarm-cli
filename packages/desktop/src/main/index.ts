@@ -251,7 +251,7 @@ const main = Effect.gen(function* () {
 
     const xdg = process.env.XDG_DATA_HOME
     const base = xdg && xdg.length > 0 ? xdg : join(homedir(), ".local", "share")
-    return !existsSync(join(base, "opencode", "opencode.db"))
+    return !existsSync(join(base, "agentswarm", "opencode.db"))
   })()
   let overlay: BrowserWindow | null = null
 
@@ -337,7 +337,7 @@ const main = Effect.gen(function* () {
     }
   }
 
-  yield* Fiber.await(loadingTask)
+  yield* Fiber.join(loadingTask)
   setInitStep({ phase: "done" })
 
   if (overlay) yield* Deferred.await(loadingComplete)

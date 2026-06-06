@@ -125,7 +125,7 @@ describe("useEvent", () => {
     const { app, emit, seen, workspaces } = await mount()
 
     try {
-      emit(event(vcs("main"), { directory: "/tmp/other", project: projectID, workspace: "ws_a" }))
+      emit(event(vcs("main"), { directory: "/tmp/root", project: projectID, workspace: "ws_a" }))
 
       await wait(() => seen.length === 1)
 
@@ -149,12 +149,26 @@ describe("useEvent", () => {
     }
   })
 
-  test("delivers current project events regardless of active workspace", async () => {
+  test("ignores other workspace events when a workspace is active", async () => {
     const { app, emit, project, seen } = await mount()
 
     try {
       project.workspace.set("ws_a")
       emit(event(vcs("ws"), { directory: "/tmp/other", project: projectID, workspace: "ws_b" }))
+      await Bun.sleep(30)
+
+      expect(seen).toHaveLength(0)
+    } finally {
+      app.renderer.destroy()
+    }
+  })
+
+  test("delivers active workspace events", async () => {
+    const { app, emit, project, seen } = await mount()
+
+    try {
+      project.workspace.set("ws_a")
+      emit(event(vcs("ws"), { directory: "/tmp/other", project: projectID, workspace: "ws_a" }))
 
       await wait(() => seen.length === 1)
 

@@ -9302,6 +9302,9 @@
           },
           {
             "$ref": "#/components/schemas/EventSessionNextCompactionEnded"
+          },
+          {
+            "$ref": "#/components/schemas/EventServerHeartbeat"
           }
         ]
       },
@@ -11703,11 +11706,29 @@
               },
               {
                 "$ref": "#/components/schemas/SyncEventSessionNextCompactionEnded"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["server.heartbeat"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {}
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
               }
             ]
           }
         },
-        "required": ["directory", "payload"],
+        "required": ["payload"],
         "additionalProperties": false
       },
       "LogLevel": {
@@ -13035,17 +13056,6 @@
         "required": ["_tag"],
         "additionalProperties": false
       },
-      "effect_HttpApiError_NotImplemented": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["NotImplemented"]
-          }
-        },
-        "required": ["_tag"],
-        "additionalProperties": false
-      },
       "ToolListItem": {
         "type": "object",
         "properties": {
@@ -14203,6 +14213,17 @@
         "required": ["items", "cursor"],
         "additionalProperties": false
       },
+      "effect_HttpApiError_NotImplemented": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["NotImplemented"]
+          }
+        },
+        "required": ["_tag"],
+        "additionalProperties": false
+      },
       "V2SessionMessagesResponse": {
         "type": "object",
         "properties": {
@@ -14440,6 +14461,24 @@
           }
         },
         "required": ["name", "data"],
+        "additionalProperties": false
+      },
+      "EventServerHeartbeat": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["server.heartbeat"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
       "SyncEventMessageUpdated": {

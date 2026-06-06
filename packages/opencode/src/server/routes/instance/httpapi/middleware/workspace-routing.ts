@@ -70,7 +70,18 @@ function selectedWorkspaceID(url: URL, sessionWorkspaceID?: WorkspaceID): Worksp
 }
 
 function defaultDirectory(request: HttpServerRequest.HttpServerRequest, url: URL): string {
-  return url.searchParams.get("directory") || request.headers["x-opencode-directory"] || process.cwd()
+  const query = url.searchParams.get("directory")
+  if (query) return query
+  const header = request.headers["x-opencode-directory"]
+  return header ? decodeDirectoryHeader(header) : process.cwd()
+}
+
+function decodeDirectoryHeader(header: string): string {
+  try {
+    return decodeURIComponent(header)
+  } catch {
+    return header
+  }
 }
 
 function shouldStayOnControlPlane(request: HttpServerRequest.HttpServerRequest, url: URL): boolean {
@@ -87,7 +98,7 @@ function resolveWorkspace(
 
 function missingWorkspaceResponse(id: WorkspaceID): HttpServerResponse.HttpServerResponse {
   return HttpServerResponse.text(`Workspace not found: ${id}`, {
-    status: 500,
+    status: 404,
     contentType: "text/plain; charset=utf-8",
   })
 }

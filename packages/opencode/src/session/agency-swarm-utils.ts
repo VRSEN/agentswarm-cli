@@ -296,6 +296,11 @@ export function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptions): string | undefined {
   if (part.url.startsWith("file://")) {
+    if (!options.allowLocalFilePaths) {
+      throw new Error(
+        "Agent Swarm Run mode cannot send local file attachments to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
+      )
+    }
     try {
       return fileURLToPath(part.url)
     } catch {

@@ -459,7 +459,7 @@ export const layer = Layer.effect(
                 const event = evt as { directory?: string; project?: string; payload: unknown }
                 GlobalBus.emit("event", {
                   directory: event.directory,
-                  project: event.project,
+                  project: space.projectID,
                   workspace: space.id,
                   payload: event.payload,
                 })
@@ -620,8 +620,8 @@ export const layer = Layer.effect(
         )
 
         const previous = current?.workspaceID ? yield* get(current.workspaceID) : undefined
-        const claimPreviousSession = (ownerID: string | undefined) =>
-          previous && ownerID ? sync.claim(input.sessionID, ownerID) : Effect.void
+        const claimSessionOwner = (ownerID: string | undefined) =>
+          ownerID ? sync.claim(input.sessionID, ownerID) : Effect.void
 
         if (previous) {
           const adapter = getAdapter(previous.projectID, previous.type)
@@ -686,7 +686,7 @@ export const layer = Layer.effect(
               workspaceID: null,
             },
           })
-          yield* claimPreviousSession(previous?.projectID)
+          yield* claimSessionOwner(previous?.projectID)
 
           log.info("session warp complete", {
             workspaceID: input.workspaceID,
@@ -714,7 +714,7 @@ export const layer = Layer.effect(
               workspaceID: input.workspaceID,
             },
           })
-          yield* claimPreviousSession(input.workspaceID)
+          yield* claimSessionOwner(input.workspaceID)
 
           log.info("session warp complete", {
             workspaceID: input.workspaceID,
@@ -723,8 +723,6 @@ export const layer = Layer.effect(
           })
           return
         }
-
-        yield* claimPreviousSession(input.workspaceID)
 
         const rows = yield* db((db) =>
           db
@@ -759,72 +757,76 @@ export const layer = Layer.effect(
           last: rows.at(-1)?.seq,
         })
 
-        yield* Effect.forEach(
-          batches,
-          (events, i) =>
-            Effect.gen(function* () {
-              const response = yield* http.execute(
-                HttpClientRequest.post(route(target.url, "/sync/replay"), {
-                  headers: new Headers(target.headers),
-                  body: HttpBody.jsonUnsafe({
-                    directory: space.directory ?? "",
-                    events,
+        const previousOwnerID = previous?.id ?? space.projectID
+        yield* claimSessionOwner(input.workspaceID)
+        yield* Effect.gen(function* () {
+          yield* Effect.forEach(
+            batches,
+            (events, i) =>
+              Effect.gen(function* () {
+                const response = yield* http.execute(
+                  HttpClientRequest.post(route(target.url, "/sync/replay"), {
+                    headers: new Headers(target.headers),
+                    body: HttpBody.jsonUnsafe({
+                      directory: space.directory ?? "",
+                      events,
+                    }),
                   }),
-                }),
-              )
+                )
 
-              if (response.status < 200 || response.status >= 300) {
-                const body = yield* response.text
-                log.error("session warp batch failed", {
+                if (response.status < 200 || response.status >= 300) {
+                  const body = yield* response.text
+                  log.error("session warp batch failed", {
+                    workspaceID: input.workspaceID,
+                    sessionID: input.sessionID,
+                    step: i + 1,
+                    total,
+                    status: response.status,
+                    body,
+                  })
+                  return yield* new SessionWarpHttpError({
+                    message: `Failed to warp session ${input.sessionID} into workspace ${workspaceID}: HTTP ${response.status} ${body}`,
+                    workspaceID,
+                    sessionID: input.sessionID,
+                    status: response.status,
+                    body,
+                  })
+                }
+
+                log.info("session warp batch posted", {
                   workspaceID: input.workspaceID,
                   sessionID: input.sessionID,
                   step: i + 1,
                   total,
                   status: response.status,
-                  body,
                 })
-                return yield* new SessionWarpHttpError({
-                  message: `Failed to warp session ${input.sessionID} into workspace ${workspaceID}: HTTP ${response.status} ${body}`,
-                  workspaceID,
-                  sessionID: input.sessionID,
-                  status: response.status,
-                  body,
-                })
-              }
+              }),
+            { discard: true },
+          )
 
-              log.info("session warp batch posted", {
-                workspaceID: input.workspaceID,
-                sessionID: input.sessionID,
-                step: i + 1,
-                total,
-                status: response.status,
-              })
+          const response = yield* http.execute(
+            HttpClientRequest.post(route(target.url, "/sync/steal"), {
+              headers: new Headers(target.headers),
+              body: HttpBody.jsonUnsafe({ sessionID: input.sessionID }),
             }),
-          { discard: true },
-        )
-
-        const response = yield* http.execute(
-          HttpClientRequest.post(route(target.url, "/sync/steal"), {
-            headers: new Headers(target.headers),
-            body: HttpBody.jsonUnsafe({ sessionID: input.sessionID }),
-          }),
-        )
-        if (response.status < 200 || response.status >= 300) {
-          const body = yield* response.text
-          log.error("session warp steal failed", {
-            workspaceID: input.workspaceID,
-            sessionID: input.sessionID,
-            status: response.status,
-            body,
-          })
-          return yield* new SessionWarpHttpError({
-            message: `Failed to steal session ${input.sessionID} into workspace ${workspaceID}: HTTP ${response.status} ${body}`,
-            workspaceID,
-            sessionID: input.sessionID,
-            status: response.status,
-            body,
-          })
-        }
+          )
+          if (response.status < 200 || response.status >= 300) {
+            const body = yield* response.text
+            log.error("session warp steal failed", {
+              workspaceID: input.workspaceID,
+              sessionID: input.sessionID,
+              status: response.status,
+              body,
+            })
+            return yield* new SessionWarpHttpError({
+              message: `Failed to steal session ${input.sessionID} into workspace ${workspaceID}: HTTP ${response.status} ${body}`,
+              workspaceID,
+              sessionID: input.sessionID,
+              status: response.status,
+              body,
+            })
+          }
+        }).pipe(Effect.tapError(() => claimSessionOwner(previousOwnerID)))
 
         log.info("session warp complete", {
           workspaceID: input.workspaceID,

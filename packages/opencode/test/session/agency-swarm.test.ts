@@ -6883,10 +6883,8 @@ describe("session.agency-swarm", () => {
       }
     }) as typeof AgencySwarmAdapter.cancel
     AgencySwarmAdapter.streamRun = async function* (args) {
+      expect(args.abort?.aborted).toBeTrue()
       yield { type: "meta", runID: "run_cancel" }
-      if (args.abort?.aborted) {
-        throw new DOMException("Aborted", "AbortError")
-      }
       yield { type: "end" }
     } as typeof AgencySwarmAdapter.streamRun
 
@@ -6906,6 +6904,7 @@ describe("session.agency-swarm", () => {
   test("stream treats external abort as cancelled without error event", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* (args) {
+      expect(args.abort?.aborted).toBeTrue()
       await new Promise<void>((resolve, reject) => {
         if (args.abort?.aborted) {
           reject(new DOMException("Aborted", "AbortError"))
@@ -7001,6 +7000,55 @@ describe("session.agency-swarm", () => {
     }
 
     expect(deltas).toEqual(["Hi, there!"])
+  })
+
+  test("stream preserves text when output_item.done is the first text event", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: {
+              type: "message",
+              id: "msg_done_only",
+              content: [{ type: "output_text", text: "Done only." }],
+              provider_data: { response_id: "response_done_only" },
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "message_output_created",
+          item: {
+            raw_item: {
+              type: "message",
+              id: "msg_done_only_replay",
+              content: [{ type: "output_text", text: "Done only." }],
+              provider_data: { response_id: "response_done_only" },
+            },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "text-delta") {
+        deltas.push(event.text)
+      }
+    }
+
+    expect(deltas).toEqual(["Done only."])
   })
 
   test("stream does not duplicate text when message_output_created replays open output_text", async () => {
