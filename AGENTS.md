@@ -68,6 +68,19 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 - Every pull-request merge needs explicit user approval and a human alignment gate. Pull requests with user-testable behavior also need a human QA gate. Worker review can inform these gates but cannot replace them.
 - Pending GitHub checks, hosted reviews, unresolved pull-request comments, unresolved official review findings, and other agent-visible workflows are open work until fixed, rerun green, or classified as non-blocking with checked evidence.
 
+## Completion Artifacts And QA
+
+- Work is not done until the user has the real thing to run: a binary, package, script, or direct runnable artifact built from the exact code under test.
+- Final handoff must include the exact CLI command the user should run. If the artifact is a local file, use that exact path in the command.
+- Final handoff must include a clear QA script with step-by-step checks, expected results, and what failure looks like.
+- Do not replace the artifact, command, or QA script with hashes, version text, vague smoke proof, or a summary.
+- Do not mention a package version as proof unless that version was actually released, installed, or built into the artifact being handed over. Name the artifact path and commit instead.
+- Drive any smoke automation yourself when it should finish in under 3 minutes.
+- When relevant full testing should finish in under 5 minutes, run it yourself before handoff.
+- When relevant full testing is likely to take more than 5 minutes, give the user a ready-to-run script and exact manual QA steps instead of calling the work done.
+- Test every user-facing function touched by the change, and every nearby function that the change could affect.
+- If a check needs secrets, live services, global installs, or long human QA, say that clearly and give the safest exact command or script for the user to run.
+
 ## Danger Zone: Public And Irreversible Operations
 
 - Pull-request merges, release notes, tags, GitHub Releases, npm publishing, yanks, unpublishes, and any public package or release change are danger-zone operations.
