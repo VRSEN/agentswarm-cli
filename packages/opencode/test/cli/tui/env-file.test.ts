@@ -1,30 +1,41 @@
 import { describe, expect, test } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { AgencyProduct } from "../../../src/agency-swarm/product"
 import { readEnvKey, writeEnvKey, writeEnvKeys } from "../../../src/cli/cmd/tui/util/env-file"
 
 async function tempdir() {
-  return mkdtemp(path.join(os.tmpdir(), "agentswarm-env-file-"))
+  return realpath(await mkdtemp(path.join(os.tmpdir(), "agentswarm-env-file-")))
+}
+
+const stableCwd = path.resolve(import.meta.dir, "../../..")
+
+function withCwd<T>(dir: string, run: () => T) {
+  process.chdir(dir)
+  try {
+    return run()
+  } finally {
+    process.chdir(stableCwd)
+  }
 }
 
 describe("env-file", () => {
   test("defaults to the caller cwd when no product state root is set", async () => {
     const dir = await tempdir()
-    const cwd = process.cwd()
     const root = process.env.AGENTSWARM_PRODUCT_STATE_ROOT
     try {
       delete process.env.AGENTSWARM_PRODUCT_STATE_ROOT
-      process.chdir(dir)
 
-      writeEnvKey("SEARCH_API_KEY", "search-key")
+      const envDir = withCwd(dir, () => {
+        writeEnvKey("SEARCH_API_KEY", "search-key")
+        expect(readEnvKey("SEARCH_API_KEY")).toBe("search-key")
+        return process.cwd()
+      })
 
-      expect(await readFile(path.join(dir, ".env"), "utf8")).toContain("SEARCH_API_KEY=")
-      expect(readEnvKey("SEARCH_API_KEY")).toBe("search-key")
+      expect(await readFile(path.join(envDir, ".env"), "utf8")).toContain("SEARCH_API_KEY=")
     } finally {
-      process.chdir(cwd)
       if (root === undefined) delete process.env.AGENTSWARM_PRODUCT_STATE_ROOT
       else process.env.AGENTSWARM_PRODUCT_STATE_ROOT = root
       await rm(dir, { recursive: true, force: true })
@@ -34,19 +45,18 @@ describe("env-file", () => {
   test("uses product state root for default env reads and writes", async () => {
     const caller = await tempdir()
     const root = await tempdir()
-    const cwd = process.cwd()
     const previous = process.env.AGENTSWARM_PRODUCT_STATE_ROOT
     try {
       process.env.AGENTSWARM_PRODUCT_STATE_ROOT = root
-      process.chdir(caller)
 
-      writeEnvKey("SEARCH_API_KEY", "search-key")
+      withCwd(caller, () => {
+        writeEnvKey("SEARCH_API_KEY", "search-key")
+        expect(readEnvKey("SEARCH_API_KEY")).toBe("search-key")
+      })
 
-      expect(readEnvKey("SEARCH_API_KEY")).toBe("search-key")
       expect(await readFile(path.join(root, ".env"), "utf8")).toContain("SEARCH_API_KEY=")
       await expect(readFile(path.join(caller, ".env"), "utf8")).rejects.toThrow()
     } finally {
-      process.chdir(cwd)
       if (previous === undefined) delete process.env.AGENTSWARM_PRODUCT_STATE_ROOT
       else process.env.AGENTSWARM_PRODUCT_STATE_ROOT = previous
       await rm(caller, { recursive: true, force: true })
@@ -56,26 +66,24 @@ describe("env-file", () => {
 
   test("keeps a relative product state root stable after cwd changes", async () => {
     const caller = await tempdir()
-    const cwd = process.cwd()
     const previous = process.env.AGENTSWARM_PRODUCT_STATE_ROOT
     try {
       process.env.AGENTSWARM_PRODUCT_STATE_ROOT = "state"
-      process.chdir(caller)
-      const root = path.resolve("state")
+      const root = withCwd(caller, () => path.resolve("state"))
       const project = path.join(root, "project")
 
-      writeEnvKey("SEARCH_API_KEY", "search-key")
+      withCwd(caller, () => writeEnvKey("SEARCH_API_KEY", "search-key"))
       await mkdir(project, { recursive: true })
-      process.chdir(project)
-      writeEnvKey("COMPOSIO_API_KEY", "composio-key")
+      withCwd(project, () => writeEnvKey("COMPOSIO_API_KEY", "composio-key"))
 
       expect(process.env.AGENTSWARM_PRODUCT_STATE_ROOT).toBe(root)
-      expect(readEnvKey("SEARCH_API_KEY")).toBe("search-key")
-      expect(readEnvKey("COMPOSIO_API_KEY")).toBe("composio-key")
+      withCwd(project, () => {
+        expect(readEnvKey("SEARCH_API_KEY")).toBe("search-key")
+        expect(readEnvKey("COMPOSIO_API_KEY")).toBe("composio-key")
+      })
       expect(await readFile(path.join(root, ".env"), "utf8")).toContain("COMPOSIO_API_KEY=")
       await expect(readFile(path.join(project, "state", ".env"), "utf8")).rejects.toThrow()
     } finally {
-      process.chdir(cwd)
       if (previous === undefined) delete process.env.AGENTSWARM_PRODUCT_STATE_ROOT
       else process.env.AGENTSWARM_PRODUCT_STATE_ROOT = previous
       await rm(caller, { recursive: true, force: true })
@@ -85,22 +93,21 @@ describe("env-file", () => {
   test("uses compiled product state root when the env var is absent", async () => {
     const caller = await tempdir()
     const root = await tempdir()
-    const cwd = process.cwd()
     const previousEnv = process.env.AGENTSWARM_PRODUCT_STATE_ROOT
     const product = AgencyProduct as unknown as { stateRoot: string | undefined }
     const previousRoot = product.stateRoot
     try {
       delete process.env.AGENTSWARM_PRODUCT_STATE_ROOT
       product.stateRoot = root
-      process.chdir(caller)
 
-      writeEnvKey("SEARCH_API_KEY", "search-key")
+      withCwd(caller, () => {
+        writeEnvKey("SEARCH_API_KEY", "search-key")
+        expect(readEnvKey("SEARCH_API_KEY")).toBe("search-key")
+      })
 
-      expect(readEnvKey("SEARCH_API_KEY")).toBe("search-key")
       expect(await readFile(path.join(root, ".env"), "utf8")).toContain("SEARCH_API_KEY=")
       await expect(readFile(path.join(caller, ".env"), "utf8")).rejects.toThrow()
     } finally {
-      process.chdir(cwd)
       product.stateRoot = previousRoot
       if (previousEnv === undefined) delete process.env.AGENTSWARM_PRODUCT_STATE_ROOT
       else process.env.AGENTSWARM_PRODUCT_STATE_ROOT = previousEnv
@@ -112,22 +119,21 @@ describe("env-file", () => {
   test("uses compiled product state root when the env var is blank", async () => {
     const caller = await tempdir()
     const root = await tempdir()
-    const cwd = process.cwd()
     const previousEnv = process.env.AGENTSWARM_PRODUCT_STATE_ROOT
     const product = AgencyProduct as unknown as { stateRoot: string | undefined }
     const previousRoot = product.stateRoot
     try {
       process.env.AGENTSWARM_PRODUCT_STATE_ROOT = "   "
       product.stateRoot = root
-      process.chdir(caller)
 
-      writeEnvKey("SEARCH_API_KEY", "search-key")
+      withCwd(caller, () => {
+        writeEnvKey("SEARCH_API_KEY", "search-key")
+        expect(readEnvKey("SEARCH_API_KEY")).toBe("search-key")
+      })
 
-      expect(readEnvKey("SEARCH_API_KEY")).toBe("search-key")
       expect(await readFile(path.join(root, ".env"), "utf8")).toContain("SEARCH_API_KEY=")
       await expect(readFile(path.join(caller, ".env"), "utf8")).rejects.toThrow()
     } finally {
-      process.chdir(cwd)
       product.stateRoot = previousRoot
       if (previousEnv === undefined) delete process.env.AGENTSWARM_PRODUCT_STATE_ROOT
       else process.env.AGENTSWARM_PRODUCT_STATE_ROOT = previousEnv

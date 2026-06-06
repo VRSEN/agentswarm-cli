@@ -1,4 +1,4 @@
-import { Log } from "@/util"
+import { Log } from "@opencode-ai/core/util/log"
 import { sanitizeClientConfigForTransport } from "./client-config"
 
 export namespace AgencySwarmAdapter {

@@ -9,7 +9,7 @@ import { AgencySwarmRunSession } from "./run-session"
 import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
 import { Storage } from "@/storage/storage"
 import { Filesystem } from "@/util/filesystem"
-import type { Session } from "@/session"
+import type { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
 import { AgencyProduct } from "./product"
 import {
@@ -213,12 +213,12 @@ async function getResumeSession(
   if (sessions) {
     return Array.from(sessions).find((item) => item.id === sessionID)
   }
-  const { Session } = await import("@/session")
+  const { Session } = await import("@/session/index")
   return Session.get(SessionID.make(sessionID)).catch(() => undefined)
 }
 
 async function listResumeSessions(directory: string) {
-  const { Session } = await import("@/session")
+  const { Session } = await import("@/session/index")
   const start = Date.now() - 30 * 24 * 60 * 60 * 1000
   return Array.from(Session.listGlobal({ directory, roots: true, start, limit: 1 }))
 }
@@ -363,7 +363,7 @@ async function isLegacyAgencySwarmRunSession(sessionID: Session.Info["id"]) {
 }
 
 async function getLatestSessionProviderID(sessionID: Session.Info["id"]) {
-  const { Session } = await import("@/session")
+  const { Session } = await import("@/session/index")
   const [latest] = await Session.messages({ sessionID, limit: 1 }).catch(() => [])
   if (!latest) return
   return latest.info.role === "user" ? latest.info.model.providerID : latest.info.providerID
@@ -1446,6 +1446,7 @@ async function waitForServer(input: {
   }
 
   input.child.kill()
+  input.stderr.stop()
   const stderr = await input.stderr.read(SERVER_STDERR_COLLECT_TIMEOUT_MS)
   const summary = summarizeActionableBridgeStderr(stderr)
   const warningSummary = summary ? "" : summarizeBridgeStderr(stderr)
@@ -1623,7 +1624,7 @@ function getVenvUvPath(directory: string) {
 export function resolveLauncherCommand(cmd: string[], platform: NodeJS.Platform = process.platform) {
   if (platform !== "win32") return cmd
   const executable = cmd[0]?.toLowerCase()
-  if (executable === "npm" || executable === "npx" || executable === "git") return ["cmd.exe", "/c", ...cmd]
+  if (executable === "npm" || executable === "npx") return ["cmd.exe", "/c", ...cmd]
   return cmd
 }
 
@@ -1739,6 +1740,14 @@ function openCommandLog(logFile?: string) {
   }
 
   try {
+    if (existsSync(logFile) && statSync(logFile).isDirectory()) {
+      disable()
+      return {
+        getLogFile: () => undefined,
+        write(_chunk: string) {},
+        async close() {},
+      }
+    }
     stream = createWriteStream(logFile, { flags: "a" })
     stream.on("error", () => {
       disable()

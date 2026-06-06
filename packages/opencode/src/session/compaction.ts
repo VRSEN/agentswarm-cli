@@ -2,22 +2,26 @@ import { BusEvent } from "@/bus/bus-event"
 import { Bus } from "@/bus"
 import * as Session from "./session"
 import { SessionID, MessageID, PartID } from "./schema"
-import { Provider } from "../provider"
+import { Provider, parseModel } from "@/provider/provider"
 import { MessageV2 } from "./message-v2"
-import z from "zod"
-import { Token } from "../util"
-import { Log } from "../util"
+import { Token } from "@/util/token"
+import * as Log from "@opencode-ai/core/util/log"
 import { SessionProcessor } from "./processor"
 import { Agent } from "@/agent/agent"
 import { Plugin } from "@/plugin"
-import { Config } from "@/config"
-import { NotFoundError } from "@/storage"
+import { Config } from "@/config/config"
+import { NotFoundError } from "@/storage/storage"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { Effect, Layer, Context, Schema } from "effect"
-import { InstanceState } from "@/effect"
+import * as DateTime from "effect/DateTime"
+import { InstanceState } from "@/effect/instance-state"
 import { isOverflow as overflow, usable } from "./overflow"
 import { makeRuntime } from "@/effect/run-service"
-import { fn } from "@/util/fn"
+import { serviceUse } from "@/effect/service-use"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { SyncEvent } from "@/sync"
+import { SessionEvent } from "@/v2/session-event"
+import { SessionAgencySwarm } from "./agency-swarm"
 
 const log = Log.create({ service: "session.compaction" })
 
@@ -37,8 +41,10 @@ const PRUNE_PROTECTED_TOOLS = ["skill"]
 const DEFAULT_TAIL_TURNS = 2
 const MIN_PRESERVE_RECENT_TOKENS = 2_000
 const MAX_PRESERVE_RECENT_TOKENS = 8_000
-const SUMMARY_TEMPLATE = `Output exactly this Markdown structure and keep the section order unchanged:
----
+const AGENCY_COMPACTION_MODEL_ERROR =
+  "No real compaction model is configured for Agency Swarm Default. Set small_model or agent.compaction.model to a non-Agency Swarm model before running /compact."
+const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
+<template>
 ## Goal
 - [single-sentence task summary]
 
@@ -66,7 +72,7 @@ const SUMMARY_TEMPLATE = `Output exactly this Markdown structure and keep the se
 
 ## Relevant Files
 - [file or directory path: why it matters, or "(none)"]
----
+</template>
 
 Rules:
 - Keep every section, even when empty.
@@ -205,6 +211,8 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionCompaction") {}
 
+export const use = serviceUse(Service)
+
 export const layer: Layer.Layer<
   Service,
   never,
@@ -215,6 +223,8 @@ export const layer: Layer.Layer<
   | Plugin.Service
   | SessionProcessor.Service
   | Provider.Service
+  | SyncEvent.Service
+  | RuntimeFlags.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -225,6 +235,8 @@ export const layer: Layer.Layer<
     const plugin = yield* Plugin.Service
     const processors = yield* SessionProcessor.Service
     const provider = yield* Provider.Service
+    const sync = yield* SyncEvent.Service
+    const flags = yield* RuntimeFlags.Service
 
     const isOverflow = Effect.fn("SessionCompaction.isOverflow")(function* (input: {
       tokens: MessageV2.Assistant["tokens"]
@@ -239,6 +251,32 @@ export const layer: Layer.Layer<
     }) {
       const msgs = yield* MessageV2.toModelMessagesEffect(input.messages, input.model)
       return Token.estimate(JSON.stringify(msgs))
+    })
+
+    const resolveModel = Effect.fn("SessionCompaction.resolveModel")(function* (input: {
+      agent: Agent.Info
+      fallback: { providerID: ProviderID; modelID: ModelID }
+      cfg: Config.Info
+    }) {
+      if (input.agent.model && input.agent.model.providerID !== SessionAgencySwarm.PROVIDER_ID) {
+        return yield* provider.getModel(input.agent.model.providerID, input.agent.model.modelID).pipe(Effect.orDie)
+      }
+
+      if (input.fallback.providerID !== SessionAgencySwarm.PROVIDER_ID) {
+        return yield* provider.getModel(input.fallback.providerID, input.fallback.modelID).pipe(Effect.orDie)
+      }
+
+      if (input.cfg.small_model) {
+        const small = parseModel(input.cfg.small_model)
+        if (small.providerID !== SessionAgencySwarm.PROVIDER_ID) {
+          const model = yield* provider
+            .getModel(small.providerID, small.modelID)
+            .pipe(Effect.catchTag("ProviderModelNotFoundError", () => Effect.succeed(undefined)))
+          if (model) return model
+        }
+      }
+
+      return undefined
     })
 
     const select = Effect.fn("SessionCompaction.select")(function* (input: {
@@ -379,11 +417,45 @@ export const layer: Layer.Layer<
         }
       }
 
-      const agent = yield* agents.get("compaction")
-      const model = agent.model
-        ? yield* provider.getModel(agent.model.providerID, agent.model.modelID)
-        : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID)
       const cfg = yield* config.get()
+      const ctx = yield* InstanceState.context
+      const agent = yield* agents.get("compaction")
+      const model = yield* resolveModel({ agent, fallback: userMessage.model, cfg })
+      if (!model) {
+        yield* session.updateMessage({
+          id: MessageID.ascending(),
+          role: "assistant",
+          parentID: input.parentID,
+          sessionID: input.sessionID,
+          mode: "compaction",
+          agent: "compaction",
+          variant: userMessage.model.variant,
+          summary: true,
+          path: {
+            cwd: ctx.directory,
+            root: ctx.worktree,
+          },
+          cost: 0,
+          tokens: {
+            output: 0,
+            input: 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          },
+          modelID: userMessage.model.modelID,
+          providerID: userMessage.model.providerID,
+          time: {
+            created: Date.now(),
+            completed: Date.now(),
+          },
+          finish: "error",
+          error: new MessageV2.APIError({
+            message: AGENCY_COMPACTION_MODEL_ERROR,
+            isRetryable: false,
+          }).toObject(),
+        })
+        return "stop"
+      }
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
       const prior = completedCompactions(history)
       const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))
@@ -406,7 +478,6 @@ export const layer: Layer.Layer<
         stripMedia: true,
         toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
       })
-      const ctx = yield* InstanceState.context
       const msg: MessageV2.Assistant = {
         id: MessageID.ascending(),
         role: "assistant",
@@ -510,7 +581,9 @@ export const layer: Layer.Layer<
               {
                 sessionID: input.sessionID,
                 agent: userMessage.agent,
-                model: yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID),
+                model: yield* provider
+                  .getModel(userMessage.model.providerID, userMessage.model.modelID)
+                  .pipe(Effect.orDie),
                 provider: {
                   source: info.source,
                   info,
@@ -556,7 +629,25 @@ export const layer: Layer.Layer<
       }
 
       if (processor.message.error) return "stop"
-      if (result === "continue") yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
+      if (result === "continue") {
+        const summary = summaryText(
+          (yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)).find(
+            (item) => item.info.id === msg.id,
+          ) ?? {
+            info: msg,
+            parts: [],
+          },
+        )
+        if (flags.experimentalEventSystem) {
+          yield* sync.run(SessionEvent.Compaction.Ended.Sync, {
+            sessionID: input.sessionID,
+            timestamp: DateTime.makeUnsafe(Date.now()),
+            text: summary ?? "",
+            include: selected.tail_start_id,
+          })
+        }
+        yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
+      }
       return result
     })
 
@@ -583,6 +674,13 @@ export const layer: Layer.Layer<
         auto: input.auto,
         overflow: input.overflow,
       })
+      if (flags.experimentalEventSystem) {
+        yield* sync.run(SessionEvent.Compaction.Started.Sync, {
+          sessionID: input.sessionID,
+          timestamp: DateTime.makeUnsafe(Date.now()),
+          reason: input.auto ? "auto" : "manual",
+        })
+      }
     })
 
     return Service.of({
@@ -603,6 +701,8 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Plugin.defaultLayer),
     Layer.provide(Bus.layer),
     Layer.provide(Config.defaultLayer),
+    Layer.provide(SyncEvent.defaultLayer),
+    Layer.provide(RuntimeFlags.defaultLayer),
   ),
 )
 
@@ -615,16 +715,5 @@ export async function isOverflow(input: { tokens: MessageV2.Assistant["tokens"];
 export async function prune(input: { sessionID: SessionID }) {
   return runPromise((svc) => svc.prune(input))
 }
-
-export const create = fn(
-  z.object({
-    sessionID: SessionID.zod,
-    agent: z.string(),
-    model: z.object({ providerID: ProviderID.zod, modelID: ModelID.zod }),
-    auto: z.boolean(),
-    overflow: z.boolean().optional(),
-  }),
-  (input) => runPromise((svc) => svc.create(input)),
-)
 
 export * as SessionCompaction from "./compaction"

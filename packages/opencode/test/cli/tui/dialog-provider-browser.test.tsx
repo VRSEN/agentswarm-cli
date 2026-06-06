@@ -1,8 +1,10 @@
 /** @jsxImportSource @opentui/solid */
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { RGBA } from "@opentui/core"
-import { testRender } from "@opentui/solid"
+import { testRender, useRenderer } from "@opentui/solid"
+import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { EventEmitter } from "events"
+import { type ParentProps } from "solid-js"
 import * as DialogContext from "../../../src/cli/cmd/tui/ui/dialog"
 import * as LocalContext from "../../../src/cli/cmd/tui/context/local"
 import * as SDKContext from "../../../src/cli/cmd/tui/context/sdk"
@@ -10,6 +12,7 @@ import * as SyncContext from "../../../src/cli/cmd/tui/context/sync"
 import * as ThemeContext from "../../../src/cli/cmd/tui/context/theme"
 import * as ToastModule from "../../../src/cli/cmd/tui/ui/toast"
 import { Telemetry } from "../../../src/telemetry/telemetry"
+import { OpencodeKeymapProvider } from "../../../src/cli/cmd/tui/keymap"
 
 let openShouldFail = false
 let openCalledWith: string | undefined
@@ -38,6 +41,11 @@ mock.module("../../../src/cli/cmd/tui/ui/dialog-prompt", () => {
 })
 
 const { createDialogProviderOptionsWithFilter } = await import("../../../src/cli/cmd/tui/component/dialog-provider")
+
+function TestKeymapProvider(props: ParentProps) {
+  const renderer = useRenderer()
+  return <OpencodeKeymapProvider keymap={createDefaultOpenTuiKeymap(renderer)}>{props.children}</OpencodeKeymapProvider>
+}
 
 function flushEffects() {
   return Promise.resolve().then(() => Promise.resolve())
@@ -136,14 +144,18 @@ describe("dialog provider browser auth", () => {
       return <box />
     }
 
-    await testRender(() => <Capture />)
+    await testRender(() => (
+      <TestKeymapProvider>
+        <Capture />
+      </TestKeymapProvider>
+    ))
     openShouldFail = true
 
     await options()[0].onSelect?.()
 
     expect(dialogContent).toBeDefined()
 
-    await testRender(() => dialogContent!())
+    await testRender(() => <TestKeymapProvider>{dialogContent!()}</TestKeymapProvider>)
     await flushEffects()
     await Bun.sleep(25)
 
@@ -213,7 +225,11 @@ describe("dialog provider browser auth", () => {
       return <box />
     }
 
-    await testRender(() => <Capture />)
+    await testRender(() => (
+      <TestKeymapProvider>
+        <Capture />
+      </TestKeymapProvider>
+    ))
 
     expect(options()).toEqual([])
   })

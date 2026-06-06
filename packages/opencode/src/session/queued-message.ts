@@ -25,10 +25,10 @@ export const removeMessageAllowingQueued = Effect.fn("SessionQueuedMessage.remov
 
     if (busy) {
       const running = yield* state.isRunning(input.sessionID)
-      if (!running) throw new Session.BusyError(input.sessionID)
+      if (!running) throw new Session.BusyError({ sessionID: input.sessionID })
       const messages = yield* session.messages({ sessionID: input.sessionID })
       if (!isQueuedAfterActiveAssistant({ messages, messageID: input.messageID })) {
-        throw new Session.BusyError(input.sessionID)
+        throw new Session.BusyError({ sessionID: input.sessionID })
       }
     }
 

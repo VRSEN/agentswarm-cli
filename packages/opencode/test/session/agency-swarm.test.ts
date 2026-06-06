@@ -11,7 +11,7 @@ import { Env } from "../../src/env"
 import { Instance } from "../../src/project/instance"
 import { Provider } from "../../src/provider/provider"
 import { ModelID, ProviderID } from "../../src/provider/schema"
-import { Session } from "../../src/session"
+import { Session } from "../../src/session/index"
 import { SessionAgencySwarm } from "../../src/session/agency-swarm"
 import { MessageID, PartID } from "../../src/session/schema"
 import { tmpdir } from "../fixture/fixture"
@@ -88,6 +88,20 @@ describe("session.agency-swarm", () => {
       options,
       abort: abort.signal,
     } as Parameters<typeof SessionAgencySwarm.stream>[0]
+    input.loadSessionMessages = async () => {
+      try {
+        return await Session.messages({ sessionID: input.sessionID })
+      } catch {
+        return [input.userMessage]
+      }
+    }
+    input.updateSessionMessage = async (message) => {
+      try {
+        return await Session.updateMessage(message)
+      } catch {
+        return message
+      }
+    }
 
     return {
       input,
@@ -1224,7 +1238,7 @@ describe("session.agency-swarm", () => {
     })
   })
 
-  test("stream forwards selected OpenRouter model and key through direct client config", async () => {
+  test("stream prefers stored OpenRouter key over stale env for direct client config", async () => {
     mockHistory()
     spyOn(Auth, "all").mockImplementation(async () => ({
       openai: { type: "api", key: "stored-openai" } as any,
@@ -1273,7 +1287,7 @@ describe("session.agency-swarm", () => {
     }
 
     expect(captured).toEqual({
-      api_key: "env-openrouter",
+      api_key: "stored-openrouter",
       model: "openrouter/anthropic/claude-sonnet-4.5",
     })
   })
@@ -1324,7 +1338,7 @@ describe("session.agency-swarm", () => {
     }
 
     expect(captured).toEqual({
-      api_key: "env-openrouter",
+      api_key: "stored-openrouter",
       model: "openrouter/anthropic/claude-sonnet-4.5",
       model_settings_extra_args: {
         extra_body: {
@@ -1383,7 +1397,7 @@ describe("session.agency-swarm", () => {
     }
 
     expect(captured).toEqual({
-      api_key: "env-openrouter",
+      api_key: "stored-openrouter",
       model: "openrouter/anthropic/claude-sonnet-4.5",
       model_settings_extra_args: {
         extra_body: {
@@ -1441,7 +1455,7 @@ describe("session.agency-swarm", () => {
     }
 
     expect(captured).toEqual({
-      api_key: "env-openrouter",
+      api_key: "stored-openrouter",
       model: "openrouter/openai/gpt-5.4",
       model_settings_extra_args: {
         extra_body: {

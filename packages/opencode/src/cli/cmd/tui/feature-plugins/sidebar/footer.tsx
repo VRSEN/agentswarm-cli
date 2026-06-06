@@ -1,4 +1,5 @@
-import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
+import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
+import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo, Show } from "solid-js"
 import { Global } from "@opencode-ai/core/global"
 import { AgencyProduct } from "@/agency-swarm/product"
@@ -80,7 +81,7 @@ const tui: TuiPlugin = async (api) => {
   })
 }
 
-const plugin: TuiPluginModule & { id: string } = {
+const plugin: InternalTuiPlugin = {
   id,
   tui,
 }

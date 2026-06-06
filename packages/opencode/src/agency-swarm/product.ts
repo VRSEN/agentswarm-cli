@@ -345,16 +345,23 @@ export namespace AgencyProduct {
   const skip = [
     "Run {highlight}/share{/highlight}",
     "Press {highlight}Ctrl+X E{/highlight} or {highlight}/editor{/highlight}",
+    "Use {highlight}/editor{/highlight}",
     "Run {highlight}/init{/highlight}",
     "Use {highlight}/review{/highlight}",
-    "Run {highlight}/models{/highlight}",
+    "{highlight}/models{/highlight}",
     "Add {highlight}.md{/highlight} files to {highlight}.agentswarm/agent/{/highlight}",
     "Use {highlight}@agent-name{/highlight} in prompts to invoke specialized subagents",
     "Run {highlight}/connect{/highlight} to add API keys for 75+ supported LLM providers",
     "Press {highlight}F2{/highlight}",
     "Configure {highlight}model{/highlight}",
     "OpenCode auto-handles OAuth",
+    "Switch to {highlight}Plan{/highlight}",
+    "Create JSON theme files in {highlight}.agentswarm/themes/{/highlight}",
+    "Use {highlight}\"theme\": \"system\"{/highlight}",
+    "Themes support dark/light variants",
+    "Use numeric xterm color codes",
     "Run {highlight}opencode serve{/highlight}",
+    `Run {highlight}${cmd} agent create{/highlight}`,
     "Use {highlight}/opencode{/highlight}",
     "Run {highlight}opencode github install{/highlight}",
     "Comment {highlight}/opencode fix this{/highlight}",
@@ -374,6 +381,13 @@ export namespace AgencyProduct {
   const swap = [
     ["OpenCode", name],
     ["Open Code", name],
+    ["{highlight}opencode.json{/highlight}", "{highlight}agentswarm.json{/highlight}"],
+    ["{highlight}~/.config/opencode/tui.json{/highlight}", "{highlight}~/.config/agentswarm/tui.json{/highlight}"],
+    ["{highlight}.opencode/commands/{/highlight}", "{highlight}.agentswarm/command/{/highlight}"],
+    ["{highlight}.opencode/agents/{/highlight}", "{highlight}.agentswarm/agent/{/highlight}"],
+    ["{highlight}.opencode/tools/{/highlight}", "{highlight}.agentswarm/tools/{/highlight}"],
+    ["{highlight}.opencode/plugins/{/highlight}", "{highlight}.agentswarm/plugin/{/highlight}"],
+    ["{highlight}.opencode/themes/{/highlight}", "{highlight}.agentswarm/themes/{/highlight}"],
     ["{highlight}opencode run{/highlight}", `{highlight}${cmd} run{/highlight}`],
     ["{highlight}opencode --continue{/highlight}", `{highlight}${cmd} --continue{/highlight}`],
     ["{highlight}opencode run -f file.ts{/highlight}", `{highlight}${cmd} run -f file.ts{/highlight}`],
@@ -383,27 +397,58 @@ export namespace AgencyProduct {
     ["{highlight}opencode debug config{/highlight}", `{highlight}${cmd} debug config{/highlight}`],
   ] as const
 
-  export function tips(input: string[]) {
-    const seen = new Set<string>()
-    const list = input
-      .filter((item) => !skip.some((text) => item.includes(text)))
-      .map((item) => {
-        let next = item
-        for (const [from, to] of swap) next = next.replaceAll(from, to)
-        if (next.includes("{highlight}/compact{/highlight}")) {
-          next = next.replace("long sessions near context limits", "long agency-swarm sessions near context limits")
-        }
-        if (next.includes("{highlight}opencode auth list{/highlight}")) {
-          next = `Run {highlight}${cmd} auth list{/highlight} to see configured provider credentials`
-        }
+  type TipFunction = (...args: unknown[]) => unknown
+
+  function skipped(value: string) {
+    return skip.some((text) => value.includes(text))
+  }
+
+  function rewrite(value: string) {
+    let next = value
+    for (const [from, to] of swap) next = next.replaceAll(from, to)
+    if (next.includes("{highlight}/compact{/highlight}")) {
+      next = next.replace("long sessions near context limits", "long agency-swarm sessions near context limits")
+    }
+    if (next.includes("{highlight}opencode auth list{/highlight}")) {
+      next = `Run {highlight}${cmd} auth list{/highlight} to see configured provider credentials`
+    }
+    return next
+  }
+
+  function transform<T>(item: T): T | undefined {
+    if (typeof item === "string") {
+      if (skipped(item)) return undefined
+      const next = rewrite(item)
+      if (skipped(next)) return undefined
+      return next as T
+    }
+    if (typeof item === "function") {
+      const fn = item as TipFunction
+      return ((...args: unknown[]) => {
+        const value = fn(...args)
+        if (typeof value !== "string") return value
+        if (skipped(value)) return undefined
+        const next = rewrite(value)
+        if (skipped(next)) return undefined
         return next
-      })
-      .concat(add)
-      .filter((item) => {
-        if (seen.has(item)) return false
-        seen.add(item)
-        return true
-      })
+      }) as T
+    }
+    return item
+  }
+
+  export function tips<T>(input: T[]): T[] {
+    const seen = new Set<string>()
+    const base = input.reduce<T[]>((acc, item) => {
+      const next = transform(item)
+      if (next !== undefined) acc.push(next)
+      return acc
+    }, [])
+    const list = base.concat(add as T[]).filter((item) => {
+      if (typeof item !== "string") return true
+      if (seen.has(item)) return false
+      seen.add(item)
+      return true
+    })
     return list
   }
 }

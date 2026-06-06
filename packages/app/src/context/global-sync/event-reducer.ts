@@ -211,6 +211,12 @@ export function applyDirectoryEvent(input: {
             const result = Binary.search(messages, props.messageID, (m) => m.id)
             if (result.found) messages.splice(result.index, 1)
           }
+          const parts = draft.part[props.messageID]
+          if (parts) {
+            for (const part of parts) {
+              delete draft.part_text_accum_delta[part.id]
+            }
+          }
           delete draft.part[props.messageID]
         }),
       )
@@ -219,6 +225,11 @@ export function applyDirectoryEvent(input: {
     case "message.part.updated": {
       const part = (event.properties as { part: Part }).part
       if (SKIP_PARTS.has(part.type)) break
+      input.setStore(
+        produce((draft) => {
+          delete draft.part_text_accum_delta[part.id]
+        }),
+      )
       const parts = input.store.part[part.messageID]
       if (!parts) {
         input.setStore("part", part.messageID, [part])
@@ -240,6 +251,11 @@ export function applyDirectoryEvent(input: {
     }
     case "message.part.removed": {
       const props = event.properties as { messageID: string; partID: string }
+      input.setStore(
+        produce((draft) => {
+          delete draft.part_text_accum_delta[props.partID]
+        }),
+      )
       const parts = input.store.part[props.messageID]
       if (!parts) break
       const result = Binary.search(parts, props.partID, (p) => p.id)
@@ -263,12 +279,15 @@ export function applyDirectoryEvent(input: {
       if (!parts) break
       const result = Binary.search(parts, props.partID, (p) => p.id)
       if (!result.found) break
+      const part = parts[result.index]
+      const field = props.field as keyof typeof part
+      const seed = typeof part[field] === "string" ? part[field] : ""
+      input.setStore("part_text_accum_delta", props.partID, (existing) => (existing ?? seed) + props.delta)
       input.setStore(
         "part",
         props.messageID,
         produce((draft) => {
           const part = draft[result.index]
-          const field = props.field as keyof typeof part
           const existing = part[field] as string | undefined
           ;(part[field] as string) = (existing ?? "") + props.delta
         }),

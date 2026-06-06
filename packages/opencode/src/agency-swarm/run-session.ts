@@ -1,7 +1,7 @@
 import path from "node:path"
 import { chmod } from "node:fs/promises"
 import { Global } from "@opencode-ai/core/global"
-import { Log } from "@/util"
+import { Log } from "@opencode-ai/core/util/log"
 import { Filesystem } from "@/util/filesystem"
 import { AgencySwarmAdapter } from "./adapter"
 

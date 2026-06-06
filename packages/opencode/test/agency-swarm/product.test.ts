@@ -106,7 +106,7 @@ describe("AgencyProduct profile", () => {
     expect(profile.tuiLogoRight).toEqual(["RIGHT", "RIGHT2"])
     expect(profile.wordmarkLines).toEqual(["WORD", " MARK"])
     expect(profile.pythonEnvironment).toBe("standalone")
-    expect(profile.stateRoot).toBe("/tmp/example-product")
+    expect(profile.stateRoot).toBe(path.resolve("/tmp/example-product"))
     expect(AgencyProduct.tuiLogo(profile)).toEqual({
       left: [" LEFT", "LEFT2"],
       right: ["RIGHT", "RIGHT2"],
@@ -310,5 +310,30 @@ describe("AgencyProduct.tips", () => {
     expect(tips).toContain("Use {highlight}/compact{/highlight} for long agency-swarm sessions near context limits")
     expect(tips).toContain("Use {highlight}/agents{/highlight} to pick the active swarm or agent from live metadata")
     expect(tips.join("\n")).not.toContain("recipient")
+  })
+
+  test("filters skipped tips before rewrites and from function output", () => {
+    type Shortcuts = { modelList: () => string }
+    type Tip = string | ((shortcuts: Shortcuts) => string | undefined)
+
+    const tips = AgencyProduct.tips<Tip>([
+      "Run {highlight}opencode serve{/highlight} for headless API access to OpenCode",
+      "Run {highlight}opencode auth list{/highlight} to see all configured providers",
+      "Add {highlight}.md{/highlight} files to {highlight}.opencode/agents/{/highlight} for specialized AI personas",
+      "Run {highlight}opencode agent create{/highlight} to make a new agent",
+      (shortcuts) =>
+        `Use {highlight}/models{/highlight} or {highlight}${shortcuts.modelList()}{/highlight} to see and switch between available AI models`,
+    ])
+
+    const rendered = tips.flatMap((item) => {
+      const value = typeof item === "string" ? item : item({ modelList: () => "ctrl+m" })
+      return value ? [value] : []
+    })
+
+    expect(rendered.join("\n")).not.toContain("opencode serve")
+    expect(rendered.join("\n")).not.toContain(".agentswarm/agent")
+    expect(rendered.join("\n")).not.toContain("agentswarm agent create")
+    expect(rendered.join("\n")).not.toContain("{highlight}/models{/highlight}")
+    expect(rendered).toContain("Run {highlight}agentswarm auth list{/highlight} to see configured provider credentials")
   })
 })

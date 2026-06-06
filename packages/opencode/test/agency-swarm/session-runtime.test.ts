@@ -3,7 +3,7 @@ import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
 import { CODEX_API_BASE_URL } from "../../src/plugin/codex"
 import { ModelID, ProviderID } from "../../src/provider/schema"
-import { Session } from "../../src/session"
+import { Session } from "../../src/session/index"
 import { SessionAgencySwarm } from "../../src/session/agency-swarm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
@@ -520,6 +520,8 @@ describe("session.agency-swarm runtime history", () => {
       },
       abort: abort.signal,
     } as Parameters<typeof SessionAgencySwarm.stream>[0]
+    input.loadSessionMessages = () => Session.messages({ sessionID: input.sessionID })
+    input.updateSessionMessage = (message) => Session.updateMessage(message)
     return {
       input,
       triggerCancel: () => abort.abort(),

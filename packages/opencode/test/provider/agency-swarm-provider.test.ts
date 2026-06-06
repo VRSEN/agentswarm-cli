@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
-import { Provider } from "../../src/provider/provider"
+import { ModelNotFoundError, Provider } from "../../src/provider/provider"
 import { Instance } from "../../src/project/instance"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { tmpdir } from "../fixture/fixture"
@@ -100,10 +100,11 @@ test("Agency Swarm default model fails cleanly when provider filters exclude it"
       try {
         await Provider.getModel(selected.providerID, selected.modelID)
         expect.unreachable("expected Provider.getModel() to reject when agency-swarm is filtered out")
-      } catch (error: any) {
-        expect(error?.name).toBe("ProviderModelNotFoundError")
-        expect(error?.data?.providerID).toBe("agency-swarm")
-        expect(error?.data?.modelID).toBe("default")
+      } catch (error) {
+        expect(ModelNotFoundError.isInstance(error)).toBe(true)
+        if (!ModelNotFoundError.isInstance(error)) throw error
+        expect(String(error.providerID)).toBe("agency-swarm")
+        expect(String(error.modelID)).toBe("default")
       }
     },
   })

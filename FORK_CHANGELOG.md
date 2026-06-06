@@ -30,18 +30,18 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 - Connection, auth, and provider dialogs: `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx`, `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`, `packages/opencode/src/cli/cmd/tui/session-error.ts`.
 - Run-mode routing, add-ons, models, and attachments: `packages/opencode/src/agency-swarm/adapter.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/cli/cmd/tui/component/prompt/autocomplete.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx`, `packages/opencode/src/cli/cmd/tui/context/local.tsx`, `packages/opencode/src/cli/cmd/tui/util/agency-target.ts`.
 - Builder and Plan preservation: `packages/opencode/src/session/agent-builder.ts`, `packages/opencode/src/session/agent-planner.ts`, `packages/opencode/src/session/prompt/agent-builder.txt`, `packages/opencode/src/session/prompt/agent-planner.txt`.
-- History, handoff, and message metadata: `packages/opencode/src/session/agency-swarm-utils.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/session/message-v2.ts`, `packages/opencode/src/agency-swarm/history.ts`.
+- History, handoff, compaction, and message metadata: `packages/opencode/src/session/agency-swarm-utils.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/session/message-v2.ts`, `packages/opencode/src/session/compaction.ts`, `packages/opencode/src/agency-swarm/history.ts`.
 - Sharing, PR reopen, and backend management: `packages/opencode/src/share/share-next.ts`, `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`, `packages/opencode/src/cli/cmd/pr.ts`, `packages/opencode/src/cli/cmd/agency.ts`, `README.md`.
 - Telemetry: `packages/opencode/src/telemetry/telemetry.ts`, docs-click telemetry hooks, integration request hooks, telemetry tests, README telemetry copy, and event-list docs.
 - Branding, config, upgrade, and visual surfaces: `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/cli/logo.ts`, `packages/opencode/src/cli/ui.ts`, `packages/opencode/src/cli/network.ts`, `packages/opencode/src/server/mdns.ts`, `packages/opencode/src/cli/cmd/uninstall.ts`, `packages/opencode/src/cli/cmd/tui/component/logo.tsx`, `packages/opencode/src/cli/cmd/tui/context/theme.tsx`, `packages/opencode/src/config/paths.ts`, `packages/opencode/src/config/config.ts`, `packages/opencode/src/cli/cmd/tui/config/tui.ts`, `packages/opencode/src/installation/index.ts`, `packages/opencode/src/cli/cmd/upgrade.ts`.
 
 ## Upstream Baseline Anchor
 
-- Last upstream sync merged `origin/dev` commit `35734b42fe3094c41b09ec81d3836944a8dd1d89` into the fork.
-- The upstream sync includes release tag `v1.14.28` at `acd8783a36d8642ade7038f34ca4f2f2ac3cc824`.
-- Fork merge commit: `8c24d21569620713c438b68e38a6a53fbbc66b68`.
-- Current fork head when this anchor was refreshed: `vrsen/dev` at `ca32b473a217c4158858400a115b73ac7e7db93d`.
-- Current comparison count: `origin/dev...vrsen/dev` = `71 311`.
+- Last upstream sync target: OpenCode `v1.14.51` at `a462b1c1011860f65dcb496a8451c550478cc6a7`.
+- Upstream commit already present before this sync: `35734b42fe3094c41b09ec81d3836944a8dd1d89`.
+- Prior fork merge commit carrying that upstream commit: `8c24d21569620713c438b68e38a6a53fbbc66b68`.
+- Current fork merge commit: `d404bc3524579dc593c0cded2e871861e4aededa`.
+- Fork base parent for the current merge: `c99369015dad55f6e3cfed384b177687a4e25470`.
 
 ## Branding/Packaging
 
@@ -121,6 +121,12 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Behavior: compaction preserves the caller agent identity needed for later routing and display. Internal flat Agency metadata is not replayed as AI SDK provider metadata.
   - Implementation: `compactHistory` and `extractCallerAgent` in `packages/opencode/src/session/agency-swarm.ts`, and Agency metadata replay filtering in `packages/opencode/src/session/message-v2.ts`.
   - Added by: `06ad1be4`
+
+- **Agency Swarm compaction model fallback**
+  - Intent: keep Run mode compaction from treating the visible Agency Swarm pseudo-model as a real provider model.
+  - Behavior: when the visible model is `Agency Swarm Default`, `/compact` uses `agent.compaction.model` or `small_model` when configured. Without a real compaction model, it returns a handled error instead of choosing an unrelated provider-list fallback such as `openai/gpt-5.5-pro`.
+  - Implementation: `resolveModel` in `packages/opencode/src/session/compaction.ts`.
+  - Added by: upstream sync `v1.14.51` follow-up.
 
 - **Recover loopback history across Agency server URL or port changes**
   - Intent: avoid data loss when the local Agency Swarm server comes back on a different loopback URL or port.

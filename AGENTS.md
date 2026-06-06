@@ -42,6 +42,7 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 - Treat `dev` and other shared long-lived fork branches as append-only. Do not force-push, rebase, or rewrite their published history unless the user explicitly asks for that exact recovery.
 - A stale-branch mistake is severity one. If a pull request comes from the wrong base, wrong diff, or wrong artifact, stop product work and do a full live audit before you mutate pull requests again.
 - To sync the fork default branch, merge upstream OpenCode `dev` into the fork default branch, or do the reverse equivalent, then fast-forward push. Avoid restacking published commit series.
+- For upstream tag or range sync work, load `.codex/skills/upstream-sync/SKILL.md` before planning, merging, resolving conflicts, or reviewing the sync.
 - If a rewrite is explicitly approved as an emergency exception, make backup refs first and save proof that compares the old commit range to the new one before and after.
 - Sync workflow:
   - verify local remote URLs point to the expected upstream and fork repositories
@@ -63,6 +64,7 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 - Build-impact changes must go through a pull request before they reach the fork default branch. Build-impact includes runtime code, packaging, release scripts, generated binaries, dependency manifests or lockfiles, CI/build workflows, and tests or harnesses that gate shipped behavior. Direct default-branch commits for build-impact changes are forbidden unless the user explicitly approves an emergency exception for that exact change.
 - Pull-request-specific work includes comment review, thread replies, issue-link checks, pull-request body edits, outside-signal polling, and other GitHub-side mutations. Keep those checks tied to the live pull request, current head SHA, and repo gates.
 - Before requesting merge approval, verify the final diff, source/base/head SHAs, required checks, unresolved threads, and official review findings. The latest head is merge-ready only with a clean current-head local Codex review, green required checks, and zero unresolved threads.
+- For upstream-sync pull requests, aim that local review at the fork-owned surface: merge shape, merge-resolution or fork-delta changes against the requested upstream target, and explicit follow-up commits after the upstream merge. Do not spend review on upstream-owned commits already present in the requested upstream target.
 - Every pull-request merge needs explicit user approval and a human alignment gate. Pull requests with user-testable behavior also need a human QA gate. Worker review can inform these gates but cannot replace them.
 - Pending GitHub checks, hosted reviews, unresolved pull-request comments, unresolved official review findings, and other agent-visible workflows are open work until fixed, rerun green, or classified as non-blocking with checked evidence.
 

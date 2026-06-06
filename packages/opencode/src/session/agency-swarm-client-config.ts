@@ -16,7 +16,7 @@ import { Auth } from "@/auth"
 import { Env } from "@/env"
 import { CODEX_API_BASE_URL, extractAccountId, refreshAccessToken } from "@/plugin/codex"
 import { Provider } from "@/provider/provider"
-import { Log } from "@/util"
+import { Log } from "@opencode-ai/core/util/log"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import semver from "semver"
 import { asRecord, asString } from "./agency-swarm-utils"
@@ -245,7 +245,9 @@ async function buildAuthClientConfig(
 
   for (const [providerID, auth] of Object.entries(auths)) {
     if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
-    if (hasEnvCredential(providerID, providers, env)) continue
+    if (hasEnvCredential(providerID, providers, env) && !(options.targetOpenRouter && providerID === "openrouter")) {
+      continue
+    }
 
     if (providerID === "openai" && auth.type === "oauth") {
       if (options.skipOpenAIOAuthFromStored || !options.allowStoredOpenAIOAuth) continue

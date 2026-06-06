@@ -26,7 +26,7 @@ import {
 import { AgencyProduct } from "../../src/agency-swarm/product"
 import { AgencySwarmRunSession } from "../../src/agency-swarm/run-session"
 import { Instance } from "../../src/project/instance"
-import { Session } from "../../src/session"
+import { Session } from "../../src/session/index"
 import { SessionID } from "../../src/session/schema"
 import { Storage } from "../../src/storage/storage"
 import { tmpdir } from "../fixture/fixture"
@@ -99,7 +99,7 @@ describe("agency-swarm npx onboarding", () => {
   test("resolveLauncherCommand routes Windows shell commands through cmd.exe", () => {
     expect(resolveLauncherCommand(["npm", "install"], "win32")).toEqual(["cmd.exe", "/c", "npm", "install"])
     expect(resolveLauncherCommand(["npx", "playwright"], "win32")).toEqual(["cmd.exe", "/c", "npx", "playwright"])
-    expect(resolveLauncherCommand(["git", "clone"], "win32")).toEqual(["cmd.exe", "/c", "git", "clone"])
+    expect(resolveLauncherCommand(["git", "clone"], "win32")).toEqual(["git", "clone"])
     expect(resolveLauncherCommand(["python", "-V"], "win32")).toEqual(["python", "-V"])
     expect(resolveLauncherCommand(["npm", "install"], "darwin")).toEqual(["npm", "install"])
   })
@@ -296,8 +296,13 @@ describe("agency-swarm npx onboarding", () => {
     const installCommand = commands.find(isUvPipInstallCommand)
 
     const venvCommand = commands.find(isPythonVenvCommand)
-    expect(venvCommand?.slice(1)).toEqual(["-m", "venv", ".venv"])
-    expect(path.basename(venvCommand?.[0] ?? "")).toBe("python3.12")
+    expect(venvCommand).toBeDefined()
+    expect(venvCommand?.slice(pythonModuleIndex(venvCommand))).toEqual(["-m", "venv", ".venv"])
+    if (process.platform === "win32") {
+      expect(venvCommand?.slice(0, 2)).toEqual(["py", "-3.13"])
+    } else {
+      expect(path.basename(venvCommand?.[0] ?? "")).toBe("python3.12")
+    }
     expect(installCommand).toEqual([
       getTestVenvUv(dir.path),
       "pip",
@@ -967,7 +972,7 @@ describe("agency-swarm npx onboarding", () => {
 
     expect(confirm).not.toHaveBeenCalled()
     expect(await Bun.file(staleFile).exists()).toBe(false)
-    expect(commands.filter(isPythonVenvCommand)).toEqual([["/usr/bin/python3.12", "-m", "venv", ".venv"]])
+    expect(commands.filter(isPythonVenvCommand)).toEqual([expectedVenvCommand("/usr/bin/python3.12")])
   })
 
   test("prepareProjectLaunch rebuilds Conda-family venvs for standalone products", async () => {
@@ -1051,7 +1056,7 @@ describe("agency-swarm npx onboarding", () => {
     )
 
     expect(commands.some((cmd) => isPythonProbeCommand(cmd) && (cmd.at(-1) ?? "").includes("base_prefix"))).toBe(true)
-    expect(commands.filter(isPythonVenvCommand)).toEqual([[replacementPython, "-m", "venv", ".venv"]])
+    expect(commands.filter(isPythonVenvCommand)).toEqual([expectedVenvCommand(replacementPython)])
 
     await launch?.cleanup?.()
   })
@@ -1324,7 +1329,7 @@ describe("agency-swarm npx onboarding", () => {
 
     expect(confirm).not.toHaveBeenCalled()
     expect(await Bun.file(staleFile).exists()).toBe(false)
-    expect(commands.filter(isPythonVenvCommand)).toEqual([[replacementPython, "-m", "venv", ".venv"]])
+    expect(commands.filter(isPythonVenvCommand)).toEqual([expectedVenvCommand(replacementPython)])
     expect(uvInstallRuns).toBe(2)
     await launch?.cleanup?.()
   })
@@ -2520,8 +2525,12 @@ describe("agency-swarm npx onboarding", () => {
     const realClearTimeout = globalThis.clearTimeout
     const killSignals: Array<string | undefined> = []
     const canaryStderr = createTextOutputStream("importing openai types...\n")
-    let resolveCanary!: (code: number) => void
+    let resolveCanary: ((code: number) => void) | undefined
     let canaryStarted = false
+    let resolveCanaryStarted!: () => void
+    const canaryStartedPromise = new Promise<void>((resolve) => {
+      resolveCanaryStarted = resolve
+    })
 
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     spyOn(globalThis, "setTimeout").mockImplementation(((fn: TimerHandler) => {
@@ -2569,6 +2578,7 @@ describe("agency-swarm npx onboarding", () => {
       }
       if (isCanaryCommand(cmd)) {
         canaryStarted = true
+        resolveCanaryStarted()
         return {
           exited: new Promise<number>((resolve) => {
             resolveCanary = resolve
@@ -2579,7 +2589,7 @@ describe("agency-swarm npx onboarding", () => {
             killSignals.push(signal)
             if (signal === "SIGKILL") {
               canaryStderr.close()
-              resolveCanary(1)
+              resolveCanary?.(1)
             }
           },
         } as never
@@ -2592,22 +2602,29 @@ describe("agency-swarm npx onboarding", () => {
       agencyFile: path.join(dir.path, "agency.py"),
       moduleName: "agency",
     })
-    const pending = Symbol("pending")
-    const outcome = await Promise.race([
+    const canaryStartedResult = await Promise.race([
+      canaryStartedPromise.then(() => true),
       launch.then(
-        () => "resolved",
+        () => new Error("prepareProjectLaunch resolved before the import canary started"),
         (error) => error,
       ),
-      new Promise((resolve) => realSetTimeout(() => resolve(pending), 20)),
+      new Promise((resolve) =>
+        realSetTimeout(() => resolve(new Error("Timed out waiting for the import canary to start")), 1000),
+      ),
+    ])
+    if (canaryStartedResult !== true) throw canaryStartedResult
+
+    const outcome = await Promise.race([
+      launch.catch((error) => error),
+      new Promise((resolve) =>
+        realSetTimeout(() => {
+          canaryStderr.close()
+          resolveCanary?.(1)
+          resolve(new Error("Timed out waiting for the import canary timeout failure"))
+        }, 1000),
+      ),
     ])
 
-    if (outcome === pending) {
-      canaryStderr.close()
-      resolveCanary(1)
-      await launch.catch(() => undefined)
-    }
-
-    expect(outcome).not.toBe(pending)
     expect(outcome).toBeInstanceOf(Error)
     if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
     expect(killSignals).toEqual([undefined, "SIGKILL"])
@@ -4856,9 +4873,8 @@ function mockReadinessDeadlineElapsed() {
   const realDateNow = Date.now
   let now = 0
   Date.now = (() => {
-    const value = now
-    now = 120001
-    return value
+    now += 120001
+    return now
   }) as typeof Date.now
   return {
     [Symbol.dispose]() {
@@ -4872,7 +4888,8 @@ function isUvPipInstallCommand(cmd: string[]) {
 }
 
 function isPythonVenvCommand(cmd: string[]) {
-  return cmd[1] === "-m" && cmd[2] === "venv" && cmd[3] === ".venv"
+  const index = pythonModuleIndex(cmd)
+  return index >= 0 && cmd[index + 1] === "venv" && cmd[index + 2] === ".venv"
 }
 
 function isUvVersionCommand(cmd: string[]) {
@@ -4880,7 +4897,22 @@ function isUvVersionCommand(cmd: string[]) {
 }
 
 function isPythonPipInstallUvCommand(cmd: string[]) {
-  return cmd[1] === "-m" && cmd[2] === "pip" && cmd[3] === "install" && cmd[4] === "--upgrade" && cmd[5] === "uv"
+  const index = pythonModuleIndex(cmd)
+  return (
+    index >= 0 &&
+    cmd[index + 1] === "pip" &&
+    cmd[index + 2] === "install" &&
+    cmd[index + 3] === "--upgrade" &&
+    cmd[index + 4] === "uv"
+  )
+}
+
+function pythonModuleIndex(cmd: string[] | undefined) {
+  return cmd?.indexOf("-m") ?? -1
+}
+
+function expectedVenvCommand(python: string) {
+  return [python, "-m", "venv", ".venv"]
 }
 
 function isLocalUvCommand(command: string | undefined) {

@@ -5,7 +5,7 @@ import { AgencySwarmAdapter } from "../../../src/agency-swarm/adapter"
 import * as DialogModelConnectedModule from "../../../src/cli/cmd/tui/component/use-connected"
 import * as DialogSelectModule from "../../../src/cli/cmd/tui/ui/dialog-select"
 import * as DialogContext from "../../../src/cli/cmd/tui/ui/dialog"
-import * as KeybindContext from "../../../src/cli/cmd/tui/context/keybind"
+import * as KeybindContext from "@tui/context/keybind"
 import * as LocalContext from "../../../src/cli/cmd/tui/context/local"
 import * as SDKContext from "../../../src/cli/cmd/tui/context/sdk"
 import * as SyncContext from "../../../src/cli/cmd/tui/context/sync"
@@ -102,6 +102,6 @@ describe("DialogModel framework mode", () => {
     const { DialogModel } = await import("../../../src/cli/cmd/tui/component/dialog-model")
     await testRender(() => <DialogModel />)
 
-    expect(selectProps?.keybind?.[0]?.title).toBe("Manage provider auth")
+    expect(selectProps?.actions?.[0]?.title).toBe("Manage provider auth")
   })
 })

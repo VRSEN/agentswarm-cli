@@ -1,12 +1,17 @@
+export * as Log from "./log"
+
 import path from "path"
 import fs from "fs/promises"
 import { createWriteStream } from "fs"
 import * as Global from "../global"
-import z from "zod"
+import { Schema } from "effect"
 import { Glob } from "./glob"
 
-export const Level = z.enum(["DEBUG", "INFO", "WARN", "ERROR"]).meta({ ref: "LogLevel", description: "Log level" })
-export type Level = z.infer<typeof Level>
+export const Level = Schema.Literals(["DEBUG", "INFO", "WARN", "ERROR"]).annotate({
+  identifier: "LogLevel",
+  description: "Log level",
+})
+export type Level = Schema.Schema.Type<typeof Level>
 
 const levelPriority: Record<Level, number> = {
   DEBUG: 0,
@@ -15,6 +20,7 @@ const levelPriority: Record<Level, number> = {
   ERROR: 3,
 }
 const keep = 10
+const initializedRunID = "OPENCODE_LOG_INITIALIZED_RUN_ID"
 
 let level: Level = "INFO"
 
@@ -57,6 +63,13 @@ let write = (msg: any) => {
   return msg.length
 }
 
+function emit(msg: string) {
+  try {
+    const result = write(msg)
+    if (result instanceof Promise) void result.catch(() => {})
+  } catch {}
+}
+
 export async function init(options: Options) {
   if (options.level) level = options.level
   void cleanup(Global.Path.log)
@@ -65,8 +78,12 @@ export async function init(options: Options) {
     Global.Path.log,
     options.dev ? "dev.log" : new Date().toISOString().split(".")[0].replace(/:/g, "") + ".log",
   )
-  await fs.truncate(logpath).catch(() => {})
+  const runID = process.env.OPENCODE_RUN_ID
+  const shouldTruncate = !options.dev || !runID || process.env[initializedRunID] !== runID
+  if (shouldTruncate) await fs.truncate(logpath).catch(() => {})
+  if (options.dev && runID) process.env[initializedRunID] = runID
   const stream = createWriteStream(logpath, { flags: "a" })
+  stream.on("error", () => {})
   write = async (msg: any) => {
     return new Promise((resolve, reject) => {
       stream.write(msg, (err) => {
@@ -133,22 +150,22 @@ export function create(tags?: Record<string, any>) {
   const result: Logger = {
     debug(message?: any, extra?: Record<string, any>) {
       if (shouldLog("DEBUG")) {
-        write("DEBUG " + build(message, extra))
+        emit("DEBUG " + build(message, extra))
       }
     },
     info(message?: any, extra?: Record<string, any>) {
       if (shouldLog("INFO")) {
-        write("INFO  " + build(message, extra))
+        emit("INFO  " + build(message, extra))
       }
     },
     error(message?: any, extra?: Record<string, any>) {
       if (shouldLog("ERROR")) {
-        write("ERROR " + build(message, extra))
+        emit("ERROR " + build(message, extra))
       }
     },
     warn(message?: any, extra?: Record<string, any>) {
       if (shouldLog("WARN")) {
-        write("WARN  " + build(message, extra))
+        emit("WARN  " + build(message, extra))
       }
     },
     tag(key: string, value: string) {

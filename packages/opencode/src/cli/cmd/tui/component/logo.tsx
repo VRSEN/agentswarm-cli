@@ -8,6 +8,7 @@ import { AgencyProduct } from "@/agency-swarm/product"
 // _ = full shadow cell (space with bg=shadow)
 // ^ = letter top, shadow bottom (▀ with fg=letter, bg=shadow)
 // ~ = shadow top only (▀ with fg=shadow)
+// , = shadow bottom only (▄ with fg=shadow)
 const SHADOW_MARKER = new RegExp(`[${marks}]`)
 
 export function textLogo(product = AgencyProduct.resolve()) {
@@ -75,6 +76,13 @@ export function Logo() {
           elements.push(
             <text fg={shadow} attributes={attrs} selectable={false}>
               ▀
+            </text>,
+          )
+          break
+        case ",":
+          elements.push(
+            <text fg={shadow} attributes={attrs} selectable={false}>
+              ▄
             </text>,
           )
           break
