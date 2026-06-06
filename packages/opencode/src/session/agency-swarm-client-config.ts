@@ -245,7 +245,9 @@ async function buildAuthClientConfig(
 
   for (const [providerID, auth] of Object.entries(auths)) {
     if (providerID === AgencySwarmAdapter.PROVIDER_ID) continue
-    if (hasEnvCredential(providerID, providers, env)) continue
+    if (hasEnvCredential(providerID, providers, env) && !(options.targetOpenRouter && providerID === "openrouter")) {
+      continue
+    }
 
     if (providerID === "openai" && auth.type === "oauth") {
       if (options.skipOpenAIOAuthFromStored || !options.allowStoredOpenAIOAuth) continue

@@ -1238,7 +1238,7 @@ describe("session.agency-swarm", () => {
     })
   })
 
-  test("stream forwards selected OpenRouter model and key through direct client config", async () => {
+  test("stream prefers stored OpenRouter key over stale env for direct client config", async () => {
     mockHistory()
     spyOn(Auth, "all").mockImplementation(async () => ({
       openai: { type: "api", key: "stored-openai" } as any,
@@ -1287,7 +1287,7 @@ describe("session.agency-swarm", () => {
     }
 
     expect(captured).toEqual({
-      api_key: "env-openrouter",
+      api_key: "stored-openrouter",
       model: "openrouter/anthropic/claude-sonnet-4.5",
     })
   })
@@ -1338,7 +1338,7 @@ describe("session.agency-swarm", () => {
     }
 
     expect(captured).toEqual({
-      api_key: "env-openrouter",
+      api_key: "stored-openrouter",
       model: "openrouter/anthropic/claude-sonnet-4.5",
       model_settings_extra_args: {
         extra_body: {
@@ -1397,7 +1397,7 @@ describe("session.agency-swarm", () => {
     }
 
     expect(captured).toEqual({
-      api_key: "env-openrouter",
+      api_key: "stored-openrouter",
       model: "openrouter/anthropic/claude-sonnet-4.5",
       model_settings_extra_args: {
         extra_body: {
@@ -1455,7 +1455,7 @@ describe("session.agency-swarm", () => {
     }
 
     expect(captured).toEqual({
-      api_key: "env-openrouter",
+      api_key: "stored-openrouter",
       model: "openrouter/openai/gpt-5.4",
       model_settings_extra_args: {
         extra_body: {

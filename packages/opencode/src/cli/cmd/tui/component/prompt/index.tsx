@@ -1452,6 +1452,25 @@ export function Prompt(props: PromptProps) {
       void promptModelWarning()
       return false
     }
+    const authProviders =
+      selectedModel.providerID === "openrouter"
+        ? sync.data.provider.filter(
+            (provider) => provider.id === AgencySwarmAdapter.PROVIDER_ID || provider.id === "openrouter",
+          )
+        : sync.data.provider
+    const openrouterEnvNames =
+      selectedModel.providerID === "openrouter"
+        ? [
+            ...new Set([
+              ...authProviders.filter((provider) => provider.id === "openrouter").flatMap((provider) => provider.env),
+              "OPENROUTER_API_KEY",
+            ]),
+          ]
+        : []
+    const authEnv =
+      selectedModel.providerID === "openrouter"
+        ? Object.fromEntries(openrouterEnvNames.map((name) => [name, process.env[name]]))
+        : process.env
     const productProviderID = frameworkMode() ? AgencySwarmAdapter.PROVIDER_ID : selectedModel.providerID
 
     const currentMode = store.mode
@@ -1486,11 +1505,11 @@ export function Prompt(props: PromptProps) {
         currentProviderID: productProviderID,
         configuredModel: sync.data.config.model,
         agentModel: local.agent.current()?.model,
-        providers: sync.data.provider,
+        providers: authProviders,
         providerAuth: sync.data.provider_auth,
         mode: currentMode,
         isSlashCommand: isServerSlashCommand,
-        env: process.env,
+        env: authEnv,
       })
     ) {
       toast.show({

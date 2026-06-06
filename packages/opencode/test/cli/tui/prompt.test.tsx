@@ -94,11 +94,15 @@ describe("prompt auth rejection handling", () => {
   afterEach(() => {
     mock.restore()
     delete process.env.OPENAI_API_KEY
+    delete process.env.OPENROUTER_API_KEY
+    delete process.env.OPENROUTER_TOKEN
   })
 
   async function renderTelemetryPrompt(input: {
     events: ReturnType<typeof createEventBus>
     frameworkMode?: boolean
+    openrouterEnv?: string[]
+    selectedModel?: { providerID: string; modelID: string }
     prompt: (input: { messageID: string; sessionID: string }) => Promise<unknown>
     sessionID: string
     workspaceID: string
@@ -108,6 +112,8 @@ describe("prompt auth rejection handling", () => {
     const model = agency ? "agency-swarm/default" : "openai/gpt-4.1"
     const providerID = agency ? "agency-swarm" : "openai"
     const modelID = agency ? "default" : "gpt-4.1"
+    const selectedModel = input.selectedModel ?? { providerID, modelID }
+    const openrouterEnv = input.openrouterEnv ?? ["OPENROUTER_API_KEY"]
     const parts: Record<string, unknown[]> = {}
 
     const promptSession = spyOn(
@@ -188,12 +194,12 @@ describe("prompt auth rejection handling", () => {
       },
       model: {
         current: () => ({
-          providerID,
-          modelID,
+          providerID: selectedModel.providerID,
+          modelID: selectedModel.modelID,
         }),
         parsed: () => ({
-          provider: agency ? "Agency Swarm" : "OpenAI",
-          model: modelID,
+          provider: selectedModel.providerID === "openrouter" ? "OpenRouter" : agency ? "Agency Swarm" : "OpenAI",
+          model: selectedModel.modelID,
         }),
         set: () => {},
         variant: {
@@ -234,6 +240,18 @@ describe("prompt auth rejection handling", () => {
             options: {},
             models: {},
           },
+          ...(selectedModel.providerID === "openrouter"
+            ? [
+                {
+                  id: "openrouter",
+                  name: "OpenRouter",
+                  source: "config",
+                  env: openrouterEnv,
+                  options: {},
+                  models: {},
+                },
+              ]
+            : []),
         ],
         provider_auth: {},
         provider_next: {
@@ -307,6 +325,83 @@ describe("prompt auth rejection handling", () => {
     expect(promptRef).toBeDefined()
     return { parts, promptRef: promptRef!, promptSession }
   }
+
+  test("blocks selected OpenRouter prompts when only OpenAI env credentials exist", async () => {
+    const { promptRef, promptSession } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      selectedModel: {
+        providerID: "openrouter",
+        modelID: "anthropic/claude-sonnet-4.5",
+      },
+      openrouterEnv: ["OPENROUTER_TOKEN"],
+      prompt: async () => ({ data: {} }),
+      sessionID: "session_openrouter_auth_guard",
+      workspaceID: "workspace_openrouter_auth_guard",
+    })
+
+    promptRef.set({
+      input: "use openrouter",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    expect(promptSession).not.toHaveBeenCalled()
+  })
+
+  test("submits selected OpenRouter prompts when custom OpenRouter env credentials exist", async () => {
+    process.env.OPENROUTER_TOKEN = "sk-openrouter-env"
+    const { promptRef, promptSession } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      selectedModel: {
+        providerID: "openrouter",
+        modelID: "anthropic/claude-sonnet-4.5",
+      },
+      openrouterEnv: ["OPENROUTER_TOKEN"],
+      prompt: async () => ({ data: {} }),
+      sessionID: "session_openrouter_auth_guard_allowed",
+      workspaceID: "workspace_openrouter_auth_guard_allowed",
+    })
+
+    promptRef.set({
+      input: "use openrouter",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    expect(promptSession).toHaveBeenCalledTimes(1)
+  })
+
+  test("submits selected OpenRouter prompts when standard fallback env credentials exist", async () => {
+    process.env.OPENROUTER_API_KEY = "sk-openrouter-env"
+    const { promptRef, promptSession } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      selectedModel: {
+        providerID: "openrouter",
+        modelID: "anthropic/claude-sonnet-4.5",
+      },
+      openrouterEnv: ["OPENROUTER_TOKEN"],
+      prompt: async () => ({ data: {} }),
+      sessionID: "session_openrouter_auth_guard_fallback",
+      workspaceID: "workspace_openrouter_auth_guard_fallback",
+    })
+
+    promptRef.set({
+      input: "use openrouter",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    expect(promptSession).toHaveBeenCalledTimes(1)
+  })
 
   test("clears the draft as soon as the prompt request starts", async () => {
     process.env.OPENAI_API_KEY = "sk-test"
