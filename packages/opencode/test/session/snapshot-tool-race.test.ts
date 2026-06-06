@@ -252,10 +252,15 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
       expect(fileExists).toBe(true)
 
       // Verify the tool call completed (in the first assistant message)
-      const allMsgs = yield* MessageV2.filterCompactedEffect(session.id)
-      const tool = allMsgs
-        .flatMap((m) => m.parts)
-        .find((p): p is MessageV2.ToolPart => p.type === "tool" && p.tool === "bash")
+      let tool: MessageV2.ToolPart | undefined
+      for (let i = 0; i < 50; i++) {
+        const allMsgs = yield* MessageV2.filterCompactedEffect(session.id)
+        tool = allMsgs
+          .flatMap((m) => m.parts)
+          .find((p): p is MessageV2.ToolPart => p.type === "tool" && p.tool === "bash")
+        if (tool?.state.status === "completed") break
+        yield* Effect.sleep("100 millis")
+      }
       expect(tool?.state.status).toBe("completed")
 
       // Poll for diff — summarize() is fire-and-forget
