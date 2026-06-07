@@ -33,7 +33,7 @@ async function waitForConfiguredDemoRecipient(tui: TuiProcess) {
 }
 
 function hasCommand(screen: string, command: string) {
-  return screen.split("\n").some((line) => line.includes(command) && line.trimStart().startsWith("┃"))
+  return screen.split("\n").some((line) => new RegExp(`┃\\s+${command}\\b`).test(line))
 }
 
 afterEach(async () => {
