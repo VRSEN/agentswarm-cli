@@ -72,11 +72,17 @@ describe("CLI branding help", () => {
   })
 
   test("uses the Agent Swarm wordmark for plain CLI output", () => {
-    const plain = UI.logo()
-    const row = `${glyphs.left[1]} ${glyphs.right[1]}`.trimEnd()
+    const plain = UI.logo(undefined, AgencyProduct.resolve({}), 100)
+    const row = " █████╗  ██████╗ ███████╗███╗   ██╗████████╗ ███████╗██╗    ██╗ █████╗ ██████╗ ███╗   ███╗"
 
+    expect(`${glyphs.left[1]} ${glyphs.right[1]}`.trimEnd()).toBe(row)
     expect(plain).toContain(row)
+    expect(plain).not.toContain(" ▓▓    ▓▓   ▓▓▓▓")
     expect(plain).not.toContain("█▀▀█ █▀▀█ █▀▀█ █▀▀▄")
+  })
+
+  test("uses compact text branding when the Agent Swarm wordmark would wrap", () => {
+    expect(UI.logo(undefined, AgencyProduct.resolve({}), 80)).toBe("Agent Swarm")
   })
 
   test("uses text branding instead of the Agent Swarm wordmark for downstream product profiles", () => {

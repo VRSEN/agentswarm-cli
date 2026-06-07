@@ -19,7 +19,8 @@ import {
   type ScrollbackWriter,
 } from "@opentui/core"
 import * as Locale from "@/util/locale"
-import { go, logo } from "@/cli/logo"
+import { go, logo, width as logoWidth } from "@/cli/logo"
+import { AgencyProduct } from "@/agency-swarm/product"
 import type { RunSplashTheme } from "./theme"
 
 export const SPLASH_TITLE_LIMIT = 50
@@ -208,28 +209,32 @@ function build(input: SplashWriterInput, kind: "entry" | "exit", ctx: Scrollback
   if (kind === "entry") {
     const rightShadow = color(input.theme.rightShadow, fallback(240, "#475569"))
 
-    for (let i = 0; i < logo.left.length; i += 1) {
-      const leftText = logo.left[i] ?? ""
-      const rightText = logo.right[i] ?? ""
+    if (logoWidth(logo) > width) {
+      push(lines, 0, 0, AgencyProduct.name, right, undefined, TextAttributes.BOLD)
+    } else {
+      for (let i = 0; i < logo.left.length; i += 1) {
+        const leftText = logo.left[i] ?? ""
+        const rightText = logo.right[i] ?? ""
 
-      draw(lines, leftText, {
-        left: 0,
-        top: i,
-        fg: left,
-        shadow: leftShadow,
-      })
-      draw(lines, rightText, {
-        left: leftText.length + 1,
-        top: i,
-        fg: right,
-        shadow: rightShadow,
-      })
+        draw(lines, leftText, {
+          left: 0,
+          top: i,
+          fg: left,
+          shadow: leftShadow,
+        })
+        draw(lines, rightText, {
+          left: leftText.length + 1,
+          top: i,
+          fg: right,
+          shadow: rightShadow,
+        })
+      }
+
+      height = logo.left.length
     }
 
-    height = logo.left.length
-
     if (input.showSession !== false) {
-      const top = logo.left.length + 1
+      const top = height + 1
       const label = "Session".padEnd(10, " ")
       push(lines, 0, top, label, left, undefined, TextAttributes.DIM)
       push(lines, label.length, top, meta.title, right, undefined, TextAttributes.BOLD)

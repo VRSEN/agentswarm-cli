@@ -1,6 +1,6 @@
 import { EOL } from "os"
 import { Schema } from "effect"
-import { logo as glyphs } from "./logo"
+import { logo as glyphs, rows as logoRows, width as logoWidth } from "./logo"
 import { AgencyProduct } from "../agency-swarm/product"
 
 export class CancelledError extends Schema.TaggedErrorClass<CancelledError>()("UICancelledError", {}) {}
@@ -39,7 +39,13 @@ export function empty() {
   blank = true
 }
 
-export function logo(pad?: string, product = AgencyProduct.resolve()) {
+function terminalColumns() {
+  if (process.stderr.isTTY && process.stderr.columns) return process.stderr.columns
+  if (process.stdout.isTTY && process.stdout.columns) return process.stdout.columns
+  return undefined
+}
+
+export function logo(pad?: string, product = AgencyProduct.resolve(), columns = terminalColumns()) {
   if (product.wordmarkLines) {
     return product.wordmarkLines.map((line) => [pad, line].filter(Boolean).join("")).join(EOL)
   }
@@ -48,14 +54,14 @@ export function logo(pad?: string, product = AgencyProduct.resolve()) {
     return [pad, product.name].filter(Boolean).join("")
   }
 
+  if (columns !== undefined && logoWidth(glyphs) + (pad?.length ?? 0) > columns) {
+    return [pad, product.name].filter(Boolean).join("")
+  }
+
   if (!process.stdout.isTTY && !process.stderr.isTTY) {
-    const result = []
-    for (const [index, left] of glyphs.left.entries()) {
-      if (pad) result.push(pad)
-      result.push(`${left} ${glyphs.right[index] ?? ""}`.trimEnd())
-      result.push(EOL)
-    }
-    return result.join("").trimEnd()
+    return logoRows(glyphs)
+      .map((line) => [pad, line].filter(Boolean).join(""))
+      .join(EOL)
   }
 
   const result: string[] = []
