@@ -1,7 +1,8 @@
 import { TextAttributes, RGBA } from "@opentui/core"
-import { For, type JSX } from "solid-js"
+import { createMemo, For, Show, type JSX } from "solid-js"
+import { useTerminalDimensions } from "@opentui/solid"
 import { useTheme, tint } from "@tui/context/theme"
-import { logo as defaultLogo, marks } from "@/cli/logo"
+import { logo as defaultLogo, marks, width as logoWidth } from "@/cli/logo"
 import { AgencyProduct } from "@/agency-swarm/product"
 
 // Shadow markers (rendered chars in parens):
@@ -10,6 +11,7 @@ import { AgencyProduct } from "@/agency-swarm/product"
 // ~ = shadow top only (▀ with fg=shadow)
 // , = shadow bottom only (▄ with fg=shadow)
 const SHADOW_MARKER = new RegExp(`[${marks}]`)
+const HOME_HORIZONTAL_PADDING = 4
 
 export function textLogo(product = AgencyProduct.resolve()) {
   return product.customBranding && !AgencyProduct.tuiLogo(product) ? product.name : undefined
@@ -21,9 +23,12 @@ export function tuiLogo(product = AgencyProduct.resolve()) {
 
 export function Logo() {
   const { theme } = useTheme()
+  const dimensions = useTerminalDimensions()
   const product = AgencyProduct.resolve()
   const custom = textLogo(product)
   const glyphLogo = tuiLogo(product) ?? defaultLogo
+  const availableWidth = createMemo(() => Math.max(0, dimensions().width - HOME_HORIZONTAL_PADDING))
+  const compact = createMemo(() => custom !== undefined || logoWidth(glyphLogo) > availableWidth())
   const rows = Array.from({ length: Math.max(glyphLogo.left.length, glyphLogo.right.length) }, (_, index) => ({
     left: glyphLogo.left[index] ?? "",
     right: glyphLogo.right[index] ?? "",
@@ -94,26 +99,27 @@ export function Logo() {
     return elements
   }
 
-  if (custom) {
-    return (
+  return (
+    <Show
+      when={compact()}
+      fallback={
+        <box>
+          <For each={rows}>
+            {(line) => (
+              <box flexDirection="row" gap={1}>
+                <box flexDirection="row">{renderLine(line.left, theme.secondary, false)}</box>
+                <box flexDirection="row">{renderLine(line.right, theme.primary, true)}</box>
+              </box>
+            )}
+          </For>
+        </box>
+      }
+    >
       <box>
         <text fg={theme.primary} attributes={TextAttributes.BOLD} selectable={false}>
-          {custom}
+          {custom ?? product.name}
         </text>
       </box>
-    )
-  }
-
-  return (
-    <box>
-      <For each={rows}>
-        {(line) => (
-          <box flexDirection="row" gap={1}>
-            <box flexDirection="row">{renderLine(line.left, theme.secondary, false)}</box>
-            <box flexDirection="row">{renderLine(line.right, theme.primary, true)}</box>
-          </box>
-        )}
-      </For>
-    </box>
+    </Show>
   )
 }

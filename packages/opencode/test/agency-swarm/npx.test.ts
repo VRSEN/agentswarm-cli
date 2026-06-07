@@ -1439,23 +1439,21 @@ describe("agency-swarm npx onboarding", () => {
     expect(canaryCommands).toHaveLength(2)
   })
 
-  test("prepareProjectLaunch streams rebuild output to stderr", async () => {
+  test("prepareProjectLaunch keeps successful rebuild output compact and logged", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
+    const iso = "2026-04-23T02:15:00.000Z"
 
     spyOn(prompts, "confirm").mockResolvedValue(true as never)
     spyOn(prompts, "spinner").mockReturnValue({
       start() {},
       stop() {},
     } as never)
-    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    const info = spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+    spyOn(Date.prototype, "toISOString").mockReturnValue(iso)
     const stderrWrite = spyOn(process.stderr, "write").mockImplementation(() => true as never)
-
-    let resolveInstall!: (code: number) => void
-    const installExited = new Promise<number>((resolve) => {
-      resolveInstall = resolve
-    })
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
       const cmd = options?.cmd as string[] | undefined
@@ -1483,24 +1481,48 @@ describe("agency-swarm npx onboarding", () => {
       }
       if (isUvPipInstallCommand(cmd)) {
         return {
-          exited: installExited,
+          exited: Promise.resolve(0),
           stdout: "Resolving packages...\n",
           stderr: "Downloading wheels...\n",
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        let resolveExit!: (code: number) => void
+        const exited = new Promise<number>((resolve) => {
+          resolveExit = resolve
+        })
+        return {
+          exited,
+          stderr: "",
+          kill() {
+            resolveExit(0)
+          },
         } as never
       }
       throw new Error(`Unexpected command: ${cmd.join(" ")}`)
     })
 
-    const launch = prepareProjectLaunch({
+    const launch = await prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
       moduleName: "agency",
     })
 
-    resolveInstall(1)
-    await expect(launch).rejects.toThrow("Dependency install failed: Downloading wheels....")
-    expect(stderrWrite.mock.calls.map((call) => call[0])).toContain("Resolving packages...\n")
-    expect(stderrWrite.mock.calls.map((call) => call[0])).toContain("Downloading wheels...\n")
+    expect(info).toHaveBeenCalledWith("Installing project dependencies...")
+    expect(info.mock.calls.map((call) => String(call[0])).join("\n")).not.toContain("Full log")
+    expect(stderrWrite.mock.calls.map((call) => call[0]).join("")).not.toContain("Resolving packages")
+    const logContent = await Bun.file(launcherLogFilePath(dir.path, "launcher-rebuild", iso)).text()
+    expect(logContent).toContain("Resolving packages...")
+    expect(logContent).toContain("Downloading wheels...")
+
+    await launch?.cleanup?.()
   })
 
   test("prepareProjectLaunch times out dependency rebuilds with a clear log path", async () => {
@@ -1583,7 +1605,9 @@ describe("agency-swarm npx onboarding", () => {
 
     expect(error).toBeInstanceOf(Error)
     if (!error) throw new Error("Expected prepareProjectLaunch to fail")
-    expect(error.message).toMatch(/Dependency install timed out after 10 minutes\..*launcher-rebuild\.log/)
+    expect(error.message).toMatch(
+      /Dependency install timed out after 10 minutes\. Last output: still working\.\.\..*launcher-rebuild\.log/,
+    )
     expect(error.message).not.toContain(dir.path)
   })
 
@@ -1676,7 +1700,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(outcome.message).toContain("Dependency install timed out after 10 minutes")
   })
 
-  test("prepareProjectLaunch preserves shutdown stderr emitted during timeout", async () => {
+  test("prepareProjectLaunch includes shutdown stderr in timeout summary without mirroring", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
 
@@ -1753,10 +1777,9 @@ describe("agency-swarm npx onboarding", () => {
         agencyFile: path.join(dir.path, "agency.py"),
         moduleName: "agency",
       }),
-    ).rejects.toThrow("Dependency install timed out after 10 minutes")
+    ).rejects.toThrow("Last output: still working... | term tail")
 
-    expect(stderrWrite.mock.calls.map((call) => call[0])).toContain("still working...\n")
-    expect(stderrWrite.mock.calls.map((call) => call[0])).toContain("term tail\n")
+    expect(stderrWrite).not.toHaveBeenCalled()
   })
 
   test("prepareProjectLaunch clears the install timeout as soon as the child exits", async () => {
@@ -1861,9 +1884,10 @@ describe("agency-swarm npx onboarding", () => {
     await launch?.cleanup?.()
   })
 
-  test("prepareProjectLaunch surfaces refresh stderr when agency-swarm upgrade fails", async () => {
+  test("prepareProjectLaunch keeps refresh failures compact and logged", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
+    const iso = "2026-04-23T02:20:00.000Z"
     await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
       recursive: true,
     })
@@ -1880,6 +1904,7 @@ describe("agency-swarm npx onboarding", () => {
     const info = spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     const warn = spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
     const stderrWrite = spyOn(process.stderr, "write").mockImplementation(() => true as never)
+    spyOn(Date.prototype, "toISOString").mockReturnValue(iso)
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
@@ -1943,16 +1968,15 @@ describe("agency-swarm npx onboarding", () => {
       moduleName: "agency",
     })
 
-    expect(info).toHaveBeenCalledWith(
-      expect.stringContaining("Refreshing project dependencies with local uv. Streaming output to stderr."),
-    )
-    expect(stderrWrite.mock.calls.map((call) => call[0])).toContain("Collecting agency-swarm...\n")
-    expect(stderrWrite.mock.calls.map((call) => call[0])).toContain(
-      "ERROR: No matching distribution found for agency-swarm[fastapi,litellm]",
-    )
+    expect(info).toHaveBeenCalledWith("Refreshing project dependencies...")
+    expect(info.mock.calls.map((call) => String(call[0])).join("\n")).not.toContain("Full log")
+    expect(stderrWrite.mock.calls.map((call) => call[0]).join("")).not.toContain("Collecting agency-swarm")
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("Installer output: ERROR: No matching distribution found"),
     )
+    const logContent = await Bun.file(launcherLogFilePath(dir.path, "launcher-refresh", iso)).text()
+    expect(logContent).toContain("Collecting agency-swarm...")
+    expect(logContent).toContain("ERROR: No matching distribution found for agency-swarm[fastapi,litellm]")
 
     await launch?.cleanup?.()
   })
@@ -2076,7 +2100,7 @@ describe("agency-swarm npx onboarding", () => {
     await launch?.cleanup?.()
   })
 
-  test("prepareProjectLaunch resumes stderr after a non-Error pip refresh traceback", async () => {
+  test("prepareProjectLaunch logs non-Error pip refresh tracebacks without mirroring stderr", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
     await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
@@ -2162,7 +2186,7 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     const mirroredOutput = stderrWrite.mock.calls.map((call) => call[0]).join("")
-    expect(mirroredOutput).toContain("later stderr after traceback")
+    expect(mirroredOutput).not.toContain("later stderr after traceback")
     expect(mirroredOutput).not.toContain("Traceback (most recent call last):")
     expect(mirroredOutput).not.toContain("pip._internal.cli.main")
     expect(mirroredOutput).not.toContain("Exception: pip bootstrap failed")
@@ -2899,7 +2923,7 @@ describe("agency-swarm npx onboarding", () => {
     await launch?.cleanup?.()
   })
 
-  test("prepareProjectLaunch ignores mirrored stderr pipe failures during rebuild installs", async () => {
+  test("prepareProjectLaunch does not mirror rebuild install output to stderr", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
 
@@ -2976,12 +3000,12 @@ describe("agency-swarm npx onboarding", () => {
       moduleName: "agency",
     })
 
-    expect(stderrWrite).toHaveBeenCalled()
+    expect(stderrWrite).not.toHaveBeenCalled()
 
     await launch?.cleanup?.()
   })
 
-  test("prepareProjectLaunch preserves full install stderr when log creation falls back", async () => {
+  test("prepareProjectLaunch keeps install failures bounded when log creation falls back", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
     const blockedLogDir = launcherLogDirectory(dir.path)
@@ -3035,7 +3059,9 @@ describe("agency-swarm npx onboarding", () => {
         agencyFile: path.join(dir.path, "agency.py"),
         moduleName: "agency",
       }),
-    ).rejects.toThrow(`Dependency install failed: ${installStderr}`)
+    ).rejects.toThrow(
+      "Dependency install failed: resolver detail 3 | resolver detail 4 | resolver detail 5 | resolver detail 6 | resolver detail 7.",
+    )
   })
 
   test("prepareProjectLaunch omits rebuild log hints when timeout logging never opens", async () => {
@@ -3124,7 +3150,7 @@ describe("agency-swarm npx onboarding", () => {
 
     expect(error).toBeInstanceOf(Error)
     if (!error) throw new Error("Expected prepareProjectLaunch to fail")
-    expect(error.message).toBe("Dependency install timed out after 10 minutes.")
+    expect(error.message).toBe("Dependency install timed out after 10 minutes. Last output: still working...")
   })
 
   test("prepareProjectLaunch avoids manifest remediation after fallback install canary failures", async () => {

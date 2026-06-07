@@ -916,11 +916,7 @@ async function ensureProjectPython(
         "launcher refresh",
         profile,
       )
-      prompts.log.info(
-        refreshLogFile
-          ? `Refreshing project dependencies with local uv. Streaming output to stderr. Full log: ${refreshLogFile}`
-          : "Refreshing project dependencies with local uv. Streaming output to stderr.",
-      )
+      prompts.log.info("Refreshing project dependencies...")
       let localUv: string | undefined
       try {
         localUv = await ensureLocalUv(directory, venvPython, {
@@ -1023,11 +1019,7 @@ async function ensureProjectPython(
     "launcher rebuild",
     profile,
   )
-  prompts.log.info(
-    installLogFile
-      ? `Installing project dependencies. Streaming output to stderr. Full log: ${installLogFile}`
-      : "Installing project dependencies. Streaming output to stderr.",
-  )
+  prompts.log.info("Installing project dependencies...")
   const localUv = await ensureLocalUv(directory, venvPython, {
     forceInstall: true,
     logFile: installLogFile,
@@ -1038,11 +1030,7 @@ async function ensureProjectPython(
     timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
   })
   if (install.timedOut) {
-    throw new Error(
-      install.logFile
-        ? `Dependency install timed out after ${formatInstallDuration(REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${install.logFile}.`
-        : `Dependency install timed out after ${formatInstallDuration(REBUILD_INSTALL_TIMEOUT_MS)}.`,
-    )
+    throw new Error(formatCommandTimeout(install, "Dependency install", REBUILD_INSTALL_TIMEOUT_MS))
   }
   if (install.code !== 0) {
     throw new Error(formatCommandFailure(install, "Dependency install failed"))
@@ -1077,7 +1065,6 @@ async function installProjectDependencies(
       {
         cwd: directory,
         logFile: options.logFile,
-        streamOutputToStderr: true,
         timeoutMs: options.timeoutMs,
       },
     )
@@ -1089,7 +1076,6 @@ async function installProjectDependencies(
     const result = await runCommand([localUv, "pip", "install", "--python", venvPython, "--upgrade", "-e", "."], {
       cwd: directory,
       logFile: options.logFile,
-      streamOutputToStderr: true,
       timeoutMs: options.timeoutMs,
     })
     return { ...result, hadManifests: true }
@@ -1099,7 +1085,6 @@ async function installProjectDependencies(
     [localUv, "pip", "install", "--python", venvPython, FALLBACK_AGENCY_SWARM_REQUIREMENT],
     {
       logFile: options.logFile,
-      streamOutputToStderr: true,
       timeoutMs: options.timeoutMs,
     },
   )
@@ -1121,11 +1106,7 @@ async function refreshProjectDependencies(
 
   const result = await installProjectDependencies(directory, venvPython, localUv, options)
   if (result.timedOut) {
-    prompts.log.warn(
-      result.logFile
-        ? `Timed out while refreshing project dependencies after ${formatInstallDuration(options.timeoutMs)}. Check the log file at ${result.logFile}.`
-        : `Timed out while refreshing project dependencies after ${formatInstallDuration(options.timeoutMs)}.`,
-    )
+    prompts.log.warn(formatCommandTimeout(result, "Project dependency refresh", options.timeoutMs))
     return { installerFailed: false }
   }
   if (result.code !== 0) {
@@ -1227,16 +1208,17 @@ async function ensureLatestAgencySwarm(
       {
         cwd: directory,
         logFile: options?.logFile,
-        streamOutputToStderr: true,
         suppressPythonTracebackStderr: true,
         timeoutMs: options?.timeoutMs,
       },
     )
     if (result.timedOut) {
       prompts.log.warn(
-        result.logFile
-          ? `Timed out while refreshing launcher-managed agency-swarm after ${formatInstallDuration(options?.timeoutMs ?? REBUILD_INSTALL_TIMEOUT_MS)}. Check the log file at ${result.logFile}.`
-          : `Timed out while refreshing launcher-managed agency-swarm after ${formatInstallDuration(options?.timeoutMs ?? REBUILD_INSTALL_TIMEOUT_MS)}.`,
+        formatCommandTimeout(
+          result,
+          "Launcher-managed agency-swarm refresh",
+          options?.timeoutMs ?? REBUILD_INSTALL_TIMEOUT_MS,
+        ),
       )
       return { installerFailed: false }
     }
@@ -1272,14 +1254,11 @@ async function ensureLocalUv(
   const result = await runCommand([venvPython, "-m", "pip", "install", "--upgrade", "uv"], {
     cwd: directory,
     logFile: options.logFile,
-    streamOutputToStderr: true,
     timeoutMs: options.timeoutMs,
   })
   if (result.timedOut) {
     throw new Error(
-      result.logFile
-        ? `Project Python environment setup timed out while installing uv after ${formatInstallDuration(options.timeoutMs)}. Check the log file at ${result.logFile}.`
-        : `Project Python environment setup timed out while installing uv after ${formatInstallDuration(options.timeoutMs)}.`,
+      formatCommandTimeout(result, "Project Python environment setup while installing uv", options.timeoutMs),
     )
   }
   if (result.code !== 0) {
@@ -1343,14 +1322,16 @@ function summarizeCommandOutput(result: Pick<CommandResult, "stdout" | "stderr">
 }
 
 function formatCommandFailure(result: CommandResult, fallback: string) {
-  if (!result.logFile) {
-    const detail = result.stderr.trim() || result.stdout.trim()
-    return detail ? `${fallback}: ${detail}` : fallback
-  }
   const summary = summarizeCommandOutput(result)
-  const logHint = ` Check the log file at ${result.logFile}.`
-  if (summary) return `${fallback}: ${summary}.${logHint}`
-  return `${fallback}.${logHint}`.trim()
+  const logHint = result.logFile ? ` Check the log file at ${result.logFile}.` : ""
+  return summary ? `${fallback}: ${summary}.${logHint}` : `${fallback}.${logHint}`.trim()
+}
+
+function formatCommandTimeout(result: CommandResult, label: string, timeoutMs: number) {
+  const summary = summarizeCommandOutput(result)
+  const logHint = result.logFile ? ` Check the log file at ${result.logFile}.` : ""
+  const detail = summary ? ` Last output: ${summary}${/[.!?]$/.test(summary) ? "" : "."}` : ""
+  return `${label} timed out after ${formatInstallDuration(timeoutMs)}.${detail}${logHint}`
 }
 
 function formatInstallDuration(ms: number) {
