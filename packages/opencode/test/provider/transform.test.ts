@@ -238,6 +238,105 @@ describe("ProviderTransform.options - google thinkingConfig gating", () => {
   })
 })
 
+describe("ProviderTransform.options - OpenRouter Gemini reasoning", () => {
+  const sessionID = "ses_test"
+  const createOpenRouterModel = (apiId: string) =>
+    ({
+      id: `openrouter/${apiId}`,
+      providerID: "openrouter",
+      api: {
+        id: apiId,
+        url: "https://openrouter.ai",
+        npm: "@openrouter/ai-sdk-provider",
+      },
+      name: apiId,
+      capabilities: {
+        temperature: true,
+        reasoning: true,
+        attachment: true,
+        toolcall: true,
+        input: { text: true, audio: false, image: true, video: false, pdf: false },
+        output: { text: true, audio: false, image: false, video: false, pdf: false },
+        interleaved: false,
+      },
+      cost: { input: 0.001, output: 0.002, cache: { read: 0.0001, write: 0.0002 } },
+      limit: { context: 128000, output: 8192 },
+      status: "active",
+      options: {},
+      headers: {},
+    }) as any
+
+  test("enables OpenRouter Gemini reasoning by default", () => {
+    const model = createOpenRouterModel("google/gemini-2.5-flash")
+
+    expect(ProviderTransform.options({ model, sessionID, providerOptions: {} })).toEqual({
+      usage: { include: true },
+      prompt_cache_key: sessionID,
+      reasoning: { max_tokens: 768 },
+    })
+  })
+
+  test("keeps OpenRouter Gemini 3 reasoning effort by default", () => {
+    const model = createOpenRouterModel("google/gemini-3-pro-preview")
+
+    expect(ProviderTransform.options({ model, sessionID, providerOptions: {} })).toEqual({
+      usage: { include: true },
+      prompt_cache_key: sessionID,
+      reasoning: { effort: "high" },
+    })
+  })
+
+  test("does not enable default reasoning for non-Gemini OpenRouter models", () => {
+    const model = createOpenRouterModel("anthropic/claude-haiku-4.5")
+
+    expect(ProviderTransform.options({ model, sessionID, providerOptions: {} })).toEqual({
+      usage: { include: true },
+      prompt_cache_key: sessionID,
+    })
+  })
+
+  test("does not enable default reasoning for OpenRouter Gemini models without reasoning", () => {
+    const model = createOpenRouterModel("google/gemini-2.5-flash-nothinking")
+    model.capabilities.reasoning = false
+
+    expect(ProviderTransform.options({ model, sessionID, providerOptions: {} })).toEqual({
+      usage: { include: true },
+      prompt_cache_key: sessionID,
+    })
+  })
+
+  test("keeps llmgateway Gemini defaults unchanged", () => {
+    const model = createOpenRouterModel("google/gemini-2.5-flash")
+    model.id = "llmgateway/google/gemini-2.5-flash"
+    model.providerID = "llmgateway"
+    model.api = {
+      id: "google/gemini-2.5-flash",
+      url: "https://llmgateway.ai",
+      npm: "@llmgateway/ai-sdk-provider",
+    }
+
+    expect(ProviderTransform.options({ model, sessionID, providerOptions: {} })).toEqual({
+      usage: { include: true },
+    })
+  })
+
+  test("keeps llmgateway Gemini 3 reasoning effort by default", () => {
+    const model = createOpenRouterModel("google/gemini-3-pro-preview")
+    model.id = "llmgateway/google/gemini-3-pro-preview"
+    model.providerID = "llmgateway"
+    model.api = {
+      id: "google/gemini-3-pro-preview",
+      url: "https://llmgateway.ai",
+      npm: "@llmgateway/ai-sdk-provider",
+    }
+
+    expect(ProviderTransform.options({ model, sessionID, providerOptions: {} })).toEqual({
+      usage: { include: true },
+      reasoning: { effort: "high" },
+    })
+  })
+})
+
 describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
   const sessionID = "test-session-123"
 
@@ -2591,6 +2690,89 @@ describe("ProviderTransform.variants", () => {
       })
       const result = ProviderTransform.variants(model)
       expect(Object.keys(result)).toEqual(["none", "minimal", "low", "medium", "high", "xhigh"])
+    })
+
+    test("gemini-2.5 returns fixed OpenRouter reasoning budgets", () => {
+      const model = createMockModel({
+        id: "openrouter/google/gemini-2.5-flash",
+        providerID: "openrouter",
+        api: {
+          id: "google/gemini-2.5-flash",
+          url: "https://openrouter.ai",
+          npm: "@openrouter/ai-sdk-provider",
+        },
+      })
+      const result = ProviderTransform.variants(model)
+      expect(Object.keys(result)).toEqual(["none", "minimal", "low", "medium", "high", "xhigh"])
+      expect(result.high).toEqual({ reasoning: { max_tokens: 768 } })
+    })
+
+    test("does not expose reasoning variants for unsupported OpenRouter Gemini models", () => {
+      const model = createMockModel({
+        id: "openrouter/google/gemini-2.0-flash",
+        providerID: "openrouter",
+        api: {
+          id: "google/gemini-2.0-flash",
+          url: "https://openrouter.ai",
+          npm: "@openrouter/ai-sdk-provider",
+        },
+      })
+
+      expect(ProviderTransform.variants(model)).toEqual({})
+    })
+
+    test.each([
+      "openrouter/google/gemini-2.5-flash",
+      "openrouter/google/gemini-3-5-pro",
+      "openrouter/anthropic/claude-haiku-4.5",
+      "openrouter/x-ai/grok-4.3",
+    ])(
+      "does not cap output tokens for OpenRouter reasoning model %s",
+      (id) => {
+        const model = createMockModel({
+          id,
+          providerID: "openrouter",
+          api: {
+            id: id.replace("openrouter/", ""),
+            url: "https://openrouter.ai",
+            npm: "@openrouter/ai-sdk-provider",
+          },
+          limit: { output: 64_000 },
+        })
+
+        expect(ProviderTransform.maxOutputTokens(model)).toBe(32_000)
+      },
+    )
+
+    test("does not cap OpenRouter GPT output tokens", () => {
+      const model = createMockModel({
+        id: "openrouter/openai/gpt-5.4-mini",
+        providerID: "openrouter",
+        api: {
+          id: "openai/gpt-5.4-mini",
+          url: "https://openrouter.ai",
+          npm: "@openrouter/ai-sdk-provider",
+        },
+        limit: { output: 64_000 },
+      })
+
+      expect(ProviderTransform.maxOutputTokens(model)).toBe(32_000)
+    })
+
+    test("does not cap non-reasoning OpenRouter Grok output tokens", () => {
+      const model = createMockModel({
+        id: "openrouter/x-ai/grok-4",
+        providerID: "openrouter",
+        api: {
+          id: "x-ai/grok-4",
+          url: "https://openrouter.ai",
+          npm: "@openrouter/ai-sdk-provider",
+        },
+        capabilities: { reasoning: false },
+        limit: { output: 64_000 },
+      })
+
+      expect(ProviderTransform.maxOutputTokens(model)).toBe(32_000)
     })
 
     test("grok-4 returns empty object", () => {

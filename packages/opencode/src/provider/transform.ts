@@ -520,6 +520,14 @@ const OPENAI_GPT5_PRO_2_PLUS_EFFORTS = ["medium", "high", "xhigh"]
 const OPENAI_GPT5_CHAT_EFFORTS = ["medium"]
 const OPENAI_GPT5_CODEX_XHIGH_EFFORTS = [...WIDELY_SUPPORTED_EFFORTS, "xhigh"]
 const OPENAI_GPT5_CODEX_3_PLUS_EFFORTS = ["none", ...OPENAI_GPT5_CODEX_XHIGH_EFFORTS]
+const OPENROUTER_GEMINI_REASONING_BUDGETS = {
+  none: { reasoning: { enabled: false } },
+  minimal: { reasoning: { max_tokens: 64 } },
+  low: { reasoning: { max_tokens: 256 } },
+  medium: { reasoning: { max_tokens: 512 } },
+  high: { reasoning: { max_tokens: 768 } },
+  xhigh: { reasoning: { max_tokens: 900 } },
+}
 
 // OpenAI rolled out the `none` reasoning_effort tier on this date (Responses API).
 // Models released before it 400 on `reasoning_effort: "none"`, so we only expose
@@ -617,6 +625,14 @@ function googleThinkingBudgetMax(apiId: string) {
   return 24_576
 }
 
+function isGemini25(id: string) {
+  return id.toLowerCase().includes("gemini-2.5")
+}
+
+function isGemini3(id: string) {
+  return id.toLowerCase().includes("gemini-3")
+}
+
 export function variants(model: Provider.Model): Record<string, Record<string, any>> {
   if (!model.capabilities.reasoning) return {}
 
@@ -663,7 +679,8 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
 
   switch (model.api.npm) {
     case "@openrouter/ai-sdk-provider":
-      if (!id.includes("gpt") && !id.includes("gemini-3") && !id.includes("claude")) return {}
+      if (!id.includes("gpt") && !id.includes("claude") && !isGemini25(id) && !isGemini3(id)) return {}
+      if (isGemini25(id)) return OPENROUTER_GEMINI_REASONING_BUDGETS
       return Object.fromEntries(
         (id.includes("gpt") ? openaiCompatibleReasoningEfforts(id) : OPENAI_EFFORTS).map((effort) => [
           effort,
@@ -1073,8 +1090,12 @@ export function options(input: {
     result["usage"] = {
       include: true,
     }
-    if (input.model.api.id.includes("gemini-3")) {
-      result["reasoning"] = { effort: "high" }
+    if (input.model.capabilities.reasoning) {
+      if (input.model.api.npm === "@openrouter/ai-sdk-provider" && isGemini25(input.model.api.id)) {
+        result["reasoning"] = OPENROUTER_GEMINI_REASONING_BUDGETS.high.reasoning
+      } else if (isGemini3(input.model.api.id)) {
+        result["reasoning"] = { effort: "high" }
+      }
     }
   }
 
