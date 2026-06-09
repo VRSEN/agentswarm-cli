@@ -77,6 +77,7 @@ export type Event =
   | EventSessionNextCompactionStarted
   | EventSessionNextCompactionDelta
   | EventSessionNextCompactionEnded
+  | EventServerHeartbeat
 
 export type OAuth = {
   type: "oauth"
@@ -786,7 +787,7 @@ export type Prompt = {
 }
 
 export type GlobalEvent = {
-  directory: string
+  directory?: string
   project?: string
   workspace?: string
   payload:
@@ -895,6 +896,13 @@ export type GlobalEvent = {
     | SyncEventSessionNextCompactionStarted
     | SyncEventSessionNextCompactionDelta
     | SyncEventSessionNextCompactionEnded
+    | {
+        id: string
+        type: "server.heartbeat"
+        properties: {
+          [key: string]: unknown
+        }
+      }
 }
 
 /**
@@ -1871,6 +1879,14 @@ export type WorkspaceWarpError = {
   name: "WorkspaceWarpError"
   data: {
     message: string
+  }
+}
+
+export type EventServerHeartbeat = {
+  id: string
+  type: "server.heartbeat"
+  properties: {
+    [key: string]: unknown
   }
 }
 
@@ -6708,6 +6724,8 @@ export type V2ModelListData = {
   body?: never
   path?: never
   query?: {
+    directory?: string
+    workspace?: string
     instance?: {
       directory?: string
       workspace?: string
@@ -6729,6 +6747,8 @@ export type V2ProviderListData = {
   body?: never
   path?: never
   query?: {
+    directory?: string
+    workspace?: string
     instance?: {
       directory?: string
       workspace?: string
@@ -6752,6 +6772,8 @@ export type V2ProviderGetData = {
     providerID: string
   }
   query?: {
+    directory?: string
+    workspace?: string
     instance?: {
       directory?: string
       workspace?: string

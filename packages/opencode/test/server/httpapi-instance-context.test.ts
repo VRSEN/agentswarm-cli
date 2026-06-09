@@ -197,6 +197,28 @@ describe("HttpApi instance context middleware", () => {
     }),
   )
 
+  it.live("preserves percent escapes in local workspace target directories", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const project = yield* Project.use.fromDirectory(dir)
+      const workspaceDir = path.join(dir, "acme%20demo")
+      const workspace = yield* createLocalWorkspace({
+        projectID: project.project.id,
+        type: "instance-context-percent-workspace",
+        directory: workspaceDir,
+      })
+      yield* serveProbe()
+
+      const response = yield* HttpClient.get(`/probe?workspace=${workspace.id}`)
+
+      expect(response.status).toBe(200)
+      expect(yield* response.json).toMatchObject({
+        directory: workspaceDir,
+        workspaceID: workspace.id,
+      })
+    }),
+  )
+
   it.live("uses configured workspace id instead of routing to the requested workspace", () =>
     Effect.gen(function* () {
       const fixedWorkspaceID = WorkspaceID.ascending()

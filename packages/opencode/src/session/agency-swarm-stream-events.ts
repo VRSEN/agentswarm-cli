@@ -735,8 +735,13 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     if (itemType === "message") {
       const itemID = asString(item["id"]) || lastTextItemID
       if (!itemID) return []
-      rememberResponseReplay(responseTextReplay, item, extractMessageText(item))
-      return finishText(itemID, textIndex.get(itemID) ?? 0, undefined, eventMeta, outputMeta(outputIndex))
+      const text = extractMessageText(item)
+      const index = textIndex.get(itemID) ?? 0
+      const parts = finishText(itemID, index, text, eventMeta, outputMeta(outputIndex))
+      if (text && textBuffer.get(textKey(itemID, index)) === text) {
+        rememberResponseReplay(responseTextReplay, item, text)
+      }
+      return parts
     }
 
     if (itemType === "reasoning") {

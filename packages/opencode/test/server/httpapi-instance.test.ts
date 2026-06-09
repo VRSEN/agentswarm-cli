@@ -92,6 +92,21 @@ describe("instance HttpApi", () => {
     }),
   )
 
+  it.live("decodes SDK directory headers for mutations", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const response = yield* HttpClientRequest.post(SessionPaths.create).pipe(
+        directoryHeader(encodeURIComponent(dir)),
+        HttpClientRequest.bodyJson({ title: "encoded directory" }),
+        Effect.flatMap(HttpClient.execute),
+      )
+
+      expect(response.status).toBe(200)
+      const body = (yield* response.json) as { directory: string }
+      expect(body.directory).toBe(dir)
+    }),
+  )
+
   it.live("does not emit sync fence headers for fixed-workspace reads or no-op mutations", () =>
     Effect.gen(function* () {
       const originalWorkspaceID = Flag.OPENCODE_WORKSPACE_ID

@@ -139,4 +139,49 @@ describe("createChildStoreManager", () => {
       dispose()
     })
   })
+
+  test("treats unfinished assistant messages as working before status loads", () => {
+    queries = [{ isLoading: false }, { isLoading: false }, { isLoading: false }, { isLoading: false }]
+
+    createRoot((dispose) => {
+      const owner = getOwner()
+      if (!owner) throw new Error("owner required")
+
+      const store = manager(owner)
+      const [state, setState] = store.ensureChild("/repo")
+      setState("message", "ses_1", [
+        {
+          role: "assistant",
+          time: {},
+        } as unknown as State["message"][string][number],
+      ])
+
+      expect(state.session_working("ses_1")).toBe(true)
+
+      dispose()
+    })
+  })
+
+  test("does not use unfinished assistant messages after idle status loads", () => {
+    queries = [{ isLoading: false }, { isLoading: false }, { isLoading: false }, { isLoading: false }]
+
+    createRoot((dispose) => {
+      const owner = getOwner()
+      if (!owner) throw new Error("owner required")
+
+      const store = manager(owner)
+      const [state, setState] = store.ensureChild("/repo")
+      setState("session_status", "ses_1", { type: "idle" })
+      setState("message", "ses_1", [
+        {
+          role: "assistant",
+          time: {},
+        } as unknown as State["message"][string][number],
+      ])
+
+      expect(state.session_working("ses_1")).toBe(false)
+
+      dispose()
+    })
+  })
 })

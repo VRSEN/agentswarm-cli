@@ -14,11 +14,17 @@ const GlobalHealth = Schema.Struct({
 
 initProjectors()
 
+const GlobalServerHeartbeat = Schema.Struct({
+  id: Schema.String,
+  type: Schema.Literal("server.heartbeat"),
+  properties: Schema.Struct({}),
+})
+
 const GlobalEventSchema = Schema.Struct({
-  directory: Schema.String,
+  directory: Schema.optional(Schema.String),
   project: Schema.optional(Schema.String),
   workspace: Schema.optional(Schema.String),
-  payload: Schema.Union([...BusEvent.effectPayloads(), ...SyncEvent.effectPayloads()]),
+  payload: Schema.Union([...BusEvent.effectPayloads(), ...SyncEvent.effectPayloads(), GlobalServerHeartbeat]),
 }).annotate({ identifier: "GlobalEvent" })
 
 export const GlobalUpgradeInput = Schema.Struct({

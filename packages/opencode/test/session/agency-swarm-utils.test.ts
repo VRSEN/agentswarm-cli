@@ -219,6 +219,24 @@ describe("session.agency-swarm-utils", () => {
     ).toThrow("Agent Swarm Run mode cannot send local image files to a remote Agency server")
   })
 
+  test("collectFileURLs blocks file URL attachments for remote Agency servers", () => {
+    expect(() =>
+      collectFileURLs(
+        msg([
+          file("part-1", {
+            type: "file",
+            mime: "text/plain",
+            url: pathToFileURL(path.join(os.tmpdir(), "remote.txt")).toString(),
+            filename: "remote.txt",
+          }),
+        ]),
+        {
+          allowLocalFilePaths: false,
+        },
+      ),
+    ).toThrow("Agent Swarm Run mode cannot send local file attachments to a remote Agency server")
+  })
+
   test("collectFileURLs materializes clipboard images for local Agency servers", async () => {
     const content = Buffer.from("clipboard image")
     const result = collectFileURLs(

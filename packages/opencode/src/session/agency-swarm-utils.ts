@@ -187,13 +187,16 @@ export function buildOutgoingMessage(message: MessageV2.WithParts): string {
   return textParts.join("\n\n")
 }
 
-export function buildStructuredOutgoingMessage(message: MessageV2.WithParts): AgencyMessageInput {
+export function buildStructuredOutgoingMessage(
+  message: MessageV2.WithParts,
+  options: { allowLocalFilePaths?: boolean } = { allowLocalFilePaths: true },
+): AgencyMessageInput {
   const files = message.parts.filter((part): part is MessageV2.FilePart => part.type === "file")
   const text = buildOutgoingMessage(message)
   if (files.length === 0) return text
 
   const hasSyntheticText = message.parts.some((part) => part.type === "text" && !part.ignored && part.synthetic)
-  const content = files.flatMap((part) => structuredFileContent(part, { hasSyntheticText }))
+  const content = files.flatMap((part) => structuredFileContent(part, { ...options, hasSyntheticText }))
   if (text) content.push({ type: "input_text", text })
   return [
     {
@@ -217,13 +220,13 @@ function visibleOutgoingText(part: MessageV2.TextPart): string {
 
 function structuredFileContent(
   part: MessageV2.FilePart,
-  options: { hasSyntheticText?: boolean } = {},
+  options: { allowLocalFilePaths?: boolean; hasSyntheticText?: boolean } = {},
 ): Array<Record<string, unknown>> {
   if (part.mime === "application/x-directory") return []
   if (isExpandedLocalTextFile(part, options)) return []
 
   const filename = part.filename || path.basename(part.source?.type === "file" ? part.source.path : "") || "attachment"
-  const url = normalizeStructuredFileURL(part)
+  const url = normalizeStructuredFileURL(part, options)
   if (!url) return []
   if (part.mime.startsWith("image/")) {
     return [
@@ -256,9 +259,17 @@ function isExpandedLocalTextFile(part: MessageV2.FilePart, options: { hasSynthet
   return !!options.hasSyntheticText && part.source?.type === "file" && !!part.source.text && part.mime === "text/plain"
 }
 
-function normalizeStructuredFileURL(part: MessageV2.FilePart): string | undefined {
+function normalizeStructuredFileURL(
+  part: MessageV2.FilePart,
+  options: { allowLocalFilePaths?: boolean } = {},
+): string | undefined {
   if (part.url.startsWith("data:") || part.url.startsWith("http://") || part.url.startsWith("https://")) return part.url
   if (!part.url.startsWith("file://")) return undefined
+  if (!options.allowLocalFilePaths) {
+    throw new Error(
+      "Agent Swarm Run mode cannot send local file attachments to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
+    )
+  }
   let filepath: string | undefined
   try {
     filepath = fileURLToPath(part.url)
@@ -296,6 +307,11 @@ export function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function normalizeFileURL(part: MessageV2.FilePart, options: CollectFileURLOptions): string | undefined {
   if (part.url.startsWith("file://")) {
+    if (!options.allowLocalFilePaths) {
+      throw new Error(
+        "Agent Swarm Run mode cannot send local file attachments to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
+      )
+    }
     try {
       return fileURLToPath(part.url)
     } catch {

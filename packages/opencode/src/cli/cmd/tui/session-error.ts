@@ -1,6 +1,7 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { hasClientConfigCredential } from "@/agency-swarm/client-config"
 import { isAgencySwarmRunMode, type AgencySwarmRunModeInput } from "@/agency-swarm/run-mode"
+import { isLocalAgencyURL } from "@/session/agency-swarm-client-config"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Log } from "@opencode-ai/core/util/log"
 import { hasStoredProviderCredential } from "@tui/util/provider-auth"
@@ -69,30 +70,11 @@ function hasConfiguredAPIStyleCredential(provider: AuthProvider | undefined) {
   )
 }
 
-function isLoopbackBaseURL(baseURL: string) {
-  try {
-    const parsed = new URL(baseURL)
-    return (
-      parsed.hostname === "127.0.0.1" ||
-      parsed.hostname === "0.0.0.0" ||
-      parsed.hostname === "localhost" ||
-      parsed.hostname === "::1" ||
-      parsed.hostname === "[::1]"
-    )
-  } catch (error) {
-    log.error("failed to parse agency-swarm base URL while checking local-provider auth policy", {
-      baseURL,
-      error: error instanceof Error ? error.message : String(error),
-    })
-    return false
-  }
-}
-
 function usesLocalAgencyProviderAuth(providers: Provider[]) {
   const agencyProvider = providers.find((provider) => provider.id === AgencySwarmAdapter.PROVIDER_ID)
   const rawBaseURL = agencyProvider?.options?.["baseURL"] ?? agencyProvider?.options?.["base_url"]
   const baseURL = typeof rawBaseURL === "string" && rawBaseURL.trim() ? rawBaseURL : AgencySwarmAdapter.DEFAULT_BASE_URL
-  return isLoopbackBaseURL(baseURL)
+  return isLocalAgencyURL(baseURL)
 }
 
 /**

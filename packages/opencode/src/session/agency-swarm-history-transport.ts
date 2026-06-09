@@ -297,7 +297,7 @@ export function isCodexClientConfig(config: Record<string, unknown> | undefined)
 
 export function sanitizeAgencyHistoryForTransport(
   history: Array<Record<string, unknown>>,
-  options: { codexTransport?: boolean } = {},
+  options: { allowLocalFilePaths?: boolean; codexTransport?: boolean } = { allowLocalFilePaths: true },
 ) {
   return history.flatMap((item) => {
     const type = asString(item["type"])
@@ -305,6 +305,7 @@ export function sanitizeAgencyHistoryForTransport(
     if (type === "message" && asString(item["role"]) === "assistant" && !hasReplayableMessageContent(item["content"])) {
       return []
     }
+    if (options.allowLocalFilePaths === false) assertRemoteSafeHistoryItem(item)
     const transportItem =
       options.codexTransport && isHostedToolPreservationSystemMessage(item) ? { ...item, role: "developer" } : item
     return [normalizeAgencyHistoryItem(stripOpenAIResponseItemID(transportItem), "transport")]
@@ -408,8 +409,9 @@ export function truncateLargeText(value: string, maxChars: number, label: string
 export function replayStoredAttachmentsInOutgoingMessage(
   message: AgencyMessageInput,
   history: Array<Record<string, unknown>>,
+  options: { allowLocalFilePaths?: boolean } = { allowLocalFilePaths: true },
 ): { message: AgencyMessageInput; replayedAttachmentKeys: Set<string> } {
-  const replayedAttachments = collectReplayableAttachmentContent(history)
+  const replayedAttachments = collectReplayableAttachmentContent(history, options)
   if (replayedAttachments.length === 0) {
     return {
       message,
@@ -463,7 +465,10 @@ export function replayStoredAttachmentsInOutgoingMessage(
   }
 }
 
-function collectReplayableAttachmentContent(history: Array<Record<string, unknown>>) {
+function collectReplayableAttachmentContent(
+  history: Array<Record<string, unknown>>,
+  options: { allowLocalFilePaths?: boolean } = { allowLocalFilePaths: true },
+) {
   const result: Array<Record<string, unknown>> = []
   const seen = new Set<string>()
   for (const item of history) {
@@ -473,6 +478,7 @@ function collectReplayableAttachmentContent(history: Array<Record<string, unknow
     for (const rawPart of content) {
       const part = asRecord(rawPart)
       if (!part || !isReplayableAttachmentPart(part)) continue
+      if (options.allowLocalFilePaths === false) assertRemoteSafeAttachmentPart(part)
       const key = replayableAttachmentKey(part)
       if (seen.has(key)) continue
       seen.add(key)
@@ -480,6 +486,28 @@ function collectReplayableAttachmentContent(history: Array<Record<string, unknow
     }
   }
   return result
+}
+
+function assertRemoteSafeHistoryItem(item: Record<string, unknown>) {
+  const content = item["content"]
+  if (!Array.isArray(content)) return
+  for (const rawPart of content) {
+    const part = asRecord(rawPart)
+    if (!part || !isReplayableAttachmentPart(part)) continue
+    assertRemoteSafeAttachmentPart(part)
+  }
+}
+
+function assertRemoteSafeAttachmentPart(part: Record<string, unknown>) {
+  const fileData = asString(part["file_data"])
+  const fileURL = asString(part["file_url"])
+  const imageURL = asString(part["image_url"])
+  if (!fileData && !fileURL?.startsWith("file://") && !imageURL?.startsWith("file://") && !imageURL?.startsWith("data:")) {
+    return
+  }
+  throw new Error(
+    "Agent Swarm Run mode cannot send local file attachments to a remote Agency server. Use an http(s) URL or run against a local Agency server.",
+  )
 }
 
 export function stripReplayedAttachmentsFromMessages(messages: unknown[], replayedKeys: Set<string>) {

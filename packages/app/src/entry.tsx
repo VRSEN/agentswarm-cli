@@ -112,11 +112,33 @@ const getDefaultUrl = () => {
   return getCurrentUrl()
 }
 
+const AUTH_TOKEN_PARAM = "auth_token"
+
+const readHashAuthToken = () => {
+  if (!location.hash) return null
+  const params = new URLSearchParams(location.hash.slice(1))
+  return params.get(AUTH_TOKEN_PARAM)
+}
+
+const readStartupAuthToken = () => {
+  const hash = readHashAuthToken()
+  if (hash) return hash
+  return new URLSearchParams(location.search).get(AUTH_TOKEN_PARAM)
+}
+
 const clearAuthToken = () => {
   const params = new URLSearchParams(location.search)
-  if (!params.has("auth_token")) return
-  params.delete("auth_token")
-  history.replaceState(null, "", location.pathname + (params.size ? `?${params}` : "") + location.hash)
+  const hadSearch = params.has(AUTH_TOKEN_PARAM)
+  params.delete(AUTH_TOKEN_PARAM)
+
+  const hashParams = new URLSearchParams(location.hash.slice(1))
+  const hadHash = hashParams.has(AUTH_TOKEN_PARAM)
+  hashParams.delete(AUTH_TOKEN_PARAM)
+
+  if (!hadSearch && !hadHash) return
+  const search = params.size ? `?${params}` : ""
+  const hash = hadHash ? (hashParams.size ? `#${hashParams}` : "") : location.hash
+  history.replaceState(null, "", location.pathname + search + hash)
 }
 
 const platform: Platform = {
@@ -147,14 +169,15 @@ if (import.meta.env.VITE_SENTRY_DSN) {
     integrations: (integrations) => {
       return integrations.filter(
         (i) =>
-          i.name !== "Breadcrumbs" && !(import.meta.env.OPENCODE_CHANNEL === "prod" && i.name === "GlobalHandlers"),
+          i.name !== "Breadcrumbs" &&
+          !(import.meta.env.VITE_OPENCODE_CHANNEL === "prod" && i.name === "GlobalHandlers"),
       )
     },
   })
 }
 
 if (root instanceof HTMLElement) {
-  const auth = authFromToken(new URLSearchParams(location.search).get("auth_token"))
+  const auth = authFromToken(readStartupAuthToken())
   clearAuthToken()
   const server: ServerConnection.Http = {
     type: "http",

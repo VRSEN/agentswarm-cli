@@ -391,6 +391,15 @@ export const layer: Layer.Layer<
       }
       const userMessage = parent.info
       const compactionPart = parent.parts.find((part): part is MessageV2.CompactionPart => part.type === "compaction")
+      const endCompaction = (text: string, include?: MessageID) =>
+        flags.experimentalEventSystem
+          ? sync.run(SessionEvent.Compaction.Ended.Sync, {
+              sessionID: input.sessionID,
+              timestamp: DateTime.makeUnsafe(Date.now()),
+              text,
+              include,
+            })
+          : Effect.void
 
       let messages = input.messages
       let replay:
@@ -628,24 +637,20 @@ export const layer: Layer.Layer<
         }
       }
 
+      const summary =
+        result === "continue"
+          ? summaryText(
+              (yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)).find(
+                (item) => item.info.id === msg.id,
+              ) ?? {
+                info: msg,
+                parts: [],
+              },
+            )
+          : undefined
       if (processor.message.error) return "stop"
       if (result === "continue") {
-        const summary = summaryText(
-          (yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)).find(
-            (item) => item.info.id === msg.id,
-          ) ?? {
-            info: msg,
-            parts: [],
-          },
-        )
-        if (flags.experimentalEventSystem) {
-          yield* sync.run(SessionEvent.Compaction.Ended.Sync, {
-            sessionID: input.sessionID,
-            timestamp: DateTime.makeUnsafe(Date.now()),
-            text: summary ?? "",
-            include: selected.tail_start_id,
-          })
-        }
+        yield* endCompaction(summary ?? "", selected.tail_start_id)
         yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
       }
       return result

@@ -26,7 +26,12 @@ import { SchemaErrorMiddleware } from "./middleware/schema-error"
 
 // SSE event schemas built from the BusEvent/SyncEvent registries.
 initProjectors()
-const EventSchema = Schema.Union(BusEvent.effectPayloads()).annotate({ identifier: "Event" })
+const ServerHeartbeat = Schema.Struct({
+  id: Schema.String,
+  type: Schema.Literal("server.heartbeat"),
+  properties: Schema.Struct({}),
+}).annotate({ identifier: "EventServerHeartbeat" })
+const EventSchema = Schema.Union([...BusEvent.effectPayloads(), ServerHeartbeat]).annotate({ identifier: "Event" })
 const SyncEventSchemas = SyncEvent.effectPayloads()
 
 export const RootHttpApi = HttpApi.make("opencode-root")
