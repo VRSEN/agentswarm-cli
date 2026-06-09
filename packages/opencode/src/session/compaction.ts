@@ -463,7 +463,6 @@ export const layer: Layer.Layer<
             isRetryable: false,
           }).toObject(),
         })
-        yield* endCompaction("")
         return "stop"
       }
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
@@ -544,7 +543,6 @@ export const layer: Layer.Layer<
         }).toObject()
         processor.message.finish = "error"
         yield* session.updateMessage(processor.message)
-        yield* endCompaction("", selected.tail_start_id)
         return "stop"
       }
 
@@ -650,9 +648,9 @@ export const layer: Layer.Layer<
               },
             )
           : undefined
-      yield* endCompaction(summary ?? "", selected.tail_start_id)
       if (processor.message.error) return "stop"
       if (result === "continue") {
+        yield* endCompaction(summary ?? "", selected.tail_start_id)
         yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
       }
       return result

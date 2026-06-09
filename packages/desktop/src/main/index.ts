@@ -337,7 +337,7 @@ const main = Effect.gen(function* () {
     }
   }
 
-  yield* Fiber.join(loadingTask)
+  yield* Fiber.await(loadingTask)
   setInitStep({ phase: "done" })
 
   if (overlay) yield* Deferred.await(loadingComplete)

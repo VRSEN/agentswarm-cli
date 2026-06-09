@@ -444,8 +444,11 @@ export namespace SessionAgencySwarm {
         !!sessionMessages &&
         hasPriorFileParts(sessionMessages, input.userMessage.info.id)
       const codexTransport = isCodexClientConfig(clientConfig)
+      const allowLocalFilePaths = isLocalAgencyURL(input.options.baseURL)
       const sanitizedChatHistory = sanitizeAgencyHistoryForTransport(chatHistory, { codexTransport })
-      const replayOnlyOutgoing = replayStoredAttachmentsInOutgoingMessage(outgoingMessage, sanitizedChatHistory)
+      const replayOnlyOutgoing = allowLocalFilePaths
+        ? replayStoredAttachmentsInOutgoingMessage(outgoingMessage, sanitizedChatHistory)
+        : { message: outgoingMessage, replayedAttachmentKeys: new Set<string>() }
       const attachmentMessage =
         hasCurrentFileAttachments ||
         hasRebuildableFileAttachments ||
@@ -487,27 +490,34 @@ export namespace SessionAgencySwarm {
       if (persistRebuiltHistoryFromMessages && rebuiltHistoryFromMessages) {
         await AgencySwarmHistory.appendMessages(scope, normalizeAgencyHistoryForStorage(rebuiltHistoryFromMessages))
       }
-      const transportChatHistory = sanitizeAgencyHistoryForTransport(effectiveChatHistory, { codexTransport })
       let requestMessage: AgencyMessageInput = outgoingMessage
       let fileURLs: Record<string, string> | undefined
-      if (structuredAttachmentsSupported) {
-        const outgoing = replayStoredAttachmentsInOutgoingMessage(
-          buildStructuredOutgoingMessage(input.userMessage),
-          transportChatHistory,
-        )
-        requestMessage = outgoing.message
-        replayedAttachmentKeys = outgoing.replayedAttachmentKeys
-      } else {
-        replayedAttachmentKeys = new Set()
-        if (hasCurrentFileAttachments) {
-          fileURLs = collectFileURLs(input.userMessage, {
-            allowLocalFilePaths: isLocalAgencyURL(input.options.baseURL),
-            materializedFilePaths,
-          })
-        }
-      }
 
       try {
+        const transportChatHistory = sanitizeAgencyHistoryForTransport(effectiveChatHistory, {
+          allowLocalFilePaths,
+          codexTransport,
+        })
+        if (structuredAttachmentsSupported) {
+          const outgoing = replayStoredAttachmentsInOutgoingMessage(
+            buildStructuredOutgoingMessage(input.userMessage, {
+              allowLocalFilePaths,
+            }),
+            transportChatHistory,
+            { allowLocalFilePaths },
+          )
+          requestMessage = outgoing.message
+          replayedAttachmentKeys = outgoing.replayedAttachmentKeys
+        } else {
+          replayedAttachmentKeys = new Set()
+          if (hasCurrentFileAttachments) {
+            fileURLs = collectFileURLs(input.userMessage, {
+              allowLocalFilePaths,
+              materializedFilePaths,
+            })
+          }
+        }
+
         for await (const frame of AgencySwarmAdapter.streamRun({
           baseURL: input.options.baseURL,
           agency,

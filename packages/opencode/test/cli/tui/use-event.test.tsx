@@ -178,6 +178,21 @@ describe("useEvent", () => {
     }
   })
 
+  test("delivers project events without workspace when a workspace is active", async () => {
+    const { app, emit, project, seen } = await mount()
+
+    try {
+      project.workspace.set("ws_a")
+      emit(event(vcs("main"), { directory: "/tmp/root", project: projectID }))
+
+      await wait(() => seen.length === 1)
+
+      expect(seen).toEqual([vcs("main")])
+    } finally {
+      app.renderer.destroy()
+    }
+  })
+
   test("delivers truly global events even when a workspace is active", async () => {
     const { app, emit, project, seen } = await mount()
 

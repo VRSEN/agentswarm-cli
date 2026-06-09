@@ -41,36 +41,41 @@ async function getCosts(workspaceID: string, year: number, month: number, timezo
       })
     }
 
-    const usageData = await Database.use(async (tx) => {
-      const all = []
-      for (const window of windows) {
-        const rows = await tx
-          .select({
-            date: sql<string>`${window.date}`,
-            model: UsageTable.model,
-            totalCost: sql<number>`coalesce(sum(${UsageTable.cost}), 0)`,
-            keyId: UsageTable.keyID,
-            plan: planExpr,
-          })
-          .from(UsageTable)
-          .where(
-            and(
-              eq(UsageTable.workspaceID, workspaceID),
-              gte(UsageTable.timeCreated, window.start),
-              lt(UsageTable.timeCreated, window.end),
-            ),
-          )
-          .groupBy(UsageTable.model, UsageTable.keyID, planExpr)
-        all.push(
-          ...rows.map((r) => ({
+    const first = windows[0]!
+    const last = windows[windows.length - 1]!
+    const dateExpr = sql<string>`case ${sql.join(
+      windows.map(
+        (window) =>
+          sql`when ${UsageTable.timeCreated} >= ${window.start} and ${UsageTable.timeCreated} < ${window.end} then ${window.date}`,
+      ),
+      sql` `,
+    )} end`
+    const usageData = await Database.use((tx) =>
+      tx
+        .select({
+          date: dateExpr,
+          model: UsageTable.model,
+          totalCost: sql<number>`coalesce(sum(${UsageTable.cost}), 0)`,
+          keyId: UsageTable.keyID,
+          plan: planExpr,
+        })
+        .from(UsageTable)
+        .where(
+          and(
+            eq(UsageTable.workspaceID, workspaceID),
+            gte(UsageTable.timeCreated, first.start),
+            lt(UsageTable.timeCreated, last.end),
+          ),
+        )
+        .groupBy(dateExpr, UsageTable.model, UsageTable.keyID, planExpr)
+        .then((rows) =>
+          rows.map((r) => ({
             ...r,
             totalCost: Number(r.totalCost ?? 0),
             plan: r.plan as "sub" | "lite" | "byok" | null,
           })),
-        )
-      }
-      return all
-    })
+        ),
+    )
 
     // Get unique key IDs from usage
     const usageKeyIds = new Set(usageData.map((r) => r.keyId).filter((id) => id !== null))

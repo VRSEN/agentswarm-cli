@@ -375,6 +375,96 @@ describe("session.agency-swarm", () => {
     })
   })
 
+  test("stream reports remote legacy file attachments as handled errors", async () => {
+    mockHistory()
+    mockAgencyVersion("1.9.4")
+    let called = false
+    AgencySwarmAdapter.streamRun = async function* () {
+      called = true
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.baseURL = "https://agency.example.com"
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[PDF 1] Inspect this.",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "application/pdf",
+        filename: "proof.pdf",
+        url: "file:///tmp/proof.pdf",
+        source: {
+          type: "file",
+          path: "/tmp/proof.pdf",
+          text: {
+            value: "[PDF 1]",
+            start: 0,
+            end: 7,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    let message = ""
+    for await (const event of stream.fullStream) {
+      if (event.type !== "error") continue
+      message = String(event.error?.message ?? event.error ?? "")
+    }
+
+    expect(called).toBeFalse()
+    expect(message).toContain("Agent Swarm Run mode cannot send local file attachments to a remote Agency server")
+  })
+
+  test("stream reports remote structured file attachments as handled errors", async () => {
+    mockHistory()
+    mockAgencyVersion("1.9.6")
+    let called = false
+    AgencySwarmAdapter.streamRun = async function* () {
+      called = true
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.baseURL = "https://agency.example.com"
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "[PDF 1] Inspect this.",
+        ignored: false,
+      },
+      {
+        type: "file",
+        mime: "application/pdf",
+        filename: "proof.pdf",
+        url: "file:///tmp/proof.pdf",
+        source: {
+          type: "file",
+          path: "/tmp/proof.pdf",
+          text: {
+            value: "[PDF 1]",
+            start: 0,
+            end: 7,
+          },
+        },
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    let message = ""
+    for await (const event of stream.fullStream) {
+      if (event.type !== "error") continue
+      message = String(event.error?.message ?? event.error ?? "")
+    }
+
+    expect(called).toBeFalse()
+    expect(message).toContain("Agent Swarm Run mode cannot send local file attachments to a remote Agency server")
+  })
+
   test("stream skips directory file data on structured transport and sends expanded text", async () => {
     await using tmp = await tmpdir()
     mockHistory()
@@ -688,6 +778,57 @@ describe("session.agency-swarm", () => {
         },
       ],
     })
+  })
+
+  test("stream reports replayed local attachment content as handled errors for remote Agency", async () => {
+    mockAgencyVersion("1.9.6")
+    const filePart = {
+      type: "input_file",
+      file_data: `data:application/pdf;base64,${Buffer.from("Attachment proof phrase one: cobalt lantern.").toString("base64")}`,
+      filename: "proof.pdf",
+    }
+    const priorUser = {
+      type: "message",
+      role: "user",
+      content: [
+        filePart,
+        {
+          type: "input_text",
+          text: "[PDF 1] In the attached PDF, what is the exact value of phrase one?",
+        },
+      ],
+    }
+    const priorAssistant = {
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: "cobalt lantern" }],
+    }
+    mockHistory(undefined, [priorUser, priorAssistant])
+    let called = false
+    AgencySwarmAdapter.streamRun = async function* () {
+      called = true
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    input.options.baseURL = "https://agency.example.com"
+    input.userMessage.parts = [
+      {
+        type: "text",
+        text: "Without re-attaching the file, what is the exact value of phrase one?",
+        ignored: false,
+      },
+    ] as any
+
+    const stream = await SessionAgencySwarm.stream(input)
+    let message = ""
+    for await (const event of stream.fullStream) {
+      if (event.type !== "error") continue
+      message = String(event.error?.message ?? event.error ?? "")
+    }
+
+    expect(called).toBeFalse()
+    expect(message).toContain("Agent Swarm Run mode cannot send local file attachments to a remote Agency server")
   })
 
   test("stream replays stored attachment content when the follow-up has a new attachment", async () => {

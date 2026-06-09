@@ -27,14 +27,12 @@ export function useEvent() {
         return
       }
 
-      if (project.workspace.current()) {
-        if (event.workspace === project.workspace.current()) {
-          handler(event.payload, { workspace: event.workspace })
-        }
+      const current = project.workspace.current()
+      if (current && event.workspace && event.workspace !== current) {
         return
       }
 
-      if (event.directory === project.instance.directory()) {
+      if (event.project === project.project() || event.directory === project.instance.directory()) {
         handler(event.payload, { workspace: event.workspace })
       }
     })

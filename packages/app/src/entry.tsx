@@ -123,7 +123,6 @@ const readHashAuthToken = () => {
 const readStartupAuthToken = () => {
   const hash = readHashAuthToken()
   if (hash) return hash
-  if (location.hostname.includes("opencode.ai")) return null
   return new URLSearchParams(location.search).get(AUTH_TOKEN_PARAM)
 }
 

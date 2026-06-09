@@ -724,42 +724,42 @@ export const layer = Layer.effect(
           return
         }
 
-        const rows = yield* db((db) =>
-          db
-            .select({
-              id: EventTable.id,
-              aggregateID: EventTable.aggregate_id,
-              seq: EventTable.seq,
-              type: EventTable.type,
-              data: EventTable.data,
-            })
-            .from(EventTable)
-            .where(eq(EventTable.aggregate_id, input.sessionID))
-            .orderBy(asc(EventTable.seq))
-            .all(),
-        )
-        if (rows.length === 0)
-          return yield* new SessionEventsNotFoundError({
-            message: `No events found for session: ${input.sessionID}`,
-            sessionID: input.sessionID,
-          })
-
-        const batches = Iterable.chunksOf(rows, 10)
-        const total = Iterable.size(batches)
-
-        log.info("session warp prepared", {
-          workspaceID: input.workspaceID,
-          sessionID: input.sessionID,
-          target: String(route(target.url, "/sync/replay")),
-          events: rows.length,
-          batches: total,
-          first: rows[0]?.seq,
-          last: rows.at(-1)?.seq,
-        })
-
         const previousOwnerID = previous?.id ?? space.projectID
         yield* claimSessionOwner(input.workspaceID)
         yield* Effect.gen(function* () {
+          const rows = yield* db((db) =>
+            db
+              .select({
+                id: EventTable.id,
+                aggregateID: EventTable.aggregate_id,
+                seq: EventTable.seq,
+                type: EventTable.type,
+                data: EventTable.data,
+              })
+              .from(EventTable)
+              .where(eq(EventTable.aggregate_id, input.sessionID))
+              .orderBy(asc(EventTable.seq))
+              .all(),
+          )
+          if (rows.length === 0)
+            return yield* new SessionEventsNotFoundError({
+              message: `No events found for session: ${input.sessionID}`,
+              sessionID: input.sessionID,
+            })
+
+          const batches = Iterable.chunksOf(rows, 10)
+          const total = Iterable.size(batches)
+
+          log.info("session warp prepared", {
+            workspaceID: input.workspaceID,
+            sessionID: input.sessionID,
+            target: String(route(target.url, "/sync/replay")),
+            events: rows.length,
+            batches: total,
+            first: rows[0]?.seq,
+            last: rows.at(-1)?.seq,
+          })
+
           yield* Effect.forEach(
             batches,
             (events, i) =>
@@ -826,13 +826,13 @@ export const layer = Layer.effect(
               body,
             })
           }
-        }).pipe(Effect.tapError(() => claimSessionOwner(previousOwnerID)))
 
-        log.info("session warp complete", {
-          workspaceID: input.workspaceID,
-          sessionID: input.sessionID,
-          batches: total,
-        })
+          log.info("session warp complete", {
+            workspaceID: input.workspaceID,
+            sessionID: input.sessionID,
+            batches: total,
+          })
+        }).pipe(Effect.tapError(() => claimSessionOwner(previousOwnerID)))
       }).pipe(
         Effect.tapError((err) =>
           Effect.sync(() =>
