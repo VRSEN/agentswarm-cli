@@ -752,7 +752,12 @@ export namespace SessionAgencySwarm {
     const extraBodyReasoning = { ...(asRecord(extraBody["reasoning"]) ?? {}) }
     if (modelID.includes("anthropic/") || modelID.includes("claude")) {
       const maxTokens = reasoning["max_tokens"]
-      if (typeof maxTokens === "number" && Number.isFinite(maxTokens)) {
+      if (reasoning["enabled"] === false) {
+        extraBody["reasoning"] = {
+          ...extraBodyReasoning,
+          enabled: false,
+        }
+      } else if (typeof maxTokens === "number" && Number.isFinite(maxTokens)) {
         extraBody["reasoning"] = {
           ...extraBodyReasoning,
           max_tokens: Math.max(1, Math.floor(maxTokens)),

@@ -24,7 +24,8 @@ import { asRecord, asString } from "./agency-swarm-utils"
 const log = Log.create({ service: "session.agency-swarm" })
 const STRUCTURED_ATTACHMENT_MESSAGE_MIN_VERSION = "1.9.6"
 const OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
-const OPENROUTER_FREE_TIER_MAX_TOKENS = 2500
+const OPENROUTER_FREE_TIER_MAX_TOKENS = 1000
+const OPENROUTER_ANTHROPIC_REASONING_FREE_TIER_MAX_TOKENS = 2500
 
 async function finalizeClientConfig(
   merged: Record<string, unknown> | undefined,
@@ -75,13 +76,22 @@ async function applyOpenRouterTokenPolicy(out: Record<string, unknown>) {
   const apiKey = asString(out["api_key"]) ?? asString(out["apiKey"])
   const freeTier = await isOpenRouterFreeTier(apiKey)
   if (freeTier) {
-    modelSettings["max_tokens"] = OPENROUTER_FREE_TIER_MAX_TOKENS
+    modelSettings["max_tokens"] = openRouterFreeTierMaxTokens(model, modelSettings)
   } else {
     delete modelSettings["max_tokens"]
   }
   if (Object.keys(modelSettings).length === 0) {
     delete out["model_settings_extra_args"]
   }
+}
+
+function openRouterFreeTierMaxTokens(model: string, settings: Record<string, unknown>) {
+  const id = model.toLowerCase()
+  const reasoning = asRecord(asRecord(settings["extra_body"])?.["reasoning"])
+  if (reasoning && reasoning["enabled"] !== false && (id.includes("anthropic/") || id.includes("claude"))) {
+    return OPENROUTER_ANTHROPIC_REASONING_FREE_TIER_MAX_TOKENS
+  }
+  return OPENROUTER_FREE_TIER_MAX_TOKENS
 }
 
 async function isOpenRouterFreeTier(apiKey: string | undefined): Promise<boolean> {
