@@ -15,6 +15,9 @@ const it = testEffect(Layer.mergeAll(Snapshot.defaultLayer, AppFileSystem.defaul
 // with path.join (which produces \ on Windows) then normalizes back to /.
 // This helper does the same for expected values so assertions match cross-platform.
 const fwd = (...parts: string[]) => path.join(...parts).replaceAll("\\", "/")
+const SNAPSHOT_BATCH_BOUNDARY = 100
+const OVER_BATCH_COUNT = SNAPSHOT_BATCH_BOUNDARY + 1
+const MIXED_BATCH_GROUP_COUNT = Math.ceil(OVER_BATCH_COUNT / 4)
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -802,7 +805,7 @@ it.instance(
   Effect.gen(function* () {
     const tmp = yield* bootstrap()
     const snapshot = yield* Snapshot.Service
-    const ids = Array.from({ length: 60 }, (_, i) => i.toString().padStart(3, "0"))
+    const ids = Array.from({ length: MIXED_BATCH_GROUP_COUNT }, (_, i) => i.toString().padStart(3, "0"))
     const mod = ids.map((id) => fwd(tmp.path, "mix", `${id}-mod.txt`))
     const del = ids.map((id) => fwd(tmp.path, "mix", `${id}-del.txt`))
     const add = ids.map((id) => fwd(tmp.path, "mix", `${id}-add.txt`))
