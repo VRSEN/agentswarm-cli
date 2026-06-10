@@ -965,7 +965,7 @@ async function driveOpenAIAPIKeyAuth(tui: TuiProcess, apiKey: string) {
   )
   if (!hasAPIKeyPrompt()) {
     await tui.waitForText("Manually enter API Key", tuiInteractionTimeoutMs)
-    tui.write("\x1b[B\r")
+    tui.write("\x1b[B\x1b[B\r")
   }
   await tui.waitFor(hasAPIKeyPrompt, "API key prompt", tuiInteractionTimeoutMs)
   await Bun.sleep(100)

@@ -190,6 +190,12 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Implementation: browser-launch error handling in `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx`.
   - Added by: `PR #57`
 
+- **OpenAI Run-mode auth includes headless Codex fallback**
+  - Intent: give users a no-local-callback OpenAI auth path when browser Codex auth cannot bind localhost port 1455.
+  - Behavior: `/auth` in Run mode always shows both browser and headless Codex auth methods for OpenAI.
+  - Implementation: `getVisibleProviderAuthMethods` in `packages/opencode/src/cli/cmd/tui/util/provider-auth.ts`.
+  - Added by: `PR #216`
+
 - **Dead agency server detection opens reconnect**
   - Intent: recover faster when the local Agency Swarm server dies during a fork session.
   - Behavior: the TUI detects the dead server and opens the reconnect flow instead of leaving the user in a broken session.

@@ -112,7 +112,7 @@ test("does not treat opencode public mode as a stored credential", () => {
   ).toBe(false)
 })
 
-test("hides openai headless auth in agency-swarm framework mode", () => {
+test("keeps openai browser and headless auth in agency-swarm framework mode", () => {
   expect(
     getVisibleProviderAuthMethods(
       "openai",
@@ -125,6 +125,7 @@ test("hides openai headless auth in agency-swarm framework mode", () => {
     ),
   ).toEqual([
     { type: "oauth", label: "ChatGPT Pro/Plus (browser)" },
+    { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
     { type: "api", label: "Manually enter API Key" },
   ])
 })

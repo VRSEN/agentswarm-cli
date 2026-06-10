@@ -138,6 +138,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Trigger:** Startup reaches Run mode without usable credentials for the needed Agency flow, or the user runs `/auth`.
 - **Happy-path proof:** `/auth` stays separate from `/connect`.
 - **Happy-path proof:** Run mode shows only Agency-supported provider auth options.
+- **Happy-path proof:** OpenAI auth always shows both browser and headless Codex auth, so users have a no-local-callback fallback when browser auth cannot bind localhost port 1455.
 - **Happy-path proof:** Explicit `client_config` credentials are accepted.
 - **Happy-path proof:** Removable stored credentials can be removed.
 - **Happy-path proof:** Prompt input is blocked while the auth modal owns focus.
