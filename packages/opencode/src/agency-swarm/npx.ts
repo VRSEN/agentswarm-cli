@@ -139,6 +139,7 @@ interface ServerStderrCollector {
 const VENV_CANARY_SCRIPT = ["import agency_swarm", "from agency_swarm.integrations.fastapi import run_fastapi"].join(
   "\n",
 )
+const EXISTING_VENV_CANARY_TIMEOUT_MS = 60 * 1000
 const VENV_CANARY_TIMEOUT_MS = 3 * 60 * 1000
 const SERVER_START_TIMEOUT_MS = 2 * 60 * 1000
 const SERVER_STDERR_COLLECT_TIMEOUT_MS = 1000
@@ -913,16 +914,16 @@ async function ensureProjectPython(
       prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
       let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
       try {
-        canary = await venvCanaryPasses([venvPython], { includeStderr: true })
+        canary = await venvCanaryPasses([venvPython], {
+          includeStderr: true,
+          timeoutMs: EXISTING_VENV_CANARY_TIMEOUT_MS,
+        })
       } catch {
         canary = { healthy: false, stderr: "", timedOut: false }
       }
       if (canary.healthy) {
         prompts.log.success("Agency Swarm packages ready")
         return [venvPython]
-      }
-      if (canary.timedOut) {
-        throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
       }
       const refreshLogFile = await tryCreateProjectCommandLogFile(
         directory,
@@ -960,9 +961,6 @@ async function ensureProjectPython(
         if (canary.healthy) {
           prompts.log.success("Agency Swarm packages ready")
           return [venvPython]
-        }
-        if (canary.timedOut) {
-          throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
         }
         corruptedVenv = true
       }
@@ -1183,19 +1181,22 @@ async function findProjectShadowingFiles(directory: string) {
   return shadowingFiles.flatMap((file) => (file ? [file] : []))
 }
 
-async function venvCanaryPasses(python: string[], options?: { cwd?: string }): Promise<boolean>
+async function venvCanaryPasses(python: string[], options?: { cwd?: string; timeoutMs?: number }): Promise<boolean>
 async function venvCanaryPasses(
   python: string[],
-  options: { cwd?: string; includeStderr: true },
+  options: { cwd?: string; includeStderr: true; timeoutMs?: number },
 ): Promise<VenvCanaryResult>
-async function venvCanaryPasses(python: string[], options?: { cwd?: string; includeStderr?: boolean }) {
+async function venvCanaryPasses(
+  python: string[],
+  options?: { cwd?: string; includeStderr?: boolean; timeoutMs?: number },
+) {
   // No cwd by default: the canary must not pick up project-local modules (e.g. `fastapi.py`
   // sitting next to `agency.py`) that shadow installed packages and falsely flag a healthy
   // .venv as broken. Callers that need the server-launch cwd (post-install verification)
   // pass it explicitly.
   const result = await runCommand([...python, "-c", VENV_CANARY_SCRIPT], {
     cwd: options?.cwd,
-    timeoutMs: VENV_CANARY_TIMEOUT_MS,
+    timeoutMs: options?.timeoutMs ?? VENV_CANARY_TIMEOUT_MS,
   })
   if (options?.includeStderr) {
     return {

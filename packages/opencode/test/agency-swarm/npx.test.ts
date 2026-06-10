@@ -2550,7 +2550,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(outcome.message).not.toContain("agency.py:99")
   })
 
-  test("prepareProjectLaunch times out when the import canary hangs", async () => {
+  test("prepareProjectLaunch refreshes an existing venv when the import canary hangs", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
     await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
@@ -2572,12 +2572,15 @@ describe("agency-swarm npx onboarding", () => {
     const canaryStderr = createTextOutputStream("importing openai types...\n")
     let resolveCanary: ((code: number) => void) | undefined
     let canaryStarted = false
+    let canaryRuns = 0
     let resolveCanaryStarted!: () => void
     const canaryStartedPromise = new Promise<void>((resolve) => {
       resolveCanaryStarted = resolve
     })
 
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+    const commands: string[][] = []
     spyOn(globalThis, "setTimeout").mockImplementation(((fn: TimerHandler) => {
       if (canaryStarted && typeof fn === "function") {
         fn()
@@ -2599,6 +2602,7 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
+      commands.push(cmd)
       if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
         const target = cmd[0] ?? ""
         if (target.endsWith(process.platform === "win32" ? "\\python.exe" : "/python")) {
@@ -2622,6 +2626,14 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isCanaryCommand(cmd)) {
+        canaryRuns += 1
+        if (canaryRuns > 1) {
+          return {
+            exited: Promise.resolve(1),
+            stdout: "",
+            stderr: "",
+          } as never
+        }
         canaryStarted = true
         resolveCanaryStarted()
         return {
@@ -2633,6 +2645,7 @@ describe("agency-swarm npx onboarding", () => {
           kill(signal?: string) {
             killSignals.push(signal)
             if (signal === "SIGKILL") {
+              canaryStarted = false
               canaryStderr.close()
               resolveCanary?.(1)
             }
@@ -2665,15 +2678,28 @@ describe("agency-swarm npx onboarding", () => {
         realSetTimeout(() => {
           canaryStderr.close()
           resolveCanary?.(1)
-          resolve(new Error("Timed out waiting for the import canary timeout failure"))
+          resolve(new Error("Timed out waiting for launch after import canary timeout"))
         }, 1000),
       ),
     ])
 
     expect(outcome).toBeInstanceOf(Error)
     if (!(outcome instanceof Error)) throw new Error("Expected prepareProjectLaunch to fail")
+    expect(outcome.message).toContain("Project `.venv` appears corrupted")
     expect(killSignals).toEqual([undefined, "SIGKILL"])
-    expect(outcome.message).toContain("Agency Swarm import canary timed out after 3 minutes")
+    expect(canaryRuns).toBe(2)
+    expect(commands.filter(isUvPipInstallCommand)).toEqual([
+      [
+        getTestVenvUv(dir.path),
+        "pip",
+        "install",
+        "--python",
+        getTestVenvPython(dir.path),
+        "--upgrade",
+        "agency-swarm[fastapi,litellm]",
+      ],
+    ])
+    expect(commands.some(isPythonVenvCommand)).toBe(false)
   })
 
   test("prepareProjectLaunch returns when server readiness timeout stderr does not close", async () => {
