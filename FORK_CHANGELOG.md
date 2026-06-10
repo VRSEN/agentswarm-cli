@@ -124,7 +124,7 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 
 - **Agency Swarm compaction model fallback**
   - Intent: keep Run mode compaction from treating the visible Agency Swarm pseudo-model as a real provider model.
-  - Behavior: when the visible model is `Agency Swarm Default`, `/compact` uses `agent.compaction.model` or `small_model` when configured. Without a real compaction model, it returns a handled error instead of choosing an unrelated provider-list fallback such as `openai/gpt-5.5-pro`.
+  - Behavior: when the visible model is `Swarm Default`, `/compact` uses `agent.compaction.model` or `small_model` when configured. Without a real compaction model, it returns a handled error instead of choosing an unrelated provider-list fallback such as `openai/gpt-5.5-pro`.
   - Implementation: `resolveModel` in `packages/opencode/src/session/compaction.ts`.
   - Added by: upstream sync `v1.14.51` follow-up.
 

@@ -209,14 +209,14 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** Ordinary `SendMessage` delegation does not change user control.
 - **Happy-path proof:** Caller agent identity survives history compaction.
 - **Happy-path proof:** History compaction ignores internal Agency metadata that is not valid model provider metadata.
-- **Happy-path proof:** In Run mode, `/compact` uses `small_model` or `agent.compaction.model` when the visible model is `Agency Swarm Default`.
+- **Happy-path proof:** In Run mode, `/compact` uses `small_model` or `agent.compaction.model` when the visible model is `Swarm Default`.
 - **Happy-path proof:** Loopback history recovers across local server URL or port changes.
 - **Happy-path proof:** Agency tool-output metadata stays attached to the correct wrapper call.
 - **Failure scenarios to test:** Structured-capability mismatch uses the legacy payload instead of dropping attachments.
 - **Failure scenarios to test:** History compaction does not lose caller agent identity.
 - **Failure scenarios to test:** A metadata outage after an explicit current-prompt handoff recipient does not drop the next prompt back to the coordinator.
 - **Failure scenarios to test:** Flat Agency metadata on text, reasoning, or tool parts does not break compaction.
-- **Failure scenarios to test:** With visible `Agency Swarm Default` and no configured real compaction model, `/compact` fails with a clear handled error instead of choosing an unrelated provider-list fallback such as `openai/gpt-5.5-pro`.
+- **Failure scenarios to test:** With visible `Swarm Default` and no configured real compaction model, `/compact` fails with a clear handled error instead of choosing an unrelated provider-list fallback such as `openai/gpt-5.5-pro`.
 - **Failure scenarios to test:** Local loopback URL or port changes do not strand prior history.
 
 ### Sharing, PR Reopen, And Backend Management
