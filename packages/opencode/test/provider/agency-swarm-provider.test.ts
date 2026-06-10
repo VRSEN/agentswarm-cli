@@ -37,6 +37,7 @@ test("Agency Swarm launch config keeps the default model addressable", async () 
       const model = await Provider.getModel(selected.providerID, selected.modelID)
       expect(String(model.providerID)).toBe("agency-swarm")
       expect(String(model.id)).toBe("default")
+      expect(model.name).toBe("Swarm Default")
     },
   })
 })

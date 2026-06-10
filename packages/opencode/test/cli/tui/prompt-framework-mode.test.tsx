@@ -159,7 +159,7 @@ describe("prompt framework-mode footer", () => {
         }),
         parsed: () => ({
           provider: "Agency Swarm",
-          model: "Agency Swarm Default",
+          model: "Swarm Default",
         }),
         set: () => {},
         variant: {
@@ -325,6 +325,8 @@ describe("prompt framework-mode footer", () => {
 
     const frame = rendered.captureCharFrame()
     expect(frame).toContain("Orchestrator")
+    expect(frame).toContain("Swarm Default")
+    expect(frame).not.toContain("Swarm Default Agency Swarm")
     expect(frame).toContain("agents")
     expect(frame).not.toContain("orchestrator-slug")
     expect(frame).not.toContain("Agent Builder")

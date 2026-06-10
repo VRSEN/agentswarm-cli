@@ -527,6 +527,12 @@ export function Prompt(props: PromptProps) {
     const current = local.model.current()
     const provider = local.model.parsed().provider
     if (!current) return provider
+    if (
+      current.providerID === AgencySwarmAdapter.PROVIDER_ID &&
+      current.modelID === AgencySwarmAdapter.DEFAULT_MODEL_ID
+    ) {
+      return ""
+    }
     return consoleManagedProviderLabel(sync.data.console_state.consoleManagedProviders, current.providerID, provider)
   })
   const hasRightContent = createMemo(() => Boolean(props.right))

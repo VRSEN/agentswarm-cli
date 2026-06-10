@@ -72,7 +72,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({ baseURL: currentServer.baseURL })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     currentTui.write("/")
     await currentTui.waitForText("/auth")
     const screen = await currentTui.waitForText("/connect")
@@ -92,7 +92,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       config: openAIProviderTestConfig,
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     currentTui.write("/auth")
     await currentTui.waitForText("/auth", tuiInteractionTimeoutMs)
     currentTui.write("\r")
@@ -115,7 +115,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
         OPEN_SWARM_TELEMETRY: undefined,
       },
     })
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await currentTui.waitFor(
       () => currentTelemetryServer!.events.some((event) => event.event === "app_started"),
       "app_started telemetry event",
@@ -185,7 +185,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       },
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     currentTui.write("telemetry prompt sentinel\r")
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
@@ -257,7 +257,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       },
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await driveOpenAIAPIKeyAuth(currentTui, "sk-live-telemetry-test")
     await currentTui.waitFor(
       () =>
@@ -287,7 +287,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       currentServer = await startAgencyProtocolServer()
       currentTui = await startTui({ baseURL: currentServer.baseURL })
 
-      await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+      await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
       currentTui.write(query)
       await currentTui.waitForText(query)
 
@@ -304,7 +304,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({ baseURL: currentServer.baseURL })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     currentTui.write("/agents\r")
     const screen = await currentTui.waitForText("Live QA Agency")
 
@@ -322,7 +322,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       configSource: "file",
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     currentTui.write("/agents\r")
     const screen = await currentTui.waitForText("TuiDemoAgency")
 
@@ -342,7 +342,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       configSource: "file",
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await selectCurrentSwarm(currentTui)
     currentTui.write("route through the whole swarm\r")
     await currentTui.waitFor(
@@ -365,7 +365,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       configSource: "file",
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await selectRunTarget(currentTui, "MathAgent", "Selected MathAgent in swarm TuiDemoAgency")
     currentTui.write("calculate through the selected agent\r")
     await currentTui.waitFor(
@@ -562,7 +562,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       configSource: "file",
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("delegate normal sendmessage\r")
     await currentTui.waitForText("Delegated to MathAgent with SendMessage.", tuiInteractionTimeoutMs)
@@ -598,7 +598,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       configSource: "file",
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("nested delegate with forwarded handoff metadata\r")
     await currentTui.waitForText("Nested SendMessage delegation finished.", tuiInteractionTimeoutMs)
@@ -638,7 +638,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       configSource: "file",
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("please handoff this calculation\r")
     await currentTui.waitForText("Math agent now has control.", tuiInteractionTimeoutMs)
@@ -678,7 +678,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       configSource: "file",
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("mixed handoff with nested delegation\r")
     await currentTui.waitForText("Math handoff finished after nested delegation.", tuiInteractionTimeoutMs)
@@ -717,7 +717,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       configSource: "file",
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("please live handoff this calculation\r")
     await currentTui.waitForText("Live agent update moved control to MathAgent.", tuiInteractionTimeoutMs)
@@ -727,7 +727,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       tuiInteractionTimeoutMs,
     )
     await currentTui.waitFor(
-      () => currentTui!.screen().includes("MathAgent · Agency Swarm"),
+      () => currentTui!.screen().includes("MathAgent · Swarm Default"),
       "live handoff routed prompt",
       tuiInteractionTimeoutMs,
     )
@@ -760,7 +760,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({ baseURL: currentServer.baseURL })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     currentTui.write("hello from terminal e2e\r")
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
@@ -784,7 +784,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
     await writeFile(imagePath, Buffer.from(pngBase64, "base64"))
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     const pastedPath = path.relative(packageRoot, imagePath)
     currentTui.write(`\x1b[200~${pastedPath}\x1b[201~`)
     await currentTui.waitForText("[Image 1]", tuiInteractionTimeoutMs)
@@ -813,7 +813,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({ baseURL: currentServer.baseURL })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     currentTui.write("first issue 172 hold\r")
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
@@ -853,7 +853,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       },
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     currentTui.write("check env isolation\r")
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
@@ -965,7 +965,7 @@ async function driveOpenAIAPIKeyAuth(tui: TuiProcess, apiKey: string) {
   )
   if (!hasAPIKeyPrompt()) {
     await tui.waitForText("Manually enter API Key", tuiInteractionTimeoutMs)
-    tui.write("\x1b[B\r")
+    tui.write("\x1b[B\x1b[B\r")
   }
   await tui.waitFor(hasAPIKeyPrompt, "API key prompt", tuiInteractionTimeoutMs)
   await Bun.sleep(100)

@@ -42,7 +42,7 @@ const DEFAULT_TAIL_TURNS = 2
 const MIN_PRESERVE_RECENT_TOKENS = 2_000
 const MAX_PRESERVE_RECENT_TOKENS = 8_000
 const AGENCY_COMPACTION_MODEL_ERROR =
-  "No real compaction model is configured for Agency Swarm Default. Set small_model or agent.compaction.model to a non-Agency Swarm model before running /compact."
+  "No real compaction model is configured for Swarm Default. Set small_model or agent.compaction.model to a non-Agency Swarm model before running /compact."
 const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
 <template>
 ## Goal

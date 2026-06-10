@@ -209,69 +209,72 @@ const providerCfg = (url: string) => ({
   },
 })
 
-it.live("tool execution produces non-empty session diff (snapshot race)", () =>
-  provideTmpdirServer(
-    Effect.fnUntraced(function* ({ dir, llm }) {
-      const prompt = yield* SessionPrompt.Service
-      const sessions = yield* Session.Service
-      const summary = yield* SessionSummary.Service
+it.live(
+  "tool execution produces non-empty session diff (snapshot race)",
+  () =>
+    provideTmpdirServer(
+      Effect.fnUntraced(function* ({ dir, llm }) {
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const summary = yield* SessionSummary.Service
 
-      const session = yield* sessions.create({
-        title: "snapshot race test",
-        permission: [{ permission: "*", pattern: "*", action: "allow" }],
-      })
+        const session = yield* sessions.create({
+          title: "snapshot race test",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        })
 
-      // Use bash tool (always registered) to create a file
-      const command = `echo 'snapshot race test content' > ${path.join(dir, "race-test.txt")}`
-      yield* llm.toolMatch((hit) => JSON.stringify(hit.body).includes("create the file"), "bash", {
-        command,
-        description: "create test file",
-      })
-      yield* llm.textMatch((hit) => JSON.stringify(hit.body).includes("bash"), "done")
+        // Use bash tool (always registered) to create a file
+        const command = `echo 'snapshot race test content' > ${path.join(dir, "race-test.txt")}`
+        yield* llm.toolMatch((hit) => JSON.stringify(hit.body).includes("create the file"), "bash", {
+          command,
+          description: "create test file",
+        })
+        yield* llm.textMatch((hit) => JSON.stringify(hit.body).includes("bash"), "done")
 
-      // Seed user message
-      yield* prompt.prompt({
-        sessionID: session.id,
-        agent: "build",
-        noReply: true,
-        parts: [{ type: "text", text: "create the file" }],
-      })
+        // Seed user message
+        yield* prompt.prompt({
+          sessionID: session.id,
+          agent: "build",
+          noReply: true,
+          parts: [{ type: "text", text: "create the file" }],
+        })
 
-      // Run the agent loop
-      const result = yield* prompt.loop({ sessionID: session.id })
-      expect(result.info.role).toBe("assistant")
+        // Run the agent loop
+        const result = yield* prompt.loop({ sessionID: session.id })
+        expect(result.info.role).toBe("assistant")
 
-      // Verify the file was created
-      const filePath = path.join(dir, "race-test.txt")
-      const fileExists = yield* Effect.promise(() =>
-        fs
-          .access(filePath)
-          .then(() => true)
-          .catch(() => false),
-      )
-      expect(fileExists).toBe(true)
+        // Verify the file was created
+        const filePath = path.join(dir, "race-test.txt")
+        const fileExists = yield* Effect.promise(() =>
+          fs
+            .access(filePath)
+            .then(() => true)
+            .catch(() => false),
+        )
+        expect(fileExists).toBe(true)
 
-      // Verify the tool call completed (in the first assistant message)
-      let tool: MessageV2.ToolPart | undefined
-      for (let i = 0; i < 50; i++) {
-        const allMsgs = yield* MessageV2.filterCompactedEffect(session.id)
-        tool = allMsgs
-          .flatMap((m) => m.parts)
-          .find((p): p is MessageV2.ToolPart => p.type === "tool" && p.tool === "bash")
-        if (tool?.state.status === "completed") break
-        yield* Effect.sleep("100 millis")
-      }
-      expect(tool?.state.status).toBe("completed")
+        // Verify the tool call completed (in the first assistant message)
+        let tool: MessageV2.ToolPart | undefined
+        for (let i = 0; i < 50; i++) {
+          const allMsgs = yield* MessageV2.filterCompactedEffect(session.id)
+          tool = allMsgs
+            .flatMap((m) => m.parts)
+            .find((p): p is MessageV2.ToolPart => p.type === "tool" && p.tool === "bash")
+          if (tool?.state.status === "completed") break
+          yield* Effect.sleep("100 millis")
+        }
+        expect(tool?.state.status).toBe("completed")
 
-      // Poll for diff — summarize() is fire-and-forget
-      let diff: Array<{ file?: string }> = []
-      for (let i = 0; i < 50; i++) {
-        diff = yield* summary.diff({ sessionID: session.id })
-        if (diff.length > 0) break
-        yield* Effect.sleep("100 millis")
-      }
-      expect(diff.length).toBeGreaterThan(0)
-    }),
-    { git: true, config: providerCfg },
-  ),
+        // Poll for diff — summarize() is fire-and-forget
+        let diff: Array<{ file?: string }> = []
+        for (let i = 0; i < 50; i++) {
+          diff = yield* summary.diff({ sessionID: session.id })
+          if (diff.length > 0) break
+          yield* Effect.sleep("100 millis")
+        }
+        expect(diff.length).toBeGreaterThan(0)
+      }),
+      { git: true, config: providerCfg },
+    ),
+  90_000,
 )

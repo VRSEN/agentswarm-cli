@@ -877,7 +877,7 @@ describe("session.compaction.process", () => {
   )
 
   itCompaction.instance(
-    "uses configured small model when user model is Agency Swarm Default",
+    "uses configured small model when user model is Swarm Default",
     () => {
       const stub = llm()
       const summaryModel = createModel({ context: 100_000, output: 32_000 })
@@ -921,7 +921,7 @@ describe("session.compaction.process", () => {
   )
 
   itCompaction.instance(
-    "uses configured compaction agent model when user model is Agency Swarm Default",
+    "uses configured compaction agent model when user model is Swarm Default",
     () => {
       const stub = llm()
       const summaryModel = createModel({ context: 100_000, output: 32_000 })
@@ -965,7 +965,7 @@ describe("session.compaction.process", () => {
   )
 
   itCompaction.instance(
-    "does not select provider-list fallback for Agency Swarm Default compaction",
+    "does not select provider-list fallback for Swarm Default compaction",
     () => {
       const openaiProviderID = ProviderID.make("openai")
       const unsupportedModelID = ModelID.make("gpt-5.5-pro")
@@ -977,7 +977,7 @@ describe("session.compaction.process", () => {
       const agencyModel = ProviderTest.model({
         id: agencyRef.modelID,
         providerID: agencyRef.providerID,
-        name: "Agency Swarm Default",
+        name: "Swarm Default",
       })
       const unsupportedInfo = ProviderTest.info({ id: openaiProviderID, name: "OpenAI" }, unsupported)
       const agencyInfo = ProviderTest.info({ id: agencyRef.providerID, name: "Agency Swarm" }, agencyModel)

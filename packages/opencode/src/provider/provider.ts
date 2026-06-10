@@ -1178,7 +1178,7 @@ function createAgencySwarmProvider(): Info {
       [modelID]: {
         id: modelID,
         providerID,
-        name: "Agency Swarm Default",
+        name: "Swarm Default",
         family: "agency-swarm",
         api: {
           id: modelID,

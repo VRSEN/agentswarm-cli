@@ -124,7 +124,7 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 
 - **Agency Swarm compaction model fallback**
   - Intent: keep Run mode compaction from treating the visible Agency Swarm pseudo-model as a real provider model.
-  - Behavior: when the visible model is `Agency Swarm Default`, `/compact` uses `agent.compaction.model` or `small_model` when configured. Without a real compaction model, it returns a handled error instead of choosing an unrelated provider-list fallback such as `openai/gpt-5.5-pro`.
+  - Behavior: when the visible model is `Swarm Default`, `/compact` uses `agent.compaction.model` or `small_model` when configured. Without a real compaction model, it returns a handled error instead of choosing an unrelated provider-list fallback such as `openai/gpt-5.5-pro`.
   - Implementation: `resolveModel` in `packages/opencode/src/session/compaction.ts`.
   - Added by: upstream sync `v1.14.51` follow-up.
 
@@ -189,6 +189,12 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Behavior: the auth dialog shows browser-launch failures in the TUI and warns the user instead of appearing to do nothing.
   - Implementation: browser-launch error handling in `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx`.
   - Added by: `PR #57`
+
+- **OpenAI Run-mode auth includes headless Codex fallback**
+  - Intent: give users a no-local-callback OpenAI auth path when browser Codex auth cannot bind localhost port 1455.
+  - Behavior: `/auth` in Run mode always shows both browser and headless Codex auth methods for OpenAI.
+  - Implementation: `getVisibleProviderAuthMethods` in `packages/opencode/src/cli/cmd/tui/util/provider-auth.ts`.
+  - Added by: `PR #216`
 
 - **Dead agency server detection opens reconnect**
   - Intent: recover faster when the local Agency Swarm server dies during a fork session.

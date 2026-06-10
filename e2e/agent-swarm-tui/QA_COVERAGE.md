@@ -19,6 +19,8 @@
 
 Full launcher project preparation, cold-start `.venv` creation, Python bridge execution, and live LLM decisions intentionally stay manual because the deterministic CI path cannot depend on Python 3.12 availability, network package install, live credentials, or the live `agency-swarm[fastapi,litellm]` package. The real-project automated handoff test copies a real `agency.py` project and launches the TUI directly with that exact project path plus file config for a local protocol server, so it proves project-path wiring and handoff semantics without claiming launcher or Python bridge startup coverage.
 
+OpenAI browser/headless auth-method picker visibility remains manual because the deterministic terminal E2E disables default plugins and only exposes API-key auth in the isolated provider catalog. The local unit test for `getVisibleProviderAuthMethods` owns the filter behavior until a plugin-enabled terminal harness exists.
+
 Manual QA command from a clean detected Agency project with no `.venv`:
 
 ```sh

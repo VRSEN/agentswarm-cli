@@ -36,7 +36,7 @@ describe("Agent Swarm downstream add-ons e2e", () => {
       config: openAIProviderTestConfig,
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     currentTui.write("/add")
     await currentTui.waitForText("/addons", tuiInteractionTimeoutMs)
     currentTui.write("\r")
@@ -59,7 +59,7 @@ describe("Agent Swarm downstream add-ons e2e", () => {
       config: openAIProviderTestConfig,
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     currentTui.write("/agents\r")
     await currentTui.waitForText("Select swarm", tuiInteractionTimeoutMs)
     const screen = await currentTui.waitForText("Live QA Agency", tuiInteractionTimeoutMs)
@@ -77,7 +77,7 @@ describe("Agent Swarm downstream add-ons e2e", () => {
       },
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     currentTui.write("/auth")
     await currentTui.waitForText("/auth", tuiInteractionTimeoutMs)
     currentTui.write("\r")

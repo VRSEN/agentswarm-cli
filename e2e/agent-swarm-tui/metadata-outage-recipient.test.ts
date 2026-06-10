@@ -23,7 +23,7 @@ describe("Agent Swarm metadata outage recipient e2e", () => {
       configSource: "file",
     })
 
-    await currentTui.waitForText("Agency Swarm", tuiReadyTimeoutMs)
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await currentTui.waitFor(
       () => currentTui!.screen().includes("UserSupportAgent"),
       "configured recipient",
@@ -32,7 +32,7 @@ describe("Agent Swarm metadata outage recipient e2e", () => {
     currentTui.write("please live handoff this calculation\r")
     await currentTui.waitForText("Live agent update moved control to MathAgent.", tuiInteractionTimeoutMs)
     await currentTui.waitFor(
-      () => currentTui!.screen().includes("MathAgent · Agency Swarm"),
+      () => currentTui!.screen().includes("MathAgent · Swarm Default"),
       "live handoff routed prompt",
       tuiInteractionTimeoutMs,
     )
