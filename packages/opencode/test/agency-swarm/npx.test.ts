@@ -537,6 +537,7 @@ describe("agency-swarm npx onboarding", () => {
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
     const commands: string[][] = []
+    let canaryRuns = 0
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
       const cmd = options?.cmd as string[] | undefined
       if (!cmd) throw new Error("Missing command")
@@ -556,9 +557,17 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (isUvPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+      if (isUvPipInstallCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        canaryRuns++
+        return {
+          exited: Promise.resolve(canaryRuns === 1 ? 1 : 0),
           stdout: "",
           stderr: "",
         } as never
@@ -600,7 +609,7 @@ describe("agency-swarm npx onboarding", () => {
     ])
     expect(commands.some(isPythonVenvCommand)).toBe(false)
     expect(uvInstallCommands.some((cmd) => cmd.includes("agency-swarm[fastapi,litellm]"))).toBe(false)
-    expect(commands.findIndex(isUvPipInstallCommand)).toBeLessThan(commands.findIndex(isCanaryCommand))
+    expect(canaryRuns).toBe(2)
 
     await launch?.cleanup?.()
   })
@@ -615,6 +624,7 @@ describe("agency-swarm npx onboarding", () => {
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
     const commands: string[][] = []
+    let canaryRuns = 0
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
       const cmd = options?.cmd as string[] | undefined
       if (!cmd) throw new Error("Missing command")
@@ -634,9 +644,17 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (isUvPipInstallCommand(cmd) || isCanaryCommand(cmd)) {
+      if (isUvPipInstallCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        canaryRuns++
+        return {
+          exited: Promise.resolve(canaryRuns === 1 ? 1 : 0),
           stdout: "",
           stderr: "",
         } as never
@@ -669,12 +687,12 @@ describe("agency-swarm npx onboarding", () => {
     ])
     expect(commands.some(isPythonVenvCommand)).toBe(false)
     expect(uvInstallCommands.some((cmd) => cmd.includes("agency-swarm[fastapi,litellm]"))).toBe(false)
-    expect(commands.findIndex(isUvPipInstallCommand)).toBeLessThan(commands.findIndex(isCanaryCommand))
+    expect(canaryRuns).toBe(2)
 
     await launch?.cleanup?.()
   })
 
-  test("prepareProjectLaunch bootstraps local uv for a healthy existing venv", async () => {
+  test("prepareProjectLaunch reuses a healthy existing venv without bootstrapping local uv", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
     await writeVenvPython(dir.path)
@@ -684,25 +702,19 @@ describe("agency-swarm npx onboarding", () => {
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
     const commands: string[][] = []
-    let uvInstalled = false
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
       const cmd = options?.cmd as string[] | undefined
       if (!cmd) throw new Error("Missing command")
       commands.push(cmd)
       if (isUvVersionCommand(cmd)) {
         return {
-          exited: Promise.resolve(uvInstalled ? 0 : 1),
+          exited: Promise.resolve(1),
           stdout: "",
-          stderr: uvInstalled ? "" : "uv: command not found",
+          stderr: "uv: command not found",
         } as never
       }
       if (isPythonPipInstallUvCommand(cmd)) {
-        uvInstalled = true
-        return {
-          exited: Promise.resolve(0),
-          stdout: "",
-          stderr: "",
-        } as never
+        throw new Error("healthy venv should not bootstrap uv")
       }
       if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
         const target = cmd[0] ?? ""
@@ -749,15 +761,15 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(warn).not.toHaveBeenCalled()
-    expect(commands.some(isPythonPipInstallUvCommand)).toBe(true)
-    expect(commands.some(isUvPipInstallCommand)).toBe(true)
+    expect(commands.some(isPythonPipInstallUvCommand)).toBe(false)
+    expect(commands.some(isUvPipInstallCommand)).toBe(false)
     expect(commands.some(isPythonVenvCommand)).toBe(false)
     expect(commands.some(isCanaryCommand)).toBe(true)
 
     await launch?.cleanup?.()
   })
 
-  test("prepareProjectLaunch continues healthy existing venv launches when local uv bootstrap fails", async () => {
+  test("prepareProjectLaunch does not need local uv when the existing venv is healthy", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
     await writeVenvPython(dir.path)
@@ -779,11 +791,7 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isPythonPipInstallUvCommand(cmd)) {
-        return {
-          exited: Promise.resolve(1),
-          stdout: "",
-          stderr: "No matching distribution found for uv",
-        } as never
+        throw new Error("healthy venv should not bootstrap uv")
       }
       if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
         const target = cmd[0] ?? ""
@@ -822,10 +830,8 @@ describe("agency-swarm npx onboarding", () => {
       moduleName: "agency",
     })
 
-    expect(warn).toHaveBeenCalledWith(
-      "Local uv could not be installed, so dependency refresh was skipped. The current venv package set will be used as-is.",
-    )
-    expect(commands.some(isPythonPipInstallUvCommand)).toBe(true)
+    expect(warn).not.toHaveBeenCalled()
+    expect(commands.some(isPythonPipInstallUvCommand)).toBe(false)
     expect(commands.some(isUvPipInstallCommand)).toBe(false)
     expect(commands.some(isPythonVenvCommand)).toBe(false)
     expect(commands.some(isCanaryCommand)).toBe(true)
@@ -1255,6 +1261,7 @@ describe("agency-swarm npx onboarding", () => {
     const commands: string[][] = []
     const replacementPython = process.platform === "win32" ? "C:\\Python312\\python.exe" : "/usr/bin/python3.12"
     let uvInstallRuns = 0
+    let canaryRuns = 0
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
       const cmd = options?.cmd as string[] | undefined
       if (!cmd) throw new Error("Missing command")
@@ -1299,8 +1306,9 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isCanaryCommand(cmd)) {
+        canaryRuns++
         return {
-          exited: Promise.resolve(0),
+          exited: Promise.resolve(canaryRuns === 1 ? 1 : 0),
           stdout: "",
           stderr: "",
         } as never
@@ -1331,6 +1339,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(await Bun.file(staleFile).exists()).toBe(false)
     expect(commands.filter(isPythonVenvCommand)).toEqual([expectedVenvCommand(replacementPython)])
     expect(uvInstallRuns).toBe(2)
+    expect(canaryRuns).toBe(2)
     await launch?.cleanup?.()
   })
 
@@ -1436,7 +1445,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(error.message).toContain("LoadFileAttachment")
 
     const canaryCommands = commands.filter(isCanaryCommand)
-    expect(canaryCommands).toHaveLength(2)
+    expect(canaryCommands).toHaveLength(3)
   })
 
   test("prepareProjectLaunch keeps successful rebuild output compact and logged", async () => {
@@ -1907,6 +1916,7 @@ describe("agency-swarm npx onboarding", () => {
     spyOn(Date.prototype, "toISOString").mockReturnValue(iso)
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
+    let canaryRuns = 0
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
       const cmd = options?.cmd as string[] | undefined
       if (!cmd) throw new Error("Missing command")
@@ -1940,8 +1950,9 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isCanaryCommand(cmd)) {
+        canaryRuns++
         return {
-          exited: Promise.resolve(0),
+          exited: Promise.resolve(canaryRuns === 1 ? 1 : 0),
           stdout: "",
           stderr: "",
         } as never
@@ -1974,6 +1985,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("Installer output: ERROR: No matching distribution found"),
     )
+    expect(canaryRuns).toBe(2)
     const logContent = await Bun.file(launcherLogFilePath(dir.path, "launcher-refresh", iso)).text()
     expect(logContent).toContain("Collecting agency-swarm...")
     expect(logContent).toContain("ERROR: No matching distribution found for agency-swarm[fastapi,litellm]")
@@ -2014,6 +2026,7 @@ describe("agency-swarm npx onboarding", () => {
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
     let pipRuns = 0
+    let canaryRuns = 0
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
       const cmd = options?.cmd as string[] | undefined
       if (!cmd) throw new Error("Missing command")
@@ -2048,8 +2061,9 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isCanaryCommand(cmd)) {
+        canaryRuns++
         return {
-          exited: Promise.resolve(0),
+          exited: Promise.resolve(canaryRuns === 1 ? 1 : 0),
           stdout: "",
           stderr: "",
         } as never
@@ -2086,6 +2100,7 @@ describe("agency-swarm npx onboarding", () => {
       expect.stringContaining("ModuleNotFoundError: No module named 'pip._internal.cli.main'"),
     )
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("Traceback (most recent call last):"))
+    expect(canaryRuns).toBe(2)
 
     const refreshLogs = Array.fromAsync(new Bun.Glob("*-launcher-refresh.log").scan(launcherLogDirectory(dir.path)))
     const logFiles = await refreshLogs
@@ -2131,6 +2146,7 @@ describe("agency-swarm npx onboarding", () => {
     const stderrWrite = spyOn(process.stderr, "write").mockImplementation(() => true as never)
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
+    let canaryRuns = 0
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
       const cmd = options?.cmd as string[] | undefined
       if (!cmd) throw new Error("Missing command")
@@ -2157,8 +2173,9 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isCanaryCommand(cmd)) {
+        canaryRuns++
         return {
-          exited: Promise.resolve(0),
+          exited: Promise.resolve(canaryRuns === 1 ? 1 : 0),
           stdout: "",
           stderr: "",
         } as never
@@ -2192,6 +2209,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(mirroredOutput).not.toContain("Exception: pip bootstrap failed")
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("Exception: pip bootstrap failed"))
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("Traceback (most recent call last):"))
+    expect(canaryRuns).toBe(2)
 
     const refreshLogs = Array.fromAsync(new Bun.Glob("*-launcher-refresh.log").scan(launcherLogDirectory(dir.path)))
     const logFiles = await refreshLogs
@@ -2231,6 +2249,7 @@ describe("agency-swarm npx onboarding", () => {
     spyOn(Date.prototype, "toISOString").mockReturnValue(iso)
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
+    let canaryRuns = 0
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
       const cmd = options?.cmd as string[] | undefined
       if (!cmd) throw new Error("Missing command")
@@ -2257,8 +2276,9 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isCanaryCommand(cmd)) {
+        canaryRuns++
         return {
-          exited: Promise.resolve(0),
+          exited: Promise.resolve(canaryRuns === 1 ? 1 : 0),
           stdout: "",
           stderr: "",
         } as never
@@ -2288,6 +2308,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("Installer output: ERROR: No matching distribution found"),
     )
+    expect(canaryRuns).toBe(2)
 
     await launch?.cleanup?.()
   })
@@ -2918,7 +2939,7 @@ describe("agency-swarm npx onboarding", () => {
       moduleName: "agency",
     })
 
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Could not create launcher refresh log file"))
+    expect(warn).not.toHaveBeenCalled()
 
     await launch?.cleanup?.()
   })

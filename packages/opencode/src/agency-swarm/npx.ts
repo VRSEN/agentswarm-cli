@@ -910,6 +910,20 @@ async function ensureProjectPython(
       corruptedVenv = true
     } else {
       prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
+      prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
+      let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
+      try {
+        canary = await venvCanaryPasses([venvPython], { includeStderr: true })
+      } catch {
+        canary = { healthy: false, stderr: "", timedOut: false }
+      }
+      if (canary.healthy) {
+        prompts.log.success("Agency Swarm packages ready")
+        return [venvPython]
+      }
+      if (canary.timedOut) {
+        throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
+      }
       const refreshLogFile = await tryCreateProjectCommandLogFile(
         directory,
         "launcher-refresh",
