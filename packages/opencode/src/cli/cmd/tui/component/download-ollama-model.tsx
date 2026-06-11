@@ -39,27 +39,32 @@ export async function downloadOllamaModel(input: { dialog: DialogContext; toast:
 function showOllamaDownloadDialog(dialog: DialogContext, modelID: string) {
   return new Promise<void>((resolve, reject) => {
     let done = false
-    dialog.replace(
-      () => (
-        <DialogOllamaModelDownload
-          modelID={modelID}
-          onDone={() => {
-            done = true
-            dialog.clear()
+    let active = true
+    let render: (() => unknown) | undefined
+    render = () => (
+      <DialogOllamaModelDownload
+        modelID={modelID}
+        onDone={() => {
+          done = true
+          if (!active || dialog.stack.at(-1)?.element !== render) {
             resolve()
-          }}
-          onError={(error) => {
-            done = true
-            reject(error)
-          }}
-        />
-      ),
-      () => {
-        if (!done) {
-          reject(new Error(`Download for ${modelID} was dismissed. The Ollama pull may still be running.`))
-        }
-      },
+            return
+          }
+          dialog.clear()
+          resolve()
+        }}
+        onError={(error) => {
+          done = true
+          reject(error)
+        }}
+      />
     )
+    dialog.replace(render, () => {
+      active = false
+      if (!done) {
+        reject(new Error(`Download for ${modelID} was dismissed. The Ollama pull may still be running.`))
+      }
+    })
   })
 }
 

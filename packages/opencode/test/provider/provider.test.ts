@@ -806,6 +806,30 @@ test("provider api field sets model api.url", async () => {
   })
 })
 
+test("ollama provider uses Ollama's OpenAI-compatible v1 base URL", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "opencode.json"),
+        JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          model: "agency-swarm/default",
+        }),
+      )
+    },
+  })
+  await WithInstance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const providers = await list()
+      const provider = providers[ProviderID.make("ollama")]
+
+      expect(provider).toBeDefined()
+      expect(provider.models["qwen3:4b"].api.url).toBe("http://127.0.0.1:11434/v1")
+    },
+  })
+})
+
 test("explicit baseURL overrides api field", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {

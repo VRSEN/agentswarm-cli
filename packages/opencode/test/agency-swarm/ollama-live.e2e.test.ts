@@ -54,7 +54,7 @@ describe("agency-swarm live Ollama e2e", () => {
         parts: [
           {
             type: "text",
-            text: "Return exactly OLLAMA_E2E_OK and no other text.",
+            text: "Return exactly OK and no other text.",
             ignored: false,
           },
         ],
@@ -75,6 +75,6 @@ describe("agency-swarm live Ollama e2e", () => {
       if (event.type === "text-delta") text.push(event.text)
     }
 
-    expect(text.join("")).toContain("OLLAMA_E2E_OK")
+    expect(text.join("").trim()).toBe("OK")
   })
 })

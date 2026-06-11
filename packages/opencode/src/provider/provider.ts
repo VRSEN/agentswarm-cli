@@ -1256,7 +1256,7 @@ function createOllamaProvider(): Info {
           family: "ollama",
           api: {
             id: modelID,
-            url: "http://127.0.0.1:11434",
+            url: "http://127.0.0.1:11434/v1",
             npm: "@ai-sdk/openai-compatible",
           },
           status: "active" as const,
