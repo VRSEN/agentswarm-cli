@@ -395,21 +395,24 @@ function AssistantReasoning(props: { part: AssistantReasoningPart; subtleSyntax:
     if (start === undefined || end === undefined) return
     return Locale.duration(end - start)
   })
+  const visible = createMemo(() => content().length > 0 || !isDone())
   return (
-    <Show when={content()}>
+    <Show when={visible()}>
       <box paddingLeft={3} marginTop={1} flexDirection="column" flexShrink={0}>
         <ReasoningHeader done={isDone()} duration={duration()} />
-        <box marginTop={1}>
-          <code
-            filetype="markdown"
-            drawUnstyledText={false}
-            streaming={true}
-            syntaxStyle={props.subtleSyntax}
-            content={content()}
-            conceal={true}
-            fg={theme.textMuted}
-          />
-        </box>
+        <Show when={content()}>
+          <box marginTop={1}>
+            <code
+              filetype="markdown"
+              drawUnstyledText={false}
+              streaming={true}
+              syntaxStyle={props.subtleSyntax}
+              content={content()}
+              conceal={true}
+              fg={theme.textMuted}
+            />
+          </box>
+        </Show>
       </box>
     </Show>
   )
