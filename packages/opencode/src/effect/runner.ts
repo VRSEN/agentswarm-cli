@@ -145,13 +145,13 @@ export const make = <A, E = never>(
           const reject: Effect.Effect<A, E | Busy> = Effect.fail(new Busy())
           return [reject, st] as const
         }
-        yield* onBusy
         const id = next()
         const cancelled = yield* Deferred.make<void>()
         const fiber = yield* work.pipe(Effect.ensuring(finishShell(id)), Effect.forkChild)
         const shell = { id, cancelled, ready, fiber } satisfies ShellHandle<A, E>
         return [
           Effect.gen(function* () {
+            yield* onBusy
             const exit = yield* Fiber.await(fiber)
             if (Exit.isSuccess(exit)) return exit.value
             if (
