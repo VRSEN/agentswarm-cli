@@ -13,6 +13,17 @@ describe("AgencySwarmOllama", () => {
     expect(AgencySwarmOllama.isModelListed("qwen3:4b", tags)).toBe(false)
   })
 
+  test("isModelListed treats tagless names as latest", () => {
+    const tags = {
+      models: [{ name: "llama3.2:latest" }, { model: "qwen2.5:latest" }],
+    }
+
+    expect(AgencySwarmOllama.isModelListed("llama3.2", tags)).toBe(true)
+    expect(AgencySwarmOllama.isModelListed("qwen2.5", tags)).toBe(true)
+    expect(AgencySwarmOllama.isModelListed("llama3.2:latest", tags)).toBe(true)
+    expect(AgencySwarmOllama.isModelListed("llama3.2:3b", tags)).toBe(false)
+  })
+
   test("parsePullProgress reads Ollama JSON progress", () => {
     expect(AgencySwarmOllama.parsePullProgress('{"status":"downloading","completed":50,"total":200}')).toEqual({
       status: "downloading",

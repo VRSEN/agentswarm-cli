@@ -27,6 +27,7 @@ import * as PromptStashModule from "../../../src/cli/cmd/tui/component/prompt/st
 import * as TextareaKeybindingsModule from "@tui/component/textarea-keybindings"
 import { DialogProvider, useDialog } from "../../../src/cli/cmd/tui/ui/dialog"
 import * as ToastModule from "../../../src/cli/cmd/tui/ui/toast"
+import { AgencySwarmOllama } from "../../../src/agency-swarm/ollama"
 import { AgencySwarmRunSession } from "../../../src/agency-swarm/run-session"
 import { Telemetry } from "../../../src/telemetry/telemetry"
 import { OpencodeKeymapProvider } from "../../../src/cli/cmd/tui/keymap"
@@ -101,13 +102,15 @@ describe("prompt auth rejection handling", () => {
   async function renderTelemetryPrompt(input: {
     events: ReturnType<typeof createEventBus>
     frameworkMode?: boolean
+    openaiCredential?: boolean
     openrouterEnv?: string[]
     selectedModel?: { providerID: string; modelID: string }
     prompt: (input: { messageID: string; sessionID: string }) => Promise<unknown>
     sessionID: string
     workspaceID: string
   }) {
-    process.env.OPENAI_API_KEY = "sk-test"
+    if (input.openaiCredential === false) delete process.env.OPENAI_API_KEY
+    else process.env.OPENAI_API_KEY = "sk-test"
     const agency = input.frameworkMode ?? true
     const model = agency ? "agency-swarm/default" : "openai/gpt-4.1"
     const providerID = agency ? "agency-swarm" : "openai"
@@ -121,6 +124,12 @@ describe("prompt auth rejection handling", () => {
         prompt: input.prompt,
       },
       "prompt",
+    )
+    const shellSession = spyOn(
+      {
+        shell: async () => ({}),
+      },
+      "shell",
     )
 
     spyOn(AgencySwarmRunSession, "sync").mockResolvedValue(undefined)
@@ -213,6 +222,7 @@ describe("prompt auth rejection handling", () => {
       client: {
         session: {
           prompt: promptSession,
+          shell: shellSession,
         },
       },
       event: input.events,
@@ -247,6 +257,18 @@ describe("prompt auth rejection handling", () => {
                   name: "OpenRouter",
                   source: "config",
                   env: openrouterEnv,
+                  options: {},
+                  models: {},
+                },
+              ]
+            : []),
+          ...(selectedModel.providerID === "ollama"
+            ? [
+                {
+                  id: "ollama",
+                  name: "Ollama",
+                  source: "config",
+                  env: [],
                   options: {},
                   models: {},
                 },
@@ -323,7 +345,7 @@ describe("prompt auth rejection handling", () => {
     ))
 
     expect(promptRef).toBeDefined()
-    return { parts, promptRef: promptRef!, promptSession }
+    return { parts, promptRef: promptRef!, promptSession, shellSession }
   }
 
   test("blocks selected OpenRouter prompts when only OpenAI env credentials exist", async () => {
@@ -348,6 +370,62 @@ describe("prompt auth rejection handling", () => {
     promptRef.submit()
     await flushEffects()
 
+    expect(promptSession).not.toHaveBeenCalled()
+  })
+
+  test("submits selected Ollama prompts without upstream credentials", async () => {
+    const ensure = spyOn(AgencySwarmOllama, "ensure").mockResolvedValue(undefined)
+    const { promptRef, promptSession } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      openaiCredential: false,
+      selectedModel: {
+        providerID: "ollama",
+        modelID: "llama3.2",
+      },
+      prompt: async () => ({ data: {} }),
+      sessionID: "session_ollama_auth_guard_allowed",
+      workspaceID: "workspace_ollama_auth_guard_allowed",
+    })
+
+    promptRef.set({
+      input: "use ollama",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    expect(ensure).toHaveBeenCalledWith("llama3.2", expect.any(Object))
+    expect(promptSession).toHaveBeenCalledTimes(1)
+  })
+
+  test("submits selected Ollama shell commands without local model setup", async () => {
+    const ensure = spyOn(AgencySwarmOllama, "ensure").mockRejectedValue(new Error("missing model"))
+    const { promptRef, promptSession, shellSession } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      openaiCredential: false,
+      selectedModel: {
+        providerID: "ollama",
+        modelID: "llama3.2",
+      },
+      prompt: async () => ({ data: {} }),
+      sessionID: "session_ollama_shell",
+      workspaceID: "workspace_ollama_shell",
+    })
+
+    promptRef.set({
+      input: "echo shell",
+      mode: "shell",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    expect(ensure).not.toHaveBeenCalled()
+    expect(shellSession).toHaveBeenCalledTimes(1)
     expect(promptSession).not.toHaveBeenCalled()
   })
 

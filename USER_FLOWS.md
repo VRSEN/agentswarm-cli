@@ -176,6 +176,9 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** Compatible configured provider credentials pass through the credential bridge.
 - **Happy-path proof:** Provider auth stays a credential flow and does not act as a Run-mode switch.
 - **Happy-path proof:** `/models` selects the LLM config passed to Agency Swarm and does not act as a product mode switch.
+- **Happy-path proof:** Selecting an Ollama local model in `/models` routes the run through Agency Swarm as a LiteLLM `ollama_chat` model.
+- **Happy-path proof:** Selected Ollama local models skip upstream provider auth gates.
+- **Happy-path proof:** Missing selected Ollama models offer an Ollama download flow, and a dismissed download cannot later close a newer dialog.
 - **Happy-path proof:** In-flight Agency runs cancel through the bridge.
 - **Happy-path proof:** Codex OAuth is stripped from non-OpenAI LiteLLM agency runs.
 - **Happy-path proof:** Run mode hides Builder, Plan, `/editor`, `/variants`, `/init`, `/review`, and other disabled upstream-native surfaces.
@@ -188,6 +191,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Failure scenarios to test:** Server reachability or authorization failure opens `/connect`.
 - **Failure scenarios to test:** Provider credential failure opens `/auth`.
 - **Failure scenarios to test:** Non-OpenAI LiteLLM agency runs do not receive Codex OAuth credentials while OpenAI-based LiteLLM runs still keep them.
+- **Failure scenarios to test:** Missing or unreachable Ollama fails visibly without switching out of Run mode.
 
 #### Builder and Plan instruction preservation
 
