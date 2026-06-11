@@ -5,6 +5,7 @@ import {
   asString,
   buildOutgoingMessage,
   buildStructuredOutgoingMessage,
+  collectFileURLs,
   isAgencyToolOutputType,
   normalizeCallerAgent as normalizeCallerAgentValue,
   stringifyToolOutput,
@@ -80,6 +81,170 @@ export function buildAgencyHistoryFromMessages(input: {
     return undefined
   }
   return input.msgs.flatMap((msg) => messageToHistoryItem(msg, input.currentID, !!input.structuredAttachments))
+}
+
+export type AgencyRunChatHistory = {
+  chatHistory: Array<Record<string, unknown>>
+  sessionMessages?: MessageV2.WithParts[]
+  compactedHistoryFromMessages?: Array<Record<string, unknown>>
+  compactedHistoryHasFileAttachments: boolean
+  rebuiltHistoryFromMessages?: Array<Record<string, unknown>>
+  persistRebuiltHistoryFromMessages: boolean
+}
+
+export async function selectAgencyRunChatHistory(input: {
+  storedHistory: Array<Record<string, unknown>>
+  currentID: string
+  loadSessionMessages: () => Promise<MessageV2.WithParts[]>
+  onError?: (error: unknown) => void
+}): Promise<AgencyRunChatHistory> {
+  try {
+    const sessionMessages = await input.loadSessionMessages()
+    const compacted = compactHistory({ msgs: sessionMessages, currentID: input.currentID })
+    if (compacted) {
+      return {
+        chatHistory: compacted,
+        sessionMessages,
+        compactedHistoryFromMessages: compacted,
+        compactedHistoryHasFileAttachments: compactHistoryHasPriorFileParts({
+          msgs: sessionMessages,
+          currentID: input.currentID,
+        }),
+        persistRebuiltHistoryFromMessages: false,
+      }
+    }
+
+    // Forked sessions clone local messages but get a fresh AgencySwarmHistory key, so the bridge
+    // would otherwise start with no context. Rebuild from cloned messages when stored history is
+    // empty and prior messages are all agency-swarm.
+    //
+    // Queued prompts can also be saved locally while an Agency Swarm stream is still running.
+    // In that window, streamed tool events are visible in local TUI state before backend
+    // `new_messages` are finalized, so stored AgencySwarmHistory can lag behind the visible chat.
+    const rebuilt = buildAgencyHistoryFromMessages({ msgs: sessionMessages, currentID: input.currentID })
+    if (
+      rebuilt &&
+      rebuilt.length > 0 &&
+      (input.storedHistory.length === 0 ||
+        hasErroredPriorAgencyAssistant(sessionMessages, input.currentID) ||
+        historyMissingLocalUserMessages(input.storedHistory, rebuilt))
+    ) {
+      return {
+        chatHistory: rebuilt,
+        sessionMessages,
+        compactedHistoryHasFileAttachments: false,
+        rebuiltHistoryFromMessages: rebuilt,
+        persistRebuiltHistoryFromMessages: input.storedHistory.length === 0,
+      }
+    }
+  } catch (error) {
+    input.onError?.(error)
+  }
+
+  return {
+    chatHistory: input.storedHistory,
+    compactedHistoryHasFileAttachments: false,
+    persistRebuiltHistoryFromMessages: false,
+  }
+}
+
+export async function buildAgencyRunTransportPayload(input: {
+  history: AgencyRunChatHistory
+  storedHistory: Array<Record<string, unknown>>
+  currentMessage: MessageV2.WithParts
+  outgoingMessage: AgencyMessageInput
+  allowLocalFilePaths: boolean
+  codexTransport: boolean
+  materializedFilePaths: string[]
+  supportsStructuredAttachments: () => Promise<boolean>
+}): Promise<{
+  message: AgencyMessageInput
+  chatHistory: Array<Record<string, unknown>>
+  fileURLs?: Record<string, string>
+  replayedAttachmentKeys: Set<string>
+  rebuiltHistoryForStorage?: Array<Record<string, unknown>>
+}> {
+  const hasCurrentFileAttachments = hasFileParts(input.currentMessage)
+  const hasRebuildableFileAttachments =
+    input.storedHistory.length === 0 &&
+    !!input.history.rebuiltHistoryFromMessages &&
+    !!input.history.sessionMessages &&
+    hasPriorFileParts(input.history.sessionMessages, input.currentMessage.info.id)
+  const sanitizedChatHistory = sanitizeAgencyHistoryForTransport(input.history.chatHistory, {
+    codexTransport: input.codexTransport,
+  })
+  const replayOnlyOutgoing = input.allowLocalFilePaths
+    ? replayStoredAttachmentsInOutgoingMessage(input.outgoingMessage, sanitizedChatHistory)
+    : { message: input.outgoingMessage, replayedAttachmentKeys: new Set<string>() }
+  const attachmentMessage =
+    hasCurrentFileAttachments ||
+    hasRebuildableFileAttachments ||
+    input.history.compactedHistoryHasFileAttachments ||
+    messageHasAttachmentContent(replayOnlyOutgoing.message)
+  const structuredAttachmentsSupported = attachmentMessage && (await input.supportsStructuredAttachments())
+
+  let effectiveHistory = input.history.chatHistory
+  let rebuiltHistoryFromMessages = input.history.rebuiltHistoryFromMessages
+  if (structuredAttachmentsSupported && input.history.sessionMessages) {
+    if (input.history.compactedHistoryFromMessages) {
+      const compacted = compactHistory({
+        msgs: input.history.sessionMessages,
+        currentID: input.currentMessage.info.id,
+        structuredAttachments: true,
+      })
+      if (compacted) {
+        effectiveHistory = compacted
+      }
+    } else if (input.history.rebuiltHistoryFromMessages) {
+      const rebuilt = buildAgencyHistoryFromMessages({
+        msgs: input.history.sessionMessages,
+        currentID: input.currentMessage.info.id,
+        structuredAttachments: true,
+      })
+      if (rebuilt && rebuilt.length > 0) {
+        rebuiltHistoryFromMessages = rebuilt
+        effectiveHistory = rebuilt
+      }
+    }
+  }
+
+  const transportChatHistory = sanitizeAgencyHistoryForTransport(effectiveHistory, {
+    allowLocalFilePaths: input.allowLocalFilePaths,
+    codexTransport: input.codexTransport,
+  })
+  const rebuiltHistoryForStorage =
+    input.history.persistRebuiltHistoryFromMessages && rebuiltHistoryFromMessages
+      ? normalizeAgencyHistoryForStorage(rebuiltHistoryFromMessages)
+      : undefined
+
+  if (structuredAttachmentsSupported) {
+    const outgoing = replayStoredAttachmentsInOutgoingMessage(
+      buildStructuredOutgoingMessage(input.currentMessage, {
+        allowLocalFilePaths: input.allowLocalFilePaths,
+      }),
+      transportChatHistory,
+      { allowLocalFilePaths: input.allowLocalFilePaths },
+    )
+    return {
+      message: outgoing.message,
+      chatHistory: transportChatHistory,
+      replayedAttachmentKeys: outgoing.replayedAttachmentKeys,
+      rebuiltHistoryForStorage,
+    }
+  }
+
+  return {
+    message: input.outgoingMessage,
+    chatHistory: transportChatHistory,
+    fileURLs: hasCurrentFileAttachments
+      ? collectFileURLs(input.currentMessage, {
+          allowLocalFilePaths: input.allowLocalFilePaths,
+          materializedFilePaths: input.materializedFilePaths,
+        })
+      : undefined,
+    replayedAttachmentKeys: new Set(),
+    rebuiltHistoryForStorage,
+  }
 }
 
 export function hasErroredPriorAgencyAssistant(msgs: MessageV2.WithParts[], currentID: string) {

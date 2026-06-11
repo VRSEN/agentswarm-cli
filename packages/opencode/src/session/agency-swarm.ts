@@ -12,18 +12,12 @@ import {
   supportsStructuredAttachmentMessages,
 } from "./agency-swarm-client-config"
 import {
+  buildAgencyRunTransportPayload,
   buildAgencyHistoryFromMessages as buildAgencyHistoryFromMessagesForTransport,
   compactHistory as compactHistoryForTransport,
-  compactHistoryHasPriorFileParts,
-  hasErroredPriorAgencyAssistant,
-  hasFileParts,
-  hasPriorFileParts,
-  historyMissingLocalUserMessages,
   isCodexClientConfig,
-  messageHasAttachmentContent,
   normalizeAgencyHistoryForStorage,
-  replayStoredAttachmentsInOutgoingMessage,
-  sanitizeAgencyHistoryForTransport,
+  selectAgencyRunChatHistory,
   stripReplayedAttachmentsFromMessages,
 } from "./agency-swarm-history-transport"
 import { createAgencySwarmStreamEvents } from "./agency-swarm-stream-events"
@@ -31,9 +25,7 @@ import {
   asRecord,
   asString,
   buildOutgoingMessage,
-  buildStructuredOutgoingMessage,
   cleanupMaterializedFilePaths,
-  collectFileURLs,
   extractEventMeta,
   extractFunctionCallOutputs as extractFunctionCallOutputsFromMessages,
   findRecipientAgent,
@@ -41,7 +33,6 @@ import {
   isAgencyAgentUpdatedHandoffMetadata,
   isTopLevelAgencyHandoffMetadata,
   normalizeCallerAgent as normalizeCallerAgentValue,
-  type AgencyMessageInput,
   type AgencySwarmEventMeta,
 } from "./agency-swarm-utils"
 
@@ -361,54 +352,19 @@ export namespace SessionAgencySwarm {
       yield { type: "start" }
       yield { type: "start-step" }
       let streamError: Error | undefined
-      let compactedHistoryFromMessages: Array<Record<string, unknown>> | undefined
-      let compactedHistoryHasFileAttachments = false
-      let rebuiltHistoryFromMessages: Array<Record<string, unknown>> | undefined
-      let persistRebuiltHistoryFromMessages = false
-      let sessionMessages: MessageV2.WithParts[] | undefined
 
       const history = await AgencySwarmHistory.load(scope)
-      const chatHistory = await input
-        .loadSessionMessages()
-        .then((msgs) => {
-          sessionMessages = msgs
-          const compacted = compactHistory({ msgs, currentID: input.userMessage.info.id })
-          if (compacted) {
-            compactedHistoryFromMessages = compacted
-            compactedHistoryHasFileAttachments = compactHistoryHasPriorFileParts({
-              msgs,
-              currentID: input.userMessage.info.id,
-            })
-            return compacted
-          }
-          // Forked sessions clone local messages but get a fresh AgencySwarmHistory key, so the bridge
-          // would otherwise start with no context. Rebuild from cloned messages when stored history is
-          // empty and prior messages are all agency-swarm.
-          //
-          // Queued prompts can also be saved locally while an Agency Swarm stream is still running.
-          // In that window, streamed tool events are visible in local TUI state before backend
-          // `new_messages` are finalized, so stored AgencySwarmHistory can lag behind the visible chat.
-          const rebuilt = buildAgencyHistoryFromMessages({ msgs, currentID: input.userMessage.info.id })
-          if (
-            rebuilt &&
-            rebuilt.length > 0 &&
-            (history.chat_history.length === 0 ||
-              hasErroredPriorAgencyAssistant(msgs, input.userMessage.info.id) ||
-              historyMissingLocalUserMessages(history.chat_history, rebuilt))
-          ) {
-            rebuiltHistoryFromMessages = rebuilt
-            persistRebuiltHistoryFromMessages = history.chat_history.length === 0
-            return rebuilt
-          }
-          return history.chat_history
-        })
-        .catch((error) => {
+      const runHistory = await selectAgencyRunChatHistory({
+        storedHistory: history.chat_history,
+        currentID: input.userMessage.info.id,
+        loadSessionMessages: input.loadSessionMessages,
+        onError: (error) => {
           log.warn("unable to rebuild compacted agency history; falling back to stored history", {
             sessionID: input.sessionID,
             error: error instanceof Error ? error.message : String(error),
           })
-          return history.chat_history
-        })
+        },
+      })
       const recipientAgent = await resolveRecipientAgent({
         sessionID: input.sessionID,
         baseURL: input.options.baseURL,
@@ -418,7 +374,8 @@ export namespace SessionAgencySwarm {
         mentionedRecipient,
         promptRecipient: input.recipientAgent,
         historyRecipient:
-          resolveHandoffRecipientFromHistory(chatHistory) ?? resolveHandoffRecipientFromHistory(history.chat_history),
+          resolveHandoffRecipientFromHistory(runHistory.chatHistory) ??
+          resolveHandoffRecipientFromHistory(history.chat_history),
         configuredRecipient: input.options.recipientAgent,
         configuredRecipientSelectedAt: input.options.recipientAgentSelectedAt,
         loadSessionMessages: input.loadSessionMessages,
@@ -442,98 +399,42 @@ export namespace SessionAgencySwarm {
         sessionModelSettingsExtraArgs,
       )
 
-      const hasCurrentFileAttachments = hasFileParts(input.userMessage)
-      const hasRebuildableFileAttachments =
-        history.chat_history.length === 0 &&
-        !!rebuiltHistoryFromMessages &&
-        !!sessionMessages &&
-        hasPriorFileParts(sessionMessages, input.userMessage.info.id)
       const codexTransport = isCodexClientConfig(clientConfig)
       const allowLocalFilePaths = isLocalAgencyURL(input.options.baseURL)
-      const sanitizedChatHistory = sanitizeAgencyHistoryForTransport(chatHistory, { codexTransport })
-      const replayOnlyOutgoing = allowLocalFilePaths
-        ? replayStoredAttachmentsInOutgoingMessage(outgoingMessage, sanitizedChatHistory)
-        : { message: outgoingMessage, replayedAttachmentKeys: new Set<string>() }
-      const attachmentMessage =
-        hasCurrentFileAttachments ||
-        hasRebuildableFileAttachments ||
-        compactedHistoryHasFileAttachments ||
-        messageHasAttachmentContent(replayOnlyOutgoing.message)
-      const structuredAttachmentsSupported =
-        attachmentMessage &&
-        (await supportsStructuredAttachmentMessagesForBackend({
-          baseURL: input.options.baseURL,
-          agency,
-          token: input.options.token,
-          timeoutMs: input.options.discoveryTimeoutMs,
-        }))
-      let effectiveChatHistory = chatHistory
-      if (structuredAttachmentsSupported && sessionMessages) {
-        if (compactedHistoryFromMessages) {
-          const compacted = compactHistory({
-            msgs: sessionMessages,
-            currentID: input.userMessage.info.id,
-            structuredAttachments: true,
-          })
-          if (compacted) {
-            compactedHistoryFromMessages = compacted
-            effectiveChatHistory = compacted
-          }
-        } else if (rebuiltHistoryFromMessages) {
-          const rebuilt = buildAgencyHistoryFromMessages({
-            msgs: sessionMessages,
-            currentID: input.userMessage.info.id,
-            structuredAttachments: true,
-          })
-          if (rebuilt && rebuilt.length > 0) {
-            rebuiltHistoryFromMessages = rebuilt
-            effectiveChatHistory = rebuilt
-          }
-        }
-      }
-
-      if (persistRebuiltHistoryFromMessages && rebuiltHistoryFromMessages) {
-        await AgencySwarmHistory.appendMessages(scope, normalizeAgencyHistoryForStorage(rebuiltHistoryFromMessages))
-      }
-      let requestMessage: AgencyMessageInput = outgoingMessage
-      let fileURLs: Record<string, string> | undefined
 
       try {
-        const transportChatHistory = sanitizeAgencyHistoryForTransport(effectiveChatHistory, {
+        const transport = await buildAgencyRunTransportPayload({
+          history: runHistory,
+          storedHistory: history.chat_history,
+          currentMessage: input.userMessage,
+          outgoingMessage,
           allowLocalFilePaths,
           codexTransport,
-        })
-        if (structuredAttachmentsSupported) {
-          const outgoing = replayStoredAttachmentsInOutgoingMessage(
-            buildStructuredOutgoingMessage(input.userMessage, {
-              allowLocalFilePaths,
+          materializedFilePaths,
+          supportsStructuredAttachments: () =>
+            supportsStructuredAttachmentMessagesForBackend({
+              baseURL: input.options.baseURL,
+              agency,
+              token: input.options.token,
+              timeoutMs: input.options.discoveryTimeoutMs,
             }),
-            transportChatHistory,
-            { allowLocalFilePaths },
-          )
-          requestMessage = outgoing.message
-          replayedAttachmentKeys = outgoing.replayedAttachmentKeys
-        } else {
-          replayedAttachmentKeys = new Set()
-          if (hasCurrentFileAttachments) {
-            fileURLs = collectFileURLs(input.userMessage, {
-              allowLocalFilePaths,
-              materializedFilePaths,
-            })
-          }
+        })
+        if (transport.rebuiltHistoryForStorage) {
+          await AgencySwarmHistory.appendMessages(scope, transport.rebuiltHistoryForStorage)
         }
+        replayedAttachmentKeys = transport.replayedAttachmentKeys
 
         for await (const frame of AgencySwarmAdapter.streamRun({
           baseURL: input.options.baseURL,
           agency,
-          message: requestMessage,
-          chatHistory: transportChatHistory,
+          message: transport.message,
+          chatHistory: transport.chatHistory,
           recipientAgent,
           additionalInstructions: input.options.additionalInstructions,
           userContext: input.options.userContext,
           fileIDs: input.options.fileIDs,
           token: input.options.token,
-          fileURLs,
+          fileURLs: transport.fileURLs,
           generateChatName: input.options.generateChatName,
           clientConfig,
           abort: streamSignal,
