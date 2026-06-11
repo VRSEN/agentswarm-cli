@@ -104,4 +104,100 @@ describe("DialogModel framework mode", () => {
 
     expect(selectProps?.actions?.[0]?.title).toBe("Manage provider auth")
   })
+
+  test("native mode keeps custom ollama providers visible", async () => {
+    let selectProps: DialogSelectModule.DialogSelectProps<any> | undefined
+
+    spyOn(DialogSelectModule, "DialogSelect").mockImplementation((props: any) => {
+      selectProps = props
+      return <box />
+    })
+    spyOn(DialogContext, "useDialog").mockReturnValue({
+      clear: mock(() => undefined),
+      replace: mock(() => undefined),
+      stack: [],
+      size: "medium",
+      setSize: mock(() => undefined),
+    } as any)
+    spyOn(DialogModelConnectedModule, "useConnected").mockReturnValue(() => true)
+    spyOn(SDKContext, "useSDK").mockReturnValue({ client: {} } as any)
+    spyOn(ToastContext, "useToast").mockReturnValue({
+      show: mock(() => undefined),
+      error: mock(() => undefined),
+      currentToast: null,
+    } as any)
+    spyOn(ThemeContext, "useTheme").mockReturnValue({
+      theme: {},
+    } as any)
+    spyOn(KeybindContext, "useKeybind").mockReturnValue({
+      all: {
+        model_provider_list: ["ctrl+a"],
+        model_favorite_toggle: ["ctrl+f"],
+      },
+    } as any)
+    spyOn(LocalContext, "useLocal").mockReturnValue({
+      agent: {
+        current: () => ({
+          name: "build",
+          model: {
+            providerID: "openai",
+            modelID: "gpt-4o",
+          },
+        }),
+      },
+      model: {
+        current: () => ({
+          providerID: "openai",
+          modelID: "gpt-4o",
+        }),
+        favorite: () => [],
+        recent: () => [],
+        set: mock(() => undefined),
+        toggleFavorite: mock(() => undefined),
+        variant: {
+          selected: () => undefined,
+          list: () => [],
+        },
+      },
+    } as any)
+    spyOn(SyncContext, "useSync").mockReturnValue({
+      data: {
+        config: {
+          model: "openai/gpt-4o",
+        },
+        provider_next: {
+          all: [
+            {
+              id: "ollama",
+              name: "Ollama",
+            },
+          ],
+          connected: ["ollama"],
+        },
+        console_state: {
+          consoleManagedProviders: [],
+        },
+        provider: [
+          {
+            id: "ollama",
+            name: "Ollama",
+            models: {
+              local: {
+                id: "local",
+                name: "Local",
+                providerID: "ollama",
+                status: "active",
+                cost: { input: 0 },
+              },
+            },
+          },
+        ],
+      },
+    } as any)
+
+    const { DialogModel } = await import("../../../src/cli/cmd/tui/component/dialog-model")
+    await testRender(() => <DialogModel />)
+
+    expect(selectProps?.options.some((option) => option.value.providerID === "ollama")).toBe(true)
+  })
 })

@@ -45,7 +45,7 @@ export function DialogModel(props: { providerID?: string }) {
   const enabledProviders = createMemo(() =>
     frameworkMode
       ? sync.data.provider.filter((provider) => isAgencySupportedProvider(provider.id))
-      : sync.data.provider.filter((provider) => provider.id !== AgencySwarmOllama.PROVIDER_ID),
+      : sync.data.provider,
   )
   // Treat framework mode as "not connected" when no agency-supported provider is usable,
   // so the disconnected fallback (filtered popular providers) keeps `/models` actionable
