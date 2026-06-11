@@ -610,11 +610,16 @@ function drop(data: SessionData, partID: string) {
 // buffered text parts that were waiting on role confirmation. User-role
 // parts are silently dropped.
 function replay(data: SessionData, commits: SessionCommit[], messageID: string, role: MessageRole, thinking: boolean) {
-  for (const [partID, msg] of data.msg.entries()) {
-    if (msg !== messageID || data.ids.has(partID)) {
-      continue
-    }
+  const entries = Array.from(data.msg.entries()).filter(([partID, msg]) => msg === messageID && !data.ids.has(partID))
+  const ordered =
+    role === "assistant"
+      ? [
+          ...entries.filter(([partID]) => data.part.get(partID) === "reasoning"),
+          ...entries.filter(([partID]) => data.part.get(partID) !== "reasoning"),
+        ]
+      : entries
 
+  for (const [partID] of ordered) {
     if (role === "user" && !data.includeUserText) {
       data.ids.add(partID)
       drop(data, partID)

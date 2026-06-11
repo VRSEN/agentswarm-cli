@@ -7950,6 +7950,104 @@ describe("session.agency-swarm", () => {
     ])
   })
 
+  test("stream flushes completed reasoning and pending text before tool input", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: "Need a lookup.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "1",
+            item: {
+              type: "message",
+              id: "msg_1",
+              content: [{ type: "output_text", text: "I will check." }],
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "2",
+            item: {
+              type: "function_call",
+              id: "fc_1",
+              call_id: "call_1",
+              name: "lookup",
+              arguments: '{"query":"status"}',
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "2",
+            item: {
+              type: "function_call",
+              id: "fc_1",
+              call_id: "call_1",
+              name: "lookup",
+              arguments: '{"query":"status"}',
+            },
+          },
+        },
+      }
+      yield {
+        type: "messages",
+        payload: {
+          new_messages: [{ type: "function_call_output", call_id: "call_1", output: "ok" }],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+      if (event.type === "tool-input-start") events.push(`tool-start:${event.toolName}`)
+      if (event.type === "tool-call") events.push(`tool-call:${event.toolName}`)
+    }
+
+    expect(events).toEqual(["reasoning:Need a lookup.", "text:I will check.", "tool-start:lookup", "tool-call:lookup"])
+  })
+
   test("stream does not replay pending text when response completes before text done", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {

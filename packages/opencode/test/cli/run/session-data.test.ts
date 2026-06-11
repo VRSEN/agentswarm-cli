@@ -257,6 +257,35 @@ describe("run session data", () => {
     ])
   })
 
+  test("keeps delayed role replayed assistant text behind completed reasoning", () => {
+    let data = createSessionData()
+    data = reduce(data, text({ id: "txt-1", messageID: "msg-1", text: "Answer later.", time: { start: 2, end: 3 } })).data
+    data = reduce(
+      data,
+      reasoning({
+        id: "reason-1",
+        messageID: "msg-1",
+        text: "Thinking first.",
+        time: { start: 1, end: 2 },
+      }),
+    ).data
+
+    const out = reduce(data, assistant("msg-1"))
+
+    expect(out.commits).toEqual([
+      expect.objectContaining({
+        kind: "reasoning",
+        text: "Thinking first.",
+        partID: "reason-1",
+      }),
+      expect.objectContaining({
+        kind: "assistant",
+        text: "Answer later.",
+        partID: "txt-1",
+      }),
+    ])
+  })
+
   test("keeps permission precedence over queued questions", () => {
     let data = createSessionData()
     data = reduce(data, {

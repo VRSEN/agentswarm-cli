@@ -705,6 +705,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     extra?: Record<string, unknown>,
   ) => {
     const parts: StreamPart[] = flushDoneReasoning()
+    parts.push(...flushPendingText(true))
     const tool = ensureTool(callID, toolName)
     if (!tool.started) {
       tool.started = true
