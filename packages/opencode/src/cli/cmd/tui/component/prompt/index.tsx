@@ -1539,7 +1539,7 @@ export function Prompt(props: PromptProps) {
 
     if (
       shouldBlockAgencyPromptSubmit({
-        currentProviderID: productProviderID,
+        currentProviderID: selectedModel.providerID,
         configuredModel: sync.data.config.model,
         agentModel: local.agent.current()?.model,
         providers: authProviders,
