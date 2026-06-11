@@ -479,6 +479,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         providers: sync.data.provider,
         providerAuth: sync.data.provider_auth,
         frameworkMode: frameworkMode(),
+        currentProviderID: local.model.current()?.providerID,
         env: process.env,
       })
 
