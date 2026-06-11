@@ -7563,7 +7563,7 @@ describe("session.agency-swarm", () => {
             {
               type: "message",
               role: "assistant",
-              id: "msg_1_final",
+              id: "msg_1",
               content: [{ type: "output_text", text: "OK" }],
             },
           ],
@@ -7983,7 +7983,7 @@ describe("session.agency-swarm", () => {
             {
               type: "message",
               role: "assistant",
-              id: "msg_final",
+              id: "msg_1",
               content: [{ type: "output_text", text: "Hey there!" }],
             },
           ],
@@ -8299,6 +8299,76 @@ describe("session.agency-swarm", () => {
     expect(events).toEqual(["reasoning:Need a lookup.", "text:I will check.", "tool-start:lookup", "tool-call:lookup"])
   })
 
+  test("stream preserves encrypted reasoning metadata when tool starts before reasoning item done", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1", encrypted_content: null },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: "Need a lookup.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: {
+              type: "function_call",
+              id: "fc_1",
+              call_id: "call_1",
+              name: "lookup",
+              arguments: '{"query":"status"}',
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1", encrypted_content: "sealed" },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "tool-input-start") events.push(`tool-start:${event.toolName}`)
+      if (event.type === "reasoning-end") events.push(`reasoning-end:${event.providerMetadata?.encrypted_content}`)
+    }
+
+    expect(events).toEqual(["reasoning:Need a lookup.", "tool-start:lookup", "reasoning-end:sealed"])
+  })
+
   test("stream force flushes pending text before tool input while reasoning stays open", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
@@ -8546,7 +8616,7 @@ describe("session.agency-swarm", () => {
             {
               type: "message",
               role: "assistant",
-              id: "msg_final",
+              id: "msg_1",
               content: [{ type: "output_text", text: "Hey there!" }],
             },
           ],
@@ -8564,6 +8634,60 @@ describe("session.agency-swarm", () => {
     }
 
     expect(events).toEqual(["reasoning:Simple greeting.", "text:Hey there!"])
+  })
+
+  test("stream keeps same-text assistant message from final messages payload when item is distinct", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: {
+              type: "message",
+              id: "msg_1",
+              content: [{ type: "output_text", text: "OK" }],
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.completed",
+            response: {},
+          },
+        },
+      }
+      yield {
+        type: "messages",
+        payload: {
+          new_messages: [
+            {
+              type: "message",
+              role: "assistant",
+              id: "msg_2",
+              content: [{ type: "output_text", text: "OK" }],
+            },
+          ],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "text-delta") events.push(event.text)
+    }
+
+    expect(events).toEqual(["OK", "OK"])
   })
 
   test("stream does not flush shifted pending text after response message final", async () => {

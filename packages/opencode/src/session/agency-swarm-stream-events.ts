@@ -76,6 +76,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   const reasoningOpen = new Set<string>()
   const reasoningByItem = new Map<string, Set<string>>()
   const reasoningDonePending = new Map<string, PendingReasoning>()
+  const reasoningWaitForDone = new Set<string>()
   const responseTextReplay = new Map<string, Set<string>>()
   const responseReasoningReplay = new Map<string, Set<string>>()
   const pendingTextReplay = new Set<string>()
@@ -193,14 +194,17 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   }
 
   const rememberCompletedResponseTextReplay = () => {
-    for (const text of textBuffer.values()) {
-      const key = replayTextKey(text)
+    for (const [part, text] of textBuffer.entries()) {
+      const separator = part.lastIndexOf(":")
+      if (separator < 0) continue
+      const itemID = part.slice(0, separator)
+      const key = replayPartKey(itemID, 0, text)
       if (key) completedResponseTextReplay.add(key)
     }
   }
 
-  const hasCompletedResponseTextReplay = (text: string) => {
-    const key = replayTextKey(text)
+  const hasCompletedResponseTextReplay = (itemID: string, index: number, text: string) => {
+    const key = replayPartKey(itemID, index, text)
     return !!key && completedResponseTextReplay.has(key)
   }
 
@@ -647,6 +651,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
         reasoningByItem.delete(itemID)
       }
     }
+    reasoningWaitForDone.delete(itemID)
     return [
       {
         type: "reasoning-end",
@@ -662,6 +667,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
 
   const flushDoneReasoning = () => {
     return Array.from(reasoningDonePending.values()).flatMap((pending) => {
+      if (reasoningWaitForDone.has(pending.itemID)) return []
       return closeReasoning(pending.itemID, pending.index, pending.meta, pending.extra)
     })
   }
@@ -910,6 +916,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
 
     if (itemType === "reasoning") {
       if (!itemID) return []
+      if (Object.hasOwn(item, "encrypted_content")) reasoningWaitForDone.add(itemID)
       return ensureReasoning(
         itemID,
         0,
@@ -1358,7 +1365,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       const text = extractMessageText(message)
       if (!text) continue
       if (hasResponseReplay(responseTextReplay, message, text)) continue
-      if (hasPendingTextReplay(itemID, 0, text) || hasCompletedResponseTextReplay(text)) continue
+      if (hasPendingTextReplay(itemID, 0, text) || hasCompletedResponseTextReplay(itemID, 0, text)) continue
       if (shouldSkipDuplicateAssistantText(itemID, 0, text)) continue
       parts.push(
         ...finishText(itemID, 0, text, messageMeta, {
@@ -1377,6 +1384,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       if (!textOpen.has(key)) textBuffer.delete(key)
     }
     reasoningDonePending.clear()
+    reasoningWaitForDone.clear()
     pendingTextReplay.clear()
     pendingTextFlushed.clear()
     closedReasoningTextReplay.clear()
