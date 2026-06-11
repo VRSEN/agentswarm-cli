@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { AgencySwarmAdapter } from "../../src/agency-swarm/adapter"
 import { AgencySwarmHistory } from "../../src/agency-swarm/history"
+import { AgencySwarmOllama } from "../../src/agency-swarm/ollama"
 import { CODEX_API_BASE_URL } from "../../src/plugin/codex"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Session } from "../../src/session/index"
@@ -130,6 +131,27 @@ describe("session.agency-swarm runtime history", () => {
       [{ type: "input_text", text: "queued follow up" }],
       [{ type: "output_text", text: "queued answer" }],
     ])
+  })
+
+  test("stream skips local Ollama checks for remote Agency backends", async () => {
+    const ensure = spyOn(AgencySwarmOllama, "ensure").mockRejectedValue(new Error("local Ollama should not be checked"))
+    let clientConfig: Record<string, unknown> | undefined
+
+    stubSessionMessages([userMessage("current", "remote ollama", 1)])
+    mockHistory([])
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      clientConfig = args.clientConfig as Record<string, unknown>
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = makeInput("current", "remote ollama")
+    input.options.baseURL = "https://agency.example"
+    input.sessionModel = { providerID: "ollama", modelID: "llama3.2" }
+
+    await consumeStream(input)
+
+    expect(ensure).not.toHaveBeenCalled()
+    expect(clientConfig?.["model"]).toBe("litellm/ollama_chat/llama3.2")
   })
 
   test("stream rebuilds local history when stored history has only tool items", async () => {
