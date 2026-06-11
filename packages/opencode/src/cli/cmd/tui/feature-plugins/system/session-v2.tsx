@@ -32,6 +32,13 @@ import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from
 
 const id = "internal:session-v2-debug"
 const route = "session.v2.messages"
+type ReasoningTime = {
+  start?: number
+  end?: number
+}
+type AssistantReasoningPart = SessionMessageAssistantReasoning & {
+  time?: ReasoningTime
+}
 
 function currentSessionID(api: TuiPluginApi) {
   const current = api.route.current
@@ -317,12 +324,7 @@ function AssistantMessage(props: {
               <AssistantText part={part as SessionMessageAssistantText} syntax={props.syntax} />
             </Match>
             <Match when={part.type === "reasoning"}>
-              <AssistantReasoning
-                part={part as SessionMessageAssistantReasoning}
-                subtleSyntax={props.subtleSyntax}
-                completedAt={() => props.message.time.completed}
-                duration={() => (duration() ? Locale.duration(duration()) : undefined)}
-              />
+              <AssistantReasoning part={part as AssistantReasoningPart} subtleSyntax={props.subtleSyntax} />
             </Match>
             <Match when={part.type === "tool"}>
               <AssistantTool part={part as SessionMessageAssistantTool} sessionID={props.sessionID} />
@@ -383,19 +385,20 @@ function AssistantText(props: { part: SessionMessageAssistantText; syntax: Synta
   )
 }
 
-function AssistantReasoning(props: {
-  part: SessionMessageAssistantReasoning
-  subtleSyntax: SyntaxStyle
-  completedAt: () => number | undefined
-  duration: () => string | undefined
-}) {
+function AssistantReasoning(props: { part: AssistantReasoningPart; subtleSyntax: SyntaxStyle }) {
   const { theme } = useTheme()
   const content = createMemo(() => props.part.text.replace("[REDACTED]", "").trim())
-  const isDone = createMemo(() => props.completedAt() !== undefined)
+  const isDone = createMemo(() => props.part.time?.end !== undefined)
+  const duration = createMemo(() => {
+    const start = props.part.time?.start
+    const end = props.part.time?.end
+    if (start === undefined || end === undefined) return
+    return Locale.duration(end - start)
+  })
   return (
     <Show when={content()}>
       <box paddingLeft={3} marginTop={1} flexDirection="column" flexShrink={0}>
-        <ReasoningHeader done={isDone()} duration={props.duration()} />
+        <ReasoningHeader done={isDone()} duration={duration()} />
         <box marginTop={1}>
           <code
             filetype="markdown"
