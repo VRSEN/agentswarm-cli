@@ -178,6 +178,22 @@ describe("run session data", () => {
     expect(out.data.ids.has("reason-1")).toBe(true)
   })
 
+  test("shows progress for redacted-only reasoning when thinking is enabled", () => {
+    let data = createSessionData()
+    data = reduce(data, assistant("msg-1")).data
+    data = reduce(data, reasoning({ id: "reason-1", messageID: "msg-1", text: "", time: { start: 1 } })).data
+
+    const out = reduce(data, delta("msg-1", "reason-1", "[REDACTED]"))
+
+    expect(out.commits).toEqual([
+      expect.objectContaining({
+        kind: "reasoning",
+        text: "Thinking...",
+        partID: "reason-1",
+      }),
+    ])
+  })
+
   test("keeps streamed reasoning ahead of assistant text for the same message", () => {
     let data = createSessionData()
     data = reduce(data, assistant("msg-1")).data
@@ -259,7 +275,10 @@ describe("run session data", () => {
 
   test("keeps delayed role replayed assistant text behind completed reasoning", () => {
     let data = createSessionData()
-    data = reduce(data, text({ id: "txt-1", messageID: "msg-1", text: "Answer later.", time: { start: 2, end: 3 } })).data
+    data = reduce(
+      data,
+      text({ id: "txt-1", messageID: "msg-1", text: "Answer later.", time: { start: 2, end: 3 } }),
+    ).data
     data = reduce(
       data,
       reasoning({

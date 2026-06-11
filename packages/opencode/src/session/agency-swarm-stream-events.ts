@@ -88,6 +88,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   const closedReasoningTextReplay = new Set<string>()
   const completedResponseTextReplay = new Set<string>()
   const doneItemTextReplay = new Set<string>()
+  const retiredParts: StreamPart[] = []
 
   let usage: Usage | undefined
   let lastTextItemID: string | undefined
@@ -96,6 +97,8 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   let sawReasoning = false
   let flushingText = false
   const agentUpdatedHandoffAgents = new Set<string>()
+
+  const drainRetiredParts = () => retiredParts.splice(0)
 
   const mergeMeta = (meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
     return {
@@ -431,12 +434,13 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   }
 
   const ensureText = (itemID: string, index: number, meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
-    const parts: StreamPart[] = []
+    const parts: StreamPart[] = drainRetiredParts()
     const key = textKey(itemID, index)
     if (shouldHoldText() && !textOpen.has(key)) {
       lastTextItemID = itemID
       textIndex.set(itemID, index)
-      return deferText(itemID, index, false, meta, extra)
+      deferText(itemID, index, false, meta, extra)
+      return parts
     }
     const activeItemID = lastTextItemID
     const activeIndex = activeItemID ? (textIndex.get(activeItemID) ?? 0) : undefined
@@ -497,7 +501,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
 
   const flushPendingText = (force: boolean) => {
     if (!force && hasOpenReasoning()) return []
-    const parts: StreamPart[] = []
+    const parts: StreamPart[] = drainRetiredParts()
     flushingText = true
     for (const [key, pending] of Array.from(textPending.entries())) {
       textPending.delete(key)
@@ -707,17 +711,15 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       }
     }
     reasoningWaitForDone.delete(itemID)
-    parts.push(
-      {
-        type: "reasoning-end",
-        id: key,
-        providerMetadata: mergeMeta(meta, {
-          item_id: itemID,
-          summary_index: index,
-          ...(extra ?? {}),
-        }),
-      },
-    )
+    parts.push({
+      type: "reasoning-end",
+      id: key,
+      providerMetadata: mergeMeta(meta, {
+        item_id: itemID,
+        summary_index: index,
+        ...(extra ?? {}),
+      }),
+    })
     return parts
   }
 
@@ -776,7 +778,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     meta: AgencySwarmEventMeta,
     extra?: Record<string, unknown>,
   ) => {
-    const parts: StreamPart[] = flushDoneReasoning()
+    const parts: StreamPart[] = [...drainRetiredParts(), ...flushDoneReasoning()]
     parts.push(...flushPendingText(true))
     const tool = ensureTool(callID, toolName)
     if (!tool.started) {
@@ -1399,7 +1401,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   }
 
   const handleMessagesPayload = async (payload: Record<string, unknown>) => {
-    const parts: StreamPart[] = []
+    const parts: StreamPart[] = drainRetiredParts()
     const newMessages = Array.isArray(payload["new_messages"]) ? payload["new_messages"] : []
     await input.persistMessages(newMessages)
     setUsage(asRecord(payload["usage"]))
@@ -1407,6 +1409,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     const runFromMessages = asString(payload["run_id"])
     if (runFromMessages) {
       await input.handleRunID(runFromMessages)
+      parts.push(...drainRetiredParts())
     }
 
     for (const output of extractFunctionCallOutputs(newMessages)) {
@@ -1445,8 +1448,10 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     for (const key of Array.from(textBuffer.keys())) {
       if (!textOpen.has(key)) textBuffer.delete(key)
     }
-    reasoningDonePending.clear()
-    reasoningWaitForDone.clear()
+    for (const pending of Array.from(reasoningDonePending.values())) {
+      retiredParts.push(...closeReasoning(pending.itemID, pending.index, pending.meta, pending.extra))
+    }
+    retiredParts.push(...flushPendingText(false))
     pendingTextReplay.clear()
     pendingTextFlushed.clear()
     closedReasoningTextReplay.clear()
@@ -1455,7 +1460,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   }
 
   const flushOpen = () => {
-    const parts: StreamPart[] = []
+    const parts: StreamPart[] = drainRetiredParts()
 
     for (const key of Array.from(reasoningOpen.values())) {
       const pending = reasoningDonePending.get(key)

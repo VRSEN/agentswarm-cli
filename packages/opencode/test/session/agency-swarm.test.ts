@@ -13,6 +13,7 @@ import { Provider } from "../../src/provider/provider"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Session } from "../../src/session/index"
 import { SessionAgencySwarm } from "../../src/session/agency-swarm"
+import { createAgencySwarmStreamEvents } from "../../src/session/agency-swarm-stream-events"
 import { MessageID, PartID } from "../../src/session/schema"
 import { tmpdir } from "../fixture/fixture"
 
@@ -10014,5 +10015,52 @@ describe("session.agency-swarm", () => {
     expect(deltas).toEqual(["Think", "ing"])
     expect(ends).toHaveLength(1)
     expect(ends[0]?.providerMetadata).toMatchObject({ encrypted_content: "sealed" })
+  })
+
+  test("stream closes pending reasoning when replay candidates retire on a new run", () => {
+    const events = createAgencySwarmStreamEvents({
+      assistantMessage: {} as never,
+      isCancelled: () => false,
+      isAborted: () => false,
+      handleRunID: async () => {},
+      persistMessages: async () => {},
+      applyAssistantLabel: async () => {},
+    })
+
+    events.handleRawResponseEvent(
+      {
+        type: "response.output_item.added",
+        output_index: "0",
+        item: { type: "reasoning", id: "rs_pending", encrypted_content: null },
+      },
+      {},
+    )
+
+    const done = events.handleRawResponseEvent(
+      {
+        type: "response.reasoning_summary_text.done",
+        item_id: "rs_pending",
+        summary_index: "0",
+        output_index: "0",
+        text: "Need answer.",
+      },
+      {},
+    )
+    expect(done.parts.map((part) => part.type)).toEqual(["reasoning-delta"])
+
+    events.retireClosedReplayCandidates()
+
+    const text = events.handleRawResponseEvent(
+      {
+        type: "response.output_text.delta",
+        item_id: "msg_next",
+        output_index: "1",
+        delta: "OK",
+      },
+      {},
+    )
+
+    expect(text.parts.map((part) => part.type)).toEqual(["reasoning-end", "text-start", "text-delta"])
+    expect(text.parts.find((part) => part.type === "text-delta")?.text).toBe("OK")
   })
 })
