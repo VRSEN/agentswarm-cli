@@ -15,6 +15,7 @@ import {
 import { truncateLargeText } from "./agency-swarm-history-transport"
 
 const MAX_UI_TOOL_OUTPUT_CHARS = 60_000
+const MIN_CUMULATIVE_REASONING_PREFIX_CHARS = 8
 type StreamPart = Record<string, unknown>
 
 type Usage = {
@@ -276,7 +277,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
 
   const reasoningSuffix = (current: string, delta: string) => {
     if (!current) return delta
-    if (delta.startsWith(current)) {
+    if (current.length >= MIN_CUMULATIVE_REASONING_PREFIX_CHARS && delta.startsWith(current)) {
       return delta.slice(current.length)
     }
     return delta
@@ -697,9 +698,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     ]
   }
 
-  const flushDoneReasoning = () => {
+  const flushDoneReasoning = (force = false) => {
     return Array.from(reasoningDonePending.values()).flatMap((pending) => {
-      if (reasoningWaitForDone.has(pending.itemID)) return []
+      if (!force && reasoningWaitForDone.has(pending.itemID)) return []
       return closeReasoning(pending.itemID, pending.index, pending.meta, pending.extra)
     })
   }
@@ -1174,7 +1175,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       setUsage(asRecord(asRecord(nested["response"])?.["usage"]))
       if (responseType !== "response.completed") return { parts: [] }
       rememberCompletedResponseTextReplay()
-      return { parts: flushPendingText(true) }
+      return { parts: [...flushDoneReasoning(true), ...flushPendingText(true)] }
     }
 
     if (responseType === "response.output_item.added" && item) {
