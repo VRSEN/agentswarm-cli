@@ -8,7 +8,7 @@ import { useEvent } from "@tui/context/event"
 import { uniqueBy } from "remeda"
 import path from "path"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import { isAgencySwarmModel } from "@/agency-swarm/run-mode"
+import { isAgencySwarmModel, isAgencySwarmRunMode } from "@/agency-swarm/run-mode"
 import { Global } from "@opencode-ai/core/global"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { iife } from "@/util/iife"
@@ -36,6 +36,8 @@ type StoredModelSelection = ModelSelection & {
   explicit?: boolean
 }
 
+export type ProductMode = "build" | "plan" | "run"
+
 export function isUsableModel(input: {
   model: ModelSelection
   providers: {
@@ -47,6 +49,7 @@ export function isUsableModel(input: {
   configuredProviders?: Record<string, unknown>
   enabledProviders?: string[]
   disabledProviders?: string[]
+  productMode?: ProductMode
 }) {
   const provider = input.providers.find((x) => x.id === input.model.providerID)
   if (provider?.models[input.model.modelID]) return true
@@ -75,6 +78,7 @@ export function selectCurrentModel(input: {
   configuredProviders?: Record<string, unknown>
   enabledProviders?: string[]
   disabledProviders?: string[]
+  productMode?: ProductMode
 }) {
   function isModelValid(model: ModelSelection) {
     return isUsableModel({
@@ -88,10 +92,16 @@ export function selectCurrentModel(input: {
     })
   }
 
+  function isAllowedProductModel(model: ModelSelection) {
+    if (input.productMode !== "build" && input.productMode !== "plan") return true
+    return model.providerID !== AgencySwarmAdapter.PROVIDER_ID
+  }
+
   function getFirstValidModel(...modelFns: (() => ModelSelection | undefined)[]) {
     for (const modelFn of modelFns) {
       const model = modelFn()
       if (!model) continue
+      if (!isAllowedProductModel(model)) continue
       if (isModelValid(model)) return { providerID: model.providerID, modelID: model.modelID }
     }
   }
@@ -99,7 +109,7 @@ export function selectCurrentModel(input: {
   const fallbackModel = () => {
     if (input.argModel) {
       const { providerID, modelID } = Provider.parseModel(input.argModel)
-      if (isModelValid({ providerID, modelID })) {
+      if (isAllowedProductModel({ providerID, modelID }) && isModelValid({ providerID, modelID })) {
         return {
           providerID,
           modelID,
@@ -109,7 +119,7 @@ export function selectCurrentModel(input: {
 
     if (input.configModel) {
       const { providerID, modelID } = Provider.parseModel(input.configModel)
-      if (isModelValid({ providerID, modelID })) {
+      if (isAllowedProductModel({ providerID, modelID }) && isModelValid({ providerID, modelID })) {
         return {
           providerID,
           modelID,
@@ -118,12 +128,15 @@ export function selectCurrentModel(input: {
     }
 
     for (const item of input.recentModels ?? []) {
-      if (isModelValid(item)) {
+      if (isAllowedProductModel(item) && isModelValid(item)) {
         return item
       }
     }
 
-    const provider = input.providers[0]
+    const provider = input.providers.find((item) => {
+      if (input.productMode !== "build" && input.productMode !== "plan") return true
+      return item.id !== AgencySwarmAdapter.PROVIDER_ID
+    })
     if (!provider) return undefined
     const defaultModel = input.providerDefaults?.[provider.id]
     const firstModel = Object.values(provider.models)[0] as { id?: string } | undefined
@@ -172,6 +185,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const sdk = useSDK()
     const toast = useToast()
     const args = useArgs()
+    const [productStore, setProductStore] = createStore<{
+      mode: ProductMode | undefined
+    }>({
+      mode: undefined,
+    })
 
     function isModelValid(model: ModelSelection) {
       return isUsableModel({
@@ -309,6 +327,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           configuredProviders: sync.data.config.provider,
           enabledProviders: sync.data.config.enabled_providers,
           disabledProviders: sync.data.config.disabled_providers,
+          productMode: productStore.mode,
         })
       })
 
@@ -713,11 +732,60 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       }
     })
 
+    const product = {
+      current(): ProductMode {
+        if (productStore.mode) return productStore.mode
+        if (
+          isAgencySwarmRunMode({
+            currentProviderID: model.current()?.providerID,
+            configuredModel: sync.data.config.model,
+            agentModel: agent.current()?.model,
+          })
+        ) {
+          return "run"
+        }
+        return agent.current()?.name === "plan" ? "plan" : "build"
+      },
+      async set(mode: ProductMode) {
+        setProductStore("mode", mode)
+        if (mode === "build" || mode === "plan") {
+          agent.set(mode)
+          const value = model.current()
+          if (!value || value.providerID === AgencySwarmAdapter.PROVIDER_ID) return
+          model.set(value, { explicit: true })
+          await updateConfigModel(value)
+          return
+        }
+        const runModel = {
+          providerID: AgencySwarmAdapter.PROVIDER_ID,
+          modelID: AgencySwarmAdapter.DEFAULT_MODEL_ID,
+        }
+        await updateConfigModel(runModel)
+        model.set(runModel, { explicit: true })
+      },
+    }
+
+    async function updateConfigModel(value: ModelSelection) {
+      await sdk.client.global.config.update(
+        {
+          config: {
+            model: `${value.providerID}/${value.modelID}`,
+          },
+        },
+        {
+          throwOnError: true,
+        },
+      )
+      await sdk.client.instance.dispose()
+      await sync.bootstrap()
+    }
+
     const result = {
       model,
       agent,
       mcp,
       session,
+      product,
     }
     return result
   },

@@ -270,6 +270,7 @@ export function Session() {
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
+      productMode: local.product.current(),
     }),
   )
   const agencyProviderOptions = createMemo(() =>
@@ -390,10 +391,11 @@ export function Session() {
     if (part.id === lastSwitch) return
 
     if (part.tool === "plan_exit") {
-      local.agent.set("build")
+      void local.product.set("build")
       lastSwitch = part.id
     } else if (part.tool === "plan_enter") {
-      local.agent.set(frameworkMode() ? "build" : "plan")
+      if (frameworkMode()) local.agent.set("build")
+      else void local.product.set("plan")
       lastSwitch = part.id
     }
   })

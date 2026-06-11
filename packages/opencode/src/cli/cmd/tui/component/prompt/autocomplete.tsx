@@ -106,6 +106,7 @@ export function Autocomplete(props: {
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
+      productMode: local.product.current(),
     }),
   )
 
@@ -663,7 +664,7 @@ export function Autocomplete(props: {
   function select() {
     if (store.visible === "/" && store.selected === 0) {
       const typed = "/" + props.input().getTextRange(store.index + 1, props.input().cursorOffset)
-      const exact = command.slashes().find((item) => [item.display, ...(item.aliases ?? [])].includes(typed))
+      const exact = command.slashes().find((item) => [item.display.trimEnd(), ...(item.aliases ?? [])].includes(typed))
       if (exact) {
         hide()
         exact.onSelect()

@@ -11,15 +11,18 @@ import {
   openAIProviderTestConfig,
   startAgencyProtocolServer,
   startMultiAgencyServer,
+  startNativeLLMServer,
   startTui,
   startTuiDemoAgencyServer,
   writeAgencyProject,
+  type NativeLLMServer,
   type TuiProcess,
   type AgencyProtocolServer,
 } from "./harness"
 
 let currentTui: TuiProcess | undefined
 let currentServer: AgencyProtocolServer | undefined
+let currentNativeServer: NativeLLMServer | undefined
 let currentTelemetryServer: ReturnType<typeof startTelemetryServer> | undefined
 const tempDirs: string[] = []
 const tuiReadyTimeoutMs = process.env.CI ? 120_000 : 30_000
@@ -39,11 +42,39 @@ function hasCommand(screen: string, command: string) {
   return screen.split("\n").some((line) => new RegExp(`┃\\s+${command}\\b`).test(line))
 }
 
+async function waitForCommand(tui: TuiProcess, command: string) {
+  await tui.waitFor(() => hasCommand(tui.screen(), command), `${command} command`, tuiInteractionTimeoutMs)
+  return tui.screen()
+}
+
+function clearPrompt(tui: TuiProcess) {
+  tui.write("\b".repeat(80))
+}
+
+function hasModeDialog(screen: string) {
+  return (
+    screen.includes("Select mode") &&
+    screen.includes("Build") &&
+    screen.includes("Plan") &&
+    screen.includes("Run") &&
+    !screen.includes("Select model")
+  )
+}
+
+function footerHasMode(screen: string, mode: string) {
+  return screen
+    .split("\n")
+    .slice(-16)
+    .some((line) => line.includes(`${mode} ·`) && line.includes("OpenAI"))
+}
+
 afterEach(async () => {
   await currentTui?.close()
   currentTui = undefined
   currentServer?.stop()
   currentServer = undefined
+  currentNativeServer?.stop()
+  currentNativeServer = undefined
   currentTelemetryServer?.stop()
   currentTelemetryServer = undefined
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
@@ -357,6 +388,237 @@ describe("Agent Swarm terminal TUI e2e", () => {
       currentServer.stop()
       currentServer = undefined
     }
+  })
+
+  test("/modes is the product switch and does not add /build or /plan commands", async () => {
+    currentServer = await startAgencyProtocolServer()
+    currentTui = await startTui({ baseURL: currentServer.baseURL })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    currentTui.write("/")
+    const screen = await waitForCommand(currentTui, "/modes")
+
+    expect(hasCommand(screen, "/modes")).toBe(true)
+    expect(hasCommand(screen, "/agents")).toBe(true)
+    expect(hasCommand(screen, "/build")).toBe(false)
+    expect(hasCommand(screen, "/plan")).toBe(false)
+    expect(hasCommand(screen, "/review")).toBe(false)
+
+    currentTui.write("mode\r")
+    await currentTui.waitForText("Select mode", tuiInteractionTimeoutMs)
+  })
+
+  test("/modes Build and Plan restore native command visibility", async () => {
+    for (const mode of ["Build", "Plan"] as const) {
+      currentServer = await startAgencyProtocolServer()
+      currentTui = await startTui({ baseURL: currentServer.baseURL })
+
+      await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+      await selectProductMode(currentTui, mode)
+      currentTui.write("/rev")
+      const screen = await waitForCommand(currentTui, "/review")
+
+      expect(hasCommand(screen, "/review")).toBe(true)
+      expect(hasCommand(screen, "/build")).toBe(false)
+      expect(hasCommand(screen, "/plan")).toBe(false)
+
+      await currentTui.close()
+      currentTui = undefined
+      currentServer.stop()
+      currentServer = undefined
+    }
+  })
+
+  test("/modes Build and Plan stay native after a Run-mode Agency response", async () => {
+    for (const mode of ["Build", "Plan"] as const) {
+      currentServer = await startTuiDemoAgencyServer()
+      currentNativeServer = await startNativeLLMServer()
+      currentTui = await startTui({
+        baseURL: currentServer.baseURL,
+        agency: "tui-demo-agency",
+        recipientAgent: "UserSupportAgent",
+        configSource: "file",
+        config: {
+          enabled_providers: openAIProviderTestConfig.enabled_providers,
+          provider: {
+            openai: {
+              options: {
+                apiKey: "test-openai-key",
+                baseURL: currentNativeServer.baseURL,
+              },
+            },
+          },
+        },
+      })
+
+      await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+      currentTui.write(`run before ${mode.toLowerCase()} mode switch\r`)
+      await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
+      await currentTui.waitFor(
+        () => currentServer!.requests.length === 1,
+        `Run-mode Agency request before ${mode}`,
+        tuiInteractionTimeoutMs,
+      )
+      const agencyRequests = currentServer.requests.length
+
+      await selectProductMode(currentTui, mode)
+      currentTui.write("who are you\r")
+      await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
+
+      const request = await waitForNativeLLMRequest(currentTui, currentNativeServer, "who are you")
+      const body = JSON.stringify(request.body)
+      expect(body).toContain("You are OpenCode")
+      expect(body).toContain(
+        mode === "Build" ? "Agent Swarm Agent Builder Instructions" : "Agent Swarm Planner Instructions",
+      )
+      if (mode === "Plan") expect(body).toContain("plan_exit")
+      expect(currentServer.requests).toHaveLength(agencyRequests)
+
+      await currentTui.close()
+      currentTui = undefined
+      currentServer.stop()
+      currentServer = undefined
+      currentNativeServer.stop()
+      currentNativeServer = undefined
+    }
+  })
+
+  test("/modes Build and Plan stay native when launcher-style env config defaults to Run", async () => {
+    for (const mode of ["Build", "Plan"] as const) {
+      currentServer = await startTuiDemoAgencyServer()
+      currentNativeServer = await startNativeLLMServer()
+      currentTui = await startTui({
+        baseURL: currentServer.baseURL,
+        agency: "tui-demo-agency",
+        recipientAgent: "UserSupportAgent",
+        config: {
+          enabled_providers: openAIProviderTestConfig.enabled_providers,
+          provider: {
+            openai: {
+              options: {
+                apiKey: "test-openai-key",
+                baseURL: currentNativeServer.baseURL,
+              },
+            },
+          },
+        },
+      })
+
+      await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+      await selectProductMode(currentTui, mode)
+      currentTui.write(`who are you from ${mode.toLowerCase()} env config\r`)
+      await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
+
+      await waitForNativeLLMRequest(
+        currentTui,
+        currentNativeServer,
+        `who are you from ${mode.toLowerCase()} env config`,
+      )
+      const request = currentNativeServer.requests.find((item) =>
+        JSON.stringify(item.body).includes(
+          mode === "Build" ? "Agent Swarm Agent Builder Instructions" : "Agent Swarm Planner Instructions",
+        ),
+      )
+      expect(request).toBeDefined()
+      const body = JSON.stringify(request.body)
+      expect(body).toContain(
+        mode === "Build" ? "Agent Swarm Agent Builder Instructions" : "Agent Swarm Planner Instructions",
+      )
+      if (mode === "Plan") expect(body).toContain("plan_exit")
+      expect(currentServer.requests).toHaveLength(0)
+
+      await currentTui.close()
+      currentTui = undefined
+      currentServer.stop()
+      currentServer = undefined
+      currentNativeServer.stop()
+      currentNativeServer = undefined
+    }
+  })
+
+  test("approving native Plan handoff switches the TUI to Build", async () => {
+    const planPrompt = "finish test plan with native plan_exit"
+    currentServer = await startTuiDemoAgencyServer()
+    currentNativeServer = await startNativeLLMServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+      config: {
+        enabled_providers: openAIProviderTestConfig.enabled_providers,
+        provider: {
+          openai: {
+            options: {
+              apiKey: "test-openai-key",
+              baseURL: currentNativeServer.baseURL,
+            },
+          },
+        },
+      },
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    await selectProductMode(currentTui, "Plan")
+    await currentTui.waitFor(() => footerHasMode(currentTui!.screen(), "Plan"), "Plan footer", tuiInteractionTimeoutMs)
+
+    currentNativeServer.planExitNext()
+    currentTui.write(`${planPrompt}\r`)
+    await currentTui.waitFor(
+      () => currentTui!.screen().includes("Would you like to") && currentTui!.screen().includes("switch to the build"),
+      "Plan approval question",
+      tuiInteractionTimeoutMs,
+    )
+    currentTui.write("\r")
+    await currentTui.waitFor(
+      () => footerHasMode(currentTui!.screen(), "Build"),
+      "Build footer after plan approval",
+      tuiInteractionTimeoutMs,
+    )
+    expect(currentServer.requests).toHaveLength(0)
+  })
+
+  test("/modes can return to server-backed Run after Build", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    await selectProductMode(currentTui, "Build")
+    await selectProductMode(currentTui, "Run")
+    await currentTui.waitForText("Swarm Default", tuiInteractionTimeoutMs)
+
+    currentTui.write("/")
+    const screen = await waitForCommand(currentTui, "/agents")
+    expect(hasCommand(screen, "/agents")).toBe(true)
+    expect(hasCommand(screen, "/review")).toBe(false)
+  })
+
+  test("Tab cycles native agents outside Run and swarm targets in Run", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("UserSupportAgent", tuiReadyTimeoutMs)
+    await selectProductMode(currentTui, "Build")
+    currentTui.write("\t")
+    await currentTui.waitFor(() => currentTui!.screen().includes("Plan"), "native Plan agent", tuiInteractionTimeoutMs)
+
+    await selectProductMode(currentTui, "Run")
+    currentTui.write("\t")
+    await currentTui.waitFor(
+      () => currentTui!.screen().includes("MathAgent · Swarm Default"),
+      "Run agent target",
+      tuiInteractionTimeoutMs,
+    )
   })
 
   test("run-target picker uses live agency labels instead of local-agency ids", async () => {
@@ -1108,6 +1370,35 @@ async function selectRunTarget(tui: TuiProcess, query: string, successMessage: s
   tui.write("\x1b[B")
   tui.write("\r")
   await tui.waitForText(successMessage, tuiInteractionTimeoutMs)
+}
+
+async function selectProductMode(tui: TuiProcess, mode: "Build" | "Plan" | "Run") {
+  clearPrompt(tui)
+  tui.write("/modes\r")
+  await tui.waitFor(() => hasModeDialog(tui.screen()), "current mode dialog", tuiInteractionTimeoutMs)
+  tui.write(mode)
+  await tui.waitFor(
+    () => hasModeDialog(tui.screen()) && tui.screen().includes(mode),
+    `${mode} mode option`,
+    tuiInteractionTimeoutMs,
+  )
+  tui.write("\x1b[B")
+  tui.write("\r")
+  await tui.waitFor(() => !tui.screen().includes("Select mode"), `${mode} mode selected`, tuiInteractionTimeoutMs)
+  clearPrompt(tui)
+}
+
+async function waitForNativeLLMRequest(tui: TuiProcess, server: NativeLLMServer, prompt: string) {
+  let request: NativeLLMServer["requests"][number] | undefined
+  await tui.waitFor(
+    () => {
+      request = server.requests.find((item) => JSON.stringify(item.body).includes(prompt))
+      return request !== undefined
+    },
+    `native LLM request containing ${prompt}`,
+    tuiInteractionTimeoutMs,
+  )
+  return request!
 }
 
 async function selectCurrentSwarm(tui: TuiProcess) {

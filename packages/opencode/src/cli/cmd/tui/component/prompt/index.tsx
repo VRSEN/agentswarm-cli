@@ -248,11 +248,37 @@ export function Prompt(props: PromptProps) {
   const canSwitchOrgs = createMemo(() => sync.data.console_state.switchableOrgCount > 1)
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
+      productMode: local.product.current(),
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
     }),
   )
+  function firstNativeModel() {
+    const hasModel = (model: { providerID: string; modelID: string }) =>
+      Boolean(sync.data.provider.find((provider) => provider.id === model.providerID)?.models[model.modelID])
+
+    const recent = local.model
+      .recent()
+      .find((item) => item.providerID !== AgencySwarmAdapter.PROVIDER_ID && hasModel(item))
+    if (recent) return recent
+
+    for (const provider of sync.data.provider) {
+      if (provider.id === AgencySwarmAdapter.PROVIDER_ID) continue
+      const defaultModel = sync.data.provider_default[provider.id]
+      const firstModel = Object.values(provider.models)[0] as { id?: string } | undefined
+      const modelID = defaultModel ?? firstModel?.id
+      if (modelID) return { providerID: provider.id, modelID }
+    }
+  }
+  function promptModel() {
+    const model = local.model.current()
+    const mode = local.product.current()
+    if ((mode === "build" || mode === "plan") && model?.providerID === AgencySwarmAdapter.PROVIDER_ID) {
+      return firstNativeModel() ?? model
+    }
+    return model
+  }
   const effectiveAgentName = createMemo(() => (frameworkMode() ? "build" : (local.agent.current()?.name ?? "build")))
   const agencyProviderOptions = createMemo(() =>
     readAgencyProviderOptions({
@@ -1494,7 +1520,7 @@ export function Prompt(props: PromptProps) {
     }
 
     const currentMode = store.mode
-    const selectedModel = local.model.current()
+    const selectedModel = promptModel()
     if (!selectedModel) {
       void promptModelWarning()
       return false
@@ -1596,7 +1622,7 @@ export function Prompt(props: PromptProps) {
       return false
     }
 
-    if (currentMode !== "shell" && agencyConnection.requiresReconnect()) {
+    if (currentMode !== "shell" && frameworkMode() && agencyConnection.requiresReconnect()) {
       toast.show({
         variant: "warning",
         message: "Reconnect to a local agency-swarm server before sending a message",
@@ -1768,6 +1794,7 @@ export function Prompt(props: PromptProps) {
         $body_agencyRecipientAgent?: string
         $body_agencyLabelAgency?: string
         $body_agencyLabelRecipientAgent?: string
+        $body_agencySwarmBridge?: boolean
       } = {
         sessionID,
         ...selectedModel,
@@ -1778,6 +1805,7 @@ export function Prompt(props: PromptProps) {
         $body_agencyRecipientAgent: agencyRecipientAgent,
         $body_agencyLabelAgency: agencyLabelAgency,
         $body_agencyLabelRecipientAgent: agencyLabelRecipientAgent,
+        $body_agencySwarmBridge: frameworkMode(),
         parts: [
           ...editorParts,
           {

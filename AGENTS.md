@@ -97,6 +97,7 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 - Drive any smoke automation yourself when it should finish in under 3 minutes.
 - When relevant full testing should finish in under 5 minutes, run it yourself before handoff.
 - When relevant full testing is likely to take more than 5 minutes, give the user a ready-to-run script and exact manual QA steps instead of calling the work done.
+- For integration-heavy Agent Swarm, OpenCode TUI, or CLI behavior, prefer the smallest meaningful integration or end-to-end tests that drive real user flows and prove boundaries. Unit tests are fine for isolated pure or local logic, but mocked unit tests are not enough proof for integration behavior.
 - Test every user-facing function touched by the change, and every nearby function that the change could affect.
 - If a check needs secrets, live services, global installs, or long human QA, say that clearly and give the safest exact command or script for the user to run.
 

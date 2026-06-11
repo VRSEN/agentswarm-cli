@@ -33,6 +33,7 @@ export function DialogModel(props: { providerID?: string }) {
     currentProviderID: local.model.current()?.providerID,
     configuredModel: sync.data.config.model,
     agentModel: local.agent.current()?.model,
+    productMode: local.product.current(),
   })
   const agencyOptions = createMemo(() =>
     readAgencyProviderOptions({

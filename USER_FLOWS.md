@@ -12,7 +12,7 @@ Keep implementation-level file paths and symbol details in `FORK_CHANGELOG.md`; 
 - Launcher and install behavior for `npx @vrsen/agentswarm`, installed `agentswarm`, the direct fork binary, and `agentswarm pr`.
 - Downstream package builds that reuse this TUI foundation through generic product profile inputs.
 - Local Agency Swarm project detection, starter creation, Python environment repair, uv setup, bridge startup, resume recovery, and external Agency server connection.
-- TUI Run mode routing, `/auth`, `/connect`, run-target selection, attachments, history, handoffs, dead-server recovery, and hidden upstream-native commands.
+- TUI `/modes`, native Build and Plan exposure, Run mode routing, `/auth`, `/connect`, run-target selection, attachments, history, handoffs, dead-server recovery, and hidden upstream-native commands in Run.
 - Fork branding, tips, theme, config precedence, upgrade channel limits, share carry-forward, and developer/debug `agentswarm agency` commands.
 - Trust-safe telemetry metrics, event-list docs, derived dashboard metrics, opt-out behavior, and privacy proof for fork-owned Agent Swarm flows.
 - Out of scope: Python-side `agency.tui()` invocation before control reaches this repo.
@@ -183,6 +183,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** In-flight Agency runs cancel through the bridge.
 - **Happy-path proof:** Codex OAuth is stripped from non-OpenAI LiteLLM agency runs.
 - **Happy-path proof:** Run mode hides Builder, Plan, `/editor`, `/variants`, `/init`, `/review`, and other disabled upstream-native surfaces.
+- **Happy-path proof:** `/modes` remains available in Run so the user can switch to Build or Plan without leaving the project.
 - **Happy-path proof:** `/models` and `/auth` are limited to Agency-supported providers.
 - **Happy-path proof:** Upstream provider/model state used for auth or LLM choice does not pull the user out of Run mode by accident.
 - **Happy-path proof:** `agency-swarm/default` stays active over stale stored model state until the user explicitly chooses another model.
@@ -195,13 +196,20 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Failure scenarios to test:** Non-OpenAI LiteLLM agency runs do not receive Codex OAuth credentials while OpenAI-based LiteLLM runs still keep them.
 - **Failure scenarios to test:** Missing or unreachable Ollama fails visibly without switching out of Run mode.
 
-#### Builder and Plan instruction preservation
+#### `/modes`, Build, and Plan
 
-- **Trigger:** Builder or Plan flows are exercised outside Run-mode hiding.
-- **Happy-path proof:** Builder still uses fork-specific Agency Swarm repo instructions.
-- **Happy-path proof:** Plan still writes Agency Swarm handoff plans instead of upstream OpenCode defaults.
-- **Failure scenarios to test:** Run mode keeps Builder and Plan switching hidden.
-- **Failure scenarios to test:** Any re-enabled Builder or Plan path keeps the fork-specific prompt instructions.
+- **Trigger:** The user runs `/modes` and chooses Build, Plan, or Run.
+- **Happy-path proof:** `/modes` is the product mode switch; `/build` and `/plan` slash commands do not exist.
+- **Happy-path proof:** Build uses native OpenCode build behavior with fork-specific Agent Swarm repo instructions and works without an Agency Swarm server.
+- **Happy-path proof:** Plan uses native OpenCode Plan mode with fork-specific Agent Swarm handoff instructions and works without an Agency Swarm server.
+- **Happy-path proof:** Build and Plan prompts use native local agent state, not the Agency Swarm backend target state.
+- **Happy-path proof:** Native OpenCode commands hidden in Run return in Build and Plan.
+- **Happy-path proof:** `/agents` uses the native OpenCode agent picker in Build and Plan.
+- **Happy-path proof:** Tab cycles native local agents in Build and Plan.
+- **Happy-path proof:** Switching from Run to Build or Plan stops treating prompts as server-backed Run prompts.
+- **Happy-path proof:** Switching back to Run in the same project reconnects to or keeps using the Agency Swarm server and returns `/agents` to the swarm/agent picker.
+- **Failure scenarios to test:** Server failure in Run still lets the user switch to Build or Plan in the same project, make a plan or build a fix, then return to Run.
+- **Failure scenarios to test:** Run mode stays server-backed even when visible provider/model state is native.
 
 #### Attachments, history, and handoff
 
@@ -243,9 +251,8 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** `connect` stores normalized backend config and optional bearer token.
 - **Happy-path proof:** `agencies` discovers available agencies.
 - **Happy-path proof:** `use` pins a default agency id.
-- **Happy-path proof:** `agent` provides Agent Builder scaffold helpers.
+- **Happy-path proof:** `agent` scaffold helpers are not promoted in CLI help.
 - **Failure scenarios to test:** URL normalization and discovery failures surface in the CLI command.
-- **Failure scenarios to test:** `agentswarm agency agent new` fails visibly when `agency-swarm create-agent-template` fails.
 
 ### Trust-Safe Telemetry
 

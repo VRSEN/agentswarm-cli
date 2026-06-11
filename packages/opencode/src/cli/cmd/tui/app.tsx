@@ -39,6 +39,7 @@ import { SyncProvider, useSync } from "@tui/context/sync"
 import { SyncProviderV2 } from "@tui/context/sync-v2"
 import { LocalProvider, useLocal } from "@tui/context/local"
 import { DialogModel } from "@tui/component/dialog-model"
+import { DialogMode } from "@tui/component/dialog-mode"
 import { useConnected } from "@tui/component/use-connected"
 import { DialogMcp } from "@tui/component/dialog-mcp"
 import { DialogStatus } from "@tui/component/dialog-status"
@@ -109,6 +110,7 @@ const appBindingCommands = [
   "model.cycle_recent_reverse",
   "model.cycle_favorite",
   "model.cycle_favorite_reverse",
+  "product.mode",
   "agent.list",
   "mcp.list",
   "agent.cycle",
@@ -457,6 +459,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const connected = useConnected()
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
+      productMode: local.product.current(),
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
@@ -644,6 +647,15 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
             })),
           ]
         : []),
+      {
+        name: "product.mode",
+        title: "Switch mode",
+        category: "Agent",
+        slashName: "modes",
+        run: () => {
+          dialog.replace(() => <DialogMode />)
+        },
+      },
       {
         name: "model.list",
         title: "Switch model",

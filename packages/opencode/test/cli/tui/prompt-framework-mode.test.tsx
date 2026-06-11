@@ -173,6 +173,9 @@ describe("prompt framework-mode footer", () => {
           set: () => {},
         },
       },
+      product: {
+        current: () => "run",
+      },
     } as any)
     spyOn(SDKContext, "useSDK").mockReturnValue({
       client: {

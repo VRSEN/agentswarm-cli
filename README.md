@@ -3,7 +3,7 @@
 Agent Swarm CLI is a terminal app for running and testing Agency Swarm projects.
 It is built on the OpenCode codebase, with Agent Swarm-specific packaging, branding, auth, and TUI flows.
 
-The main user path is **Run mode**: start the TUI from an Agency Swarm project, authenticate a model provider, connect to the local Agency Swarm server, and send prompts to your agency.
+The main user path is **Run mode**: start the TUI from an Agency Swarm project, authenticate a model provider, connect to the local Agency Swarm server, and send prompts to your swarm.
 
 ## Install
 
@@ -36,12 +36,14 @@ On startup, the CLI can detect the project, prepare the project Python environme
 
 ## Main TUI Flows
 
+- `/modes` switches between Build, Plan, and Run.
+- Build is Agent Builder: native OpenCode build behavior with Agent Swarm guidance.
+- Plan is native OpenCode Plan mode for preparing work before Build.
+- Run connects to or starts an Agency Swarm FastAPI server and sends prompts to the active swarm.
 - `/auth` manages OpenAI and Anthropic credentials used by Agency Swarm runs.
 - `/connect` chooses a local or external Agency Swarm server.
-- `/agents` switches the active swarm or agent from live Agency Swarm metadata.
+- `/agents` switches native agents in Build and Plan. In Run, it switches the active swarm or agent from live Agency Swarm metadata.
 - `/models` is limited in Run mode to providers that the Agency Swarm path supports.
-
-Agent Builder and Plan are preserved from the OpenCode backbone, but they are currently hidden from the normal Run mode surface.
 
 ## Sharing
 

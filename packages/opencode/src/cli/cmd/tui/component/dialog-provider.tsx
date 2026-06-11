@@ -197,6 +197,7 @@ export function createDialogProviderOptionsWithFilter(props: DialogProviderProps
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
+      productMode: local.product.current(),
     }),
   )
 
@@ -453,6 +454,7 @@ export function DialogAuth() {
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
+      productMode: local.product.current(),
     }),
   )
   const providerIDs = frameworkMode()
@@ -985,6 +987,7 @@ function AutoMethod(props: AutoMethodProps) {
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
+      productMode: local.product.current(),
     }),
   )
 
@@ -1128,6 +1131,7 @@ function CodeMethod(props: CodeMethodProps) {
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
+      productMode: local.product.current(),
     }),
   )
 
@@ -1227,6 +1231,7 @@ function ApiMethod(props: ApiMethodProps) {
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
+      productMode: local.product.current(),
     }),
   )
   const description = () => {

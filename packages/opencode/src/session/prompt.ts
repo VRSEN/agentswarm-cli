@@ -64,7 +64,9 @@ import * as Database from "@/storage/db"
 import { SessionTable } from "./session.sql"
 import { SessionAgencySwarm } from "./agency-swarm"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import { isAgencySwarmRunMode } from "@/agency-swarm/run-mode"
+import { isAgencySwarmModel, isAgencySwarmRunMode } from "@/agency-swarm/run-mode"
+import { agentBuilderInstructions } from "./agent-builder"
+import { agentPlannerInstructions } from "./agent-planner"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -94,7 +96,18 @@ export function shouldUseAgencySwarmBridge(input: {
   configuredModel?: string
   agentProviderID?: string
   lastAssistantProviderID?: string
+  agentName?: string
+  agencySwarmBridge?: boolean
 }) {
+  if (input.agencySwarmBridge === false) return false
+  const nativePrimary =
+    input.resolvedProviderID !== SessionAgencySwarm.PROVIDER_ID &&
+    (input.agentName === "build" || input.agentName === "plan")
+  const configuredRunMode =
+    isAgencySwarmModel(input.configuredModel) || input.agentProviderID === SessionAgencySwarm.PROVIDER_ID
+  if (nativePrimary && !configuredRunMode) {
+    return false
+  }
   return isAgencySwarmRunMode({
     currentProviderID:
       input.resolvedProviderID === SessionAgencySwarm.PROVIDER_ID ||
@@ -1667,6 +1680,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       return yield* loop({
         sessionID: input.sessionID,
         agencyRecipientAgent: input.agencyRecipientAgent,
+        agencySwarmBridge: input.agencySwarmBridge,
         promptMessageID: message.info.id,
       })
     })
@@ -1771,6 +1785,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             configuredModel: cfg.model,
             agentProviderID: agent.model?.providerID,
             lastAssistantProviderID: lastAssistant?.providerID,
+            agentName: agent.name,
+            agencySwarmBridge: input.agencySwarmBridge,
           })
           const processorModel = useAgencySwarmBridge
             ? yield* getModel(
@@ -1921,7 +1937,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               instruction.system().pipe(Effect.orDie),
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
-            const system = [...env, ...instructions, ...(skills ? [skills] : [])]
+            const modeInstructions = [
+              ...agentBuilderInstructions(agent.name, model.providerID),
+              ...agentPlannerInstructions(agent.name, model.providerID),
+            ]
+            const system = [...env, ...instructions, ...modeInstructions, ...(skills ? [skills] : [])]
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const result = yield* handle.process({
@@ -2177,6 +2197,7 @@ export const PromptInput = Schema.Struct({
   agencyRecipientAgent: Schema.optional(Schema.String),
   agencyLabelAgency: Schema.optional(Schema.String),
   agencyLabelRecipientAgent: Schema.optional(Schema.String),
+  agencySwarmBridge: Schema.optional(Schema.Boolean),
   parts: Schema.Array(
     Schema.Union([
       MessageV2.TextPartInput,
@@ -2191,6 +2212,7 @@ export type PromptInput = Schema.Schema.Type<typeof PromptInput>
 export class LoopInput extends Schema.Class<LoopInput>("SessionPrompt.LoopInput")({
   sessionID: SessionID,
   agencyRecipientAgent: Schema.optional(Schema.String),
+  agencySwarmBridge: Schema.optional(Schema.Boolean),
 }) {}
 
 export const ShellInput = Schema.Struct({
