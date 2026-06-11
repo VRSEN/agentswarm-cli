@@ -178,17 +178,41 @@ describe("run session data", () => {
     expect(out.data.ids.has("reason-1")).toBe(true)
   })
 
-  test("shows progress for redacted-only reasoning when thinking is enabled", () => {
+  test("shows placeholder for redacted-only reasoning when thinking is enabled", () => {
     let data = createSessionData()
     data = reduce(data, assistant("msg-1")).data
     data = reduce(data, reasoning({ id: "reason-1", messageID: "msg-1", text: "", time: { start: 1 } })).data
 
-    const out = reduce(data, delta("msg-1", "reason-1", "[REDACTED]"))
+    let out = reduce(data, delta("msg-1", "reason-1", "[REDACTED]"))
+    expect(out.commits).toEqual([])
+
+    out = reduce(
+      out.data,
+      reasoning({ id: "reason-1", messageID: "msg-1", text: "[REDACTED]", time: { start: 1, end: 2 } }),
+    )
 
     expect(out.commits).toEqual([
       expect.objectContaining({
         kind: "reasoning",
         text: "Thinking...",
+        partID: "reason-1",
+      }),
+    ])
+  })
+
+  test("does not prepend placeholder when redacted reasoning later reveals text", () => {
+    let data = createSessionData()
+    data = reduce(data, assistant("msg-1")).data
+    data = reduce(data, reasoning({ id: "reason-1", messageID: "msg-1", text: "", time: { start: 1 } })).data
+
+    let out = reduce(data, delta("msg-1", "reason-1", "[REDACTED]"))
+    expect(out.commits).toEqual([])
+
+    out = reduce(out.data, delta("msg-1", "reason-1", "Visible reasoning."))
+    expect(out.commits).toEqual([
+      expect.objectContaining({
+        kind: "reasoning",
+        text: "Visible reasoning.",
         partID: "reason-1",
       }),
     ])

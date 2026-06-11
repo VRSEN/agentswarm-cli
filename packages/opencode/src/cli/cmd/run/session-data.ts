@@ -568,6 +568,9 @@ function flushPart(data: SessionData, commits: SessionCommit[], partID: string, 
     if (kind === "reasoning" && chunk) {
       chunk = chunk.replace(/\[REDACTED\]/g, "")
       if (!chunk.trim()) {
+        if (!data.end.has(partID) && !interrupted) {
+          return
+        }
         chunk = "Thinking..."
       }
     }
