@@ -1,4 +1,4 @@
-import { and, Database, eq, gte, inArray, isNull, lt, or, sql } from "@opencode-ai/console-core/drizzle/index.js"
+import { and, Database, eq, gte, inArray, isNull, lt, or, sql, sum } from "@opencode-ai/console-core/drizzle/index.js"
 import { UsageTable } from "@opencode-ai/console-core/schema/billing.sql.js"
 import { KeyTable } from "@opencode-ai/console-core/schema/key.sql.js"
 import { UserTable } from "@opencode-ai/console-core/schema/user.sql.js"
@@ -10,7 +10,6 @@ import { withActor } from "~/context/auth.withActor"
 import { Dropdown } from "~/component/dropdown"
 import { IconChevronLeft, IconChevronRight } from "~/component/icon"
 import styles from "./graph-section.module.css"
-import { localDateLabel, localDateUTC } from "./usage-time"
 import {
   Chart,
   BarController,
@@ -25,53 +24,41 @@ import { useI18n } from "~/context/i18n"
 
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend)
 
-async function getCosts(workspaceID: string, year: number, month: number, timezone: string) {
+async function getCosts(workspaceID: string, year: number, month: number, tzOffset: string) {
   "use server"
   return withActor(async () => {
-    const monthEnd = localDateLabel(year, month + 1, 1)
-    const planExpr = sql<string | null>`JSON_EXTRACT(${UsageTable.enrichment}, '$.plan')`
-    const windows: Array<{ date: string; start: Date; end: Date }> = []
-    for (let day = 1; ; day++) {
-      const date = localDateLabel(year, month, day)
-      if (date >= monthEnd) break
-      windows.push({
-        date,
-        start: localDateUTC(timezone, year, month, day),
-        end: localDateUTC(timezone, year, month, day + 1),
-      })
-    }
+    const timezoneOffset = (() => {
+      const m = /^([+-])(\d{2}):(\d{2})$/.exec(tzOffset)
+      if (!m) return 0
+      const sign = m[1] === "-" ? -1 : 1
+      return sign * (Number(m[2]) * 60 + Number(m[3])) * 60_000
+    })()
 
-    const first = windows[0]!
-    const last = windows[windows.length - 1]!
-    const dateExpr = sql<string>`case ${sql.join(
-      windows.map(
-        (window) =>
-          sql`when ${UsageTable.timeCreated} >= ${window.start} and ${UsageTable.timeCreated} < ${window.end} then ${window.date}`,
-      ),
-      sql` `,
-    )} end`
+    const monthStartUTC = new Date(Date.UTC(year, month, 1, 0, 0, 0) - timezoneOffset)
+    const monthEndUTC = new Date(Date.UTC(year, month + 1, 1, 0, 0, 0) - timezoneOffset)
+    const dateExpr = sql<string>`DATE(CONVERT_TZ(${UsageTable.timeCreated}, '+00:00', ${tzOffset}))`
     const usageData = await Database.use((tx) =>
       tx
         .select({
           date: dateExpr,
           model: UsageTable.model,
-          totalCost: sql<number>`coalesce(sum(${UsageTable.cost}), 0)`,
+          totalCost: sum(UsageTable.cost),
           keyId: UsageTable.keyID,
-          plan: planExpr,
+          plan: sql<string | null>`JSON_EXTRACT(${UsageTable.enrichment}, '$.plan')`,
         })
         .from(UsageTable)
         .where(
           and(
             eq(UsageTable.workspaceID, workspaceID),
-            gte(UsageTable.timeCreated, first.start),
-            lt(UsageTable.timeCreated, last.end),
+            gte(UsageTable.timeCreated, monthStartUTC),
+            lt(UsageTable.timeCreated, monthEndUTC),
           ),
         )
-        .groupBy(dateExpr, UsageTable.model, UsageTable.keyID, planExpr)
-        .then((rows) =>
-          rows.map((r) => ({
+        .groupBy(dateExpr, UsageTable.model, UsageTable.keyID, sql`JSON_EXTRACT(${UsageTable.enrichment}, '$.plan')`)
+        .then((x) =>
+          x.map((r) => ({
             ...r,
-            totalCost: Number(r.totalCost ?? 0),
+            totalCost: r.totalCost ? parseInt(r.totalCost) : 0,
             plan: r.plan as "sub" | "lite" | "byok" | null,
           })),
         ),
@@ -144,6 +131,42 @@ function formatDateLabel(dateStr: string): string {
   const [, m, d] = dateStr.split("-").map(Number)
   const month = new Date(2000, m - 1, 1).toLocaleDateString(undefined, { month: "short" })
   return `${month} ${d.toString().padStart(2, "0")}`
+}
+
+// Compute the UTC offset (in MySQL CONVERT_TZ format like "+05:30") for the
+// given IANA timezone at the given instant. Honors DST.
+function getTimezoneOffset(timezone: string, at: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  })
+    .formatToParts(at)
+    .reduce<Record<string, string>>((acc, p) => {
+      if (p.type !== "literal") acc[p.type] = p.value
+      return acc
+    }, {})
+  const asUTC = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  )
+  const diffMinutes = Math.round((asUTC - at.getTime()) / 60_000)
+  const sign = diffMinutes < 0 ? "-" : "+"
+  const abs = Math.abs(diffMinutes)
+  const hh = Math.floor(abs / 60)
+    .toString()
+    .padStart(2, "0")
+  const mm = (abs % 60).toString().padStart(2, "0")
+  return `${sign}${hh}:${mm}`
 }
 
 function addOpacityToColor(color: string, opacity: number): string {
@@ -429,7 +452,11 @@ export function GraphSection() {
   })
 
   createEffect(async () => {
-    const data = await getCosts(params.id!, store.year, store.month, timezone)
+    // Compute the offset for mid-month so DST transitions don't bias to the
+    // wrong side.
+    const midMonth = new Date(Date.UTC(store.year, store.month, 15, 12, 0, 0))
+    const tzOffset = getTimezoneOffset(timezone, midMonth)
+    const data = await getCosts(params.id!, store.year, store.month, tzOffset)
     setStore({ data })
   })
 
