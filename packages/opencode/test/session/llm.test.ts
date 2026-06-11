@@ -319,7 +319,7 @@ function createEventResponse(chunks: unknown[], includeDone = false) {
 }
 
 describe("session.llm.stream", () => {
-  test("OpenRouter Gemini 2.5 none variant replaces the default reasoning budget", async () => {
+  test("OpenRouter Gemini 2.5 none variant does not send a stale default reasoning budget", async () => {
     const server = state.server
     if (!server) {
       throw new Error("Server not initialized")
@@ -390,89 +390,7 @@ describe("session.llm.stream", () => {
         })
 
         const capture = await request
-        expect(capture.body.reasoning).toEqual({ enabled: false })
-      },
-    })
-  })
-
-  test("OpenRouter Gemini 2.5 disabled model reasoning overrides later variant budgets", async () => {
-    const server = state.server
-    if (!server) {
-      throw new Error("Server not initialized")
-    }
-
-    const providerID = "openrouter"
-    const modelID = "google/gemini-2.5-flash"
-    const fixture = await loadFixture(providerID, modelID)
-    const model = fixture.model
-
-    const request = waitRequest(
-      "/chat/completions",
-      new Response(createChatStream("Hello"), {
-        status: 200,
-        headers: { "Content-Type": "text/event-stream" },
-      }),
-    )
-
-    await using tmp = await tmpdir({
-      init: async (dir) => {
-        await Bun.write(
-          path.join(dir, "opencode.json"),
-          JSON.stringify({
-            $schema: "https://opencode.ai/config.json",
-            enabled_providers: [providerID],
-            provider: {
-              [providerID]: {
-                options: {
-                  apiKey: "test-key",
-                  baseURL: `${server.url.origin}/v1`,
-                },
-              },
-            },
-          }),
-        )
-      },
-    })
-
-    await WithInstance.provide({
-      directory: tmp.path,
-      fn: async () => {
-        const resolved = await getModel(ProviderID.make(providerID), ModelID.make(model.id))
-        const sessionID = SessionID.make("session-test-openrouter-gemini-disabled")
-        const agent = {
-          name: "test",
-          mode: "primary",
-          options: {},
-          permission: [{ permission: "*", pattern: "*", action: "allow" }],
-        } satisfies Agent.Info
-
-        const user = {
-          id: MessageID.make("msg_user-openrouter-gemini-disabled"),
-          sessionID,
-          role: "user",
-          time: { created: Date.now() },
-          agent: agent.name,
-          model: { providerID: ProviderID.make(providerID), modelID: resolved.id, variant: "high" },
-        } satisfies MessageV2.User
-
-        await drain({
-          user,
-          sessionID,
-          model: {
-            ...resolved,
-            options: {
-              ...resolved.options,
-              reasoning: { enabled: false },
-            },
-          },
-          agent,
-          system: ["You are a helpful assistant."],
-          messages: [{ role: "user", content: "Hello" }],
-          tools: {},
-        })
-
-        const capture = await request
-        expect(capture.body.reasoning).toEqual({ enabled: false })
+        expect(capture.body.reasoning).toBeUndefined()
       },
     })
   })
