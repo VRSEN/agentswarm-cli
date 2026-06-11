@@ -309,7 +309,7 @@ describe("agency-swarm npx onboarding", () => {
       "install",
       "--python",
       getTestVenvPython(dir.path),
-      "agency-swarm[fastapi,litellm]>=1.9.6",
+      "agency-swarm[fastapi,litellm]>=1.10.1",
     ])
   })
 
@@ -527,7 +527,7 @@ describe("agency-swarm npx onboarding", () => {
     await launch?.cleanup?.()
   })
 
-  test("prepareProjectLaunch refreshes existing requirements venv without unpinned agency-swarm upgrade", async () => {
+  test("prepareProjectLaunch refreshes older pinned requirements venv without forcing the launcher floor", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
     await Bun.write(path.join(dir.path, "requirements.txt"), "agency-swarm==1.9.6\n")
@@ -565,9 +565,10 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isCanaryCommand(cmd)) {
+        const script = cmd.at(-1) ?? ""
         canaryRuns++
         return {
-          exited: Promise.resolve(canaryRuns === 1 ? 1 : 0),
+          exited: Promise.resolve(canaryRuns === 1 ? 1 : runVenvCanaryScript(script, "1.9.6")),
           stdout: "",
           stderr: "",
         } as never
@@ -609,12 +610,13 @@ describe("agency-swarm npx onboarding", () => {
     ])
     expect(commands.some(isPythonVenvCommand)).toBe(false)
     expect(uvInstallCommands.some((cmd) => cmd.includes("agency-swarm[fastapi,litellm]"))).toBe(false)
+    expect(commands.filter(isCanaryCommand).every((cmd) => !(cmd.at(-1) ?? "").includes("meets_floor"))).toBe(true)
     expect(canaryRuns).toBe(2)
 
     await launch?.cleanup?.()
   })
 
-  test("prepareProjectLaunch refreshes existing pyproject venv without unpinned agency-swarm upgrade", async () => {
+  test("prepareProjectLaunch refreshes older pinned pyproject venv without forcing the launcher floor", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
     await Bun.write(path.join(dir.path, "pyproject.toml"), "[project]\ndependencies = ['agency-swarm==1.9.6']\n")
@@ -652,9 +654,10 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isCanaryCommand(cmd)) {
+        const script = cmd.at(-1) ?? ""
         canaryRuns++
         return {
-          exited: Promise.resolve(canaryRuns === 1 ? 1 : 0),
+          exited: Promise.resolve(canaryRuns === 1 ? 1 : runVenvCanaryScript(script, "1.9.6")),
           stdout: "",
           stderr: "",
         } as never
@@ -687,6 +690,7 @@ describe("agency-swarm npx onboarding", () => {
     ])
     expect(commands.some(isPythonVenvCommand)).toBe(false)
     expect(uvInstallCommands.some((cmd) => cmd.includes("agency-swarm[fastapi,litellm]"))).toBe(false)
+    expect(commands.filter(isCanaryCommand).every((cmd) => !(cmd.at(-1) ?? "").includes("meets_floor"))).toBe(true)
     expect(canaryRuns).toBe(2)
 
     await launch?.cleanup?.()
@@ -1306,9 +1310,10 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isCanaryCommand(cmd)) {
+        const script = cmd.at(-1) ?? ""
         canaryRuns++
         return {
-          exited: Promise.resolve(canaryRuns === 1 ? 1 : 0),
+          exited: Promise.resolve(runVenvCanaryScript(script, canaryRuns === 1 ? "1.10.0" : "1.10.1")),
           stdout: "",
           stderr: "",
         } as never
@@ -1340,6 +1345,7 @@ describe("agency-swarm npx onboarding", () => {
     expect(commands.filter(isPythonVenvCommand)).toEqual([expectedVenvCommand(replacementPython)])
     expect(uvInstallRuns).toBe(2)
     expect(canaryRuns).toBe(2)
+    expect(commands.filter(isCanaryCommand).every((cmd) => (cmd.at(-1) ?? "").includes("meets_floor"))).toBe(true)
     await launch?.cleanup?.()
   })
 
@@ -2332,7 +2338,7 @@ describe("agency-swarm npx onboarding", () => {
     await launch?.cleanup?.()
   })
 
-  test("prepareProjectLaunch checks the FastAPI launcher symbol in the canary", async () => {
+  test("prepareProjectLaunch checks the FastAPI launcher symbol and version floor in the canary", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
     await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
@@ -2400,11 +2406,24 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     const canaryScripts = commands.filter(isCanaryCommand).map((cmd) => cmd.at(-1) ?? "")
+    const canaryScript = canaryScripts[0]
     const launcherCommand = commands.find((cmd) => cmd[1]?.endsWith("launch_agency.py"))
     expect(canaryScripts.length).toBeGreaterThan(0)
     expect(
       canaryScripts.every((script) => script.includes("from agency_swarm.integrations.fastapi import run_fastapi")),
     ).toBe(true)
+    if (!canaryScript) throw new Error("Expected canary script")
+    expect(runVenvCanaryScript(canaryScript, "1.10.1")).toBe(0)
+    expect(runVenvCanaryScript(canaryScript, "1.10.1.0")).toBe(0)
+    expect(runVenvCanaryScript(canaryScript, "1.10.1+local")).toBe(0)
+    expect(runVenvCanaryScript(canaryScript, "1.10.1.0+local")).toBe(0)
+    expect(runVenvCanaryScript(canaryScript, "1.10.1.1")).toBe(0)
+    expect(runVenvCanaryScript(canaryScript, "1.10.1.1rc1")).toBe(0)
+    expect(runVenvCanaryScript(canaryScript, "1.10.2rc1")).toBe(0)
+    expect(runVenvCanaryScript(canaryScript, "1!1.10.1")).toBe(0)
+    expect(runVenvCanaryScript(canaryScript, "1.10.0")).toBe(1)
+    expect(runVenvCanaryScript(canaryScript, "1.10.1rc1")).toBe(1)
+    expect(runVenvCanaryScript(canaryScript, "1.10.1.0rc1")).toBe(1)
     expect(launcherCommand?.at(-1)).toBe("agency")
 
     await launch?.cleanup?.()
@@ -2715,7 +2734,7 @@ describe("agency-swarm npx onboarding", () => {
         "--python",
         getTestVenvPython(dir.path),
         "--upgrade",
-        "agency-swarm[fastapi,litellm]",
+        "agency-swarm[fastapi,litellm]>=1.10.1",
       ],
     ])
     expect(commands.some(isPythonVenvCommand)).toBe(false)
@@ -4923,6 +4942,52 @@ function getTestVenvPython(directory: string) {
     process.platform === "win32" ? "Scripts" : "bin",
     process.platform === "win32" ? "python.exe" : "python",
   )
+}
+
+function findCanaryTestPython() {
+  const commands = process.platform === "win32" ? [["py", "-3"], ["python"]] : [["python3"], ["python"]]
+  return commands.find((cmd) => {
+    try {
+      return (
+        Bun.spawnSync({
+          cmd: [...cmd, "-c", "import sys"],
+          stdout: "pipe",
+          stderr: "pipe",
+        }).exitCode === 0
+      )
+    } catch {
+      return false
+    }
+  })
+}
+
+function runVenvCanaryScript(script: string, installed: string) {
+  const python = findCanaryTestPython()
+  if (!python) throw new Error("Python is required to verify the generated Agency Swarm canary script")
+  const wrapper = [
+    "import importlib.metadata",
+    "import sys",
+    "import types",
+    `installed = ${JSON.stringify(installed)}`,
+    "agency_swarm = types.ModuleType('agency_swarm')",
+    "agency_swarm.__path__ = []",
+    "integrations = types.ModuleType('agency_swarm.integrations')",
+    "integrations.__path__ = []",
+    "fastapi = types.ModuleType('agency_swarm.integrations.fastapi')",
+    "fastapi.run_fastapi = object()",
+    "agency_swarm.integrations = integrations",
+    "integrations.fastapi = fastapi",
+    "sys.modules['agency_swarm'] = agency_swarm",
+    "sys.modules['agency_swarm.integrations'] = integrations",
+    "sys.modules['agency_swarm.integrations.fastapi'] = fastapi",
+    "importlib.metadata.version = lambda name: installed",
+    script,
+  ].join("\n")
+  return Bun.spawnSync({
+    cmd: [...python, "-c", wrapper],
+    stdout: "pipe",
+    stderr: "pipe",
+  }).exitCode
 }
 
 function getTestVenvUv(directory: string) {
