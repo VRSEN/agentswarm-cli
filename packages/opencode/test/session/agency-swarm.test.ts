@@ -7430,6 +7430,95 @@ describe("session.agency-swarm", () => {
     expect(deltas).toEqual(["OK", "OK"])
   })
 
+  test("stream keeps repeated pending assistant text from a different item", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            delta: "Think.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: { type: "message", id: "msg_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_1",
+            output_index: "1",
+            delta: "OK",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "message_output_created",
+          item: {
+            raw_item: {
+              type: "message",
+              id: "msg_2",
+              content: [{ type: "output_text", text: "OK" }],
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+    }
+
+    expect(events).toEqual(["reasoning:Think.", "text:OK", "text:OK"])
+  })
+
   test("stream keeps both distinct short assistant messages in the same run (no body-only dedupe)", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {

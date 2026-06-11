@@ -453,8 +453,13 @@ function hasOpenReasoning(data: SessionData, messageID: string | undefined): boo
   return false
 }
 
-function flushReadyAssistant(data: SessionData, commits: SessionCommit[], messageID: string | undefined) {
-  if (!messageID || hasOpenReasoning(data, messageID)) {
+function flushReadyAssistant(
+  data: SessionData,
+  commits: SessionCommit[],
+  messageID: string | undefined,
+  includeOpenReasoning = false,
+) {
+  if (!messageID || (!includeOpenReasoning && hasOpenReasoning(data, messageID))) {
     return
   }
 
@@ -834,6 +839,7 @@ export function reduceSessionData(input: SessionDataInput): SessionDataOutput {
 
     if (part.type === "tool") {
       const view = syncPermission(data, part) ?? syncQuestion(data, part)
+      flushReadyAssistant(data, commits, part.messageID, true)
 
       if (part.state.status === "running") {
         if (data.ids.has(part.id)) {

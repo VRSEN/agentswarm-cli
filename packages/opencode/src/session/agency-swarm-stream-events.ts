@@ -81,6 +81,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   const pendingTextReplay = new Set<string>()
   const pendingTextFlushed = new Set<string>()
   const closedReasoningTextReplay = new Set<string>()
+  const completedResponseTextReplay = new Set<string>()
 
   let usage: Usage | undefined
   let lastTextItemID: string | undefined
@@ -191,12 +192,16 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     return !!key && closedReasoningTextReplay.has(key)
   }
 
-  const hasPendingTextBuffer = (text: string) => {
+  const rememberCompletedResponseTextReplay = () => {
+    for (const text of textBuffer.values()) {
+      const key = replayTextKey(text)
+      if (key) completedResponseTextReplay.add(key)
+    }
+  }
+
+  const hasCompletedResponseTextReplay = (text: string) => {
     const key = replayTextKey(text)
-    if (!key) return false
-    return Array.from(textPending.values()).some((pending) => {
-      return replayTextKey(textBuffer.get(textKey(pending.itemID, pending.index)) || "") === key
-    })
+    return !!key && completedResponseTextReplay.has(key)
   }
 
   const markPendingTextDone = (
@@ -1076,7 +1081,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       if (hasResponseReplay(responseTextReplay, rawItem, text)) {
         return []
       }
-      if (hasPendingTextReplay(itemID, 0, text) || hasPendingTextBuffer(text)) {
+      if (hasPendingTextReplay(itemID, 0, text)) {
         return []
       }
       const index = 0
@@ -1125,7 +1130,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       responseType === "response.incomplete"
     ) {
       setUsage(asRecord(asRecord(nested["response"])?.["usage"]))
-      return { parts: responseType === "response.completed" ? flushPendingText(true) : [] }
+      if (responseType !== "response.completed") return { parts: [] }
+      rememberCompletedResponseTextReplay()
+      return { parts: flushPendingText(true) }
     }
 
     if (responseType === "response.output_item.added" && item) {
@@ -1349,7 +1356,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       const text = extractMessageText(message)
       if (!text) continue
       if (hasResponseReplay(responseTextReplay, message, text)) continue
-      if (hasPendingTextReplay(itemID, 0, text) || hasPendingTextBuffer(text)) continue
+      if (hasPendingTextReplay(itemID, 0, text) || hasCompletedResponseTextReplay(text)) continue
       if (shouldSkipDuplicateAssistantText(itemID, 0, text)) continue
       parts.push(
         ...finishText(itemID, 0, text, messageMeta, {

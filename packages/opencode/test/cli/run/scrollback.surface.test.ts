@@ -233,11 +233,13 @@ test("adds the reasoning header once for streamed reasoning chunks", async () =>
   try {
     await out.scrollback.append(reasoning("first "))
     await out.scrollback.append(reasoning("second"))
+    await out.scrollback.append(reasoning(" chunk"))
 
     const activeEntry = Reflect.get(out.scrollback, "active") as { content?: string } | undefined
     expect(activeEntry?.content?.match(/Thought/g) ?? []).toHaveLength(1)
     expect(activeEntry?.content).toContain("first")
     expect(activeEntry?.content).toContain("second")
+    expect(activeEntry?.content).toContain("second chunk")
 
     await out.scrollback.complete()
 
@@ -246,6 +248,7 @@ test("adds the reasoning header once for streamed reasoning chunks", async () =>
       const output = render(commits)
       expect(output).toContain("first")
       expect(output).toContain("second")
+      expect(output).toContain("second chunk")
     } finally {
       destroy(commits)
     }
