@@ -278,7 +278,8 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     if (!key) return false
     for (const [pendingKey, pending] of textPending.entries()) {
       if (pending.itemID !== itemID) continue
-      if (pending.index !== index && pending.done) continue
+      if (pending.index !== index && (pending.done || textExplicit.has(textKey(pending.itemID, pending.index))))
+        continue
       if (replayTextKey(textBuffer.get(textKey(pending.itemID, pending.index)) || "") !== key) continue
       textPending.set(pendingKey, {
         ...pending,
@@ -532,6 +533,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   const flushPendingText = (force: boolean) => {
     if (!force && hasOpenReasoning()) return []
     const parts: StreamPart[] = drainRetiredParts()
+    if (force) parts.push(...flushPendingReasoningDeltas())
     flushingText = true
     for (const [key, pending] of Array.from(textPending.entries())) {
       textPending.delete(key)
@@ -703,6 +705,14 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     reasoningDeltaPending.delete(key)
     const text = cumulative ? pending.delta.slice(pending.current.length) : pending.delta
     return text ? emitReasoningDelta(pending.itemID, pending.index, text, pending.meta, pending.extra) : []
+  }
+
+  const flushPendingReasoningDeltas = () => {
+    return Array.from(reasoningDeltaPending.keys()).flatMap((key) => {
+      const pending = reasoningDeltaPending.get(key)
+      const current = reasoningBuffer.get(key) || ""
+      return flushPendingReasoningDelta(key, !!pending && pending.delta.startsWith(current))
+    })
   }
 
   const reasoningDelta = (

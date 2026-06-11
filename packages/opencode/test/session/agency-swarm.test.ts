@@ -8031,6 +8031,92 @@ describe("session.agency-swarm", () => {
     expect(events).toEqual(["reasoning:A", "reasoning:B", "reasoning-end"])
   })
 
+  test("stream flushes pending cumulative reasoning before forced text and tool output", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_forced_order" },
+          },
+        },
+      }
+      for (const delta of ["A", "AB"]) {
+        yield {
+          type: "data",
+          payload: {
+            type: "raw_response_event",
+            data: {
+              type: "response.reasoning_summary_text.delta",
+              item_id: "rs_forced_order",
+              summary_index: "0",
+              output_index: "0",
+              delta,
+            },
+          },
+        }
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_forced_order",
+            output_index: "1",
+            delta: "I will check.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "2",
+            item: {
+              type: "function_call",
+              id: "fc_forced_order",
+              call_id: "call_forced_order",
+              name: "lookup",
+              arguments: '{"query":"status"}',
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_forced_order",
+            summary_index: "0",
+            output_index: "0",
+            text: "AB",
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+      if (event.type === "tool-input-start") events.push(`tool:${event.toolName}`)
+    }
+
+    expect(events).toEqual(["reasoning:A", "reasoning:B", "text:I will check.", "tool:lookup"])
+  })
+
   test("stream normalizes mixed cumulative and incremental reasoning deltas", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
@@ -9363,6 +9449,86 @@ describe("session.agency-swarm", () => {
             },
           },
         }
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: "Need answer.",
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+    }
+
+    expect(events).toEqual(["reasoning:Need answer.", "text:OK", "text:OK"])
+  })
+
+  test("stream matches held text completion by content index", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            delta: "Need answer.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_multi",
+            output_index: "1",
+            content_index: "0",
+            delta: "OK",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.done",
+            item_id: "msg_multi",
+            output_index: "1",
+            content_index: "1",
+            text: "OK",
+          },
+        },
       }
       yield {
         type: "data",
