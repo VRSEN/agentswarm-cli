@@ -1671,26 +1671,26 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
     const outputAbort = new AbortController()
     let timeout: ReturnType<typeof setTimeout> | undefined
     const exitPromise = proc.exited.finally(() => {
-      if (timeout) clearTimeout(timeout)
+      if (timeout) globalThis.clearTimeout(timeout)
     })
     const exitResult = exitPromise.then((code) => ({ code, timedOut: false as const }))
     const timeoutResult =
       options?.timeoutMs === undefined
         ? undefined
         : new Promise<{ code: number; timedOut: true }>((resolve) => {
-            timeout = setTimeout(() => {
+            timeout = globalThis.setTimeout(() => {
               resolve({ code: -1, timedOut: true })
               void (async () => {
                 try {
                   proc.kill()
                 } catch {}
-                const forceKill = setTimeout(() => {
+                const forceKill = globalThis.setTimeout(() => {
                   try {
                     proc.kill("SIGKILL")
                   } catch {}
                 }, PROCESS_KILL_GRACE_MS)
                 await exitPromise.catch(() => undefined)
-                clearTimeout(forceKill)
+                globalThis.clearTimeout(forceKill)
                 outputAbort.abort()
               })()
             }, options.timeoutMs)

@@ -1812,6 +1812,13 @@ describe("agency-swarm npx onboarding", () => {
     const clearTimeoutSpy = spyOn(globalThis, "clearTimeout").mockImplementation(((timer: { cleared?: boolean }) => {
       timer.cleared = true
     }) as unknown as typeof clearTimeout)
+    let restored = false
+    const restoreTimers = () => {
+      if (restored) return
+      setTimeoutSpy.mockRestore()
+      clearTimeoutSpy.mockRestore()
+      restored = true
+    }
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
     const installStderr = createTextOutputStream("install finished\n")
@@ -1878,19 +1885,25 @@ describe("agency-swarm npx onboarding", () => {
       moduleName: "agency",
     })
 
-    await new Promise((resolve) => realSetTimeout(resolve, 20))
+    let launch: Awaited<ReturnType<typeof prepareProjectLaunch>>
+    try {
+      await new Promise((resolve) => realSetTimeout(resolve, 20))
 
-    expect(timers).not.toHaveLength(0)
-    expect(timers[0]?.cleared).toBe(true)
-    const installTimeout = timers[0]
-    if (typeof installTimeout?.fn !== "function") throw new Error("Expected install timeout callback")
-    await installTimeout.fn()
+      expect(timers).not.toHaveLength(0)
+      expect(timers[0]?.cleared).toBe(true)
+      const installTimeout = timers[0]
+      if (typeof installTimeout?.fn !== "function") throw new Error("Expected install timeout callback")
+      await installTimeout.fn()
+      restoreTimers()
+      installStderr.close()
 
-    setTimeoutSpy.mockRestore()
-    clearTimeoutSpy.mockRestore()
-    installStderr.close()
-    const launch = await launchPromise
-    await launch?.cleanup?.()
+      launch = await launchPromise
+    } finally {
+      restoreTimers()
+      installStderr.close()
+      launch ??= await launchPromise.catch(() => undefined)
+      await launch?.cleanup?.()
+    }
   })
 
   test("prepareProjectLaunch keeps refresh failures compact and logged", async () => {
