@@ -6,7 +6,7 @@ import { Spinner } from "@tui/component/spinner"
 import { useTheme } from "@tui/context/theme"
 import { useLocal } from "@tui/context/local"
 import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
-import { TextAttributes, type BoxRenderable, type SyntaxStyle } from "@opentui/core"
+import { RGBA, TextAttributes, type BoxRenderable, type SyntaxStyle } from "@opentui/core"
 import { useBindings } from "../../keymap"
 import { Locale } from "@/util/locale"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
@@ -317,7 +317,12 @@ function AssistantMessage(props: {
               <AssistantText part={part as SessionMessageAssistantText} syntax={props.syntax} />
             </Match>
             <Match when={part.type === "reasoning"}>
-              <AssistantReasoning part={part as SessionMessageAssistantReasoning} subtleSyntax={props.subtleSyntax} />
+              <AssistantReasoning
+                part={part as SessionMessageAssistantReasoning}
+                subtleSyntax={props.subtleSyntax}
+                completedAt={() => props.message.time.completed}
+                duration={() => (duration() ? Locale.duration(duration()) : undefined)}
+              />
             </Match>
             <Match when={part.type === "tool"}>
               <AssistantTool part={part as SessionMessageAssistantTool} sessionID={props.sessionID} />
@@ -378,31 +383,55 @@ function AssistantText(props: { part: SessionMessageAssistantText; syntax: Synta
   )
 }
 
-function AssistantReasoning(props: { part: SessionMessageAssistantReasoning; subtleSyntax: SyntaxStyle }) {
+function AssistantReasoning(props: {
+  part: SessionMessageAssistantReasoning
+  subtleSyntax: SyntaxStyle
+  completedAt: () => number | undefined
+  duration: () => string | undefined
+}) {
   const { theme } = useTheme()
   const content = createMemo(() => props.part.text.replace("[REDACTED]", "").trim())
+  const isDone = createMemo(() => props.completedAt() !== undefined)
   return (
     <Show when={content()}>
-      <box
-        paddingLeft={2}
-        marginTop={1}
-        flexDirection="column"
-        border={["left"]}
-        customBorderChars={SplitBorder.customBorderChars}
-        borderColor={theme.backgroundElement}
-        flexShrink={0}
-      >
-        <code
-          filetype="markdown"
-          drawUnstyledText={false}
-          streaming={true}
-          syntaxStyle={props.subtleSyntax}
-          content={"_Thinking:_ " + content()}
-          conceal={true}
-          fg={theme.textMuted}
-        />
+      <box paddingLeft={3} marginTop={1} flexDirection="column" flexShrink={0}>
+        <ReasoningHeader done={isDone()} duration={props.duration()} />
+        <box marginTop={1}>
+          <code
+            filetype="markdown"
+            drawUnstyledText={false}
+            streaming={true}
+            syntaxStyle={props.subtleSyntax}
+            content={content()}
+            conceal={true}
+            fg={theme.textMuted}
+          />
+        </box>
       </box>
     </Show>
+  )
+}
+
+function ReasoningHeader(props: { done: boolean; duration?: string }) {
+  const { theme } = useTheme()
+  const fg = () => RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
+
+  return (
+    <Switch>
+      <Match when={!props.done}>
+        <box flexDirection="row">
+          <Spinner color={fg()}>Thinking</Spinner>
+        </box>
+      </Match>
+      <Match when={true}>
+        <text fg={fg()} wrapMode="none">
+          <span>Thought</span>
+          <Show when={props.duration}>
+            <span>: {props.duration}</span>
+          </Show>
+        </text>
+      </Match>
+    </Switch>
   )
 }
 

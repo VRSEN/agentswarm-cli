@@ -66,12 +66,7 @@ function reasoningBody(raw: string): RunEntryBody {
 
   const lead = clean.match(/^\n+/)?.[0] ?? ""
   const body = lead ? clean.slice(lead.length) : clean
-  const mark = "Thinking:"
-  if (body.startsWith(mark)) {
-    return codeBody(`${lead}_Thinking:_ ${body.slice(mark.length).trimStart()}`, "markdown")
-  }
-
-  return codeBody(clean, "markdown")
+  return codeBody(`${lead}Thought:\n\n${body.trimStart()}`, "markdown")
 }
 
 function systemBody(raw: string, phase: StreamCommit["phase"]): RunEntryBody {

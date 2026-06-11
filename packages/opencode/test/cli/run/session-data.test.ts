@@ -178,6 +178,85 @@ describe("run session data", () => {
     expect(out.data.ids.has("reason-1")).toBe(true)
   })
 
+  test("keeps streamed reasoning ahead of assistant text for the same message", () => {
+    let data = createSessionData()
+    data = reduce(data, assistant("msg-1")).data
+    data = reduce(data, reasoning({ id: "reason-1", messageID: "msg-1", text: "", time: { start: 1 } })).data
+
+    let out = reduce(data, delta("msg-1", "reason-1", 'The user just said "hey". I shoul'))
+    expect(out.commits).toEqual([
+      expect.objectContaining({
+        kind: "reasoning",
+        text: 'The user just said "hey". I shoul',
+        partID: "reason-1",
+      }),
+    ])
+
+    data = reduce(out.data, text({ id: "txt-1", messageID: "msg-1", text: "", time: { start: 2 } })).data
+    out = reduce(data, delta("msg-1", "txt-1", "Hey there!"))
+    expect(out.commits).toEqual([])
+
+    out = reduce(out.data, delta("msg-1", "reason-1", "d respond politely."))
+    expect(out.commits).toEqual([
+      expect.objectContaining({
+        kind: "reasoning",
+        text: "d respond politely.",
+        partID: "reason-1",
+      }),
+    ])
+
+    out = reduce(
+      out.data,
+      reasoning({
+        id: "reason-1",
+        messageID: "msg-1",
+        text: 'The user just said "hey". I should respond politely.',
+        time: { start: 1, end: 3 },
+      }),
+    )
+    expect(out.commits).toEqual([
+      expect.objectContaining({
+        kind: "assistant",
+        text: "Hey there!",
+        partID: "txt-1",
+      }),
+    ])
+  })
+
+  test("keeps delayed role replayed assistant text behind open reasoning", () => {
+    let data = createSessionData()
+    data = reduce(data, reasoning({ id: "reason-1", messageID: "msg-1", text: "", time: { start: 1 } })).data
+    data = reduce(data, delta("msg-1", "reason-1", "Thinking first.")).data
+    data = reduce(data, text({ id: "txt-1", messageID: "msg-1", text: "", time: { start: 2 } })).data
+    data = reduce(data, delta("msg-1", "txt-1", "Answer later.")).data
+
+    let out = reduce(data, assistant("msg-1"))
+    expect(out.commits).toEqual([
+      expect.objectContaining({
+        kind: "reasoning",
+        text: "Thinking first.",
+        partID: "reason-1",
+      }),
+    ])
+
+    out = reduce(
+      out.data,
+      reasoning({
+        id: "reason-1",
+        messageID: "msg-1",
+        text: "Thinking first.",
+        time: { start: 1, end: 3 },
+      }),
+    )
+    expect(out.commits).toEqual([
+      expect.objectContaining({
+        kind: "assistant",
+        text: "Answer later.",
+        partID: "txt-1",
+      }),
+    ])
+  })
+
   test("keeps permission precedence over queued questions", () => {
     let data = createSessionData()
     data = reduce(data, {

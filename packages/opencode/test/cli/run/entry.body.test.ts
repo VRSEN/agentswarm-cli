@@ -69,7 +69,7 @@ describe("run entry body", () => {
     const reasoning = entryBody(
       commit({
         kind: "reasoning",
-        text: "Thinking: plan next steps",
+        text: "plan next steps",
         phase: "progress",
         source: "reasoning",
         partID: "reason-1",
@@ -78,13 +78,13 @@ describe("run entry body", () => {
     expect(reasoning).toEqual({
       type: "code",
       filetype: "markdown",
-      content: "_Thinking:_ plan next steps",
+      content: "Thought:\n\nplan next steps",
     })
     expect(
       entryCanStream(
         commit({
           kind: "reasoning",
-          text: "Thinking: plan next steps",
+          text: "plan next steps",
           phase: "progress",
           source: "reasoning",
         }),

@@ -7586,6 +7586,618 @@ describe("session.agency-swarm", () => {
     expect(deltas).toEqual(["Find the right file first."])
   })
 
+  test("stream normalizes cumulative reasoning deltas without dropping later reasoning items", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            delta: "The user has",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            delta: "The user has just greeted",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: "The user has just greeted",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: { type: "reasoning", id: "rs_2" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_2",
+            summary_index: "0",
+            output_index: "1",
+            delta: "The user has",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_2",
+            summary_index: "0",
+            output_index: "1",
+            text: "The user has",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "1",
+            item: { type: "reasoning", id: "rs_2" },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") deltas.push(event.text)
+    }
+
+    expect(deltas).toEqual(["The user has", " just greeted", "The user has"])
+  })
+
+  test("stream keeps text behind open reasoning for TUI ordering", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            delta: 'The user just said "hey". I shoul',
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: { type: "message", id: "msg_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_1",
+            output_index: "1",
+            delta: "Hey there!",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            delta: "d respond warmly.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: 'The user just said "hey". I should respond warmly.',
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.done",
+            item_id: "msg_1",
+            output_index: "1",
+            content_index: "1",
+            text: "Hey there!",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.completed",
+            response: {},
+          },
+        },
+      }
+      yield {
+        type: "messages",
+        payload: {
+          new_messages: [
+            {
+              type: "message",
+              role: "assistant",
+              id: "msg_final",
+              content: [{ type: "output_text", text: "Hey there!" }],
+            },
+          ],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+    }
+
+    expect(events).toEqual([
+      'reasoning:The user just said "hey". I shoul',
+      "reasoning:d respond warmly.",
+      "text:Hey there!",
+    ])
+  })
+
+  test("stream keeps text behind late reasoning for TUI ordering", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: 'The user just said "hey". I shoul',
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: { type: "message", id: "msg_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_1",
+            output_index: "1",
+            delta: "Hey there!",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_1",
+            summary_index: "1",
+            output_index: "0",
+            delta: "d respond warmly.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "1",
+            item: {
+              type: "message",
+              id: "msg_1",
+              content: [{ type: "output_text", text: "Hey there!" }],
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.done",
+            item_id: "msg_1",
+            output_index: "1",
+            text: "Hey there!",
+            content_index: "1",
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+    }
+
+    expect(events).toEqual([
+      'reasoning:The user just said "hey". I shoul',
+      "reasoning:d respond warmly.",
+      "text:Hey there!",
+    ])
+  })
+
+  test("stream does not replay pending text when response completes before text done", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: "Simple greeting.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: { type: "message", id: "msg_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_1",
+            output_index: "1",
+            delta: "Hey there!",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.completed",
+            response: {},
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.done",
+            item_id: "msg_1",
+            output_index: "1",
+            text: "Hey there!",
+          },
+        },
+      }
+      yield {
+        type: "messages",
+        payload: {
+          new_messages: [
+            {
+              type: "message",
+              role: "assistant",
+              id: "msg_final",
+              content: [{ type: "output_text", text: "Hey there!" }],
+            },
+          ],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+    }
+
+    expect(events).toEqual(["reasoning:Simple greeting.", "text:Hey there!"])
+  })
+
+  test("stream does not flush shifted pending text after response message final", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: "Simple greeting.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "1",
+            item: {
+              type: "message",
+              id: "msg_1",
+              content: [{ type: "output_text", text: "Hey there!" }],
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_1",
+            output_index: "1",
+            content_index: "1",
+            delta: "Hey there!",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.completed",
+            response: {},
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+    }
+
+    expect(events).toEqual(["reasoning:Simple greeting.", "text:Hey there!"])
+  })
+
+  test("stream keeps repeated assistant text outputs after reasoning", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: "Need answer.",
+          },
+        },
+      }
+      for (const id of ["msg_1", "msg_2"]) {
+        yield {
+          type: "data",
+          payload: {
+            type: "raw_response_event",
+            data: {
+              type: "response.output_item.done",
+              output_index: id === "msg_1" ? "1" : "2",
+              item: {
+                type: "message",
+                id,
+                content: [{ type: "output_text", text: "OK" }],
+              },
+            },
+          },
+        }
+        yield {
+          type: "data",
+          payload: {
+            type: "raw_response_event",
+            data: {
+              type: "response.output_text.done",
+              item_id: id,
+              output_index: id === "msg_1" ? "1" : "2",
+              text: "OK",
+            },
+          },
+        }
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+    }
+
+    expect(events).toEqual(["reasoning:Need answer.", "text:OK", "text:OK"])
+  })
+
   test("stream does not duplicate response-scoped reasoning replay when LiteLLM changes item id", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
@@ -8366,7 +8978,7 @@ describe("session.agency-swarm", () => {
             item_id: "rs_dup",
             summary_index: "0",
             output_index: "1",
-            delta: "Thinking",
+            delta: "Think",
           },
         },
       }
@@ -8390,7 +9002,7 @@ describe("session.agency-swarm", () => {
           data: {
             type: "response.output_item.done",
             output_index: "1",
-            item: { type: "reasoning", id: "rs_dup" },
+            item: { type: "reasoning", id: "rs_dup", encrypted_content: "sealed" },
           },
         },
       }
@@ -8400,10 +9012,14 @@ describe("session.agency-swarm", () => {
     const { input } = helper()
     const stream = await SessionAgencySwarm.stream(input)
     const starts: any[] = []
+    const deltas: string[] = []
     const ends: any[] = []
     for await (const event of stream.fullStream) {
       if (event.type === "reasoning-start") {
         starts.push(event)
+      }
+      if (event.type === "reasoning-delta") {
+        deltas.push(event.text)
       }
       if (event.type === "reasoning-end") {
         ends.push(event)
@@ -8411,6 +9027,8 @@ describe("session.agency-swarm", () => {
     }
 
     expect(starts).toHaveLength(1)
+    expect(deltas).toEqual(["Think", "ing"])
     expect(ends).toHaveLength(1)
+    expect(ends[0]?.providerMetadata).toMatchObject({ encrypted_content: "sealed" })
   })
 })

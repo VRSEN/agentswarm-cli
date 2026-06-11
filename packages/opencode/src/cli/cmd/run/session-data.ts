@@ -431,6 +431,49 @@ function ready(data: SessionData, partID: string): boolean {
   return data.includeUserText && role === "user"
 }
 
+function hasOpenReasoning(data: SessionData, messageID: string | undefined): boolean {
+  if (!messageID) {
+    return false
+  }
+
+  for (const [partID, kind] of data.part.entries()) {
+    if (kind !== "reasoning") {
+      continue
+    }
+
+    if (data.msg.get(partID) !== messageID) {
+      continue
+    }
+
+    if (!data.end.has(partID)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function flushReadyAssistant(data: SessionData, commits: SessionCommit[], messageID: string | undefined) {
+  if (!messageID || hasOpenReasoning(data, messageID)) {
+    return
+  }
+
+  for (const [partID, msg] of data.msg.entries()) {
+    if (msg !== messageID || data.ids.has(partID) || data.part.get(partID) !== "assistant" || !ready(data, partID)) {
+      continue
+    }
+
+    flushPart(data, commits, partID)
+
+    if (!data.end.has(partID)) {
+      continue
+    }
+
+    data.ids.add(partID)
+    drop(data, partID)
+  }
+}
+
 function syncText(data: SessionData, partID: string, next: string) {
   const prev = data.text.get(partID) ?? ""
   if (!next) {
@@ -518,7 +561,7 @@ function flushPart(data: SessionData, commits: SessionCommit[], partID: string, 
       return
     }
     if (kind === "reasoning" && chunk) {
-      chunk = `Thinking: ${chunk.replace(/\[REDACTED\]/g, "")}`
+      chunk = chunk.replace(/\[REDACTED\]/g, "")
     }
     if (kind === "assistant" && chunk) {
       chunk = stripEcho(data, msg, chunk)
@@ -592,6 +635,10 @@ function replay(data: SessionData, commits: SessionCommit[], messageID: string, 
         data.ids.add(partID)
       }
       drop(data, partID)
+      continue
+    }
+
+    if (role === "assistant" && kind === "assistant" && hasOpenReasoning(data, messageID)) {
       continue
     }
 
@@ -766,7 +813,7 @@ export function reduceSessionData(input: SessionDataInput): SessionDataOutput {
       return out(data, commits)
     }
 
-    if (!ready(data, partID)) {
+    if (!ready(data, partID) || (kind === "assistant" && hasOpenReasoning(data, data.msg.get(partID)))) {
       return out(data, commits)
     }
 
@@ -892,7 +939,7 @@ export function reduceSessionData(input: SessionDataInput): SessionDataOutput {
       return out(data, commits)
     }
 
-    if (!ready(data, part.id)) {
+    if (!ready(data, part.id) || (kind === "assistant" && hasOpenReasoning(data, msg))) {
       return out(data, commits)
     }
 
@@ -904,6 +951,9 @@ export function reduceSessionData(input: SessionDataInput): SessionDataOutput {
 
     data.ids.add(part.id)
     drop(data, part.id)
+    if (kind === "reasoning") {
+      flushReadyAssistant(data, commits, msg)
+    }
     return out(data, commits)
   }
 
