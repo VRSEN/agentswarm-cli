@@ -1879,15 +1879,21 @@ describe("agency-swarm npx onboarding", () => {
       throw new Error(`Unexpected command: ${cmd.join(" ")}`)
     })
 
+    let launchSettled = false
     const launchPromise = prepareProjectLaunch({
       directory: dir.path,
       agencyFile: path.join(dir.path, "agency.py"),
       moduleName: "agency",
+    }).finally(() => {
+      launchSettled = true
     })
 
     let launch: Awaited<ReturnType<typeof prepareProjectLaunch>>
     try {
-      await new Promise((resolve) => realSetTimeout(resolve, 20))
+      const deadline = Date.now() + 1000
+      while (timers.length === 0 && !launchSettled && Date.now() < deadline) {
+        await new Promise((resolve) => realSetTimeout(resolve, 5))
+      }
 
       expect(timers).not.toHaveLength(0)
       expect(timers[0]?.cleared).toBe(true)
