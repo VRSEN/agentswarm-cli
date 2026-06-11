@@ -136,16 +136,51 @@ interface ServerStderrCollector {
   stop(): void
 }
 
-const VENV_CANARY_SCRIPT = ["import agency_swarm", "from agency_swarm.integrations.fastapi import run_fastapi"].join(
-  "\n",
-)
+const MIN_AGENCY_SWARM_VERSION = "1.10.1"
+function buildVenvCanaryScript(minimumAgencySwarmVersion?: string) {
+  const imports = ["import agency_swarm", "from agency_swarm.integrations.fastapi import run_fastapi"]
+  if (!minimumAgencySwarmVersion) return imports.join("\n")
+
+  return [
+    "from importlib.metadata import version",
+    "import re",
+    ...imports,
+    "def pep440_floor(value):",
+    "    public = value.split('+', 1)[0]",
+    "    epoch = 0",
+    "    if '!' in public:",
+    "        raw_epoch, public = public.split('!', 1)",
+    "        epoch = int(raw_epoch) if raw_epoch.isdigit() else 0",
+    "    match = re.match(r'^(\\d+(?:\\.\\d+)*)(.*)$', public)",
+    "    if not match:",
+    "        return (-1, (0, 0, 0), True)",
+    "    release = tuple(int(part) for part in match.group(1).split('.'))",
+    "    while len(release) > 1 and release[-1] == 0:",
+    "        release = release[:-1]",
+    "    suffix = match.group(2).lower().lstrip('.-_')",
+    "    prerelease = suffix.startswith(('a', 'b', 'c', 'rc', 'alpha', 'beta', 'pre', 'preview', 'dev'))",
+    "    return (epoch, release, prerelease)",
+    "def meets_floor(value, floor):",
+    "    current = pep440_floor(value)",
+    "    minimum = pep440_floor(floor)",
+    "    if current[0] != minimum[0]:",
+    "        return current[0] > minimum[0]",
+    "    width = max(len(current[1]), len(minimum[1]))",
+    "    current_release = current[1] + (0,) * (width - len(current[1]))",
+    "    minimum_release = minimum[1] + (0,) * (width - len(minimum[1]))",
+    "    if current_release != minimum_release:",
+    "        return current_release > minimum_release",
+    "    return not current[2] or minimum[2]",
+    `raise SystemExit(0 if meets_floor(version("agency-swarm"), "${minimumAgencySwarmVersion}") else 1)`,
+  ].join("\n")
+}
 const EXISTING_VENV_CANARY_TIMEOUT_MS = 60 * 1000
 const VENV_CANARY_TIMEOUT_MS = 3 * 60 * 1000
 const SERVER_START_TIMEOUT_MS = 2 * 60 * 1000
 const SERVER_STDERR_COLLECT_TIMEOUT_MS = 1000
 const REBUILD_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 const PROCESS_KILL_GRACE_MS = 5000
-const FALLBACK_AGENCY_SWARM_REQUIREMENT = "agency-swarm[fastapi,litellm]>=1.9.6"
+const FALLBACK_AGENCY_SWARM_REQUIREMENT = `agency-swarm[fastapi,litellm]>=${MIN_AGENCY_SWARM_VERSION}`
 
 export function shouldRunNpxOnboarding(input: {
   env: NodeJS.ProcessEnv
@@ -890,6 +925,7 @@ async function ensureProjectPython(
   const venvDir = path.resolve(path.join(directory, ".venv"))
   let selfHealing = false
   let corruptedVenv = false
+  const hasManifests = await hasDependencyManifest(directory)
   const hasVenvPath = await Filesystem.exists(venvDir)
   const hasVenv = await Filesystem.exists(venvPython)
   if (hasVenv) {
@@ -916,6 +952,7 @@ async function ensureProjectPython(
       try {
         canary = await venvCanaryPasses([venvPython], {
           includeStderr: true,
+          minimumAgencySwarmVersion: hasManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
           timeoutMs: EXISTING_VENV_CANARY_TIMEOUT_MS,
         })
       } catch {
@@ -954,7 +991,10 @@ async function ensureProjectPython(
         prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
         let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
         try {
-          canary = await venvCanaryPasses([venvPython], { includeStderr: true })
+          canary = await venvCanaryPasses([venvPython], {
+            includeStderr: true,
+            minimumAgencySwarmVersion: hasManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
+          })
         } catch {
           canary = { healthy: false, stderr: "", timedOut: false }
         }
@@ -1048,7 +1088,11 @@ async function ensureProjectPython(
     throw new Error(formatCommandFailure(install, "Dependency install failed"))
   }
   prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
-  const canary = await venvCanaryPasses([venvPython], { cwd: directory, includeStderr: true })
+  const canary = await venvCanaryPasses([venvPython], {
+    cwd: directory,
+    includeStderr: true,
+    minimumAgencySwarmVersion: install.hadManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
+  })
   if (canary.timedOut) {
     throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
   }
@@ -1181,20 +1225,23 @@ async function findProjectShadowingFiles(directory: string) {
   return shadowingFiles.flatMap((file) => (file ? [file] : []))
 }
 
-async function venvCanaryPasses(python: string[], options?: { cwd?: string; timeoutMs?: number }): Promise<boolean>
 async function venvCanaryPasses(
   python: string[],
-  options: { cwd?: string; includeStderr: true; timeoutMs?: number },
+  options?: { cwd?: string; minimumAgencySwarmVersion?: string; timeoutMs?: number },
+): Promise<boolean>
+async function venvCanaryPasses(
+  python: string[],
+  options: { cwd?: string; includeStderr: true; minimumAgencySwarmVersion?: string; timeoutMs?: number },
 ): Promise<VenvCanaryResult>
 async function venvCanaryPasses(
   python: string[],
-  options?: { cwd?: string; includeStderr?: boolean; timeoutMs?: number },
+  options?: { cwd?: string; includeStderr?: boolean; minimumAgencySwarmVersion?: string; timeoutMs?: number },
 ) {
   // No cwd by default: the canary must not pick up project-local modules (e.g. `fastapi.py`
   // sitting next to `agency.py`) that shadow installed packages and falsely flag a healthy
   // .venv as broken. Callers that need the server-launch cwd (post-install verification)
   // pass it explicitly.
-  const result = await runCommand([...python, "-c", VENV_CANARY_SCRIPT], {
+  const result = await runCommand([...python, "-c", buildVenvCanaryScript(options?.minimumAgencySwarmVersion)], {
     cwd: options?.cwd,
     timeoutMs: options?.timeoutMs ?? VENV_CANARY_TIMEOUT_MS,
   })
@@ -1219,7 +1266,15 @@ async function ensureLatestAgencySwarm(
 ): Promise<{ installerFailed: boolean }> {
   try {
     const result = await runCommand(
-      [localUv, "pip", "install", "--python", venvPython, "--upgrade", "agency-swarm[fastapi,litellm]"],
+      [
+        localUv,
+        "pip",
+        "install",
+        "--python",
+        venvPython,
+        "--upgrade",
+        `agency-swarm[fastapi,litellm]>=${MIN_AGENCY_SWARM_VERSION}`,
+      ],
       {
         cwd: directory,
         logFile: options?.logFile,
