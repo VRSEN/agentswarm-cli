@@ -7988,6 +7988,49 @@ describe("session.agency-swarm", () => {
     expect(deltas).toEqual(["A", "B"])
   })
 
+  test("stream flushes cumulative reasoning delta before stream-end close", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_stream_end" },
+          },
+        },
+      }
+      for (const delta of ["A", "AB"]) {
+        yield {
+          type: "data",
+          payload: {
+            type: "raw_response_event",
+            data: {
+              type: "response.reasoning_summary_text.delta",
+              item_id: "rs_stream_end",
+              summary_index: "0",
+              output_index: "0",
+              delta,
+            },
+          },
+        }
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "reasoning-end") events.push("reasoning-end")
+    }
+
+    expect(events).toEqual(["reasoning:A", "reasoning:B", "reasoning-end"])
+  })
+
   test("stream preserves valid overlapping incremental reasoning deltas", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
@@ -9278,6 +9321,73 @@ describe("session.agency-swarm", () => {
             text: "Need answer.",
           },
         },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+    }
+
+    expect(events).toEqual(["reasoning:Need answer.", "text:OK", "text:OK"])
+  })
+
+  test("stream keeps repeated content-index done text after reasoning closes", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: "Need answer.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      for (const contentIndex of ["0", "1"]) {
+        yield {
+          type: "data",
+          payload: {
+            type: "raw_response_event",
+            data: {
+              type: "response.output_text.done",
+              item_id: "msg_multi",
+              output_index: "1",
+              content_index: contentIndex,
+              text: "OK",
+            },
+          },
+        }
       }
       yield { type: "end" }
     } as typeof AgencySwarmAdapter.streamRun

@@ -569,9 +569,6 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     ) {
       return []
     }
-    if (!isOpen && final !== undefined && hasAnyPendingTextReplay(itemID, final)) {
-      return []
-    }
     if (!isOpen && final !== undefined && hasPendingTextReplay(itemID, index, final)) {
       return []
     }
@@ -1499,9 +1496,10 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
         parts.push(...closeReasoning(pending.itemID, pending.index, pending.meta, pending.extra))
         continue
       }
-      reasoningOpen.delete(key)
-      reasoningDonePending.delete(key)
-      parts.push({ type: "reasoning-end", id: key, providerMetadata: {} })
+      const separator = key.lastIndexOf(":")
+      const itemID = separator < 0 ? key : key.slice(0, separator)
+      const index = separator < 0 ? 0 : Number(key.slice(separator + 1))
+      parts.push(...closeReasoning(itemID, Number.isFinite(index) ? index : 0, {}, {}))
     }
 
     parts.push(...flushPendingText(true))
