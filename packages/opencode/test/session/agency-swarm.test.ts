@@ -7519,6 +7519,83 @@ describe("session.agency-swarm", () => {
     expect(events).toEqual(["reasoning:Think.", "text:OK", "text:OK"])
   })
 
+  test("stream clears completed response replay text when a new run starts", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield { type: "meta", runID: "run_1" }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "message", id: "msg_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_1",
+            output_index: "0",
+            delta: "OK",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.completed",
+            response: {},
+          },
+        },
+      }
+      yield {
+        type: "messages",
+        payload: {
+          new_messages: [
+            {
+              type: "message",
+              role: "assistant",
+              id: "msg_1_final",
+              content: [{ type: "output_text", text: "OK" }],
+            },
+          ],
+        },
+      }
+      yield { type: "meta", runID: "run_2" }
+      yield {
+        type: "messages",
+        payload: {
+          new_messages: [
+            {
+              type: "message",
+              role: "assistant",
+              id: "msg_2",
+              content: [{ type: "output_text", text: "OK" }],
+            },
+          ],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "text-delta") deltas.push(event.text)
+    }
+
+    expect(deltas).toEqual(["OK", "OK"])
+  })
+
   test("stream keeps both distinct short assistant messages in the same run (no body-only dedupe)", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {

@@ -1378,6 +1378,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     pendingTextReplay.clear()
     pendingTextFlushed.clear()
     closedReasoningTextReplay.clear()
+    completedResponseTextReplay.clear()
   }
 
   const flushOpen = () => {
