@@ -241,12 +241,12 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     )
   }
 
-  const rememberDoneItemTextReplay = (itemID: string, index: number, text: string) => {
+  const rememberDoneItemTextReplay = (itemID: string, index: number, text: string, deltaBacked: boolean) => {
     const part = replayPartKey(itemID, index, text)
     if (part) doneItemTextReplay.add(part)
     const key = replayItemKey(itemID, text)
     if (key) doneItemShiftedTextReplay.add(key)
-    if (key && textDeltaSeen.has(textKey(itemID, index))) doneItemDeltaTextReplay.add(key)
+    if (key && deltaBacked) doneItemDeltaTextReplay.add(key)
   }
 
   const hasDoneItemTextReplay = (itemID: string, index: number, text: string) => {
@@ -1079,10 +1079,11 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       if (!itemID) return []
       const text = extractMessageText(item)
       const index = textIndex.get(itemID) ?? 0
+      const deltaBacked = textDeltaSeen.has(textKey(itemID, index))
       const parts = finishText(itemID, index, text, eventMeta, outputMeta(outputIndex))
       if (text && textBuffer.get(textKey(itemID, index)) === text) {
         rememberResponseReplay(responseTextReplay, item, text)
-        rememberDoneItemTextReplay(itemID, index, text)
+        rememberDoneItemTextReplay(itemID, index, text, deltaBacked)
       }
       return parts
     }

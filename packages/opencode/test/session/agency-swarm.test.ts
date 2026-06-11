@@ -9730,6 +9730,50 @@ describe("session.agency-swarm", () => {
     expect(events).toEqual(["reasoning:Need answer.", "text:OK", "text:OK"])
   })
 
+  test("stream keeps repeated explicit content-index done text after message item done without reasoning", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: {
+              type: "message",
+              id: "msg_multi",
+              content: [{ type: "output_text", text: "OK" }],
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.done",
+            item_id: "msg_multi",
+            output_index: "0",
+            content_index: "1",
+            text: "OK",
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "text-delta") events.push(event.text)
+    }
+
+    expect(events).toEqual(["OK", "OK"])
+  })
+
   test("stream does not duplicate response-scoped reasoning replay when LiteLLM changes item id", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
