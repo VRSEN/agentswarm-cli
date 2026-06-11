@@ -75,6 +75,8 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   const textIndex = new Map<string, number>()
   const textPending = new Map<string, PendingText>()
   const textExplicit = new Set<string>()
+  const textDeclared = new Set<string>()
+  const textDeltaSeen = new Set<string>()
 
   const reasoningBuffer = new Map<string, string>()
   const reasoningOpen = new Set<string>()
@@ -90,6 +92,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   const completedResponseTextReplay = new Set<string>()
   const doneItemTextReplay = new Set<string>()
   const doneItemShiftedTextReplay = new Set<string>()
+  const doneItemDeltaTextReplay = new Set<string>()
   const retiredParts: StreamPart[] = []
 
   let usage: Usage | undefined
@@ -243,6 +246,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     if (part) doneItemTextReplay.add(part)
     const key = replayItemKey(itemID, text)
     if (key) doneItemShiftedTextReplay.add(key)
+    if (key && textDeltaSeen.has(textKey(itemID, index))) doneItemDeltaTextReplay.add(key)
   }
 
   const hasDoneItemTextReplay = (itemID: string, index: number, text: string) => {
@@ -250,14 +254,17 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     return !!key && doneItemTextReplay.has(key)
   }
 
-  const isShiftedDoneItemTextReplay = (itemID: string, index: number, text: string) => {
+  const hasShiftedDoneItemTextReplay = (itemID: string, index: number, text: string) => {
     const key = replayItemKey(itemID, text)
-    return (
-      !!key &&
-      doneItemShiftedTextReplay.has(key) &&
-      !hasDoneItemTextReplay(itemID, index, text) &&
-      !textExplicit.has(textKey(itemID, index))
-    )
+    return !!key && doneItemShiftedTextReplay.has(key) && !hasDoneItemTextReplay(itemID, index, text)
+  }
+
+  const isShiftedDoneItemTextReplay = (itemID: string, index: number, text: string) =>
+    hasShiftedDoneItemTextReplay(itemID, index, text) && !textExplicit.has(textKey(itemID, index))
+
+  const hasDeltaBackedDoneItemTextReplay = (itemID: string, text: string) => {
+    const key = replayItemKey(itemID, text)
+    return !!key && doneItemDeltaTextReplay.has(key)
   }
 
   const markPendingTextDone = (
@@ -488,6 +495,15 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   const emitText = (pending: PendingText) => {
     const key = textKey(pending.itemID, pending.index)
     const text = textBuffer.get(key) || ""
+    if (
+      text &&
+      !pending.done &&
+      hasShiftedDoneItemTextReplay(pending.itemID, pending.index, text) &&
+      !textDeclared.has(key)
+    ) {
+      textBuffer.delete(key)
+      return []
+    }
     if (text && sawReasoning && hasClosedReasoningTextReplay(pending.itemID, pending.index, text)) {
       textBuffer.delete(key)
       return []
@@ -537,6 +553,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     if (!textOpen.has(key) && isShiftedDoneItemTextReplay(itemID, index, delta)) return []
     const existing = textBuffer.get(key) || ""
     textBuffer.set(key, existing + delta)
+    textDeltaSeen.add(key)
     if (shouldHoldText() && !textOpen.has(key)) {
       return deferText(itemID, index, false, meta, extra)
     }
@@ -1248,7 +1265,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       const partType = asString(part?.["type"]) || ""
       if (partType !== "output_text" && partType !== "refusal") return { parts: [] }
       const contentIndex = asNumber(nested["content_index"]) ?? 0
-      textExplicit.add(textKey(itemID, contentIndex))
+      const key = textKey(itemID, contentIndex)
+      textExplicit.add(key)
+      textDeclared.add(key)
       return {
         parts: ensureText(
           itemID,
@@ -1264,7 +1283,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       if (delta === undefined) return { parts: [] }
       const itemID = textItemID(nested)
       if (!itemID) return { parts: [] }
-      const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
+      const explicitIndex = asNumber(nested["content_index"])
+      const contentIndex = explicitIndex ?? textIndex.get(itemID) ?? 0
+      if (explicitIndex !== undefined) textExplicit.add(textKey(itemID, contentIndex))
       const textMeta = outputMeta(outputIndex, { content_index: contentIndex })
       return {
         parts: [
@@ -1277,13 +1298,21 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     if (responseType === "response.output_text.done" || responseType === "response.content_part.done") {
       const itemID = textItemID(nested)
       if (!itemID) return { parts: [] }
-      const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
+      const explicitIndex = asNumber(nested["content_index"])
+      const contentIndex = explicitIndex ?? textIndex.get(itemID) ?? 0
+      const key = textKey(itemID, contentIndex)
       const part = asRecord(nested["part"])
       const final =
         asRawString(nested["text"]) ??
         asRawString(part?.["text"]) ??
         asRawString(part?.["refusal"]) ??
         asRawString(nested["delta"])
+      if (
+        explicitIndex !== undefined &&
+        (textBuffer.has(key) || (final !== undefined && !hasDeltaBackedDoneItemTextReplay(itemID, final)))
+      ) {
+        textExplicit.add(key)
+      }
       return {
         parts: finishText(
           itemID,
