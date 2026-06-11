@@ -787,6 +787,17 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     })
   }
 
+  const closeOpenReasoning = () => {
+    return Array.from(reasoningOpen.values()).flatMap((key) => {
+      const pending = reasoningDonePending.get(key)
+      if (pending) return closeReasoning(pending.itemID, pending.index, pending.meta, pending.extra)
+      const separator = key.lastIndexOf(":")
+      const itemID = separator < 0 ? key : key.slice(0, separator)
+      const index = separator < 0 ? 0 : Number(key.slice(separator + 1))
+      return closeReasoning(itemID, Number.isFinite(index) ? index : 0, {}, {})
+    })
+  }
+
   const finishReasoning = (
     itemID: string,
     index: number,
@@ -1271,7 +1282,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       setUsage(asRecord(asRecord(nested["response"])?.["usage"]))
       if (responseType !== "response.completed") return { parts: [] }
       rememberCompletedResponseTextReplay()
-      return { parts: [...flushDoneReasoning(true), ...flushPendingText(true)] }
+      return { parts: [...flushDoneReasoning(true), ...closeOpenReasoning(), ...flushPendingText(true)] }
     }
 
     if (responseType === "response.output_item.added" && item) {
@@ -1543,19 +1554,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
 
   const flushOpen = () => {
     const parts: StreamPart[] = drainRetiredParts()
-
-    for (const key of Array.from(reasoningOpen.values())) {
-      const pending = reasoningDonePending.get(key)
-      if (pending) {
-        parts.push(...closeReasoning(pending.itemID, pending.index, pending.meta, pending.extra))
-        continue
-      }
-      const separator = key.lastIndexOf(":")
-      const itemID = separator < 0 ? key : key.slice(0, separator)
-      const index = separator < 0 ? 0 : Number(key.slice(separator + 1))
-      parts.push(...closeReasoning(itemID, Number.isFinite(index) ? index : 0, {}, {}))
-    }
-
+    parts.push(...closeOpenReasoning())
     parts.push(...flushPendingText(true))
 
     for (const key of Array.from(textOpen.values())) {
