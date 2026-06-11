@@ -718,7 +718,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   ) => {
     const key = reasoningKey(itemID, index)
     if (!reasoningOpen.has(key)) return []
-    const parts = flushPendingReasoningDelta(key, false)
+    const pending = reasoningDeltaPending.get(key)
+    const current = reasoningBuffer.get(key) || ""
+    const parts = flushPendingReasoningDelta(key, !!pending && pending.delta.startsWith(current))
     reasoningOpen.delete(key)
     reasoningDonePending.delete(key)
     const set = reasoningByItem.get(itemID)
@@ -759,10 +761,13 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     const key = reasoningKey(itemID, index)
     const isOpen = reasoningOpen.has(key)
     const pending = reasoningDeltaPending.get(key)
-    const parts: StreamPart[] = pending
-      ? flushPendingReasoningDelta(key, text !== undefined && text.startsWith(pending.delta))
-      : []
     const raw = reasoningBuffer.get(key) || ""
+    const parts: StreamPart[] = pending
+      ? flushPendingReasoningDelta(
+          key,
+          text !== undefined ? text.startsWith(pending.delta) : pending.delta.startsWith(raw),
+        )
+      : []
     if (!isOpen && text !== undefined && raw && !text.startsWith(raw)) {
       reasoningBuffer.delete(key)
     }
