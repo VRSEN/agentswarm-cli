@@ -8048,6 +8048,81 @@ describe("session.agency-swarm", () => {
     expect(events).toEqual(["reasoning:Need a lookup.", "text:I will check.", "tool-start:lookup", "tool-call:lookup"])
   })
 
+  test("stream keeps post-reasoning assistant text streaming after reasoning closes", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            delta: "Think.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "1",
+            item: { type: "message", id: "msg_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_1",
+            output_index: "1",
+            delta: "Answer",
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+    }
+
+    expect(events).toEqual(["reasoning:Think.", "text:Answer"])
+  })
+
   test("stream does not replay pending text when response completes before text done", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {

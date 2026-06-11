@@ -103,7 +103,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   }
 
   const hasOpenReasoning = () => reasoningOpen.size > 0
-  const shouldHoldText = () => !flushingText && (hasOpenReasoning() || sawReasoning)
+  const shouldHoldText = () => !flushingText && hasOpenReasoning()
 
   /** Skip only when the incoming event is a replay of the same `(itemID, index)` that is already closed. Body-only matches would drop legit later messages with a short repeat body like "Done" or "OK". */
   const shouldSkipDuplicateAssistantText = (itemID: string, index: number, text: string) => {
@@ -463,7 +463,6 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
 
   const flushPendingText = (force: boolean) => {
     if (hasOpenReasoning()) return []
-    if (sawReasoning && !force) return []
     const parts: StreamPart[] = []
     flushingText = true
     for (const [key, pending] of Array.from(textPending.entries())) {

@@ -96,6 +96,17 @@ function assistant(text: string, phase: StreamCommit["phase"] = "progress"): Str
   }
 }
 
+function reasoning(text: string, phase: StreamCommit["phase"] = "progress"): StreamCommit {
+  return {
+    kind: "reasoning",
+    text,
+    phase,
+    source: "reasoning",
+    messageID: "msg-1",
+    partID: "reason-1",
+  }
+}
+
 function user(text: string): StreamCommit {
   return {
     kind: "user",
@@ -210,6 +221,33 @@ test("holds markdown code blocks until final commit and keeps newline ownership"
       expect(render(final)).toContain("console.log(message)")
     } finally {
       destroy(final)
+    }
+  } finally {
+    out.scrollback.destroy()
+  }
+})
+
+test("adds the reasoning header once for streamed reasoning chunks", async () => {
+  const out = await setup()
+
+  try {
+    await out.scrollback.append(reasoning("first "))
+    await out.scrollback.append(reasoning("second"))
+
+    const activeEntry = Reflect.get(out.scrollback, "active") as { content?: string } | undefined
+    expect(activeEntry?.content?.match(/Thought/g) ?? []).toHaveLength(1)
+    expect(activeEntry?.content).toContain("first")
+    expect(activeEntry?.content).toContain("second")
+
+    await out.scrollback.complete()
+
+    const commits = claim(out.renderer)
+    try {
+      const output = render(commits)
+      expect(output).toContain("first")
+      expect(output).toContain("second")
+    } finally {
+      destroy(commits)
     }
   } finally {
     out.scrollback.destroy()
