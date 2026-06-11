@@ -9031,6 +9031,62 @@ describe("session.agency-swarm", () => {
     expect(events).toEqual(["reasoning:Need a lookup.", "tool-start:lookup", "reasoning-end:sealed"])
   })
 
+  test("stream waits for encrypted reasoning output item done after empty run item replay", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1", encrypted_content: null },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "run_item_stream_event",
+          name: "reasoning_item_created",
+          item: {
+            raw_item: {
+              type: "reasoning",
+              id: "rs_1",
+              summary: [],
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1", encrypted_content: "sealed" },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    let starts = 0
+    const ends: Record<string, unknown>[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-start") starts++
+      if (event.type === "reasoning-end") ends.push(event)
+    }
+
+    expect(starts).toBe(1)
+    expect(ends).toHaveLength(1)
+    expect(ends[0]?.providerMetadata).toMatchObject({ encrypted_content: "sealed" })
+  })
+
   test("stream force flushes pending text before tool input while reasoning stays open", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
