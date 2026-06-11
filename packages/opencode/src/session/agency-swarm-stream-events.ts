@@ -51,9 +51,17 @@ type PendingReasoning = {
   extra?: Record<string, unknown>
 }
 
+type PendingReasoningDeltaItem = {
+  delta: string
+  meta: AgencySwarmEventMeta
+  extra?: Record<string, unknown>
+}
+
 type PendingReasoningDelta = PendingReasoning & {
   current: string
   delta: string
+  forced?: boolean
+  tail?: PendingReasoningDeltaItem[]
 }
 
 type StreamEventsInput = {
@@ -533,7 +541,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   const flushPendingText = (force: boolean) => {
     if (!force && hasOpenReasoning()) return []
     const parts: StreamPart[] = drainRetiredParts()
-    if (force) parts.push(...flushPendingReasoningDeltas())
+    if (force) {
+      for (const pending of reasoningDeltaPending.values()) pending.forced = true
+    }
     flushingText = true
     for (const [key, pending] of Array.from(textPending.entries())) {
       textPending.delete(key)
@@ -715,13 +725,36 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     if (!pending) return []
     reasoningDeltaPending.delete(key)
     const text = cumulative ? pending.delta.slice(pending.current.length) : pending.delta
-    return text ? emitReasoningDelta(pending.itemID, pending.index, text, pending.meta, pending.extra) : []
+    const parts = text ? emitReasoningDelta(pending.itemID, pending.index, text, pending.meta, pending.extra) : []
+    for (const item of pending.tail ?? []) {
+      parts.push(...emitReasoningDelta(pending.itemID, pending.index, item.delta, item.meta, item.extra))
+    }
+    return parts
   }
 
-  const flushPendingReasoningDeltas = () => {
-    return Array.from(reasoningDeltaPending.keys()).flatMap((key) => {
-      return flushPendingReasoningDelta(key, false)
-    })
+  const flushPendingReasoningDeltaForFinal = (key: string, final: string | undefined): StreamPart[] => {
+    const pending = reasoningDeltaPending.get(key)
+    if (!pending) return []
+    if (!pending.forced || final === undefined) {
+      return flushPendingReasoningDelta(key, final !== undefined && final.startsWith(pending.delta))
+    }
+
+    reasoningDeltaPending.delete(key)
+    let current = pending.current
+    const parts: StreamPart[] = []
+    const items: PendingReasoningDeltaItem[] = [
+      { delta: pending.delta, meta: pending.meta, extra: pending.extra },
+      ...(pending.tail ?? []),
+    ]
+    for (const item of items) {
+      const incremental = final.startsWith(current + item.delta)
+      const cumulative = item.delta.startsWith(current) && final.startsWith(item.delta)
+      const text = incremental ? item.delta : cumulative ? item.delta.slice(current.length) : item.delta
+      if (!text) continue
+      parts.push(...emitReasoningDelta(pending.itemID, pending.index, text, item.meta, item.extra))
+      current += text
+    }
+    return parts
   }
 
   const reasoningDelta = (
@@ -734,6 +767,13 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     if (!delta) return []
     const key = reasoningKey(itemID, index)
     const pending = reasoningDeltaPending.get(key)
+    if (pending?.forced) {
+      reasoningDeltaPending.set(key, {
+        ...pending,
+        tail: [...(pending.tail ?? []), { delta, meta, extra }],
+      })
+      return []
+    }
     const parts = pending
       ? flushPendingReasoningDelta(key, isLikelyCumulativeReasoningDelta(pending.current, pending.delta))
       : []
@@ -807,9 +847,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     const isOpen = reasoningOpen.has(key)
     const pending = reasoningDeltaPending.get(key)
     const raw = reasoningBuffer.get(key) || ""
-    const parts: StreamPart[] = pending
-      ? flushPendingReasoningDelta(key, text !== undefined && text.startsWith(pending.delta))
-      : []
+    const parts: StreamPart[] = pending ? flushPendingReasoningDeltaForFinal(key, text) : []
     if (!isOpen && text !== undefined && raw && !text.startsWith(raw)) {
       reasoningBuffer.delete(key)
     }
