@@ -801,6 +801,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     meta: AgencySwarmEventMeta,
     extra?: Record<string, unknown>,
     close = true,
+    closeWaiting = false,
   ) => {
     const key = reasoningKey(itemID, index)
     const isOpen = reasoningOpen.has(key)
@@ -822,6 +823,12 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       parts.push(...reasoningDelta(itemID, index, suffix, meta, extra))
     }
     if (!close) {
+      if (reasoningOpen.has(key)) {
+        reasoningDonePending.set(key, { itemID, index, meta, extra })
+      }
+      return parts
+    }
+    if (!closeWaiting && reasoningWaitForDone.has(itemID)) {
       if (reasoningOpen.has(key)) {
         reasoningDonePending.set(key, { itemID, index, meta, extra })
       }
@@ -1134,6 +1141,8 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
             summaryText(summary, summaryIndex),
             eventMeta,
             outputMeta(outputIndex, { encrypted_content: item["encrypted_content"] ?? null }),
+            true,
+            true,
           )
         })
     }
