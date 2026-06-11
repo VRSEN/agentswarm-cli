@@ -698,7 +698,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     if (!delta) return []
     const key = reasoningKey(itemID, index)
     const pending = reasoningDeltaPending.get(key)
-    const parts = pending ? flushPendingReasoningDelta(key, delta.startsWith(pending.delta)) : []
+    const parts = pending ? flushPendingReasoningDelta(key, pending.delta.startsWith(pending.current)) : []
     const current = reasoningBuffer.get(key) || ""
     if (current && delta.startsWith(current)) {
       reasoningDeltaPending.set(key, { itemID, index, current, delta, meta, extra })

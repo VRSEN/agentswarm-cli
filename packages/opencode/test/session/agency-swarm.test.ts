@@ -8031,6 +8031,61 @@ describe("session.agency-swarm", () => {
     expect(events).toEqual(["reasoning:A", "reasoning:B", "reasoning-end"])
   })
 
+  test("stream normalizes mixed cumulative and incremental reasoning deltas", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_mixed" },
+          },
+        },
+      }
+      for (const delta of ["A", "AB", "C"]) {
+        yield {
+          type: "data",
+          payload: {
+            type: "raw_response_event",
+            data: {
+              type: "response.reasoning_summary_text.delta",
+              item_id: "rs_mixed",
+              summary_index: "0",
+              output_index: "0",
+              delta,
+            },
+          },
+        }
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_mixed",
+            summary_index: "0",
+            output_index: "0",
+            text: "ABC",
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") deltas.push(event.text)
+    }
+
+    expect(deltas).toEqual(["A", "B", "C"])
+  })
+
   test("stream preserves valid overlapping incremental reasoning deltas", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
