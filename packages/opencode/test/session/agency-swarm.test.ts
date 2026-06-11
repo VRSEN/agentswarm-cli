@@ -8128,7 +8128,7 @@ describe("session.agency-swarm", () => {
     expect(events).toEqual(["reasoning:The ", "reasoning:The answer", "reasoning-end"])
   })
 
-  test("stream preserves pending cumulative-looking reasoning before forced text and tool output", async () => {
+  test("stream normalizes pending cumulative reasoning before forced text and tool output", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
       yield {
@@ -8211,7 +8211,7 @@ describe("session.agency-swarm", () => {
       if (event.type === "tool-input-start") events.push(`tool:${event.toolName}`)
     }
 
-    expect(events).toEqual(["reasoning:A", "reasoning:AB", "text:I will check.", "tool:lookup"])
+    expect(events).toEqual(["reasoning:A", "text:I will check.", "tool:lookup", "reasoning:B"])
   })
 
   test("stream normalizes mixed cumulative and incremental reasoning deltas", async () => {
@@ -9514,6 +9514,323 @@ describe("session.agency-swarm", () => {
     }
 
     expect(events).toEqual(["reasoning:Need answer.", "reasoning-end", "text:OK"])
+  })
+
+  test("stream force-flushes cumulative reasoning as an incremental delta", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      for (const delta of ["The user", "The user has"]) {
+        yield {
+          type: "data",
+          payload: {
+            type: "raw_response_event",
+            data: {
+              type: "response.reasoning_summary_text.delta",
+              item_id: "rs_1",
+              summary_index: "0",
+              output_index: "0",
+              delta,
+            },
+          },
+        }
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_1",
+            output_index: "1",
+            delta: "I can help.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "2",
+            item: {
+              type: "function_call",
+              id: "fc_1",
+              call_id: "call_1",
+              name: "lookup",
+              arguments: '{"query":"status"}',
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: "The user has",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.completed",
+            response: {},
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "reasoning-end") events.push("reasoning-end")
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+      if (event.type === "tool-input-start") events.push(`tool:${event.toolName}`)
+    }
+
+    expect(events).toEqual(["reasoning:The user", "text:I can help.", "tool:lookup", "reasoning: has", "reasoning-end"])
+  })
+
+  test("stream preserves prefix-sharing incremental reasoning across forced text and tool output", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      for (const delta of ["Check cache", "Check cache again"]) {
+        yield {
+          type: "data",
+          payload: {
+            type: "raw_response_event",
+            data: {
+              type: "response.reasoning_summary_text.delta",
+              item_id: "rs_1",
+              summary_index: "0",
+              output_index: "0",
+              delta,
+            },
+          },
+        }
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_1",
+            output_index: "1",
+            delta: "I can help.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "2",
+            item: {
+              type: "function_call",
+              id: "fc_1",
+              call_id: "call_1",
+              name: "lookup",
+              arguments: '{"query":"status"}',
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: "Check cacheCheck cache again",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.completed",
+            response: {},
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "reasoning-end") events.push("reasoning-end")
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+      if (event.type === "tool-input-start") events.push(`tool:${event.toolName}`)
+    }
+
+    expect(events).toEqual([
+      "reasoning:Check cache",
+      "text:I can help.",
+      "tool:lookup",
+      "reasoning:Check cache again",
+      "reasoning-end",
+    ])
+  })
+
+  test("stream preserves forced prefix-sharing incremental reasoning when another reasoning delta follows", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      for (const delta of ["Check cache", "Check cache again"]) {
+        yield {
+          type: "data",
+          payload: {
+            type: "raw_response_event",
+            data: {
+              type: "response.reasoning_summary_text.delta",
+              item_id: "rs_1",
+              summary_index: "0",
+              output_index: "0",
+              delta,
+            },
+          },
+        }
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_text.delta",
+            item_id: "msg_1",
+            output_index: "1",
+            delta: "I can help.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "2",
+            item: {
+              type: "function_call",
+              id: "fc_1",
+              call_id: "call_1",
+              name: "lookup",
+              arguments: '{"query":"status"}',
+            },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            delta: "Then inspect",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: "Check cacheCheck cache againThen inspect",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.completed",
+            response: {},
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "reasoning-end") events.push("reasoning-end")
+      if (event.type === "text-delta") events.push(`text:${event.text}`)
+      if (event.type === "tool-input-start") events.push(`tool:${event.toolName}`)
+    }
+
+    expect(events).toEqual([
+      "reasoning:Check cache",
+      "text:I can help.",
+      "tool:lookup",
+      "reasoning:Check cache again",
+      "reasoning:Then inspect",
+      "reasoning-end",
+    ])
   })
 
   test("stream keeps same-text assistant message from final messages payload when item is distinct", async () => {
