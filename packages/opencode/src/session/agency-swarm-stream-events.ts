@@ -15,8 +15,6 @@ import {
 import { truncateLargeText } from "./agency-swarm-history-transport"
 
 const MAX_UI_TOOL_OUTPUT_CHARS = 60_000
-const MIN_REASONING_OVERLAP_CHARS = 8
-
 type StreamPart = Record<string, unknown>
 
 type Usage = {
@@ -247,12 +245,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   const reasoningSuffix = (current: string, delta: string) => {
     if (!current) return delta
     if (delta.startsWith(current)) {
-      if (delta.length === current.length && current.length < MIN_REASONING_OVERLAP_CHARS) return delta
       return delta.slice(current.length)
-    }
-    const limit = Math.min(current.length, delta.length)
-    for (let size = limit; size >= MIN_REASONING_OVERLAP_CHARS; size--) {
-      if (current.endsWith(delta.slice(0, size))) return delta.slice(size)
     }
     return delta
   }

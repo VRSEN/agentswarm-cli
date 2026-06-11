@@ -7877,6 +7877,72 @@ describe("session.agency-swarm", () => {
     expect(deltas).toEqual(["The user has", " just greeted", "The user has"])
   })
 
+  test("stream preserves valid overlapping incremental reasoning deltas", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_1" },
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            delta: "Look at the file ",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.delta",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            delta: "the file path next.",
+          },
+        },
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.reasoning_summary_text.done",
+            item_id: "rs_1",
+            summary_index: "0",
+            output_index: "0",
+            text: "Look at the file the file path next.",
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const deltas: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") deltas.push(event.text)
+    }
+
+    expect(deltas).toEqual(["Look at the file ", "the file path next."])
+  })
+
   test("stream keeps text behind open reasoning for TUI ordering", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
