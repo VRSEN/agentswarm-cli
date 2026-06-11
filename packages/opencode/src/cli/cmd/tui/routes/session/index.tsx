@@ -1526,21 +1526,24 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
     const end = props.part.time.end
     return end === undefined ? undefined : Locale.duration(Math.max(0, end - props.part.time.start))
   })
+  const visible = createMemo(() => ctx.showThinking() && (content().length > 0 || !isDone()))
   return (
-    <Show when={content() && ctx.showThinking()}>
+    <Show when={visible()}>
       <box id={"text-" + props.part.id} paddingLeft={3} marginTop={1} flexDirection="column" flexShrink={0}>
         <ReasoningHeader done={isDone()} duration={duration()} />
-        <box marginTop={1}>
-          <code
-            filetype="markdown"
-            drawUnstyledText={false}
-            streaming={true}
-            syntaxStyle={subtleSyntax()}
-            content={content()}
-            conceal={ctx.conceal()}
-            fg={theme.textMuted}
-          />
-        </box>
+        <Show when={content()}>
+          <box marginTop={1}>
+            <code
+              filetype="markdown"
+              drawUnstyledText={false}
+              streaming={true}
+              syntaxStyle={subtleSyntax()}
+              content={content()}
+              conceal={ctx.conceal()}
+              fg={theme.textMuted}
+            />
+          </box>
+        </Show>
       </box>
     </Show>
   )

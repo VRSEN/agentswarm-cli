@@ -388,7 +388,7 @@ function AssistantText(props: { part: SessionMessageAssistantText; syntax: Synta
 function AssistantReasoning(props: { part: AssistantReasoningPart; subtleSyntax: SyntaxStyle }) {
   const { theme } = useTheme()
   const content = createMemo(() => props.part.text.replace("[REDACTED]", "").trim())
-  const isDone = createMemo(() => props.part.time?.end !== undefined)
+  const isDone = createMemo(() => props.part.time === undefined || props.part.time.end !== undefined)
   const duration = createMemo(() => {
     const start = props.part.time?.start
     const end = props.part.time?.end
