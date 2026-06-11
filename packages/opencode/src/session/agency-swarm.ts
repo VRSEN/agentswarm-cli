@@ -428,7 +428,7 @@ export namespace SessionAgencySwarm {
         input.sessionModel &&
         buildLitellmModelForClientConfig(input.sessionModel.providerID, input.sessionModel.modelID)
       const sessionModelSettingsExtraArgs = normalizeVariantOptionsForClientConfig(input.sessionModel)
-      if (sessionModel?.providerID === AgencySwarmOllama.PROVIDER_ID) {
+      if (sessionModel?.providerID === AgencySwarmOllama.PROVIDER_ID && isLocalAgencyURL(input.options.baseURL)) {
         await AgencySwarmOllama.ensure(sessionModel.modelID)
       }
       const clientConfig = await resolveClientConfig(

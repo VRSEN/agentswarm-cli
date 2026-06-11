@@ -33,7 +33,8 @@ export function isMissingModelError(error: unknown): error is MissingModelError 
 }
 
 export function isModelListed(modelID: string, data: { models?: Array<{ name?: string; model?: string }> }) {
-  return (data.models ?? []).some((model) => model.name === modelID || model.model === modelID)
+  const names = modelID.includes(":") ? [modelID] : [modelID, `${modelID}:latest`]
+  return (data.models ?? []).some((model) => names.includes(model.name ?? "") || names.includes(model.model ?? ""))
 }
 
 export function formatMissingModelInstallHint(modelID: string) {
