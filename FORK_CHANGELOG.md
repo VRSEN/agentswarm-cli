@@ -29,6 +29,7 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 - Agency session resume and bridge recovery: `packages/opencode/src/agency-swarm/run-session.ts`, `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/cli/cmd/tui/session-error.ts`, `packages/opencode/src/cli/cmd/tui/context/agency-swarm-connection.tsx`.
 - Connection, auth, and provider dialogs: `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx`, `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`, `packages/opencode/src/cli/cmd/tui/session-error.ts`.
 - Run-mode routing, add-ons, models, and attachments: `packages/opencode/src/agency-swarm/adapter.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/cli/cmd/tui/component/prompt/autocomplete.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx`, `packages/opencode/src/cli/cmd/tui/context/local.tsx`, `packages/opencode/src/cli/cmd/tui/util/agency-target.ts`.
+- Run-mode local models: `packages/opencode/src/agency-swarm/ollama.ts`, `packages/opencode/src/agency-swarm/litellm-provider.ts`, `packages/opencode/src/agency-swarm/client-config.ts`, `packages/opencode/src/provider/provider.ts`, `packages/opencode/src/cli/cmd/tui/component/download-ollama-model.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx`, `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`, `packages/opencode/src/cli/cmd/tui/session-error.ts`.
 - Builder and Plan preservation: `packages/opencode/src/session/agent-builder.ts`, `packages/opencode/src/session/agent-planner.ts`, `packages/opencode/src/session/prompt/agent-builder.txt`, `packages/opencode/src/session/prompt/agent-planner.txt`.
 - History, handoff, compaction, and message metadata: `packages/opencode/src/session/agency-swarm-utils.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/session/message-v2.ts`, `packages/opencode/src/session/compaction.ts`, `packages/opencode/src/agency-swarm/history.ts`.
 - Sharing, PR reopen, and backend management: `packages/opencode/src/share/share-next.ts`, `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`, `packages/opencode/src/cli/cmd/pr.ts`, `packages/opencode/src/cli/cmd/agency.ts`, `README.md`.
@@ -145,6 +146,13 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Behavior: LiteLLM agency runs keep Codex OAuth only when the target model is OpenAI-based.
   - Implementation: `shouldStripCodexOAuth` and `stripCodexOAuthForNonOpenAI` in `packages/opencode/src/session/agency-swarm.ts`.
   - Added by: `6e36ccac`
+
+- **Run-mode Ollama local models**
+  - Intent: let Agent Swarm users run local open-source models through Ollama without leaving Run mode or adding upstream provider credentials.
+  - Behavior: `/models` exposes an Ollama provider in Agent Swarm Run mode and routes selections to Agency Swarm as LiteLLM `ollama_chat` models.
+  - Behavior: startup and prompt auth gates treat selected Ollama models as local and do not require OpenAI, Anthropic, OpenRouter, or other upstream credentials.
+  - Behavior: when a selected Ollama model is missing, the TUI can prompt to download it through Ollama and stale download completion must not close a newer dialog.
+  - Implementation: `AgencySwarmOllama` in `packages/opencode/src/agency-swarm/ollama.ts`, LiteLLM routing helpers, the built-in Ollama provider in `packages/opencode/src/provider/provider.ts`, auth gating in `packages/opencode/src/cli/cmd/tui/session-error.ts`, and model-selection/download flows in the TUI prompt and model dialogs.
 
 - **Tool outputs preserve wrapper call metadata**
   - Intent: keep Agency Swarm tool results attached to the correct wrapped call and preserve the extra metadata needed for tracing.
