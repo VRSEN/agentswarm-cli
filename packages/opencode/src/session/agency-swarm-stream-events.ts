@@ -1515,6 +1515,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     completedResponseTextReplay.clear()
     doneItemTextReplay.clear()
     doneItemShiftedTextReplay.clear()
+    doneItemDeltaTextReplay.clear()
   }
 
   const flushOpen = () => {
