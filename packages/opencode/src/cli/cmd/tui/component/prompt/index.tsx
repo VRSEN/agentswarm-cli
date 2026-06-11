@@ -1022,6 +1022,7 @@ export function Prompt(props: PromptProps) {
     set(prompt) {
       input.setText(prompt.input)
       setStore("prompt", prompt)
+      if (prompt.mode) setStore("mode", prompt.mode)
       restoreExtmarksFromParts(prompt.parts)
       input.gotoBufferEnd()
     },
@@ -1455,6 +1456,7 @@ export function Prompt(props: PromptProps) {
       return true
     }
 
+    const currentMode = store.mode
     const selectedModel = local.model.current()
     if (!selectedModel) {
       void promptModelWarning()
@@ -1479,7 +1481,7 @@ export function Prompt(props: PromptProps) {
       selectedModel.providerID === "openrouter"
         ? Object.fromEntries(openrouterEnvNames.map((name) => [name, process.env[name]]))
         : process.env
-    if (frameworkMode() && AgencySwarmOllama.isModel(selectedModel)) {
+    if (currentMode !== "shell" && frameworkMode() && AgencySwarmOllama.isModel(selectedModel)) {
       try {
         await AgencySwarmOllama.ensure(selectedModel.modelID, {
           onServerStart() {
@@ -1510,7 +1512,6 @@ export function Prompt(props: PromptProps) {
     }
     const productProviderID = frameworkMode() ? AgencySwarmAdapter.PROVIDER_ID : selectedModel.providerID
 
-    const currentMode = store.mode
     const variant = local.model.variant.current()
     const serverSlashCommand = inputText.startsWith("/")
       ? iife(() => {

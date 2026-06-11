@@ -125,6 +125,12 @@ describe("prompt auth rejection handling", () => {
       },
       "prompt",
     )
+    const shellSession = spyOn(
+      {
+        shell: async () => ({}),
+      },
+      "shell",
+    )
 
     spyOn(AgencySwarmRunSession, "sync").mockResolvedValue(undefined)
     spyOn(AutocompleteModule, "Autocomplete").mockImplementation((props: any) => {
@@ -216,6 +222,7 @@ describe("prompt auth rejection handling", () => {
       client: {
         session: {
           prompt: promptSession,
+          shell: shellSession,
         },
       },
       event: input.events,
@@ -338,7 +345,7 @@ describe("prompt auth rejection handling", () => {
     ))
 
     expect(promptRef).toBeDefined()
-    return { parts, promptRef: promptRef!, promptSession }
+    return { parts, promptRef: promptRef!, promptSession, shellSession }
   }
 
   test("blocks selected OpenRouter prompts when only OpenAI env credentials exist", async () => {
@@ -391,6 +398,35 @@ describe("prompt auth rejection handling", () => {
 
     expect(ensure).toHaveBeenCalledWith("llama3.2", expect.any(Object))
     expect(promptSession).toHaveBeenCalledTimes(1)
+  })
+
+  test("submits selected Ollama shell commands without local model setup", async () => {
+    const ensure = spyOn(AgencySwarmOllama, "ensure").mockRejectedValue(new Error("missing model"))
+    const { promptRef, promptSession, shellSession } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      openaiCredential: false,
+      selectedModel: {
+        providerID: "ollama",
+        modelID: "llama3.2",
+      },
+      prompt: async () => ({ data: {} }),
+      sessionID: "session_ollama_shell",
+      workspaceID: "workspace_ollama_shell",
+    })
+
+    promptRef.set({
+      input: "echo shell",
+      mode: "shell",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    expect(ensure).not.toHaveBeenCalled()
+    expect(shellSession).toHaveBeenCalledTimes(1)
+    expect(promptSession).not.toHaveBeenCalled()
   })
 
   test("submits selected OpenRouter prompts when custom OpenRouter env credentials exist", async () => {

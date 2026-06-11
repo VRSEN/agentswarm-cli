@@ -8,6 +8,8 @@ import type { ToastContext } from "../ui/toast"
 
 type PullProgress = AgencySwarmOllama.PullProgress
 
+class OllamaDownloadDismissedError extends Error {}
+
 export async function downloadOllamaModel(input: { dialog: DialogContext; toast: ToastContext; modelID: string }) {
   const confirmed = await DialogConfirm.show(
     input.dialog,
@@ -26,7 +28,9 @@ export async function downloadOllamaModel(input: { dialog: DialogContext; toast:
     })
     return true
   } catch (error) {
-    input.dialog.clear()
+    if (!(error instanceof OllamaDownloadDismissedError)) {
+      input.dialog.clear()
+    }
     input.toast.show({
       variant: "error",
       message: error instanceof Error ? error.message : String(error),
@@ -62,7 +66,11 @@ function showOllamaDownloadDialog(dialog: DialogContext, modelID: string) {
     dialog.replace(render, () => {
       active = false
       if (!done) {
-        reject(new Error(`Download for ${modelID} was dismissed. The Ollama pull may still be running.`))
+        reject(
+          new OllamaDownloadDismissedError(
+            `Download for ${modelID} was dismissed. The Ollama pull may still be running.`,
+          ),
+        )
       }
     })
   })
