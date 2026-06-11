@@ -286,7 +286,7 @@ describe("run subagent data", () => {
           sessionID: "child-1",
           type: "reasoning",
           text: "planning next steps",
-          time: { start: 1 },
+          time: { start: 1, end: 2 },
         },
       },
     })
@@ -353,7 +353,7 @@ describe("run subagent data", () => {
     expect(snapshot.tabs).toEqual([expect.objectContaining({ sessionID: "child-1", status: "running" })])
     expect(visible(snapshot.details["child-1"]?.commits ?? [])).toEqual([
       "› Inspect footer tabs",
-      "_Thinking:_ planning next steps",
+      "Thought:\n\nplanning next steps",
       "# Shell\n$ git status --short",
       "hello world",
     ])
@@ -432,7 +432,7 @@ describe("run subagent data", () => {
 
     expect(visible(snapshotSubagentData(data).details["child-1"]?.commits ?? [])).toEqual([
       "› Inspect footer tabs",
-      "_Thinking:_ planning next steps",
+      "Thought:\n\nplanning next steps",
       "hello world",
     ])
   })

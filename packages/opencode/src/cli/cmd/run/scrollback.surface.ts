@@ -35,6 +35,7 @@ type ActiveEntry = {
 }
 
 let nextId = 0
+const REASONING_HEADER = "Thought:\n\n"
 
 function commitMarkdownBlocks(input: {
   surface: ScrollbackSurface
@@ -81,6 +82,23 @@ function staticBody(commit: StreamCommit, body: RunEntryBody, spaced: number): R
   return {
     ...body,
     content: body.content.replace(/^\n/, ""),
+  }
+}
+
+function streamingBody(commit: StreamCommit, body: ActiveBody, active: ActiveEntry | undefined): ActiveBody {
+  if (!active || !sameEntryGroup(active.commit, commit) || commit.kind !== "reasoning" || body.type !== "code") {
+    return body
+  }
+
+  const lead = body.content.match(/^\n+/)?.[0] ?? ""
+  const content = lead ? body.content.slice(lead.length) : body.content
+  if (!content.startsWith(REASONING_HEADER)) {
+    return body
+  }
+
+  return {
+    ...body,
+    content: `${lead}${content.slice(REASONING_HEADER.length)}`,
   }
 }
 
@@ -294,17 +312,24 @@ export class RunScrollbackStream {
   }
 
   private async writeStreaming(commit: StreamCommit, body: ActiveBody): Promise<void> {
-    if (!this.active || !sameEntryGroup(this.active.commit, commit) || this.active.body.type !== body.type) {
+    const continuing = !!this.active && sameEntryGroup(this.active.commit, commit) && this.active.body.type === body.type
+    if (!continuing) {
       this.markRendered(await this.finishActive(false))
       this.active = this.createEntry(commit, body)
     }
 
-    this.active.body = body
-    this.active.commit = commit
-    this.active.content += body.content
+    const active = this.active
+    if (!active) {
+      return
+    }
+
+    const next = continuing ? streamingBody(commit, body, active) : body
+    active.body = next
+    active.commit = commit
+    active.content += next.content
     await this.flushActive(false, false)
-    if (this.active.rendered) {
-      this.markRendered(this.active.commit)
+    if (active.rendered) {
+      this.markRendered(active.commit)
     }
   }
 

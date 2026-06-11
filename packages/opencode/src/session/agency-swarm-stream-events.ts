@@ -15,7 +15,6 @@ import {
 import { truncateLargeText } from "./agency-swarm-history-transport"
 
 const MAX_UI_TOOL_OUTPUT_CHARS = 60_000
-
 type StreamPart = Record<string, unknown>
 
 type Usage = {
@@ -37,6 +36,26 @@ type Tool = {
   done: boolean
 }
 
+type PendingText = {
+  itemID: string
+  index: number
+  done: boolean
+  meta: AgencySwarmEventMeta
+  extra?: Record<string, unknown>
+}
+
+type PendingReasoning = {
+  itemID: string
+  index: number
+  meta: AgencySwarmEventMeta
+  extra?: Record<string, unknown>
+}
+
+type PendingReasoningDelta = PendingReasoning & {
+  current: string
+  delta: string
+}
+
 type StreamEventsInput = {
   assistantMessage: MessageV2.Assistant
   isCancelled: () => boolean
@@ -54,18 +73,37 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   const textBuffer = new Map<string, string>()
   const textOpen = new Set<string>()
   const textIndex = new Map<string, number>()
+  const textPending = new Map<string, PendingText>()
+  const textExplicit = new Set<string>()
+  const textDeclared = new Set<string>()
+  const textDeltaSeen = new Set<string>()
 
   const reasoningBuffer = new Map<string, string>()
   const reasoningOpen = new Set<string>()
   const reasoningByItem = new Map<string, Set<string>>()
+  const reasoningDonePending = new Map<string, PendingReasoning>()
+  const reasoningDeltaPending = new Map<string, PendingReasoningDelta>()
+  const reasoningWaitForDone = new Set<string>()
   const responseTextReplay = new Map<string, Set<string>>()
   const responseReasoningReplay = new Map<string, Set<string>>()
+  const pendingTextReplay = new Set<string>()
+  const pendingTextFlushed = new Set<string>()
+  const closedReasoningTextReplay = new Set<string>()
+  const completedResponseTextReplay = new Set<string>()
+  const doneItemTextReplay = new Set<string>()
+  const doneItemShiftedTextReplay = new Set<string>()
+  const doneItemDeltaTextReplay = new Set<string>()
+  const retiredParts: StreamPart[] = []
 
   let usage: Usage | undefined
   let lastTextItemID: string | undefined
   let lastReasoningItemID: string | undefined
   let hadDanglingTool = false
+  let sawReasoning = false
+  let flushingText = false
   const agentUpdatedHandoffAgents = new Set<string>()
+
+  const drainRetiredParts = () => retiredParts.splice(0)
 
   const mergeMeta = (meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
     return {
@@ -79,6 +117,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     return `${itemID}:${value}`
   }
 
+  const hasOpenReasoning = () => reasoningOpen.size > 0
+  const shouldHoldText = () => !flushingText && hasOpenReasoning()
+
   /** Skip only when the incoming event is a replay of the same `(itemID, index)` that is already closed. Body-only matches would drop legit later messages with a short repeat body like "Done" or "OK". */
   const shouldSkipDuplicateAssistantText = (itemID: string, index: number, text: string) => {
     const key = textKey(itemID, index)
@@ -86,9 +127,38 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     return current === text && !textOpen.has(key)
   }
 
+  function deferText(
+    itemID: string,
+    index: number,
+    done: boolean,
+    meta: AgencySwarmEventMeta,
+    extra?: Record<string, unknown>,
+  ) {
+    const key = textKey(itemID, index)
+    const prev = textPending.get(key)
+    textPending.set(key, {
+      itemID,
+      index,
+      done: done || prev?.done === true,
+      meta,
+      extra,
+    })
+    return []
+  }
+
   const replayTextKey = (text: string) => {
     const normalized = text.trim()
     return normalized ? normalized : undefined
+  }
+
+  const replayPartKey = (itemID: string, index: number, text: string) => {
+    const key = replayTextKey(text)
+    return key ? `${itemID}:${index}:${key}` : undefined
+  }
+
+  const replayItemKey = (itemID: string, text: string) => {
+    const key = replayTextKey(text)
+    return key ? `${itemID}:${key}` : undefined
   }
 
   const providerResponseID = (item: Record<string, unknown> | undefined) => {
@@ -119,6 +189,107 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     const responseID = providerResponseID(item)
     const key = replayTextKey(text)
     return !!responseID && !!key && store.get(responseID)?.has(key) === true
+  }
+
+  const rememberPendingTextReplay = (itemID: string, index: number, text: string) => {
+    const key = replayPartKey(itemID, index, text)
+    if (key) pendingTextReplay.add(key)
+  }
+
+  const hasPendingTextReplay = (itemID: string, index: number, text: string) => {
+    const key = replayPartKey(itemID, index, text)
+    return !!key && pendingTextReplay.has(key)
+  }
+
+  const hasAnyPendingTextReplay = (itemID: string, text: string) => {
+    const key = replayTextKey(text)
+    return (
+      !!key &&
+      Array.from(pendingTextReplay).some((value) => value.startsWith(`${itemID}:`) && value.endsWith(`:${key}`))
+    )
+  }
+
+  const rememberClosedReasoningTextReplay = (itemID: string, index: number, text: string) => {
+    const key = replayPartKey(itemID, index, text)
+    if (key) closedReasoningTextReplay.add(key)
+  }
+
+  const hasClosedReasoningTextReplay = (itemID: string, index: number, text: string) => {
+    const key = replayPartKey(itemID, index, text)
+    return !!key && closedReasoningTextReplay.has(key)
+  }
+
+  const rememberCompletedResponseTextReplay = () => {
+    for (const [part, text] of textBuffer.entries()) {
+      const separator = part.lastIndexOf(":")
+      if (separator < 0) continue
+      const itemID = part.slice(0, separator)
+      const index = Number(part.slice(separator + 1))
+      if (!Number.isFinite(index)) continue
+      const key = replayPartKey(itemID, index, text)
+      if (key) completedResponseTextReplay.add(key)
+    }
+  }
+
+  const hasAnyCompletedResponseTextReplay = (itemID: string, text: string) => {
+    const key = replayTextKey(text)
+    return (
+      !!key &&
+      Array.from(completedResponseTextReplay).some(
+        (value) => value.startsWith(`${itemID}:`) && value.endsWith(`:${key}`),
+      )
+    )
+  }
+
+  const rememberDoneItemTextReplay = (itemID: string, index: number, text: string, deltaBacked: boolean) => {
+    const part = replayPartKey(itemID, index, text)
+    if (part) doneItemTextReplay.add(part)
+    const key = replayItemKey(itemID, text)
+    if (key) doneItemShiftedTextReplay.add(key)
+    if (key && deltaBacked) doneItemDeltaTextReplay.add(key)
+  }
+
+  const hasDoneItemTextReplay = (itemID: string, index: number, text: string) => {
+    const key = replayPartKey(itemID, index, text)
+    return !!key && doneItemTextReplay.has(key)
+  }
+
+  const hasShiftedDoneItemTextReplay = (itemID: string, index: number, text: string) => {
+    const key = replayItemKey(itemID, text)
+    return !!key && doneItemShiftedTextReplay.has(key) && !hasDoneItemTextReplay(itemID, index, text)
+  }
+
+  const isShiftedDoneItemTextReplay = (itemID: string, index: number, text: string) =>
+    hasShiftedDoneItemTextReplay(itemID, index, text) && !textExplicit.has(textKey(itemID, index))
+
+  const hasDeltaBackedDoneItemTextReplay = (itemID: string, text: string) => {
+    const key = replayItemKey(itemID, text)
+    return !!key && doneItemDeltaTextReplay.has(key)
+  }
+
+  const markPendingTextDone = (
+    itemID: string,
+    index: number,
+    text: string,
+    meta: AgencySwarmEventMeta,
+    extra?: Record<string, unknown>,
+  ) => {
+    const key = replayTextKey(text)
+    if (!key) return false
+    for (const [pendingKey, pending] of textPending.entries()) {
+      if (pending.itemID !== itemID) continue
+      if (pending.index !== index && (pending.done || textExplicit.has(textKey(pending.itemID, pending.index))))
+        continue
+      if (replayTextKey(textBuffer.get(textKey(pending.itemID, pending.index)) || "") !== key) continue
+      textPending.set(pendingKey, {
+        ...pending,
+        done: true,
+        meta,
+        extra: pending.extra ?? extra,
+      })
+      return true
+    }
+    return false
   }
 
   const agentUpdatedHandoffMetadata = (agent: string | undefined) => {
@@ -285,8 +456,14 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   }
 
   const ensureText = (itemID: string, index: number, meta: AgencySwarmEventMeta, extra?: Record<string, unknown>) => {
-    const parts: StreamPart[] = []
+    const parts: StreamPart[] = drainRetiredParts()
     const key = textKey(itemID, index)
+    if (shouldHoldText() && !textOpen.has(key)) {
+      lastTextItemID = itemID
+      textIndex.set(itemID, index)
+      deferText(itemID, index, false, meta, extra)
+      return parts
+    }
     const activeItemID = lastTextItemID
     const activeIndex = activeItemID ? (textIndex.get(activeItemID) ?? 0) : undefined
     const activeKey = activeItemID !== undefined ? textKey(activeItemID, activeIndex) : undefined
@@ -316,6 +493,56 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     return parts
   }
 
+  const emitText = (pending: PendingText) => {
+    const key = textKey(pending.itemID, pending.index)
+    const text = textBuffer.get(key) || ""
+    if (
+      text &&
+      !pending.done &&
+      hasShiftedDoneItemTextReplay(pending.itemID, pending.index, text) &&
+      !textDeclared.has(key)
+    ) {
+      textBuffer.delete(key)
+      return []
+    }
+    if (text && sawReasoning && hasClosedReasoningTextReplay(pending.itemID, pending.index, text)) {
+      textBuffer.delete(key)
+      return []
+    }
+    const parts = ensureText(pending.itemID, pending.index, pending.meta, pending.extra)
+    pendingTextFlushed.add(key)
+    if (text) {
+      parts.push({
+        type: "text-delta",
+        text,
+        providerMetadata: mergeMeta(pending.meta, {
+          item_id: pending.itemID,
+          content_index: pending.index,
+          ...(pending.extra ?? {}),
+        }),
+      })
+      rememberPendingTextReplay(pending.itemID, pending.index, text)
+    }
+    if (pending.done) {
+      if (text && sawReasoning) rememberClosedReasoningTextReplay(pending.itemID, pending.index, text)
+      parts.push(...closeText(key, pending.meta, pending.extra))
+    }
+    return parts
+  }
+
+  const flushPendingText = (force: boolean) => {
+    if (!force && hasOpenReasoning()) return []
+    const parts: StreamPart[] = drainRetiredParts()
+    if (force) parts.push(...flushPendingReasoningDeltas())
+    flushingText = true
+    for (const [key, pending] of Array.from(textPending.entries())) {
+      textPending.delete(key)
+      parts.push(...emitText(pending))
+    }
+    flushingText = false
+    return parts
+  }
+
   const textDelta = (
     itemID: string,
     index: number,
@@ -325,8 +552,13 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   ) => {
     if (!delta) return []
     const key = textKey(itemID, index)
+    if (!textOpen.has(key) && isShiftedDoneItemTextReplay(itemID, index, delta)) return []
     const existing = textBuffer.get(key) || ""
     textBuffer.set(key, existing + delta)
+    textDeltaSeen.add(key)
+    if (shouldHoldText() && !textOpen.has(key)) {
+      return deferText(itemID, index, false, meta, extra)
+    }
     return [
       {
         type: "text-delta",
@@ -349,15 +581,50 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   ) => {
     const key = textKey(itemID, index)
     const isOpen = textOpen.has(key)
+    if (
+      !isOpen &&
+      final !== undefined &&
+      (hasDoneItemTextReplay(itemID, index, final) || isShiftedDoneItemTextReplay(itemID, index, final))
+    ) {
+      return []
+    }
+    if (!isOpen && final !== undefined && hasPendingTextReplay(itemID, index, final)) {
+      return []
+    }
+    if (!isOpen && final !== undefined && sawReasoning && hasClosedReasoningTextReplay(itemID, index, final)) {
+      return []
+    }
+    if (
+      !isOpen &&
+      final !== undefined &&
+      !textPending.has(key) &&
+      markPendingTextDone(itemID, index, final, meta, extra)
+    ) {
+      return []
+    }
     const raw = textBuffer.get(key) || ""
     if (!isOpen && final !== undefined && raw && !final.startsWith(raw)) {
       textBuffer.delete(key)
     }
     const current = textBuffer.get(key) || ""
+    if (!isOpen && final !== undefined && final === current && textPending.has(key)) {
+      return deferText(itemID, index, true, meta, extra)
+    }
     if (!isOpen && (final === undefined || final === current)) {
       return []
     }
+    if (shouldHoldText() && !isOpen) {
+      if (final) {
+        const suffix = final.startsWith(current) ? final.slice(current.length) : current ? "" : final
+        if (suffix) {
+          textBuffer.set(key, current + suffix)
+        }
+      }
+      return deferText(itemID, index, final !== undefined, meta, extra)
+    }
     if (final !== undefined && final === current) {
+      if (pendingTextFlushed.has(key) || sawReasoning) rememberPendingTextReplay(itemID, index, final)
+      if (sawReasoning) rememberClosedReasoningTextReplay(itemID, index, final)
       return closeText(key, meta, extra)
     }
     const parts = isOpen ? [] : ensureText(itemID, index, meta, extra)
@@ -368,6 +635,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     if (!suffix && final !== undefined && current && !final.startsWith(current) && !textOpen.has(key)) {
       return []
     }
+    if (final !== undefined && (pendingTextFlushed.has(key) || sawReasoning))
+      rememberPendingTextReplay(itemID, index, final)
+    if (final !== undefined && sawReasoning) rememberClosedReasoningTextReplay(itemID, index, final)
     parts.push(...closeText(key, meta, extra))
     return parts
   }
@@ -378,6 +648,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     meta: AgencySwarmEventMeta,
     extra?: Record<string, unknown>,
   ) => {
+    sawReasoning = true
     const key = reasoningKey(itemID, index)
     if (reasoningOpen.has(key)) {
       lastReasoningItemID = itemID
@@ -404,22 +675,21 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     ]
   }
 
-  const reasoningDelta = (
+  const emitReasoningDelta = (
     itemID: string,
     index: number,
-    delta: string,
+    text: string,
     meta: AgencySwarmEventMeta,
     extra?: Record<string, unknown>,
   ) => {
-    if (!delta) return []
     const key = reasoningKey(itemID, index)
     const existing = reasoningBuffer.get(key) || ""
-    reasoningBuffer.set(key, existing + delta)
+    reasoningBuffer.set(key, existing + text)
     return [
       {
         type: "reasoning-delta",
         id: key,
-        text: delta,
+        text,
         providerMetadata: mergeMeta(meta, {
           item_id: itemID,
           summary_index: index,
@@ -429,46 +699,138 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     ]
   }
 
+  const isPrefixReasoningDelta = (current: string, delta: string) => {
+    if (!current || !delta.startsWith(current)) return false
+    return true
+  }
+
+  const isLikelyCumulativeReasoningDelta = (current: string, delta: string) => {
+    if (!isPrefixReasoningDelta(current, delta)) return false
+    if (delta.length === current.length) return true
+    return !/\s$/.test(current)
+  }
+
+  const flushPendingReasoningDelta = (key: string, cumulative: boolean): StreamPart[] => {
+    const pending = reasoningDeltaPending.get(key)
+    if (!pending) return []
+    reasoningDeltaPending.delete(key)
+    const text = cumulative ? pending.delta.slice(pending.current.length) : pending.delta
+    return text ? emitReasoningDelta(pending.itemID, pending.index, text, pending.meta, pending.extra) : []
+  }
+
+  const flushPendingReasoningDeltas = () => {
+    return Array.from(reasoningDeltaPending.keys()).flatMap((key) => {
+      return flushPendingReasoningDelta(key, false)
+    })
+  }
+
+  const reasoningDelta = (
+    itemID: string,
+    index: number,
+    delta: string,
+    meta: AgencySwarmEventMeta,
+    extra?: Record<string, unknown>,
+  ) => {
+    if (!delta) return []
+    const key = reasoningKey(itemID, index)
+    const pending = reasoningDeltaPending.get(key)
+    const parts = pending
+      ? flushPendingReasoningDelta(key, isLikelyCumulativeReasoningDelta(pending.current, pending.delta))
+      : []
+    const current = reasoningBuffer.get(key) || ""
+    if (isPrefixReasoningDelta(current, delta)) {
+      reasoningDeltaPending.set(key, { itemID, index, current, delta, meta, extra })
+      return parts
+    }
+    return [...parts, ...emitReasoningDelta(itemID, index, delta, meta, extra)]
+  }
+
+  const closeReasoning = (
+    itemID: string,
+    index: number,
+    meta: AgencySwarmEventMeta,
+    extra?: Record<string, unknown>,
+  ) => {
+    const key = reasoningKey(itemID, index)
+    if (!reasoningOpen.has(key)) return []
+    const parts = flushPendingReasoningDelta(key, false)
+    reasoningOpen.delete(key)
+    reasoningDonePending.delete(key)
+    const set = reasoningByItem.get(itemID)
+    if (set) {
+      set.delete(key)
+      if (set.size === 0) {
+        reasoningByItem.delete(itemID)
+      }
+    }
+    reasoningWaitForDone.delete(itemID)
+    parts.push({
+      type: "reasoning-end",
+      id: key,
+      providerMetadata: mergeMeta(meta, {
+        item_id: itemID,
+        summary_index: index,
+        ...(extra ?? {}),
+      }),
+    })
+    return parts
+  }
+
+  const flushDoneReasoning = (force = false) => {
+    return Array.from(reasoningDonePending.values()).flatMap((pending) => {
+      if (!force && reasoningWaitForDone.has(pending.itemID)) return []
+      return closeReasoning(pending.itemID, pending.index, pending.meta, pending.extra)
+    })
+  }
+
+  const closeOpenReasoning = () => {
+    return Array.from(reasoningOpen.values()).flatMap((key) => {
+      const pending = reasoningDonePending.get(key)
+      if (pending) return closeReasoning(pending.itemID, pending.index, pending.meta, pending.extra)
+      const separator = key.lastIndexOf(":")
+      const itemID = separator < 0 ? key : key.slice(0, separator)
+      const index = separator < 0 ? 0 : Number(key.slice(separator + 1))
+      return closeReasoning(itemID, Number.isFinite(index) ? index : 0, {}, {})
+    })
+  }
+
   const finishReasoning = (
     itemID: string,
     index: number,
     text: string | undefined,
     meta: AgencySwarmEventMeta,
     extra?: Record<string, unknown>,
+    close = true,
   ) => {
     const key = reasoningKey(itemID, index)
     const isOpen = reasoningOpen.has(key)
+    const pending = reasoningDeltaPending.get(key)
     const raw = reasoningBuffer.get(key) || ""
+    const parts: StreamPart[] = pending
+      ? flushPendingReasoningDelta(key, text !== undefined && text.startsWith(pending.delta))
+      : []
     if (!isOpen && text !== undefined && raw && !text.startsWith(raw)) {
       reasoningBuffer.delete(key)
     }
     const current = reasoningBuffer.get(key) || ""
     if (!isOpen && (text === undefined || text === current)) {
-      return []
+      return parts
     }
-    const parts = isOpen ? [] : ensureReasoning(itemID, index, meta, extra)
+    if (!isOpen) parts.push(...ensureReasoning(itemID, index, meta, extra))
     const suffix = text ? (text.startsWith(current) ? text.slice(current.length) : current ? "" : text) : ""
     if (suffix) {
       parts.push(...reasoningDelta(itemID, index, suffix, meta, extra))
     }
-    if (reasoningOpen.has(key)) {
-      reasoningOpen.delete(key)
-      const set = reasoningByItem.get(itemID)
-      if (set) {
-        set.delete(key)
-        if (set.size === 0) {
-          reasoningByItem.delete(itemID)
-        }
+    if (!close) {
+      if (reasoningOpen.has(key)) {
+        reasoningDonePending.set(key, { itemID, index, meta, extra })
       }
-      parts.push({
-        type: "reasoning-end",
-        id: key,
-        providerMetadata: mergeMeta(meta, {
-          item_id: itemID,
-          summary_index: index,
-          ...(extra ?? {}),
-        }),
-      })
+      return parts
+    }
+    const closed = closeReasoning(itemID, index, meta, extra)
+    if (closed.length > 0) {
+      parts.push(...closed)
+      parts.push(...flushPendingText(false))
     }
     return parts
   }
@@ -480,7 +842,8 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     meta: AgencySwarmEventMeta,
     extra?: Record<string, unknown>,
   ) => {
-    const parts: StreamPart[] = []
+    const parts: StreamPart[] = [...drainRetiredParts(), ...flushDoneReasoning()]
+    parts.push(...flushPendingText(true))
     const tool = ensureTool(callID, toolName)
     if (!tool.started) {
       tool.started = true
@@ -660,6 +1023,11 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   const textItemID = (event: Record<string, unknown>) => asString(event["item_id"]) || lastTextItemID
   const reasoningItemID = (event: Record<string, unknown>) => asString(event["item_id"]) || lastReasoningItemID
 
+  const summaryText = (summary: unknown[], index: number) => {
+    const record = asRecord(summary[index])
+    return asRawString(record?.["text"])
+  }
+
   const handleOutputItemAdded = (
     item: Record<string, unknown>,
     outputIndex: number | undefined,
@@ -679,6 +1047,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
 
     if (itemType === "reasoning") {
       if (!itemID) return []
+      if (Object.hasOwn(item, "encrypted_content")) reasoningWaitForDone.add(itemID)
       return ensureReasoning(
         itemID,
         0,
@@ -737,9 +1106,11 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       if (!itemID) return []
       const text = extractMessageText(item)
       const index = textIndex.get(itemID) ?? 0
+      const deltaBacked = textDeltaSeen.has(textKey(itemID, index))
       const parts = finishText(itemID, index, text, eventMeta, outputMeta(outputIndex))
       if (text && textBuffer.get(textKey(itemID, index)) === text) {
         rememberResponseReplay(responseTextReplay, item, text)
+        rememberDoneItemTextReplay(itemID, index, text, deltaBacked)
       }
       return parts
     }
@@ -756,10 +1127,11 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
         .filter((value) => reasoningOpen.has(value))
         .flatMap((key) => {
           const index = Number(key.split(":")[1] || "0")
+          const summaryIndex = Number.isFinite(index) ? index : 0
           return finishReasoning(
             itemID,
-            Number.isFinite(index) ? index : 0,
-            undefined,
+            summaryIndex,
+            summaryText(summary, summaryIndex),
             eventMeta,
             outputMeta(outputIndex, { encrypted_content: item["encrypted_content"] ?? null }),
           )
@@ -852,6 +1224,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       if (hasResponseReplay(responseTextReplay, rawItem, text)) {
         return []
       }
+      if (hasAnyPendingTextReplay(itemID, text) || hasAnyCompletedResponseTextReplay(itemID, text)) {
+        return []
+      }
       const index = 0
       if (shouldSkipDuplicateAssistantText(itemID, index, text)) {
         return []
@@ -898,7 +1273,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       responseType === "response.incomplete"
     ) {
       setUsage(asRecord(asRecord(nested["response"])?.["usage"]))
-      return { parts: [] }
+      if (responseType !== "response.completed") return { parts: [] }
+      rememberCompletedResponseTextReplay()
+      return { parts: [...flushDoneReasoning(true), ...closeOpenReasoning(), ...flushPendingText(true)] }
     }
 
     if (responseType === "response.output_item.added" && item) {
@@ -916,6 +1293,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       const partType = asString(part?.["type"]) || ""
       if (partType !== "output_text" && partType !== "refusal") return { parts: [] }
       const contentIndex = asNumber(nested["content_index"]) ?? 0
+      const key = textKey(itemID, contentIndex)
+      textExplicit.add(key)
+      textDeclared.add(key)
       return {
         parts: ensureText(
           itemID,
@@ -931,7 +1311,9 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       if (delta === undefined) return { parts: [] }
       const itemID = textItemID(nested)
       if (!itemID) return { parts: [] }
-      const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
+      const explicitIndex = asNumber(nested["content_index"])
+      const contentIndex = explicitIndex ?? textIndex.get(itemID) ?? 0
+      if (explicitIndex !== undefined) textExplicit.add(textKey(itemID, contentIndex))
       const textMeta = outputMeta(outputIndex, { content_index: contentIndex })
       return {
         parts: [
@@ -944,13 +1326,21 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     if (responseType === "response.output_text.done" || responseType === "response.content_part.done") {
       const itemID = textItemID(nested)
       if (!itemID) return { parts: [] }
-      const contentIndex = asNumber(nested["content_index"]) ?? textIndex.get(itemID) ?? 0
+      const explicitIndex = asNumber(nested["content_index"])
+      const contentIndex = explicitIndex ?? textIndex.get(itemID) ?? 0
+      const key = textKey(itemID, contentIndex)
       const part = asRecord(nested["part"])
       const final =
         asRawString(nested["text"]) ??
         asRawString(part?.["text"]) ??
         asRawString(part?.["refusal"]) ??
         asRawString(nested["delta"])
+      if (
+        explicitIndex !== undefined &&
+        (textBuffer.has(key) || (final !== undefined && !hasDeltaBackedDoneItemTextReplay(itemID, final)))
+      ) {
+        textExplicit.add(key)
+      }
       return {
         parts: finishText(
           itemID,
@@ -997,7 +1387,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       const part = asRecord(nested["part"])
       const text = asRawString(nested["text"])
       const final = text ?? asRawString(part?.["text"])
-      return { parts: finishReasoning(itemID, summaryIndex, final, eventMeta, outputMeta(outputIndex)) }
+      return { parts: finishReasoning(itemID, summaryIndex, final, eventMeta, outputMeta(outputIndex), false) }
     }
 
     if (
@@ -1095,7 +1485,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   }
 
   const handleMessagesPayload = async (payload: Record<string, unknown>) => {
-    const parts: StreamPart[] = []
+    const parts: StreamPart[] = drainRetiredParts()
     const newMessages = Array.isArray(payload["new_messages"]) ? payload["new_messages"] : []
     await input.persistMessages(newMessages)
     setUsage(asRecord(payload["usage"]))
@@ -1103,6 +1493,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     const runFromMessages = asString(payload["run_id"])
     if (runFromMessages) {
       await input.handleRunID(runFromMessages)
+      parts.push(...drainRetiredParts())
     }
 
     for (const output of extractFunctionCallOutputs(newMessages)) {
@@ -1122,6 +1513,8 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
       const text = extractMessageText(message)
       if (!text) continue
       if (hasResponseReplay(responseTextReplay, message, text)) continue
+      if (hasDoneItemTextReplay(itemID, 0, text)) continue
+      if (hasAnyPendingTextReplay(itemID, text) || hasAnyCompletedResponseTextReplay(itemID, text)) continue
       if (shouldSkipDuplicateAssistantText(itemID, 0, text)) continue
       parts.push(
         ...finishText(itemID, 0, text, messageMeta, {
@@ -1139,19 +1532,27 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     for (const key of Array.from(textBuffer.keys())) {
       if (!textOpen.has(key)) textBuffer.delete(key)
     }
+    for (const pending of Array.from(reasoningDonePending.values())) {
+      retiredParts.push(...closeReasoning(pending.itemID, pending.index, pending.meta, pending.extra))
+    }
+    retiredParts.push(...flushPendingText(false))
+    pendingTextReplay.clear()
+    pendingTextFlushed.clear()
+    closedReasoningTextReplay.clear()
+    completedResponseTextReplay.clear()
+    doneItemTextReplay.clear()
+    doneItemShiftedTextReplay.clear()
+    doneItemDeltaTextReplay.clear()
   }
 
   const flushOpen = () => {
-    const parts: StreamPart[] = []
+    const parts: StreamPart[] = drainRetiredParts()
+    parts.push(...closeOpenReasoning())
+    parts.push(...flushPendingText(true))
 
     for (const key of Array.from(textOpen.values())) {
       textOpen.delete(key)
       parts.push({ type: "text-end", providerMetadata: {} })
-    }
-
-    for (const key of Array.from(reasoningOpen.values())) {
-      reasoningOpen.delete(key)
-      parts.push({ type: "reasoning-end", id: key, providerMetadata: {} })
     }
 
     for (const tool of Array.from(tools.values())) {

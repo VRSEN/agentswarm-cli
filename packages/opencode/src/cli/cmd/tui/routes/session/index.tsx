@@ -1521,28 +1521,54 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
     // OpenRouter sends encrypted reasoning data that appears as [REDACTED]
     return props.part.text.replace("[REDACTED]", "").trim()
   })
+  const isDone = createMemo(() => props.part.time.end !== undefined)
+  const duration = createMemo(() => {
+    const end = props.part.time.end
+    return end === undefined ? undefined : Locale.duration(Math.max(0, end - props.part.time.start))
+  })
+  const visible = createMemo(() => ctx.showThinking() && (content().length > 0 || !isDone()))
   return (
-    <Show when={content() && ctx.showThinking()}>
-      <box
-        id={"text-" + props.part.id}
-        paddingLeft={2}
-        marginTop={1}
-        flexDirection="column"
-        border={["left"]}
-        customBorderChars={SplitBorder.customBorderChars}
-        borderColor={theme.backgroundElement}
-      >
-        <code
-          filetype="markdown"
-          drawUnstyledText={false}
-          streaming={true}
-          syntaxStyle={subtleSyntax()}
-          content={"_Thinking:_ " + content()}
-          conceal={ctx.conceal()}
-          fg={theme.textMuted}
-        />
+    <Show when={visible()}>
+      <box id={"text-" + props.part.id} paddingLeft={3} marginTop={1} flexDirection="column" flexShrink={0}>
+        <ReasoningHeader done={isDone()} duration={duration()} />
+        <Show when={content()}>
+          <box marginTop={1}>
+            <code
+              filetype="markdown"
+              drawUnstyledText={false}
+              streaming={true}
+              syntaxStyle={subtleSyntax()}
+              content={content()}
+              conceal={ctx.conceal()}
+              fg={theme.textMuted}
+            />
+          </box>
+        </Show>
       </box>
     </Show>
+  )
+}
+
+function ReasoningHeader(props: { done: boolean; duration?: string }) {
+  const { theme } = useTheme()
+  const fg = () => RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
+
+  return (
+    <Switch>
+      <Match when={!props.done}>
+        <box flexDirection="row">
+          <Spinner color={fg()}>Thinking</Spinner>
+        </box>
+      </Match>
+      <Match when={true}>
+        <text fg={fg()} wrapMode="none">
+          <span>Thought</span>
+          <Show when={props.duration}>
+            <span>: {props.duration}</span>
+          </Show>
+        </text>
+      </Match>
+    </Switch>
   )
 }
 

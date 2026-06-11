@@ -705,7 +705,7 @@ function emitTask(state: State): void {
       },
       {
         kind: "reasoning",
-        text: "Thinking: tracing reducer and footer boundaries",
+        text: "tracing reducer and footer boundaries",
         phase: "progress",
         source: "reasoning",
         messageID: "sub_demo_msg_reasoning",

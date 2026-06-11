@@ -41,9 +41,18 @@ function latestText(assistant: SessionMessageAssistant | undefined) {
   return assistant?.content.findLast((item): item is SessionMessageAssistantText => item.type === "text")
 }
 
+type ReasoningTime = {
+  start?: number
+  end?: number
+}
+
+type ReasoningPart = SessionMessageAssistantReasoning & {
+  time?: ReasoningTime
+}
+
 function latestReasoning(assistant: SessionMessageAssistant | undefined, reasoningID: string) {
   return assistant?.content.findLast(
-    (item): item is SessionMessageAssistantReasoning => item.type === "reasoning" && item.id === reasoningID,
+    (item): item is ReasoningPart => item.type === "reasoning" && item.id === reasoningID,
   )
 }
 
@@ -236,11 +245,13 @@ export const { use: useSyncV2, provider: SyncProviderV2 } = createSimpleContext(
           break
         case "session.next.reasoning.started":
           update(event.properties.sessionID, (draft) => {
-            activeAssistant(draft)?.content.push({
+            const part: ReasoningPart = {
               type: "reasoning",
               id: event.properties.reasoningID,
               text: "",
-            })
+              time: { start: event.properties.timestamp },
+            }
+            activeAssistant(draft)?.content.push(part)
           })
           break
         case "session.next.reasoning.delta":
@@ -252,7 +263,10 @@ export const { use: useSyncV2, provider: SyncProviderV2 } = createSimpleContext(
         case "session.next.reasoning.ended":
           update(event.properties.sessionID, (draft) => {
             const match = latestReasoning(activeAssistant(draft), event.properties.reasoningID)
-            if (match) match.text = event.properties.text
+            if (match) {
+              match.text = event.properties.text
+              match.time = { ...match.time, end: event.properties.timestamp }
+            }
           })
           break
         case "session.next.retried":

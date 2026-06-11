@@ -6,7 +6,7 @@ import { Spinner } from "@tui/component/spinner"
 import { useTheme } from "@tui/context/theme"
 import { useLocal } from "@tui/context/local"
 import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
-import { TextAttributes, type BoxRenderable, type SyntaxStyle } from "@opentui/core"
+import { RGBA, TextAttributes, type BoxRenderable, type SyntaxStyle } from "@opentui/core"
 import { useBindings } from "../../keymap"
 import { Locale } from "@/util/locale"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
@@ -32,6 +32,13 @@ import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from
 
 const id = "internal:session-v2-debug"
 const route = "session.v2.messages"
+type ReasoningTime = {
+  start?: number
+  end?: number
+}
+type AssistantReasoningPart = SessionMessageAssistantReasoning & {
+  time?: ReasoningTime
+}
 
 function currentSessionID(api: TuiPluginApi) {
   const current = api.route.current
@@ -317,7 +324,7 @@ function AssistantMessage(props: {
               <AssistantText part={part as SessionMessageAssistantText} syntax={props.syntax} />
             </Match>
             <Match when={part.type === "reasoning"}>
-              <AssistantReasoning part={part as SessionMessageAssistantReasoning} subtleSyntax={props.subtleSyntax} />
+              <AssistantReasoning part={part as AssistantReasoningPart} subtleSyntax={props.subtleSyntax} />
             </Match>
             <Match when={part.type === "tool"}>
               <AssistantTool part={part as SessionMessageAssistantTool} sessionID={props.sessionID} />
@@ -378,31 +385,59 @@ function AssistantText(props: { part: SessionMessageAssistantText; syntax: Synta
   )
 }
 
-function AssistantReasoning(props: { part: SessionMessageAssistantReasoning; subtleSyntax: SyntaxStyle }) {
+function AssistantReasoning(props: { part: AssistantReasoningPart; subtleSyntax: SyntaxStyle }) {
   const { theme } = useTheme()
   const content = createMemo(() => props.part.text.replace("[REDACTED]", "").trim())
+  const isDone = createMemo(() => props.part.time === undefined || props.part.time.end !== undefined)
+  const duration = createMemo(() => {
+    const start = props.part.time?.start
+    const end = props.part.time?.end
+    if (start === undefined || end === undefined) return
+    return Locale.duration(end - start)
+  })
+  const visible = createMemo(() => content().length > 0 || !isDone())
   return (
-    <Show when={content()}>
-      <box
-        paddingLeft={2}
-        marginTop={1}
-        flexDirection="column"
-        border={["left"]}
-        customBorderChars={SplitBorder.customBorderChars}
-        borderColor={theme.backgroundElement}
-        flexShrink={0}
-      >
-        <code
-          filetype="markdown"
-          drawUnstyledText={false}
-          streaming={true}
-          syntaxStyle={props.subtleSyntax}
-          content={"_Thinking:_ " + content()}
-          conceal={true}
-          fg={theme.textMuted}
-        />
+    <Show when={visible()}>
+      <box paddingLeft={3} marginTop={1} flexDirection="column" flexShrink={0}>
+        <ReasoningHeader done={isDone()} duration={duration()} />
+        <Show when={content()}>
+          <box marginTop={1}>
+            <code
+              filetype="markdown"
+              drawUnstyledText={false}
+              streaming={true}
+              syntaxStyle={props.subtleSyntax}
+              content={content()}
+              conceal={true}
+              fg={theme.textMuted}
+            />
+          </box>
+        </Show>
       </box>
     </Show>
+  )
+}
+
+function ReasoningHeader(props: { done: boolean; duration?: string }) {
+  const { theme } = useTheme()
+  const fg = () => RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
+
+  return (
+    <Switch>
+      <Match when={!props.done}>
+        <box flexDirection="row">
+          <Spinner color={fg()}>Thinking</Spinner>
+        </box>
+      </Match>
+      <Match when={true}>
+        <text fg={fg()} wrapMode="none">
+          <span>Thought</span>
+          <Show when={props.duration}>
+            <span>: {props.duration}</span>
+          </Show>
+        </text>
+      </Match>
+    </Switch>
   )
 }
 
