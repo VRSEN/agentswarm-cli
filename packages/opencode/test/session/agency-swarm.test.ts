@@ -8031,6 +8031,103 @@ describe("session.agency-swarm", () => {
     expect(events).toEqual(["reasoning:A", "reasoning:B", "reasoning-end"])
   })
 
+  test("stream preserves prefix-matching incremental reasoning when item done has no summary", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_prefix_done" },
+          },
+        },
+      }
+      for (const delta of ["The ", "The answer"]) {
+        yield {
+          type: "data",
+          payload: {
+            type: "raw_response_event",
+            data: {
+              type: "response.reasoning_summary_text.delta",
+              item_id: "rs_prefix_done",
+              summary_index: "0",
+              output_index: "0",
+              delta,
+            },
+          },
+        }
+      }
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.done",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_prefix_done" },
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "reasoning-end") events.push("reasoning-end")
+    }
+
+    expect(events).toEqual(["reasoning:The ", "reasoning:The answer", "reasoning-end"])
+  })
+
+  test("stream preserves prefix-matching incremental reasoning before stream-end close", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "response.output_item.added",
+            output_index: "0",
+            item: { type: "reasoning", id: "rs_prefix_stream_end" },
+          },
+        },
+      }
+      for (const delta of ["The ", "The answer"]) {
+        yield {
+          type: "data",
+          payload: {
+            type: "raw_response_event",
+            data: {
+              type: "response.reasoning_summary_text.delta",
+              item_id: "rs_prefix_stream_end",
+              summary_index: "0",
+              output_index: "0",
+              delta,
+            },
+          },
+        }
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: string[] = []
+    for await (const event of stream.fullStream) {
+      if (event.type === "reasoning-delta") events.push(`reasoning:${event.text}`)
+      if (event.type === "reasoning-end") events.push("reasoning-end")
+    }
+
+    expect(events).toEqual(["reasoning:The ", "reasoning:The answer", "reasoning-end"])
+  })
+
   test("stream flushes pending cumulative reasoning before forced text and tool output", async () => {
     mockHistory()
     AgencySwarmAdapter.streamRun = async function* () {
