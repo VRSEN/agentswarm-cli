@@ -407,6 +407,8 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
     const parts: StreamPart[] = []
     const key = textKey(itemID, index)
     if (shouldHoldText() && !textOpen.has(key)) {
+      lastTextItemID = itemID
+      textIndex.set(itemID, index)
       return deferText(itemID, index, false, meta, extra)
     }
     const activeItemID = lastTextItemID
@@ -467,7 +469,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
   }
 
   const flushPendingText = (force: boolean) => {
-    if (hasOpenReasoning()) return []
+    if (!force && hasOpenReasoning()) return []
     const parts: StreamPart[] = []
     flushingText = true
     for (const [key, pending] of Array.from(textPending.entries())) {
