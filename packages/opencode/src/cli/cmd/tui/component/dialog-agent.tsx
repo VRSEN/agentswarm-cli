@@ -47,7 +47,7 @@ export function DialogAgent() {
       currentProviderID: currentModel()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
-      productMode: local.product.current(),
+      productMode: local.product?.current(),
     }),
   )
 

@@ -37,7 +37,7 @@ On startup, the CLI can detect the project, prepare the project Python environme
 ## Main TUI Flows
 
 - `/modes` switches between Build, Plan, and Run.
-- Build is Agent Builder: native OpenCode build behavior with Agent Swarm guidance.
+- Build uses native OpenCode build behavior with Agent Swarm guidance.
 - Plan is native OpenCode Plan mode for preparing work before Build.
 - Run connects to or starts an Agency Swarm FastAPI server and sends prompts to the active swarm.
 - `/auth` manages OpenAI and Anthropic credentials used by Agency Swarm runs.

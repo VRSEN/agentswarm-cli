@@ -248,7 +248,7 @@ export function Prompt(props: PromptProps) {
   const canSwitchOrgs = createMemo(() => sync.data.console_state.switchableOrgCount > 1)
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
-      productMode: local.product.current(),
+      productMode: local.product?.current(),
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
@@ -273,7 +273,7 @@ export function Prompt(props: PromptProps) {
   }
   function promptModel() {
     const model = local.model.current()
-    const mode = local.product.current()
+    const mode = local.product?.current()
     if ((mode === "build" || mode === "plan") && model?.providerID === AgencySwarmAdapter.PROVIDER_ID) {
       return firstNativeModel() ?? model
     }

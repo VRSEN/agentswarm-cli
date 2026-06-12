@@ -565,7 +565,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentNativeServer.planExitNext()
     currentTui.write(`${planPrompt}\r`)
     await currentTui.waitFor(
-      () => currentTui!.screen().includes("Would you like to") && currentTui!.screen().includes("switch to the build"),
+      () => currentTui!.screen().includes("Would you like to") && currentTui!.screen().includes("switch to Build"),
       "Plan approval question",
       tuiInteractionTimeoutMs,
     )

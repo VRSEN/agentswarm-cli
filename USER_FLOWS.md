@@ -251,8 +251,9 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** `connect` stores normalized backend config and optional bearer token.
 - **Happy-path proof:** `agencies` discovers available agencies.
 - **Happy-path proof:** `use` pins a default agency id.
-- **Happy-path proof:** `agent` scaffold helpers are not promoted in CLI help.
+- **Happy-path proof:** `agent` provides Agent Builder scaffold helpers.
 - **Failure scenarios to test:** URL normalization and discovery failures surface in the CLI command.
+- **Failure scenarios to test:** `agentswarm agency agent new` fails visibly when `agency-swarm create-agent-template` fails.
 
 ### Trust-Safe Telemetry
 

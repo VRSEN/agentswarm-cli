@@ -270,7 +270,7 @@ export function Session() {
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
-      productMode: local.product.current(),
+      productMode: local.product?.current(),
     }),
   )
   const agencyProviderOptions = createMemo(() =>

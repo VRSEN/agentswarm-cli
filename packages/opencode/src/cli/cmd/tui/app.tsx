@@ -459,7 +459,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const connected = useConnected()
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
-      productMode: local.product.current(),
+      productMode: local.product?.current(),
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,

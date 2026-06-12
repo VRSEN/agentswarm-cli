@@ -10,7 +10,7 @@ import path from "path"
 
 export const AgencyCommand = cmd({
   command: "agency",
-  describe: "Agency Swarm backend management: connect, discover swarms, set default swarm",
+  describe: "Agency Swarm backend management: connect, discover agencies, set default agency, Agent Builder helpers",
   builder: (yargs: Argv) =>
     yargs
       .command(AgencyConnectCommand)
@@ -165,14 +165,14 @@ const AgencyUseCommand = cmd({
 
 const AgencyAgentCommand = cmd({
   command: "agent",
-  describe: false,
+  describe: "Agency Swarm Agent Builder helpers",
   builder: (yargs: Argv) => yargs.command(AgencyAgentNewCommand).demandCommand(),
   async handler() {},
 })
 
 const AgencyAgentNewCommand = cmd({
   command: "new <name>",
-  describe: false,
+  describe: "create a new Agency Swarm agent scaffold via `agency-swarm create-agent-template`",
   builder: (yargs: Argv) =>
     yargs
       .positional("name", {

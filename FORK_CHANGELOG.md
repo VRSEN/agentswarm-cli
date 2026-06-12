@@ -213,7 +213,7 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 
 - **Agency backend management commands are debugging and development tools**
   - Intent: keep backend lifecycle commands available for debugging and development without treating them as the main end-user path.
-  - Behavior: the fork exposes backend install and maintenance commands, but they are debugging and development tools rather than core product surface. `agentswarm agency agent new` remains hidden from help instead of being expanded as an Agent Builder path.
+  - Behavior: the fork exposes backend install and maintenance commands, but they are debugging and development tools rather than core product surface.
   - Implementation: `AgencyCommand` in `packages/opencode/src/cli/cmd/agency.ts`.
   - Added by: `14abd070`
 
@@ -338,7 +338,7 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 
 ## Web/App Surface
 
-- **README mode overview explains Builder, Plan, and Run**
+- **README mode overview explains Build, Plan, and Run**
   - Intent: document the fork's mode model clearly at the top level.
   - Behavior: the README explains `/modes`, Build, Plan, and Run, with Run as the connected Agency Swarm path and Build or Plan as native OpenCode modes under the Agent Swarm umbrella.
   - Implementation: the `Main TUI Flows` section in `README.md`.
