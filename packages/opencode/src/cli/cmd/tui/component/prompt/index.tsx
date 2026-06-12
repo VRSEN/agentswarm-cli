@@ -1593,12 +1593,7 @@ export function Prompt(props: PromptProps) {
       return false
     }
 
-    const submittedPrompt = structuredClone(unwrap(store.prompt))
-    const savedPrompt = { input: store.prompt.input, parts: [...store.prompt.parts] }
     let sessionID = props.sessionID
-    let createdSessionID: string | undefined
-    let navigatedToCreatedSession = false
-    let navigateTimer: ReturnType<typeof setTimeout> | undefined
     if (sessionID == null) {
       const workspace = workspaceSelection()
       const workspaceID = iife(() => {
@@ -1628,7 +1623,6 @@ export function Prompt(props: PromptProps) {
       }
 
       sessionID = res.data.id
-      createdSessionID = sessionID
     }
 
     const messageID = MessageID.ascending()
@@ -1740,38 +1734,18 @@ export function Prompt(props: PromptProps) {
           provider_id: productProviderID,
         },
       })
-      void sdk.client.session
-        .prompt(promptPayload)
+      sdk.client.session
+        .prompt(promptPayload, { throwOnError: true })
         .then((result) => {
           captureTaskCompleted(messageID, result)
-          if (result?.error) throw result.error
-          if (editorParts.length > 0) editor.markSelectionSent()
         })
         .catch((error) => {
           captureTaskFailed(messageID, error)
-          setStore("prompt", savedPrompt)
-          input.setText(savedPrompt.input)
-          restoreExtmarksFromParts(savedPrompt.parts)
           const message = toErrorMessage(error)
           const shouldReopenAuth = shouldOpenAgencyAuthDialog({
             providerID: productProviderID,
             message,
           })
-          if (navigateTimer) {
-            clearTimeout(navigateTimer)
-            navigateTimer = undefined
-          }
-          if (createdSessionID && shouldReopenAuth) {
-            if (navigatedToCreatedSession) {
-              route.navigate({
-                type: "home",
-                prompt: submittedPrompt,
-              })
-            }
-            void sdk.client.session.delete({
-              sessionID: createdSessionID,
-            })
-          }
           if (shouldReopenAuth) {
             toast.show({
               variant: "error",
@@ -1787,6 +1761,7 @@ export function Prompt(props: PromptProps) {
             duration: 5000,
           })
         })
+      if (editorParts.length > 0) editor.markSelectionSent()
     }
 
     clearSubmittedPrompt(currentMode)
@@ -1794,9 +1769,7 @@ export function Prompt(props: PromptProps) {
     // temporary hack to make sure the message is sent
     if (!props.sessionID) {
       if (editorParts.length > 0) editor.preserveSelectionFromNewSession()
-      navigateTimer = setTimeout(() => {
-        navigateTimer = undefined
-        navigatedToCreatedSession = true
+      setTimeout(() => {
         route.navigate({
           type: "session",
           sessionID,
