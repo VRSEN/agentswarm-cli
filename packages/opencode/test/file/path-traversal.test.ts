@@ -25,6 +25,7 @@ describe("Filesystem.contains", () => {
       expect(Filesystem.contains("/project", "/project/src")).toBe(true)
       expect(Filesystem.contains("/project", "/project/src/file.ts")).toBe(true)
       expect(Filesystem.contains("/project", "/project")).toBe(true)
+      expect(Filesystem.contains("/project", "/project/..config")).toBe(true)
     }),
   )
 
@@ -33,6 +34,7 @@ describe("Filesystem.contains", () => {
       expect(Filesystem.contains("/project", "/project/../etc")).toBe(false)
       expect(Filesystem.contains("/project", "/project/src/../../etc")).toBe(false)
       expect(Filesystem.contains("/project", "/etc/passwd")).toBe(false)
+      expect(Filesystem.contains("/project", "/")).toBe(false)
     }),
   )
 
@@ -48,6 +50,29 @@ describe("Filesystem.contains", () => {
     Effect.sync(() => {
       expect(Filesystem.contains("/project", "/project-other/file")).toBe(false)
       expect(Filesystem.contains("/project", "/projectfile")).toBe(false)
+    }),
+  )
+})
+
+describe("Filesystem.overlaps", () => {
+  it.effect("detects containment in either direction", () =>
+    Effect.sync(() => {
+      expect(Filesystem.overlaps("/project", "/project/src")).toBe(true)
+      expect(Filesystem.overlaps("/project/src", "/project")).toBe(true)
+      expect(Filesystem.overlaps("/project", "/project")).toBe(true)
+    }),
+  )
+
+  it.effect("keeps child names beginning with .. inside the parent", () =>
+    Effect.sync(() => {
+      expect(Filesystem.overlaps("/project", "/project/..config")).toBe(true)
+    }),
+  )
+
+  it.effect("rejects unrelated sibling and parent-only paths", () =>
+    Effect.sync(() => {
+      expect(Filesystem.overlaps("/project", "/project-other")).toBe(false)
+      expect(Filesystem.overlaps("/project/src", "/etc")).toBe(false)
     }),
   )
 })

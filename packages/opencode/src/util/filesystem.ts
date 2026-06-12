@@ -1,7 +1,7 @@
 import { chmod, mkdir, readFile, stat as statFile, writeFile } from "fs/promises"
 import { createWriteStream, existsSync, statSync } from "fs"
 import { realpathSync } from "fs"
-import { dirname, isAbsolute, join, relative, resolve as pathResolve, win32 } from "path"
+import { dirname, isAbsolute, join, relative, resolve as pathResolve, sep, win32 } from "path"
 import { Readable } from "stream"
 import { pipeline } from "stream/promises"
 import { Glob } from "@opencode-ai/core/util/glob"
@@ -163,13 +163,12 @@ export function windowsPath(p: string): string {
   )
 }
 export function overlaps(a: string, b: string) {
-  const relA = relative(a, b)
-  const relB = relative(b, a)
-  return !relA || !relA.startsWith("..") || !relB || !relB.startsWith("..")
+  return contains(a, b) || contains(b, a)
 }
 
 export function contains(parent: string, child: string) {
-  return !relative(parent, child).startsWith("..")
+  const result = relative(parent, child)
+  return result === "" || (!isAbsolute(result) && result !== ".." && !result.startsWith(`..${sep}`))
 }
 
 export async function findUp(

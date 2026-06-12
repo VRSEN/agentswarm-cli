@@ -363,8 +363,12 @@ describe("AppFileSystem", () => {
 
     test("overlaps detects overlapping paths", () => {
       expect(AppFileSystem.overlaps("/a/b", "/a/b/c")).toBe(true)
+      expect(AppFileSystem.overlaps("/a/b", "/a/b")).toBe(true)
+      expect(AppFileSystem.overlaps("/a/b", "/a/b/..c")).toBe(true)
       expect(AppFileSystem.overlaps("/a/b/c", "/a/b")).toBe(true)
+      expect(AppFileSystem.overlaps("/a/b", "/a")).toBe(true)
       expect(AppFileSystem.overlaps("/a", "/b")).toBe(false)
+      expect(AppFileSystem.overlaps("/a/b", "/a/bc")).toBe(false)
     })
   })
 })
