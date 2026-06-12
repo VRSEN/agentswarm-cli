@@ -392,11 +392,23 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 
 These items were checked with `git blame`, source PRs/issues, `origin/dev`, and upstream release `v1.14.25` on 2026-04-26. They are not intentional fork product behavior and should be aligned with upstream in cleanup PRs.
 
+- **Built source installs can fall back to local dist binaries during global source installs**
+  - Decision: align with upstream. Upstream `origin/dev` and `v1.14.25` do not have an equivalent local `dist` fallback, and this is not approved product behavior.
+  - Evidence: VRSEN PR #50 and issue #49 say this was a developer source-install QA fallback for `npm install -g .` from `packages/opencode`, not an end-user feature.
+  - Blame/intent check: added by bonk1t in `725ac8ec0` (`fix(install): support built source global installs`).
+  - Current implementation: `findBuiltBinary` in `packages/opencode/bin/agentswarm` and `packages/opencode/test/installation/source-install-wrapper.test.ts`.
+
 - **Prompt submit flow has fork-only retry/error handling instead of clean upstream fire-and-forget submit**
   - Decision: align with upstream. Immediate composer clearing is upstream behavior, not a fork feature, and waiting for model completion was not intentional.
   - Evidence: VRSEN PR #42 introduced the original regression by changing upstream fire-and-forget `sdk.client.session.prompt(...).catch(() => {})` into `await sdk.client.session.prompt(...)`; issue #103 names that exact root cause. VRSEN PR #88 was mostly intentional, but it carried this bug forward. VRSEN PR #99 tried to restore upstream behavior, but later follow-up code still left extra prompt-task waiting and retry/error-restoration logic instead of the clean upstream shape.
   - Blame/intent check: original regression line is `f977cea74b` (`fix: harden agent swarm auth onboarding`); current follow-up machinery is mainly `8a18f7bb`, `9e73b5f7`, and `2ad600b64`.
   - Current implementation: prompt submit flow in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`.
+
+- **Spurious package scripts remain from upstream junk**
+  - Decision: align with upstream. These scripts are not fork intent and should not be treated as Agent Swarm functionality.
+  - Evidence: upstream OpenCode PR #22160 and issue #22159 identify `random`, `clean`, `lint`, `format`, `docs`, and `deploy` as accidental junk and remove them with no logic change.
+  - Blame/intent check: local blame points to upstream/historical commits `9fdbe193cd` and `6d95f0d14c`, not bonk1t fork product work.
+  - Current implementation: `packages/opencode/package.json`.
 
 ## Maintenance Protocol
 
