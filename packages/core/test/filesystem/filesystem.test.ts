@@ -354,7 +354,11 @@ describe("AppFileSystem", () => {
 
     test("contains checks path containment", () => {
       expect(AppFileSystem.contains("/a/b", "/a/b/c")).toBe(true)
+      expect(AppFileSystem.contains("/a/b", "/a/b")).toBe(true)
+      expect(AppFileSystem.contains("/a/b", "/a/b/..c")).toBe(true)
       expect(AppFileSystem.contains("/a/b", "/a/c")).toBe(false)
+      expect(AppFileSystem.contains("/a/b", "/a")).toBe(false)
+      expect(AppFileSystem.contains("/a/b", "/a/bc")).toBe(false)
     })
 
     test("overlaps detects overlapping paths", () => {
