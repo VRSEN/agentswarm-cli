@@ -1,6 +1,36 @@
 import { describe, expect, test } from "bun:test"
+import path from "node:path"
 import { ProviderTransform } from "@/provider/transform"
 import { ModelID, ProviderID } from "../../src/provider/schema"
+
+describe("ProviderTransform.OUTPUT_TOKEN_MAX", () => {
+  test("honors OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX at startup", async () => {
+    const child = Bun.spawn({
+      cmd: [
+        process.execPath,
+        "--conditions=browser",
+        "-e",
+        `import { ProviderTransform } from "./src/provider/transform.ts"; process.stdout.write(String(ProviderTransform.OUTPUT_TOKEN_MAX))`,
+      ],
+      cwd: path.resolve(import.meta.dir, "../.."),
+      env: {
+        ...process.env,
+        OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "12345",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ])
+
+    expect(code).toBe(0)
+    expect(stderr).toBe("")
+    expect(stdout).toBe("12345")
+  })
+})
 
 describe("ProviderTransform.options - setCacheKey", () => {
   const sessionID = "test-session-123"
