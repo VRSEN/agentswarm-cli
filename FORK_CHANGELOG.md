@@ -34,7 +34,7 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 - History, handoff, compaction, and message metadata: `packages/opencode/src/session/agency-swarm-utils.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/session/message-v2.ts`, `packages/opencode/src/session/compaction.ts`, `packages/opencode/src/agency-swarm/history.ts`.
 - Sharing, PR reopen, and backend management: `packages/opencode/src/share/share-next.ts`, `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`, `packages/opencode/src/cli/cmd/pr.ts`, `packages/opencode/src/cli/cmd/agency.ts`, `README.md`.
 - Telemetry: `packages/opencode/src/telemetry/telemetry.ts`, docs-click telemetry hooks, integration request hooks, telemetry tests, README telemetry copy, and event-list docs.
-- Branding, config, upgrade, and visual surfaces: `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/cli/logo.ts`, `packages/opencode/src/cli/ui.ts`, `packages/opencode/src/cli/network.ts`, `packages/opencode/src/server/mdns.ts`, `packages/opencode/src/cli/cmd/uninstall.ts`, `packages/opencode/src/cli/cmd/tui/component/logo.tsx`, `packages/opencode/src/cli/cmd/tui/context/theme.tsx`, `packages/opencode/src/config/paths.ts`, `packages/opencode/src/config/config.ts`, `packages/opencode/src/cli/cmd/tui/config/tui.ts`, `packages/opencode/src/installation/index.ts`, `packages/opencode/src/cli/cmd/upgrade.ts`.
+- Branding, config, upgrade, desktop release, and visual surfaces: `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/cli/logo.ts`, `packages/opencode/src/cli/ui.ts`, `packages/opencode/src/cli/network.ts`, `packages/opencode/src/server/mdns.ts`, `packages/opencode/src/cli/cmd/uninstall.ts`, `packages/opencode/src/cli/cmd/tui/component/logo.tsx`, `packages/opencode/src/cli/cmd/tui/context/theme.tsx`, `packages/opencode/src/config/paths.ts`, `packages/opencode/src/config/config.ts`, `packages/opencode/src/cli/cmd/tui/config/tui.ts`, `packages/opencode/src/installation/index.ts`, `packages/opencode/src/cli/cmd/upgrade.ts`, `packages/desktop/src/main/index.ts`, and `packages/desktop/src/renderer/index.tsx`.
 
 ## Upstream Baseline Anchor
 
@@ -90,6 +90,13 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Behavior: at the same project directory level, `agentswarm.json` overrides `opencode.json`; at the same workspace level, `.agentswarm/agentswarm.json` and `.agentswarm/tui.json` override sibling `.opencode/opencode.json` and `.opencode/tui.json`. Legacy files still load when branded ones are absent. Cross-level (parent/child) precedence is unchanged from upstream.
   - Implementation: target order in `ConfigPaths.files` in `packages/opencode/src/config/paths.ts`, plus same-parent adjacent-pair swaps in `Config.loadInstanceState` in `packages/opencode/src/config/config.ts` and `TuiConfig.loadState` in `packages/opencode/src/cli/cmd/tui/config/tui.ts`.
   - Added by: `a6e60a80`, `490baa06`, `4e35d3e4`
+
+- **Desktop Agent Swarm state and release-channel behavior**
+  - Intent: keep desktop packaging and crash-reporting behavior aligned with Agent Swarm release state instead of stale upstream OpenCode assumptions.
+  - Behavior: desktop startup checks the Agent Swarm data directory for the local SQLite state before deciding whether migration is needed.
+  - Behavior: desktop Sentry integration filtering uses the Vite-exposed release channel so packaged production builds apply the intended channel-specific filtering.
+  - Implementation: desktop migration state check in `packages/desktop/src/main/index.ts` and Sentry channel filtering in `packages/desktop/src/renderer/index.tsx`.
+  - Added by: `b715e4831`
 
 ## Agency Swarm Integration
 
@@ -385,23 +392,11 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 
 These items were checked with `git blame`, source PRs/issues, `origin/dev`, and upstream release `v1.14.25` on 2026-04-26. They are not intentional fork product behavior and should be aligned with upstream in cleanup PRs.
 
-- **Built source installs can fall back to local dist binaries during global source installs**
-  - Decision: align with upstream. Upstream `origin/dev` and `v1.14.25` do not have an equivalent local `dist` fallback, and this is not approved product behavior.
-  - Evidence: VRSEN PR #50 and issue #49 say this was a developer source-install QA fallback for `npm install -g .` from `packages/opencode`, not an end-user feature.
-  - Blame/intent check: added by bonk1t in `725ac8ec0` (`fix(install): support built source global installs`).
-  - Current implementation: `findBuiltBinary` in `packages/opencode/bin/agentswarm` and `packages/opencode/test/installation/source-install-wrapper.test.ts`.
-
 - **Prompt submit flow has fork-only retry/error handling instead of clean upstream fire-and-forget submit**
   - Decision: align with upstream. Immediate composer clearing is upstream behavior, not a fork feature, and waiting for model completion was not intentional.
   - Evidence: VRSEN PR #42 introduced the original regression by changing upstream fire-and-forget `sdk.client.session.prompt(...).catch(() => {})` into `await sdk.client.session.prompt(...)`; issue #103 names that exact root cause. VRSEN PR #88 was mostly intentional, but it carried this bug forward. VRSEN PR #99 tried to restore upstream behavior, but later follow-up code still left extra prompt-task waiting and retry/error-restoration logic instead of the clean upstream shape.
   - Blame/intent check: original regression line is `f977cea74b` (`fix: harden agent swarm auth onboarding`); current follow-up machinery is mainly `8a18f7bb`, `9e73b5f7`, and `2ad600b64`.
   - Current implementation: prompt submit flow in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`.
-
-- **Spurious package scripts remain from upstream junk**
-  - Decision: align with upstream. These scripts are not fork intent and should not be treated as Agent Swarm functionality.
-  - Evidence: upstream OpenCode PR #22160 and issue #22159 identify `random`, `clean`, `lint`, `format`, `docs`, and `deploy` as accidental junk and remove them with no logic change.
-  - Blame/intent check: local blame points to upstream/historical commits `9fdbe193cd` and `6d95f0d14c`, not bonk1t fork product work.
-  - Current implementation: `packages/opencode/package.json`.
 
 ## Maintenance Protocol
 
