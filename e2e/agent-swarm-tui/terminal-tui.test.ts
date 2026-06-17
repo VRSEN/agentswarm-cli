@@ -178,7 +178,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     const screen = await currentTui.waitForText("Use /models for local models or /auth for sign-in.", tuiReadyTimeoutMs)
 
-    expect(screen).toContain("Manage provider auth")
+    expect(screen).toContain("Tip Use /models for local models or /auth for sign-in.")
     expect(screen).not.toContain("Run /connect to add an AI provider")
   })
 
