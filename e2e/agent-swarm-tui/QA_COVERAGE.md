@@ -27,4 +27,4 @@ Manual QA command from a clean detected Agency project with no `.venv`:
 AGENTSWARM_LAUNCHER=1 bun --cwd packages/opencode --conditions=browser ./src/index.ts /absolute/path/to/project
 ```
 
-Expected result: choose `Use detected Agency Swarm project`, approve `.venv` creation, verify the local FastAPI bridge starts, and verify the TUI opens in Run mode against the detected project.
+Expected result: choose `Use detected Agent Swarm project`, approve `Create a Python environment for this project?`, see `Setting up Agent Swarm. This can take 1-2 minutes.` followed by `Agent Swarm ready`, and verify the TUI opens in Run mode against the detected project. The happy path should not print the Python path, `.venv` creation steps, dependency install steps, package checks, or local server startup line.

@@ -34,7 +34,7 @@ describe("Agent Swarm real project TUI handoff e2e", () => {
 
     await currentTui.waitForText("Swarm Default", timeoutMs)
     await currentTui.waitForText("UserSupportAgent", timeoutMs)
-    expect(currentTui.history()).not.toContain("Use detected Agency Swarm project")
+    expect(currentTui.history()).not.toContain("Use detected Agent Swarm project")
 
     const imagePath = path.join(project, "handoff-proof.png")
     await writeFile(

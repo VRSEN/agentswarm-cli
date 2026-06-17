@@ -291,6 +291,13 @@ describe("AgencyProduct profile", () => {
       hidden: true,
     })
   })
+
+  test("uses first-run provider access copy", () => {
+    expect(AgencyProduct.start).toEqual([
+      "Choose a model or set up access to start.",
+      "Use /models for local models or /auth for sign-in.",
+    ])
+  })
 })
 
 describe("AgencyProduct.tips", () => {

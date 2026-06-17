@@ -308,11 +308,10 @@ export namespace AgencyProduct {
   export const wordmarkLines = current.wordmarkLines
   export const pythonEnvironment = current.pythonEnvironment
   export const stateRoot = current.stateRoot
-  export const connect = "Authenticate providers"
-  export const start = [
-    "Authenticate providers and connect to a local agency-swarm server before sending prompts.",
-    "Use /auth for provider credentials, then /connect to choose the server and store a token.",
-  ]
+  export const connect = "Connect to a running server"
+  export const start = current.hideModelSelection
+    ? ["Set up model access to start.", "Use /auth for provider sign-in."]
+    : ["Choose a model or set up access to start.", "Use /models for local models or /auth for sign-in."]
 
   export function shouldShowPostAuthModelSelection(profile: Pick<Profile, "skipPostAuthModelSelection"> = current) {
     return !profile.skipPostAuthModelSelection
@@ -371,7 +370,7 @@ export namespace AgencyProduct {
   ]
 
   const add = [
-    "Use {highlight}/auth{/highlight} to sign in to OpenAI or add API keys for supported providers",
+    "Use {highlight}/auth{/highlight} to set up provider access",
     "Use {highlight}/connect{/highlight} to choose the local agency-swarm server you want to use",
     "Use {highlight}/agents{/highlight} to pick the active swarm or agent from live metadata",
     "Set {highlight}provider.agency-swarm.options.baseURL{/highlight} in config to pin a default local server",

@@ -49,7 +49,7 @@ For each failure scenario, capture the visible user result and cite the matching
 #### Detected local project, venv, and uv
 
 - **Trigger:** Launch from a directory containing `agency.py` with `def create_agency` and an `agency_swarm` import.
-- **Happy-path proof:** Onboarding offers `Use detected Agency Swarm project` first.
+- **Happy-path proof:** Onboarding offers `Use detected Agent Swarm project` first.
 - **Happy-path proof:** A healthy `.venv` is reused.
 - **Happy-path proof:** A broken `.venv` is rebuilt when Python 3.12+ is available.
 - **Happy-path proof:** Launcher-managed uv is installed or repaired inside `.venv`.
@@ -57,6 +57,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** No second unpinned `agency-swarm` upgrade runs after manifest install.
 - **Happy-path proof:** Launcher-managed `agency-swarm[fastapi,litellm]` is used only when no manifest exists.
 - **Happy-path proof:** Local `.venv` uv is used for launcher-managed fallback installs into `.venv`.
+- **Happy-path proof:** Happy-path setup collapses internal Python, dependency, and package-check work into `Setting up Agent Swarm. This can take 1-2 minutes.` followed by `Agent Swarm ready`; downstream products use their configured product name.
 - **Failure scenarios to test:** Missing Python 3.12+ produces a visible launcher failure.
 - **Failure scenarios to test:** Failed imports produce a visible launcher failure.
 - **Failure scenarios to test:** uv install or repair failure produces a visible launcher failure.
@@ -77,12 +78,13 @@ For each failure scenario, capture the visible user result and cite the matching
 
 #### Starter project
 
-- **Trigger:** Launch without a detected project and choose `Create a new starter project`.
+- **Trigger:** Launch without a detected project and choose `Create a new Agent Swarm project`.
 - **Happy-path proof:** Empty, unsafe, or already-used project names are rejected.
 - **Happy-path proof:** The starter uses `agency-ai-solutions/agency-starter-template`.
 - **Happy-path proof:** GitHub template creation is used only when `gh` is present and authenticated.
 - **Happy-path proof:** Local clone mode is used when GitHub template creation is unavailable.
 - **Happy-path proof:** The new project then enters the local project setup flow.
+- **Happy-path proof:** Template clone and ready detail messages do not appear on the happy path; the user sees `Creating Agent Swarm project...` before compact setup status.
 - **Failure scenarios to test:** Clone failure is visible and does not leave the user in a partial TUI launch.
 - **Failure scenarios to test:** Template creation failure is visible and does not leave the user in a partial TUI launch.
 - **Failure scenarios to test:** Later local setup failure is visible and does not leave the user in a partial TUI launch.
@@ -99,10 +101,10 @@ For each failure scenario, capture the visible user result and cite the matching
 
 ### Connect, Bridge, And Server Failures
 
-#### Onboarding connect to existing agency
+#### Onboarding connect to running server
 
-- **Trigger:** Launch without a detected project and choose `Connect to an existing agency`.
-- **Happy-path proof:** The launcher prompts for Agency Swarm base URL and optional bearer token.
+- **Trigger:** Launch without a detected project and choose `Connect to a running server`.
+- **Happy-path proof:** The launcher prompts for server URL and optional access token.
 - **Happy-path proof:** The launcher normalizes and validates the URL.
 - **Happy-path proof:** The launcher discovers agencies.
 - **Happy-path proof:** The launcher auto-picks one agency or asks for an agency id when several exist.

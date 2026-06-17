@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import {
@@ -63,9 +63,123 @@ describe("Agent Swarm terminal TUI e2e", () => {
       args: [project],
     })
 
-    await currentTui.waitForText("Use detected Agency Swarm project", 10_000)
+    await currentTui.waitForText("Use detected Agent Swarm project", 10_000)
     expect(currentTui.history()).toContain(project)
     expect(currentTui.history()).not.toContain("Creating virtual environment")
+  })
+
+  test("launcher detects an Agent Swarm project from cwd", async () => {
+    const project = await mkdtemp(path.join(os.tmpdir(), "agentswarm-cwd-project-"))
+    tempDirs.push(project)
+    await writeAgencyProject(project)
+
+    currentTui = await startTui({
+      cwd: project,
+      env: {
+        AGENTSWARM_LAUNCHER: "1",
+        OPENCODE_CONFIG_CONTENT: undefined,
+      },
+      args: [],
+    })
+
+    await currentTui.waitForText("Use detected Agent Swarm project", 10_000)
+    expect(currentTui.history()).toContain(project)
+    expect(currentTui.history()).not.toContain("Creating virtual environment")
+  })
+
+  test("launcher resolves relative project arguments from cwd when PWD is stale", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "agentswarm-relative-parent-"))
+    tempDirs.push(parent)
+    const stale = await mkdtemp(path.join(os.tmpdir(), "agentswarm-stale-pwd-"))
+    tempDirs.push(stale)
+    const project = path.join(parent, "my-agency")
+    await mkdir(project)
+    await writeAgencyProject(project)
+
+    currentTui = await startTui({
+      cwd: parent,
+      env: {
+        AGENTSWARM_LAUNCHER: "1",
+        OPENCODE_CONFIG_CONTENT: undefined,
+        PWD: stale,
+      },
+      args: ["my-agency"],
+    })
+
+    await currentTui.waitForText("Use detected Agent Swarm project", 10_000)
+    const history = currentTui.history().replace(/\s+/g, "")
+    expect(history).toContain((await realpath(project)).replace(/\s+/g, ""))
+    expect(history).not.toContain((await realpath(stale)).replace(/\s+/g, ""))
+    expect(currentTui.history()).not.toContain("Creating virtual environment")
+  })
+
+  test("launcher keeps the connect selection history free of stale option hints", async () => {
+    const project = await mkdtemp(path.join(os.tmpdir(), "agentswarm-connect-launch-"))
+    tempDirs.push(project)
+
+    currentTui = await startTui({
+      cwd: packageRoot,
+      env: {
+        AGENTSWARM_LAUNCHER: "1",
+        OPENCODE_CONFIG_CONTENT: undefined,
+      },
+      args: [project],
+    })
+
+    await currentTui.waitForText("How do you want to start?", 10_000)
+    currentTui.write("\x1b[B\r")
+    const screen = await currentTui.waitForText("Server URL", tuiInteractionTimeoutMs)
+
+    expect(screen).toContain("Connect to a running server")
+    expect(screen).toContain("Connect Agent Swarm to a running server.")
+    expect(screen).not.toContain("Connect to a running server(recommended for a fresh setup)")
+    expect(screen).not.toContain("recommended for a fresh setup")
+    expect(screen).not.toContain("local or remote server")
+  })
+
+  test("first-run no-models tip points users to local models or auth", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "agentswarm-first-run-models-"))
+    tempDirs.push(root)
+    const models = path.join(root, "models.json")
+    await writeFile(
+      models,
+      JSON.stringify({
+        opencode: {
+          id: "opencode",
+          name: "OpenCode",
+          env: ["OPENCODE_API_KEY"],
+          npm: "@ai-sdk/openai-compatible",
+          api: "https://example.invalid/v1",
+          models: {
+            free: {
+              id: "free",
+              name: "Free",
+              attachment: false,
+              reasoning: false,
+              tool_call: true,
+              temperature: true,
+              cost: { input: 0, output: 0 },
+              limit: { context: 128000, output: 4096 },
+              modalities: { input: ["text"], output: ["text"] },
+            },
+          },
+        },
+      }),
+    )
+
+    currentTui = await startTui({
+      cwd: packageRoot,
+      env: {
+        AGENTSWARM_LAUNCHER: "0",
+        OPENCODE_MODELS_PATH: models,
+      },
+      args: [],
+    })
+
+    const screen = await currentTui.waitForText("Use /models for local models or /auth for sign-in.", tuiReadyTimeoutMs)
+
+    expect(screen).toContain("Manage provider auth")
+    expect(screen).not.toContain("Run /connect to add an AI provider")
   })
 
   test("run-mode slash commands keep /auth and /connect separate and hide native commands", async () => {

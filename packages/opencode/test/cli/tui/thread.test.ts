@@ -99,6 +99,14 @@ describe("tui thread", () => {
     await check(".")
   })
 
+  test("uses the real cwd when PWD is stale", async () => {
+    await using cwd = await tmpdir({ git: true })
+    await using stale = await tmpdir()
+    const project = path.join(cwd.path, "my-agency")
+
+    expect(resolveThreadDirectory("my-agency", stale.path, cwd.path)).toBe(project)
+  })
+
   test("uses cwd-only npx launches without preparing local projects", async () => {
     setup()
     await using caller = await tmpdir({ git: true })

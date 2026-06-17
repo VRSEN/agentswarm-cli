@@ -15,7 +15,6 @@ import { AgencyProduct } from "./product"
 import {
   collectUnixPythonCandidates,
   findPythonExecutable,
-  formatPython,
   inspectPython,
   isCondaPython,
   type PythonInfo,
@@ -526,7 +525,7 @@ async function requireDetectedStarterProject(directory: string, profile: Pick<Pr
   const project = await detectAgencyProject(directory, profile)
   if (!project) {
     throw new Error(
-      `Starter template did not contain a configured Agency Swarm entry file: ${profile.agencyEntryFiles.join(", ")}`,
+      `Starter template did not contain a configured project entry file: ${profile.agencyEntryFiles.join(", ")}`,
     )
   }
   return project
@@ -536,8 +535,7 @@ export function formatProjectLabel(
   project: AgencyProject,
   profile: Pick<ProductProfile, "custom" | "name"> = AgencyProduct,
 ) {
-  const label = profile.custom ? profile.name : "Agency Swarm"
-  return `Use detected ${label} project (${project.directory})`
+  return `Use detected ${profile.name} project (${project.directory})`
 }
 
 export function validateStarterName(base: string, value?: string) {
@@ -597,7 +595,7 @@ export async function prepareNpxLaunch(
   if (projectDirectory) await mkdir(projectDirectory, { recursive: true })
 
   if (choice === "connect") {
-    const launch = await prepareRemoteLaunch(launchDirectory)
+    const launch = await prepareRemoteLaunch(launchDirectory, profile)
     if (!launch) {
       prompts.outro("Cancelled")
       return
@@ -633,11 +631,6 @@ async function chooseLaunchChoice(
   project: AgencyProject | undefined,
   profile: Pick<ProductProfile, "custom" | "name" | "stateRoot"> = AgencyProduct,
 ) {
-  prompts.log.info("1. Choose how to start the terminal UI.")
-  prompts.log.info(
-    "   The launcher can use a detected project, create a starter project, or connect to an existing server.",
-  )
-
   const result = await prompts.select<LaunchChoice>({
     message: "How do you want to start?",
     options: [
@@ -654,14 +647,12 @@ async function chooseLaunchChoice(
         : [
             {
               value: "starter" as const,
-              label: "Create a new starter project",
-              hint: "recommended for a fresh setup",
+              label: `Create a new ${profile.name} project`,
             },
           ]),
       {
         value: "connect" as const,
-        label: "Connect to an existing agency",
-        hint: "local or remote Agency Swarm server",
+        label: "Connect to a running server",
       },
     ],
   })
@@ -669,12 +660,14 @@ async function chooseLaunchChoice(
   return result
 }
 
-async function prepareRemoteLaunch(directory: string): Promise<PreparedNpxLaunch | undefined> {
-  prompts.log.info("2. Configure the Agency Swarm server.")
-  prompts.log.info("   This path is for an agency that is already running somewhere else.")
+async function prepareRemoteLaunch(
+  directory: string,
+  profile: Pick<ProductProfile, "name"> = AgencyProduct,
+): Promise<PreparedNpxLaunch | undefined> {
+  prompts.log.info(`Connect ${profile.name} to a running server.`)
 
   const url = await prompts.text({
-    message: "Agency Swarm base URL",
+    message: "Server URL",
     placeholder: AgencySwarmAdapter.DEFAULT_BASE_URL,
     defaultValue: AgencySwarmAdapter.DEFAULT_BASE_URL,
     validate(value) {
@@ -690,7 +683,7 @@ async function prepareRemoteLaunch(directory: string): Promise<PreparedNpxLaunch
   if (prompts.isCancel(url)) return
 
   const tokenConfirm = await prompts.confirm({
-    message: "Does this server need a bearer token?",
+    message: "Does this server need an access token?",
     initialValue: false,
   })
   if (prompts.isCancel(tokenConfirm)) return
@@ -698,7 +691,7 @@ async function prepareRemoteLaunch(directory: string): Promise<PreparedNpxLaunch
   let token: string | undefined
   if (tokenConfirm) {
     const entered = await prompts.password({
-      message: "Bearer token",
+      message: "Access token",
       mask: "•",
     })
     if (prompts.isCancel(entered)) return
@@ -758,9 +751,6 @@ async function createStarterProject(input: {
   baseDirectory: string
   profile: ProductProfile
 }): Promise<AgencyProject | undefined> {
-  prompts.log.info("2. Create the starter project.")
-  prompts.log.info(`   This gives the terminal UI a ready-to-run ${input.profile.name} project to launch.`)
-
   const starterProfile = input.profile.customStarter ? input.profile : AgencyProduct
 
   if (input.profile.customStarter) {
@@ -769,7 +759,7 @@ async function createStarterProject(input: {
     if (await Filesystem.exists(targetDirectory)) {
       throw new Error(`Target directory already exists: ${targetDirectory}`)
     }
-    prompts.log.step(`Creating starter project in \`${name}/\``)
+    prompts.log.info(`Creating ${input.profile.name} project...`)
     const clone = await runCommand(["git", "clone", "--depth=1", starterTemplateUrl(input.profile), targetDirectory])
     if (clone.code !== 0) {
       throw new Error(clone.stderr.trim() || clone.stdout.trim() || "Starter template clone failed")
@@ -783,7 +773,7 @@ async function createStarterProject(input: {
   }
 
   const repoName = await prompts.text({
-    message: "Project or repository name",
+    message: "Project name",
     placeholder: input.profile.starterProjectName,
     validate(value) {
       return validateStarterName(input.baseDirectory, value)
@@ -795,17 +785,15 @@ async function createStarterProject(input: {
   let mode: StarterMode = "local"
   if (ghReady) {
     const selected = await prompts.select<StarterMode>({
-      message: "How should the starter be created?",
+      message: "Where should we create it?",
       options: [
         {
           value: "github",
-          label: "Create a GitHub repository from the template",
-          hint: "recommended",
+          label: "GitHub - backed up and shareable",
         },
         {
           value: "local",
-          label: "Create a local folder from the template",
-          hint: "skip GitHub for now",
+          label: "This computer - no GitHub",
         },
       ],
     })
@@ -819,7 +807,6 @@ async function createStarterProject(input: {
     throw new Error(`Target directory already exists: ${targetDirectory}`)
   }
 
-  prompts.log.step(mode === "github" ? "Creating repository from the starter template" : "Cloning the starter template")
   try {
     if (mode === "github") {
       const visibility = await prompts.select<"private" | "public">({
@@ -840,6 +827,7 @@ async function createStarterProject(input: {
         return
       }
 
+      prompts.log.info(`Creating ${input.profile.name} project...`)
       const result = await runCommand(
         ["gh", "repo", "create", name, "--template", input.profile.starterTemplateRepo, "--clone", `--${visibility}`],
         {
@@ -850,6 +838,7 @@ async function createStarterProject(input: {
         throw new Error(result.stderr.trim() || result.stdout.trim() || "GitHub template creation failed")
       }
     } else {
+      prompts.log.info(`Creating ${input.profile.name} project...`)
       const clone = await runCommand(["git", "clone", "--depth=1", starterTemplateUrl(input.profile), targetDirectory])
       if (clone.code !== 0) {
         throw new Error(clone.stderr.trim() || clone.stdout.trim() || "Starter template clone failed")
@@ -860,7 +849,6 @@ async function createStarterProject(input: {
       }).catch(() => undefined)
       await runCommand(["git", "init", "-b", "main"], { cwd: targetDirectory })
     }
-    prompts.log.step("Starter project ready")
   } catch (error) {
     prompts.log.error("Starter project setup failed")
     throw error
@@ -873,13 +861,10 @@ async function createProductStateRootProject(input: {
   directory: string
   profile: ProductProfile
 }): Promise<AgencyProject | undefined> {
-  prompts.log.info("2. Create the product state project.")
-  prompts.log.info(`   This keeps ${input.profile.name} launcher state in one user folder.`)
-
   const starterProfile = input.profile.customStarter ? input.profile : AgencyProduct
 
   await mkdir(path.dirname(input.directory), { recursive: true })
-  prompts.log.step(`Creating starter project in \`${input.directory}\``)
+  prompts.log.info(`Creating ${input.profile.name} project...`)
   const clone = await runCommand(["git", "clone", "--depth=1", starterTemplateUrl(input.profile), input.directory])
   if (clone.code !== 0) {
     throw new Error(clone.stderr.trim() || clone.stdout.trim() || "Starter template clone failed")
@@ -896,16 +881,13 @@ export async function prepareProjectLaunch(
   project: AgencyProject,
   profile: LaunchProfile = AgencyProduct,
 ): Promise<PreparedNpxLaunch | undefined> {
-  prompts.log.info(`Starting the ${profile.name} project.`)
-  prompts.log.info(
-    "The launcher will reuse a project `.venv`, start a local FastAPI server, and connect the terminal UI to it.",
-  )
+  prompts.log.info(`Setting up ${profile.name}. This can take 1-2 minutes.`)
 
   const python = await ensureProjectPython(project.directory, profile)
   if (!python) return
 
-  prompts.log.info("Starting your agency project.")
   const server = await startProjectServer(project.directory, python, project.moduleName, project.agencyFile)
+  prompts.log.success(`${profile.name} ready`)
   return {
     directory: project.directory,
     runProjectDirectory: project.directory,
@@ -946,8 +928,6 @@ async function ensureProjectPython(
       prompts.log.warn("Project `.venv` uses a Conda-family Python. Rebuilding with a standalone Python...")
       corruptedVenv = true
     } else {
-      prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
-      prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
       let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
       try {
         canary = await venvCanaryPasses([venvPython], {
@@ -959,7 +939,6 @@ async function ensureProjectPython(
         canary = { healthy: false, stderr: "", timedOut: false }
       }
       if (canary.healthy) {
-        prompts.log.success("Agency Swarm packages ready")
         return [venvPython]
       }
       const refreshLogFile = await tryCreateProjectCommandLogFile(
@@ -968,7 +947,6 @@ async function ensureProjectPython(
         "launcher refresh",
         profile,
       )
-      prompts.log.info("Refreshing project dependencies...")
       let localUv: string | undefined
       try {
         localUv = await ensureLocalUv(directory, venvPython, {
@@ -988,7 +966,6 @@ async function ensureProjectPython(
         if (refresh.installerFailed) corruptedVenv = true
       }
       if (!corruptedVenv) {
-        prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
         let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
         try {
           canary = await venvCanaryPasses([venvPython], {
@@ -999,7 +976,6 @@ async function ensureProjectPython(
           canary = { healthy: false, stderr: "", timedOut: false }
         }
         if (canary.healthy) {
-          prompts.log.success("Agency Swarm packages ready")
           return [venvPython]
         }
         corruptedVenv = true
@@ -1028,7 +1004,6 @@ async function ensureProjectPython(
   // (python3 etc.) resolves via PATH and, in an activated broken venv, still points at
   // the .venv binary we are about to delete.
   const rebuildCmd = corruptedVenv ? [detected.executable] : detected.cmd
-  prompts.log.info(`Detected Python: ${formatPython(detected, rebuildCmd)}`)
 
   if (corruptedVenv) {
     prompts.log.warn("Project `.venv` is incomplete or corrupted. Rebuilding...")
@@ -1038,7 +1013,7 @@ async function ensureProjectPython(
 
   if (!selfHealing) {
     const createVenv = await prompts.confirm({
-      message: "Create a local `.venv` in this project?",
+      message: "Create a Python environment for this project?",
       initialValue: true,
     })
     if (prompts.isCancel(createVenv)) {
@@ -1055,7 +1030,6 @@ async function ensureProjectPython(
     }
   }
 
-  prompts.log.step("Creating `.venv`")
   const created = await runCommand([...rebuildCmd, "-m", "venv", ".venv"], {
     cwd: directory,
   })
@@ -1064,14 +1038,12 @@ async function ensureProjectPython(
     throw new Error(created.stderr.trim() || created.stdout.trim() || "Virtual environment creation failed")
   }
 
-  prompts.log.step("`.venv` created")
   const installLogFile = await tryCreateProjectCommandLogFile(
     directory,
     "launcher-rebuild",
     "launcher rebuild",
     profile,
   )
-  prompts.log.info("Installing project dependencies...")
   const localUv = await ensureLocalUv(directory, venvPython, {
     forceInstall: true,
     logFile: installLogFile,
@@ -1087,7 +1059,6 @@ async function ensureProjectPython(
   if (install.code !== 0) {
     throw new Error(formatCommandFailure(install, "Dependency install failed"))
   }
-  prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
   const canary = await venvCanaryPasses([venvPython], {
     cwd: directory,
     includeStderr: true,
@@ -1101,7 +1072,6 @@ async function ensureProjectPython(
       await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr, install.logFile),
     )
   }
-  prompts.log.success("Agency Swarm packages ready")
   return [venvPython]
 }
 
@@ -1191,9 +1161,9 @@ async function formatPostInstallCanaryFailure(
   const detail = summary ? ` Details: ${summary}` : ""
   if (isImportLikeCanaryFailure(stderr)) {
     if (hadManifests) {
-      return `The launcher recreated the local Python environment, but it still could not import required Agency Swarm packages. Check requirements.txt/pyproject.toml for agency-swarm version compatibility.${shadowingHint}${logHint}${detail}`
+      return `The launcher recreated the local Python environment, but it still could not import required packages. Check requirements.txt/pyproject.toml for agency-swarm version compatibility.${shadowingHint}${logHint}${detail}`
     }
-    return `The launcher recreated the local Python environment, but it still could not import required Agency Swarm packages. Check for project-local fastapi.py/agency_swarm.py files that may shadow installed packages.${shadowingHint}${logHint}${detail}`
+    return `The launcher recreated the local Python environment, but it still could not import required packages. Check for project-local fastapi.py/agency_swarm.py files that may shadow installed packages.${shadowingHint}${logHint}${detail}`
   }
   return `The launcher recreated the local Python environment, but it still could not repair it.${shadowingHint}${logHint}${detail}`
 }
@@ -1202,8 +1172,8 @@ async function formatCanaryTimeoutFailure(directory: string, stderr: string) {
   const summary = summarizeBridgeStderr(stderr)
   const shadowingHint = await formatShadowingHint(directory)
   return summary
-    ? `Agency Swarm import canary timed out after ${formatInstallDuration(VENV_CANARY_TIMEOUT_MS)}. Startup stopped instead of waiting indefinitely.${shadowingHint} Canary stderr: ${summary}`
-    : `Agency Swarm import canary timed out after ${formatInstallDuration(VENV_CANARY_TIMEOUT_MS)}. Startup stopped instead of waiting indefinitely.${shadowingHint}`
+    ? `Package check timed out after ${formatInstallDuration(VENV_CANARY_TIMEOUT_MS)}. Startup stopped instead of waiting indefinitely.${shadowingHint} Check stderr: ${summary}`
+    : `Package check timed out after ${formatInstallDuration(VENV_CANARY_TIMEOUT_MS)}. Startup stopped instead of waiting indefinitely.${shadowingHint}`
 }
 
 function isImportLikeCanaryFailure(stderr: string) {
@@ -1503,10 +1473,10 @@ async function waitForServer(input: {
   const warningSummary = summary ? "" : summarizeBridgeStderr(stderr)
   throw new Error(
     summary
-      ? `Timed out waiting for the Agency Swarm server to start after ${formatInstallDuration(SERVER_START_TIMEOUT_MS)}. Last bridge output: ${summary}`
+      ? `Timed out waiting for the local server to start after ${formatInstallDuration(SERVER_START_TIMEOUT_MS)}. Last bridge output: ${summary}`
       : warningSummary
-        ? `Timed out waiting for the Agency Swarm server to start after ${formatInstallDuration(SERVER_START_TIMEOUT_MS)}. Bridge output only contained non-fatal startup warnings: ${warningSummary}`
-        : `Timed out waiting for the Agency Swarm server to start after ${formatInstallDuration(SERVER_START_TIMEOUT_MS)}`,
+        ? `Timed out waiting for the local server to start after ${formatInstallDuration(SERVER_START_TIMEOUT_MS)}. Bridge output only contained non-fatal startup warnings: ${warningSummary}`
+        : `Timed out waiting for the local server to start after ${formatInstallDuration(SERVER_START_TIMEOUT_MS)}`,
   )
 }
 
@@ -1514,9 +1484,7 @@ function formatAgencyServerExitFailure(exited: number, stderr: string, entryFile
   const projectFailure = formatAgencyProjectStartupFailure(stderr, entryFile)
   if (projectFailure) return projectFailure
   const summary = summarizeBridgeStderr(stderr)
-  return summary
-    ? `Agency Swarm server exited with code ${exited}: ${summary}`
-    : `Agency Swarm server exited with code ${exited}`
+  return summary ? `Local server exited with code ${exited}: ${summary}` : `Local server exited with code ${exited}`
 }
 
 function formatAgencyProjectStartupFailure(stderr: string, entryFile: string) {
@@ -1524,7 +1492,7 @@ function formatAgencyProjectStartupFailure(stderr: string, entryFile: string) {
   if (!exception) return
   const frame = findProjectEntryFrame(stderr, entryFile)
   const importFailure = /^(?:[\w.]+\.)?(?:ImportError|ModuleNotFoundError):/.test(exception)
-  const title = importFailure ? "Your agency project could not load." : "Your agency project failed to start."
+  const title = importFailure ? "Your project could not load." : "Your project failed to start."
   const entryName = path.basename(entryFile)
   const location = frame ? `\nAt: ${entryName}:${frame.line}${frame.source ? `\n${frame.source}` : ""}` : ""
   const recovery = importFailure

@@ -326,7 +326,7 @@ export async function startTui(input: {
 }
 
 function spawnTuiProcess(input: { args: string[]; cwd?: string; env: Record<string, string | undefined> }) {
-  return spawn(process.execPath, ["--conditions=browser", "./src/index.ts", ...input.args], {
+  return spawn(process.execPath, ["--conditions=browser", path.join(packageRoot, "src", "index.ts"), ...input.args], {
     cwd: input.cwd ?? packageRoot,
     cols: 100,
     rows: 30,
