@@ -17,6 +17,7 @@ export namespace AgencySwarmAdapter {
     id: string
     name: string
     description?: string
+    model?: string
     isEntryPoint: boolean
   }
 
@@ -129,6 +130,13 @@ export namespace AgencySwarmAdapter {
     }
 
     return Array.from(result.values()).sort()
+  }
+
+  export function formatModelLabels(labels: string[]): string | undefined {
+    const first = labels[0]
+    if (!first) return undefined
+    if (labels.length === 1) return first
+    return `${first} +${labels.length - 1}`
   }
 
   export async function discover(input: {
@@ -496,15 +504,18 @@ export namespace AgencySwarmAdapter {
       const data = asRecord(nodeRecord["data"])
       const label = asString(data?.["label"]) ?? id
       const description = asString(data?.["description"])
+      const model = asString(data?.["model"])
       const dataEntryPoint = asBoolean(data?.["isEntryPoint"]) === true
       const knownAgent = result.get(id)
       const includeNode = nodeType === "agent" || !!knownAgent
       if (!includeNode) continue
+      const resolvedModel = model || knownAgent?.model
 
       result.set(id, {
         id,
         name: label,
         description: description || knownAgent?.description,
+        ...(resolvedModel ? { model: resolvedModel } : {}),
         isEntryPoint: entryPoints.has(id) || dataEntryPoint || knownAgent?.isEntryPoint === true,
       })
     }

@@ -2,12 +2,15 @@ import type { AssistantMessage, Part, Provider, UserMessage } from "@opencode-ai
 import { displayAgentName } from "@/agent/display"
 import { Locale } from "@/util/locale"
 import * as Model from "./model"
+import { resolveModelLabel, type ModelLabelContext } from "./model-label"
 
 export type TranscriptOptions = {
   thinking: boolean
   toolDetails: boolean
   assistantMetadata: boolean
   providers?: Provider[]
+  agencies?: ModelLabelContext["agencies"]
+  agencyID?: string
 }
 
 export type SessionInfo = {
@@ -55,7 +58,11 @@ export function formatMessage(
   if (msg.role === "user") {
     result += `## User\n\n`
   } else {
-    result += formatAssistantHeader(msg, options.assistantMetadata, providers ?? options.providers)
+    result += formatAssistantHeader(msg, options.assistantMetadata, {
+      providers: providers ?? options.providers,
+      agencies: options.agencies,
+      agencyID: options.agencyID,
+    })
   }
 
   for (const part of parts) {
@@ -68,7 +75,7 @@ export function formatMessage(
 export function formatAssistantHeader(
   msg: AssistantMessage,
   includeMetadata: boolean,
-  providers?: Provider[] | ReadonlyMap<string, Provider>,
+  context?: Provider[] | ReadonlyMap<string, Provider> | ModelLabelContext,
 ): string {
   if (!includeMetadata) {
     return `## Assistant\n\n`
@@ -77,9 +84,29 @@ export function formatAssistantHeader(
   const duration =
     msg.time.completed && msg.time.created ? ((msg.time.completed - msg.time.created) / 1000).toFixed(1) + "s" : ""
 
-  const modelName = Model.name(providers, msg.providerID, msg.modelID)
+  const modelName = resolveModelLabel({
+    ...readModelLabelContext(context),
+    providerID: msg.providerID,
+    modelID: msg.modelID,
+    agentID: msg.agent,
+  })
 
   return `## Assistant (${displayAgentName(msg.agent)} · ${modelName}${duration ? ` · ${duration}` : ""})\n\n`
+}
+
+function readModelLabelContext(
+  context: Provider[] | ReadonlyMap<string, Provider> | ModelLabelContext | undefined,
+): ModelLabelContext {
+  if (!context) return {}
+  if (Array.isArray(context)) return { providers: context }
+  if (isProviderMap(context)) return { providers: context }
+  return context
+}
+
+function isProviderMap(
+  context: Provider[] | ReadonlyMap<string, Provider> | ModelLabelContext,
+): context is ReadonlyMap<string, Provider> {
+  return context instanceof Map
 }
 
 export function formatPart(part: Part, options: TranscriptOptions): string {

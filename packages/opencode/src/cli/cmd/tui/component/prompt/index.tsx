@@ -83,6 +83,7 @@ import {
   resolveAgencyTargetSelection,
   shouldAdoptAgencyHandoffRecipient,
 } from "../../util/agency-target"
+import { resolveModelLabel } from "../../util/model-label"
 import { hasAgencyHandoffEvidence } from "@/session/agency-swarm-utils"
 import {
   confirmWorkspaceFileChanges,
@@ -114,6 +115,7 @@ export type PromptProps = {
     normal?: string[]
     shell?: string[]
   }
+  agencyDiscovery?: () => AgencySwarmAdapter.AgencyDescriptor[]
 }
 
 export type PromptRef = {
@@ -262,15 +264,15 @@ export function Prompt(props: PromptProps) {
   )
   const frameworkRecipientDiscoveryInput = createMemo(() => {
     if (!frameworkMode()) return undefined
+    if (props.agencyDiscovery) return undefined
     const options = agencyProviderOptions()
-    if (!options.recipientAgent) return undefined
     return {
       baseURL: options.baseURL,
       token: options.token,
       timeoutMs: options.discoveryTimeoutMs,
     }
   })
-  const [frameworkRecipientDiscovery] = createResource(
+  const [localFrameworkRecipientDiscovery] = createResource(
     frameworkRecipientDiscoveryInput,
     async (input): Promise<AgencySwarmAdapter.AgencyDescriptor[]> => {
       try {
@@ -289,6 +291,7 @@ export function Prompt(props: PromptProps) {
       initialValue: [],
     },
   )
+  const frameworkRecipientDiscovery = createMemo(() => props.agencyDiscovery?.() ?? localFrameworkRecipientDiscovery())
   const sessionHandoffRecipient = createMemo(() => {
     if (!props.sessionID) return undefined
     const options = agencyProviderOptions()
@@ -525,6 +528,24 @@ export function Prompt(props: PromptProps) {
   const [workspaceCreatingDots, setWorkspaceCreatingDots] = createSignal(3)
   const [warpNotice, setWarpNotice] = createSignal<string>()
   const [cursorVersion, setCursorVersion] = createSignal(0)
+  const currentModelLabel = createMemo(() => {
+    const fallback = local.model.parsed().model
+    const current = local.model.current()
+    if (!current) return fallback
+    const options = agencyProviderOptions()
+    return resolveModelLabel({
+      providers: sync.data.provider,
+      agencies: frameworkRecipientDiscovery(),
+      agencyID: options.agency,
+      agentID: effectiveHandoffRecipient()?.agent ?? options.recipientAgent,
+      providerID: current.providerID,
+      modelID: current.modelID,
+      fallback,
+    })
+  })
+  const currentModelLabelDisplay = createMemo(() =>
+    Locale.truncateMiddle(currentModelLabel(), Math.max(12, Math.min(48, Math.floor(dimensions().width / 3)))),
+  )
   const currentProviderLabel = createMemo(() => {
     const current = local.model.current()
     const provider = local.model.parsed().provider
@@ -2171,7 +2192,7 @@ export function Prompt(props: PromptProps) {
                             flexShrink={0}
                             fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}
                           >
-                            {local.model.parsed().model}
+                            {currentModelLabelDisplay()}
                           </text>
                           <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
                           <Show when={showAgencyReconnect()}>

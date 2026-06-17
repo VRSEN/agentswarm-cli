@@ -66,6 +66,65 @@ const providers: Provider[] = [
   },
 ]
 
+const agencyProviders: Provider[] = [
+  {
+    id: "agency-swarm",
+    name: "Agency Swarm",
+    source: "config",
+    env: [],
+    options: {},
+    models: {
+      default: {
+        id: "default",
+        providerID: "agency-swarm",
+        api: {
+          id: "default",
+          url: "https://example.com/agency-swarm/default",
+          npm: "@ai-sdk/openai",
+        },
+        name: "Swarm Default",
+        capabilities: {
+          temperature: false,
+          reasoning: false,
+          attachment: false,
+          toolcall: false,
+          input: {
+            text: true,
+            audio: false,
+            image: false,
+            video: false,
+            pdf: false,
+          },
+          output: {
+            text: true,
+            audio: false,
+            image: false,
+            video: false,
+            pdf: false,
+          },
+          interleaved: false,
+        },
+        cost: {
+          input: 0,
+          output: 0,
+          cache: {
+            read: 0,
+            write: 0,
+          },
+        },
+        limit: {
+          context: 128_000,
+          output: 8_192,
+        },
+        status: "active",
+        options: {},
+        headers: {},
+        release_date: "2026-01-01",
+      },
+    },
+  },
+]
+
 describe("transcript", () => {
   describe("formatAssistantHeader", () => {
     const baseMsg: AssistantMessage = {
@@ -91,6 +150,78 @@ describe("transcript", () => {
     test("uses model display name when available", () => {
       const result = formatAssistantHeader(baseMsg, true, providers)
       expect(result).toBe("## Assistant (Agent Builder · Claude Sonnet 4 · 5.4s)\n\n")
+    })
+
+    test("uses assistant agent model label for agency-swarm default", () => {
+      const msg = {
+        ...baseMsg,
+        agent: "reviewer",
+        providerID: "agency-swarm",
+        modelID: "default",
+      }
+      const result = formatAssistantHeader(msg, true, {
+        providers: agencyProviders,
+        agencyID: "demo",
+        agencies: [
+          {
+            id: "demo",
+            name: "Demo Agency",
+            agents: [
+              {
+                id: "orchestrator",
+                name: "Orchestrator",
+                model: "gpt-5.4-mini",
+                isEntryPoint: true,
+              },
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "claude-sonnet-4-5",
+                isEntryPoint: false,
+              },
+            ],
+            metadata: {},
+          },
+        ],
+      })
+
+      expect(result).toBe("## Assistant (Reviewer · claude-sonnet-4-5 · 5.4s)\n\n")
+      expect(result).not.toContain("Swarm Default")
+    })
+
+    test("falls back to agency aggregate when assistant agent cannot be resolved", () => {
+      const msg = {
+        ...baseMsg,
+        providerID: "agency-swarm",
+        modelID: "default",
+      }
+      const result = formatAssistantHeader(msg, true, {
+        providers: agencyProviders,
+        agencyID: "demo",
+        agencies: [
+          {
+            id: "demo",
+            name: "Demo Agency",
+            agents: [
+              {
+                id: "orchestrator",
+                name: "Orchestrator",
+                model: "gpt-5.4-mini",
+                isEntryPoint: true,
+              },
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "claude-sonnet-4-5",
+                isEntryPoint: false,
+              },
+            ],
+            metadata: {},
+          },
+        ],
+      })
+
+      expect(result).toBe("## Assistant (Agent Builder · gpt-5.4-mini +1 · 5.4s)\n\n")
     })
 
     test("excludes metadata when disabled", () => {
