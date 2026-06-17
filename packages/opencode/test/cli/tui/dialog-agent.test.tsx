@@ -134,7 +134,7 @@ describe("DialogAgent agency selection", () => {
 
     const agencyOption = selectProps?.options.find((option) => option.title === "Live Agency")
     expect(agencyOption).toBeDefined()
-    expect(agencyOption?.category).toBe("Swarm: Live Agency")
+    expect(agencyOption?.category).toBe("Swarm: Live Agency (1 main / 1 sub)")
     expect(agencyOption?.description).toBeUndefined()
 
     selectProps!.onSelect!(agencyOption!)

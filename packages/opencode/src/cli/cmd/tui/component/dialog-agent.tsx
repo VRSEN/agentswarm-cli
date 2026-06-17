@@ -144,7 +144,7 @@ export function DialogAgent() {
 
     const agencies = discovered?.agencies ?? []
     for (const agency of agencies) {
-      const category = `Swarm: ${agency.name}`
+      const category = formatAgencyCategory(agency)
       const entry = agency.agents.find((agent) => agent.isEntryPoint) ?? agency.agents[0]
       const description =
         agency.description && agency.description !== entry?.description ? agency.description : undefined
@@ -296,4 +296,10 @@ export function DialogAgent() {
       duration: 3000,
     })
   }
+}
+
+function formatAgencyCategory(agency: AgencySwarmAdapter.AgencyDescriptor) {
+  const main = agency.agents.filter((agent) => agent.isEntryPoint).length
+  const sub = agency.agents.length - main
+  return `Swarm: ${agency.name} (${main} main / ${sub} sub)`
 }

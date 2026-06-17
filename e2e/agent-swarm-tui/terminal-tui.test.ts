@@ -308,6 +308,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentTui.write("/agents\r")
     const screen = await currentTui.waitForText("Live QA Agency")
 
+    expect(screen).toContain("Swarm: Live QA Agency (1 main / 1 sub)")
     expect(screen).toContain("Entry Agent")
     expect(screen).toContain("Review Agent")
     expect(screen).not.toContain("local-agency")
@@ -327,7 +328,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     const screen = await currentTui.waitForText("TuiDemoAgency")
 
     expect(screen).toContain("Select swarm")
-    expect(screen).toContain("Swarm: TuiDemoAgency")
+    expect(screen).toContain("Swarm: TuiDemoAgency (1 main / 1 sub)")
     expect(screen).toContain("UserSupportAgent")
     expect(screen).toContain("MathAgent")
     expect(screen.toLowerCase()).not.toContain("recipient")
