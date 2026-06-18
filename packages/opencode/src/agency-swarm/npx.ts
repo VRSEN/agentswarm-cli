@@ -980,7 +980,7 @@ export async function prepareProjectLaunch(
   const python = await ensureProjectPython(project.directory, profile)
   if (!python) return
 
-  prompts.log.info("Starting your agency project.")
+  prompts.log.info("Starting your Agent Swarm project.")
   const server = await startProjectServer(project.directory, python, project.moduleName, project.agencyFile)
   return {
     directory: project.directory,
