@@ -3,7 +3,7 @@ import net from "node:net"
 import os from "node:os"
 import path from "node:path"
 import { createWriteStream, existsSync, statSync } from "node:fs"
-import { mkdir, mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
 import { AgencySwarmAdapter } from "./adapter"
 import { AgencySwarmRunSession } from "./run-session"
 import { SERVER_LAUNCHER_SCRIPT } from "./server-launcher"
@@ -113,6 +113,14 @@ interface VenvCanaryResult {
   timedOut: boolean
 }
 
+class ProjectEntryReadError extends Error {
+  constructor(readonly file: string) {
+    super(
+      `Could not read ${path.basename(file)}. Make sure the project files are downloaded and readable, then try again.`,
+    )
+  }
+}
+
 interface DependencyInstallResult extends CommandResult {
   hadManifests: boolean
 }
@@ -137,6 +145,7 @@ interface ServerStderrCollector {
 }
 
 const MIN_AGENCY_SWARM_VERSION = "1.10.1"
+const PROJECT_ENTRY_READ_TIMEOUT_MS = 1_000
 function buildVenvCanaryScript(minimumAgencySwarmVersion?: string) {
   const imports = ["import agency_swarm", "from agency_swarm.integrations.fastapi import run_fastapi"]
   if (!minimumAgencySwarmVersion) return imports.join("\n")
@@ -502,7 +511,7 @@ export async function detectAgencyProject(
   for (const entryFile of profile.agencyEntryFiles) {
     const agencyFile = path.join(dir, entryFile)
     if (!(await Filesystem.exists(agencyFile))) continue
-    const source = await Filesystem.readText(agencyFile).catch(() => "")
+    const source = await readProjectEntryFile(agencyFile)
     if (!source.includes("def create_agency")) continue
     if (!source.includes("agency_swarm")) continue
     return {
@@ -510,6 +519,21 @@ export async function detectAgencyProject(
       agencyFile,
       moduleName: agencyEntryModuleName(entryFile),
     } satisfies AgencyProject
+  }
+}
+
+async function readProjectEntryFile(file: string) {
+  const stat = await Filesystem.statAsync(file).catch(() => undefined)
+  if (!stat?.isFile()) throw new ProjectEntryReadError(file)
+
+  const abort = new AbortController()
+  const timeout = nativeSetTimeout(() => abort.abort(), PROJECT_ENTRY_READ_TIMEOUT_MS)
+  try {
+    return await readFile(file, { encoding: "utf8", signal: abort.signal })
+  } catch {
+    throw new ProjectEntryReadError(file)
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
@@ -536,8 +560,7 @@ export function formatProjectLabel(
   project: AgencyProject,
   profile: Pick<ProductProfile, "custom" | "name"> = AgencyProduct,
 ) {
-  const label = profile.custom ? profile.name : "Agency Swarm"
-  return `Use detected ${label} project (${project.directory})`
+  return `Use detected ${profile.name} project (${project.directory})`
 }
 
 export function validateStarterName(base: string, value?: string) {
@@ -562,6 +585,7 @@ export async function prepareNpxLaunch(
   profile: ProductProfile = AgencyProduct,
 ): Promise<PreparedNpxLaunch | undefined> {
   prompts.intro(profile.name)
+  prompts.log.info(`Checking ${profile.name} project files...`)
   const stateRoot = normalizeProductStateRootEnv(profile)
   const projectDirectory = stateRoot ? path.join(stateRoot, "project") : undefined
   const launchDirectory = projectDirectory ?? directory
@@ -588,7 +612,20 @@ export async function prepareNpxLaunch(
     return launch
   }
 
-  const project = await detectAgencyProject(launchDirectory, profile)
+  const project = await detectLaunchProject(launchDirectory, profile)
+  if (project === "connect") {
+    const launch = await prepareRemoteLaunch(launchDirectory, profile)
+    if (!launch) {
+      prompts.outro("Cancelled")
+      return
+    }
+    prompts.outro(`Opening ${profile.name}`)
+    return launch
+  }
+  if (project === "cancel") {
+    prompts.outro("Cancelled")
+    return
+  }
   const choice = await chooseLaunchChoice(project, profile)
   if (!choice) {
     prompts.outro("Cancelled")
@@ -597,7 +634,7 @@ export async function prepareNpxLaunch(
   if (projectDirectory) await mkdir(projectDirectory, { recursive: true })
 
   if (choice === "connect") {
-    const launch = await prepareRemoteLaunch(launchDirectory)
+    const launch = await prepareRemoteLaunch(launchDirectory, profile)
     if (!launch) {
       prompts.outro("Cancelled")
       return
@@ -629,6 +666,45 @@ export async function prepareNpxLaunch(
   return launch
 }
 
+async function detectLaunchProject(
+  directory: string,
+  profile: ProductProfile,
+): Promise<AgencyProject | undefined | "connect" | "cancel"> {
+  while (true) {
+    try {
+      return await detectAgencyProject(directory, profile)
+    } catch (error) {
+      if (!(error instanceof ProjectEntryReadError)) throw error
+      const choice = await chooseProjectReadRecovery(error)
+      if (choice === "retry") continue
+      return choice
+    }
+  }
+}
+
+async function chooseProjectReadRecovery(error: ProjectEntryReadError) {
+  prompts.log.warn(error.message)
+  const choice = await prompts.select<"retry" | "connect" | "cancel">({
+    message: "How do you want to continue?",
+    options: [
+      {
+        value: "retry",
+        label: "Try again",
+      },
+      {
+        value: "connect",
+        label: "Connect to a running Agent Swarm",
+      },
+      {
+        value: "cancel",
+        label: "Cancel",
+      },
+    ],
+  })
+  if (prompts.isCancel(choice)) return "cancel"
+  return choice
+}
+
 async function chooseLaunchChoice(
   project: AgencyProject | undefined,
   profile: Pick<ProductProfile, "custom" | "name" | "stateRoot"> = AgencyProduct,
@@ -654,14 +730,12 @@ async function chooseLaunchChoice(
         : [
             {
               value: "starter" as const,
-              label: "Create a new starter project",
-              hint: "recommended for a fresh setup",
+              label: `Create a new ${profile.name} project`,
             },
           ]),
       {
         value: "connect" as const,
-        label: "Connect to an existing agency",
-        hint: "local or remote Agency Swarm server",
+        label: "Connect to a running Agent Swarm",
       },
     ],
   })
@@ -669,12 +743,14 @@ async function chooseLaunchChoice(
   return result
 }
 
-async function prepareRemoteLaunch(directory: string): Promise<PreparedNpxLaunch | undefined> {
-  prompts.log.info("2. Configure the Agency Swarm server.")
-  prompts.log.info("   This path is for an agency that is already running somewhere else.")
+async function prepareRemoteLaunch(
+  directory: string,
+  profile: Pick<ProductProfile, "name"> = AgencyProduct,
+): Promise<PreparedNpxLaunch | undefined> {
+  prompts.log.info(`Connect ${profile.name} to a running Agent Swarm.`)
 
   const url = await prompts.text({
-    message: "Agency Swarm base URL",
+    message: "Agent Swarm server URL",
     placeholder: AgencySwarmAdapter.DEFAULT_BASE_URL,
     defaultValue: AgencySwarmAdapter.DEFAULT_BASE_URL,
     validate(value) {
@@ -690,7 +766,7 @@ async function prepareRemoteLaunch(directory: string): Promise<PreparedNpxLaunch
   if (prompts.isCancel(url)) return
 
   const tokenConfirm = await prompts.confirm({
-    message: "Does this server need a bearer token?",
+    message: "Does this server need an access token?",
     initialValue: false,
   })
   if (prompts.isCancel(tokenConfirm)) return
@@ -698,7 +774,7 @@ async function prepareRemoteLaunch(directory: string): Promise<PreparedNpxLaunch
   let token: string | undefined
   if (tokenConfirm) {
     const entered = await prompts.password({
-      message: "Bearer token",
+      message: "Access token",
       mask: "•",
     })
     if (prompts.isCancel(entered)) return

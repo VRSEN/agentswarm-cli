@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import {
@@ -63,9 +63,60 @@ describe("Agent Swarm terminal TUI e2e", () => {
       args: [project],
     })
 
-    await currentTui.waitForText("Use detected Agency Swarm project", 10_000)
+    await currentTui.waitForText("Checking Agent Swarm project files...", 10_000)
+    await currentTui.waitForText("Use detected Agent Swarm project", 10_000)
     expect(currentTui.history()).toContain(project)
     expect(currentTui.history()).not.toContain("Creating virtual environment")
+  })
+
+  test("launcher recovers when agency.py cannot be read", async () => {
+    const project = await mkdtemp(path.join(os.tmpdir(), "agentswarm-unreadable-project-"))
+    tempDirs.push(project)
+    await mkdir(path.join(project, "agency.py"))
+
+    currentTui = await startTui({
+      cwd: packageRoot,
+      env: {
+        AGENTSWARM_LAUNCHER: "1",
+        OPENCODE_CONFIG_CONTENT: undefined,
+      },
+      args: [project],
+    })
+
+    await currentTui.waitForText("Could not read agency.py", 10_000)
+    const screen = await currentTui.waitForText("Try again", tuiInteractionTimeoutMs)
+    const normalized = screen.replace(/\s+/g, " ").replace(/\s+\./g, ".")
+
+    expect(normalized).toContain(
+      "Could not read agency.py. Make sure the project files are downloaded and readable, then try again.",
+    )
+    expect(screen).toContain("Try again")
+    expect(screen).toContain("Connect to a running Agent Swarm")
+    expect(screen).toContain("Cancel")
+    expect(screen).not.toContain("Create a new Agent Swarm project")
+  })
+
+  test("launcher uses Agent Swarm connect copy without stale hints", async () => {
+    const project = await mkdtemp(path.join(os.tmpdir(), "agentswarm-connect-launch-"))
+    tempDirs.push(project)
+
+    currentTui = await startTui({
+      cwd: packageRoot,
+      env: {
+        AGENTSWARM_LAUNCHER: "1",
+        OPENCODE_CONFIG_CONTENT: undefined,
+      },
+      args: [project],
+    })
+
+    await currentTui.waitForText("How do you want to start?", 10_000)
+    currentTui.write("\x1b[B\r")
+    const screen = await currentTui.waitForText("Agent Swarm server URL", tuiInteractionTimeoutMs)
+
+    expect(screen).toContain("Connect to a running Agent Swarm")
+    expect(screen).toContain("Connect Agent Swarm to a running Agent Swarm.")
+    expect(screen).not.toContain("recommended for a fresh setup")
+    expect(screen).not.toContain("local or remote Agency Swarm server")
   })
 
   test("run-mode slash commands keep /auth and /connect separate and hide native commands", async () => {

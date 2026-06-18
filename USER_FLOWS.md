@@ -49,7 +49,7 @@ For each failure scenario, capture the visible user result and cite the matching
 #### Detected local project, venv, and uv
 
 - **Trigger:** Launch from a directory containing `agency.py` with `def create_agency` and an `agency_swarm` import.
-- **Happy-path proof:** Onboarding offers `Use detected Agency Swarm project` first.
+- **Happy-path proof:** Onboarding shows `Checking Agent Swarm project files...`, then offers `Use detected Agent Swarm project` first.
 - **Happy-path proof:** A healthy `.venv` is reused.
 - **Happy-path proof:** A broken `.venv` is rebuilt when Python 3.12+ is available.
 - **Happy-path proof:** Launcher-managed uv is installed or repaired inside `.venv`.
@@ -59,6 +59,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** Local `.venv` uv is used for launcher-managed fallback installs into `.venv`.
 - **Failure scenarios to test:** Missing Python 3.12+ produces a visible launcher failure.
 - **Failure scenarios to test:** Failed imports produce a visible launcher failure.
+- **Failure scenarios to test:** An unreadable existing `agency.py` shows `Could not read agency.py. Make sure the project files are downloaded and readable, then try again.` and offers only `Try again`, `Connect to a running Agent Swarm`, and `Cancel`.
 - **Failure scenarios to test:** uv install or repair failure produces a visible launcher failure.
 - **Failure scenarios to test:** Dependency setup failure produces a visible launcher failure.
 
@@ -77,7 +78,7 @@ For each failure scenario, capture the visible user result and cite the matching
 
 #### Starter project
 
-- **Trigger:** Launch without a detected project and choose `Create a new starter project`.
+- **Trigger:** Launch without a detected project and choose `Create a new Agent Swarm project`.
 - **Happy-path proof:** Empty, unsafe, or already-used project names are rejected.
 - **Happy-path proof:** The starter uses `agency-ai-solutions/agency-starter-template`.
 - **Happy-path proof:** GitHub template creation is used only when `gh` is present and authenticated.
@@ -99,10 +100,10 @@ For each failure scenario, capture the visible user result and cite the matching
 
 ### Connect, Bridge, And Server Failures
 
-#### Onboarding connect to existing agency
+#### Onboarding connect to running Agent Swarm
 
-- **Trigger:** Launch without a detected project and choose `Connect to an existing agency`.
-- **Happy-path proof:** The launcher prompts for Agency Swarm base URL and optional bearer token.
+- **Trigger:** Launch without a detected project and choose `Connect to a running Agent Swarm`.
+- **Happy-path proof:** The launcher prompts for Agent Swarm server URL and optional access token.
 - **Happy-path proof:** The launcher normalizes and validates the URL.
 - **Happy-path proof:** The launcher discovers agencies.
 - **Happy-path proof:** The launcher auto-picks one agency or asks for an agency id when several exist.

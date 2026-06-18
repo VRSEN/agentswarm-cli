@@ -3346,6 +3346,47 @@ describe("agency-swarm npx onboarding", () => {
     expect(project).toBeUndefined()
   })
 
+  test("prepareNpxLaunch offers recovery when agency.py cannot be read", async () => {
+    await using dir = await tmpdir()
+    await mkdir(path.join(dir.path, "agency.py"))
+    const labels: string[][] = []
+    const info = spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    const warn = spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
+
+    spyOn(prompts, "outro").mockImplementation(() => undefined as never)
+    spyOn(prompts, "select").mockImplementation((input) => {
+      labels.push(input.options.map((option) => String(option.label)))
+      return Promise.resolve("connect" as never)
+    })
+    spyOn(prompts, "text").mockResolvedValue("http://127.0.0.1:8123" as never)
+    spyOn(prompts, "confirm").mockResolvedValue(false as never)
+    const rawFetch = globalThis.fetch
+    spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: URL | RequestInfo) => {
+          const url = String(input)
+          const body = url.endsWith("/openapi.json")
+            ? { paths: { "/local-agency/get_metadata": { get: {} } } }
+            : { name: "Local Agency" }
+          return Response.json(body)
+        },
+        {
+          preconnect: rawFetch.preconnect?.bind(rawFetch),
+        },
+      ) as typeof globalThis.fetch,
+    )
+
+    const launch = await prepareNpxLaunch(dir.path)
+
+    expect(info).toHaveBeenCalledWith("Checking Agent Swarm project files...")
+    expect(warn).toHaveBeenCalledWith(
+      "Could not read agency.py. Make sure the project files are downloaded and readable, then try again.",
+    )
+    expect(labels[0]).toEqual(["Try again", "Connect to a running Agent Swarm", "Cancel"])
+    expect(labels.flat()).not.toContain("Create a new Agent Swarm project")
+    expect(launch?.directory).toBe(dir.path)
+  })
+
   test("product state root is the launcher project and state directory", async () => {
     await using caller = await tmpdir()
     await using root = await tmpdir()
@@ -3987,7 +4028,7 @@ describe("agency-swarm npx onboarding", () => {
       moduleName: "agency",
     }
 
-    expect(formatProjectLabel(project)).toBe(`Use detected Agency Swarm project (${root})`)
+    expect(formatProjectLabel(project)).toBe(`Use detected Agent Swarm project (${root})`)
     expect(formatProjectLabel(project, downstreamProfile)).toBe(`Use detected Example Product project (${root})`)
   })
 
