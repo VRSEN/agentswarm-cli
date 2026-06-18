@@ -4,7 +4,7 @@
 
 ## Automated
 
-- `USER_FLOWS.md` Detected Local Project: launcher mode shows the detected-project choice before `.venv` work begins.
+- `USER_FLOWS.md` Detected Local Project: launcher mode shows startup project-file checking, the detected-project choice before `.venv` work begins, unreadable `agency.py` recovery choices, and Agent Swarm connect copy.
 - `USER_FLOWS.md` Startup `/auth` and In-TUI `/connect`: `/auth` and `/connect` stay separate in the real terminal UI.
 - `USER_FLOWS.md` Run Mode: native `/editor`, `/variants`, `/init`, and `/review` slash commands stay hidden.
 - `USER_FLOWS.md` Run Mode: `/agents` uses Swarm and agent wording, live agency labels, swarm-row routing, and specific-agent routing against an Agency Swarm TUI-demo-shaped swarm.
@@ -27,4 +27,4 @@ Manual QA command from a clean detected Agency project with no `.venv`:
 AGENTSWARM_LAUNCHER=1 bun --cwd packages/opencode --conditions=browser ./src/index.ts /absolute/path/to/project
 ```
 
-Expected result: choose `Use detected Agency Swarm project`, approve `.venv` creation, verify the local FastAPI bridge starts, and verify the TUI opens in Run mode against the detected project.
+Expected result: choose `Use detected Agent Swarm project`, approve `.venv` creation, verify the local FastAPI bridge starts, and verify the TUI opens in Run mode against the detected project.
