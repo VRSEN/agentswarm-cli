@@ -131,12 +131,30 @@ describe("plugin.codex", () => {
       })
     })
 
+    test("hides Codex OAuth models with unsupported API ids", async () => {
+      const result = await loadModels(
+        createProvider({
+          "gpt-5.4": createModel("gpt-5.4", "gpt-5.4-nano"),
+          "gpt-5.4-mini": createModel("gpt-5.4-mini"),
+        }),
+        {
+          type: "oauth",
+          refresh: "refresh",
+          access: "access",
+          expires: Date.now() + 60_000,
+        },
+      )
+
+      expect(Object.keys(result)).toEqual(["gpt-5.4-mini"])
+      expect(result["gpt-5.4"]).toBeUndefined()
+    })
+
     test("keeps API key models unfiltered", async () => {
       const provider = createProvider({
         "gpt-5.2": createModel("gpt-5.2"),
         "gpt-5.3-codex": createModel("gpt-5.3-codex"),
         "gpt-5.3-codex-spark": createModel("gpt-5.3-codex-spark"),
-        "gpt-5.4": createModel("gpt-5.4"),
+        "gpt-5.4": createModel("gpt-5.4", "gpt-5.4-nano"),
         "gpt-5.4-nano": createModel("gpt-5.4-nano"),
         "gpt-5.4-mini": createModel("gpt-5.4-mini"),
         "gpt-5.4-mini-2026-06-18": createModel("gpt-5.4-mini-2026-06-18", "gpt-5.4-mini"),

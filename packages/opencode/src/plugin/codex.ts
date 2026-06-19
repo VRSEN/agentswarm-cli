@@ -367,7 +367,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
 
         return Object.fromEntries(
           Object.entries(provider.models)
-            .filter(([modelID]) => CODEX_OAUTH_MODELS.has(modelID))
+            .filter(([modelID, model]) => CODEX_OAUTH_MODELS.has(modelID) && CODEX_OAUTH_MODELS.has(model.api.id))
             .map(([modelID, model]) => [
               modelID,
               {
