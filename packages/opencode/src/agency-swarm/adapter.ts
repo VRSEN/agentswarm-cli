@@ -17,6 +17,7 @@ export namespace AgencySwarmAdapter {
     id: string
     name: string
     description?: string
+    model?: string
     isEntryPoint: boolean
   }
 
@@ -496,15 +497,18 @@ export namespace AgencySwarmAdapter {
       const data = asRecord(nodeRecord["data"])
       const label = asString(data?.["label"]) ?? id
       const description = asString(data?.["description"])
+      const model = asString(data?.["model"])
       const dataEntryPoint = asBoolean(data?.["isEntryPoint"]) === true
       const knownAgent = result.get(id)
       const includeNode = nodeType === "agent" || !!knownAgent
       if (!includeNode) continue
+      const resolvedModel = model || knownAgent?.model
 
       result.set(id, {
         id,
         name: label,
         description: description || knownAgent?.description,
+        ...(resolvedModel ? { model: resolvedModel } : {}),
         isEntryPoint: entryPoints.has(id) || dataEntryPoint || knownAgent?.isEntryPoint === true,
       })
     }

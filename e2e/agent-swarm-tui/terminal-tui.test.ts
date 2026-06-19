@@ -364,6 +364,28 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(screen).not.toContain("local-agency")
   })
 
+  test("swarm-level agency default footer uses metadata model label without a recipient agent", async () => {
+    currentServer = await startAgencyProtocolServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      config: {
+        provider: {
+          "agency-swarm": {
+            options: {
+              recipientAgent: undefined,
+              recipientAgentSelectedAt: undefined,
+            },
+          },
+        },
+      },
+    })
+
+    const screen = await currentTui.waitForText(agencyClientConfigModel, tuiReadyTimeoutMs)
+    expect(screen).toContain(`Live QA Agency · ${agencyClientConfigModel}`)
+    expect(screen).not.toContain("Live QA Agency · Swarm Default")
+    expect(screen).not.toContain("Live QA Agency · Swarm models")
+  })
+
   test("run-target picker uses Swarm and agent wording against the TUI demo swarm", async () => {
     currentServer = await startTuiDemoAgencyServer()
     currentTui = await startTui({
@@ -395,13 +417,17 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await selectCurrentSwarm(currentTui)
+    const swarmScreen = await currentTui.waitForText("TuiDemoAgency · Swarm models: gpt-5.4-mini +1")
+    expect(swarmScreen).not.toContain("TuiDemoAgency · gpt-5.4-mini +1")
     currentTui.write("route through the whole swarm\r")
+    const screen = await currentTui.waitForText("Run · gpt-5.4-mini", tuiInteractionTimeoutMs)
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
       "swarm-routed request",
       tuiInteractionTimeoutMs,
     )
 
+    expect(screen).not.toContain("Run · Swarm Default")
     const body = currentServer.requests[0]?.body
     expect(body?.message).toContain("route through the whole swarm")
     expect(body).not.toHaveProperty("recipient_agent")
@@ -418,6 +444,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await selectRunTarget(currentTui, "MathAgent", "Selected MathAgent in swarm TuiDemoAgency")
+    await currentTui.waitForText("MathAgent · claude-sonnet-4-5", tuiInteractionTimeoutMs)
     currentTui.write("calculate through the selected agent\r")
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
@@ -693,6 +720,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("please handoff this calculation\r")
     await currentTui.waitForText("Math agent now has control.", tuiInteractionTimeoutMs)
+    await currentTui.waitForText("Run · claude-sonnet-4-5", tuiInteractionTimeoutMs)
     await currentTui.waitFor(() => currentServer!.requests.length === 1, "handoff request", tuiInteractionTimeoutMs)
 
     currentTui.write("continue after handoff\r")
@@ -778,7 +806,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       tuiInteractionTimeoutMs,
     )
     await currentTui.waitFor(
-      () => currentTui!.screen().includes("MathAgent · Swarm Default"),
+      () => currentTui!.screen().includes("MathAgent · claude-sonnet-4-5"),
       "live handoff routed prompt",
       tuiInteractionTimeoutMs,
     )

@@ -186,6 +186,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** `/models` and `/auth` are limited to Agency-supported providers.
 - **Happy-path proof:** Upstream provider/model state used for auth or LLM choice does not pull the user out of Run mode by accident.
 - **Happy-path proof:** `agency-swarm/default` stays active over stale stored model state until the user explicitly chooses another model.
+- **Happy-path proof:** Footer/status labels and completed run rows show actual Agent Swarm model labels when agency metadata exposes them, without changing the internal `agency-swarm/default` route.
 - **Happy-path proof:** Live agency names appear in run-target labels.
 - **Happy-path proof:** Tab cycles run targets.
 - **Failure scenarios to test:** Agent discovery failure offers `/connect`.

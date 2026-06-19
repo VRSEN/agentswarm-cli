@@ -32,7 +32,7 @@ describe("Agent Swarm metadata outage recipient e2e", () => {
     currentTui.write("please live handoff this calculation\r")
     await currentTui.waitForText("Live agent update moved control to MathAgent.", tuiInteractionTimeoutMs)
     await currentTui.waitFor(
-      () => currentTui!.screen().includes("MathAgent · Swarm Default"),
+      () => currentTui!.screen().includes("MathAgent · gpt-5.4-mini"),
       "live handoff routed prompt",
       tuiInteractionTimeoutMs,
     )

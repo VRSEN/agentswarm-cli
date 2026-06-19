@@ -58,31 +58,35 @@ describe("prompt framework-mode footer", () => {
     const prompt = mock(async () => ({}))
     let promptRef: import("../../../src/cli/cmd/tui/component/prompt").PromptRef | undefined
 
-    spyOn(AgencySwarmAdapter, "discover").mockResolvedValue({
-      agencies: [
-        {
-          id: "demo",
-          name: "Demo Agency",
-          agents: [
-            {
-              id: "orchestrator-slug",
-              name: "Orchestrator",
-              isEntryPoint: true,
-            },
-            {
-              id: "slides_agent",
-              name: "Slides Agent",
-              isEntryPoint: false,
-            },
-            {
-              id: "support_agent",
-              name: "Support Agent",
-              isEntryPoint: false,
-            },
-          ],
-          metadata: {},
-        },
-      ],
+    const agencies: AgencySwarmAdapter.AgencyDescriptor[] = [
+      {
+        id: "demo",
+        name: "Demo Agency",
+        agents: [
+          {
+            id: "orchestrator-slug",
+            name: "Orchestrator",
+            model: "gpt-5.4-mini",
+            isEntryPoint: true,
+          },
+          {
+            id: "slides_agent",
+            name: "Slides Agent",
+            model: "claude-sonnet-4-5",
+            isEntryPoint: false,
+          },
+          {
+            id: "support_agent",
+            name: "Support Agent",
+            model: "gpt-5.4-mini",
+            isEntryPoint: false,
+          },
+        ],
+        metadata: {},
+      },
+    ]
+    const discover = spyOn(AgencySwarmAdapter, "discover").mockResolvedValue({
+      agencies,
       rawOpenAPI: {},
     })
     spyOn(AutocompleteModule, "Autocomplete").mockImplementation((props: any) => {
@@ -311,7 +315,12 @@ describe("prompt framework-mode footer", () => {
           <RouteProvider>
             <DialogProvider>
               <CommandPaletteProvider>
-                <Prompt sessionID="session_1" showPlaceholder={false} ref={(ref) => (promptRef = ref)} />
+                <Prompt
+                  sessionID="session_1"
+                  showPlaceholder={false}
+                  agencyDiscovery={() => agencies}
+                  ref={(ref) => (promptRef = ref)}
+                />
               </CommandPaletteProvider>
             </DialogProvider>
           </RouteProvider>
@@ -325,12 +334,16 @@ describe("prompt framework-mode footer", () => {
 
     const frame = rendered.captureCharFrame()
     expect(frame).toContain("Orchestrator")
-    expect(frame).toContain("Swarm Default")
+    expect(frame).toContain("gpt-5.4-mini")
+    expect(frame).not.toContain("gpt-5.4-mini +1")
+    expect(frame).not.toContain("Swarm models")
+    expect(frame).not.toContain("Swarm Default")
     expect(frame).not.toContain("Swarm Default Agency Swarm")
     expect(frame).toContain("agents")
     expect(frame).not.toContain("orchestrator-slug")
     expect(frame).not.toContain("Agent Builder")
     expect(frame).not.toContain("recipients")
+    expect(discover).not.toHaveBeenCalled()
 
     eventHandlers["message.updated"]?.({
       properties: {
@@ -369,6 +382,9 @@ describe("prompt framework-mode footer", () => {
 
     const handoffFrame = rendered.captureCharFrame()
     expect(handoffFrame).toContain("Slides Agent")
+    expect(handoffFrame).toContain("claude-sonnet-4-5")
+    expect(handoffFrame).not.toContain("gpt-5.4-mini +1")
+    expect(handoffFrame).not.toContain("Swarm models")
     expect(updateGlobalConfig).not.toHaveBeenCalled()
 
     promptRef!.set({ input: "continue", parts: [] })

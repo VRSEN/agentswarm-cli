@@ -15,7 +15,8 @@ const configSchema = "https://opencode.ai/config.json"
 export const latestOpenAITestModel = "openai/gpt-5.4-mini"
 export const latestOpenAITestModelLabel = "GPT-5.4 mini OpenAI"
 export const agencyClientConfigModel = "gpt-4o-mini"
-const tuiDemoAgentModel = "gpt-5.4-mini"
+const tuiDemoEntryAgentModel = "gpt-5.4-mini"
+const tuiDemoMathAgentModel = "claude-sonnet-4-5"
 
 type TuiManagedConfig = Pick<Config.Info, "$schema" | "enabled_providers" | "model" | "provider">
 export type TuiConfigOverride = Pick<Config.Info, "enabled_providers" | "model" | "provider">
@@ -436,7 +437,7 @@ const tuiDemoAgencyFixture: AgencyFixture = {
           label: "UserSupportAgent",
           description: "Receives user requests and coordinates reasoning, search, and file work.",
           isEntryPoint: true,
-          model: tuiDemoAgentModel,
+          model: tuiDemoEntryAgentModel,
         },
       },
       {
@@ -445,7 +446,7 @@ const tuiDemoAgencyFixture: AgencyFixture = {
         data: {
           label: "MathAgent",
           description: "Handles arithmetic and calculation-heavy requests.",
-          model: tuiDemoAgentModel,
+          model: tuiDemoMathAgentModel,
         },
       },
     ],

@@ -3,6 +3,7 @@ import {
   createContext,
   createEffect,
   createMemo,
+  createResource,
   createSignal,
   For,
   Match,
@@ -90,8 +91,10 @@ import { useCommandPalette } from "../../context/command-palette"
 import { useBindings, useCommandShortcut } from "../../keymap"
 import { PathFormatterProvider, usePathFormatter } from "../../context/path-format"
 import { AgencyProduct } from "@/agency-swarm/product"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { describeStreamAuthError, isAgencySwarmFrameworkMode } from "../../session-error"
-import { displayRunOnlyModeLabel } from "../../util/agency-target"
+import { displayRunOnlyModeLabel, readAgencyProviderOptions } from "../../util/agency-target"
+import { resolveAssistantModelLabel, type ModelLabelScope } from "../../util/model-label"
 
 addDefaultParsers(parsers.parsers)
 
@@ -165,6 +168,7 @@ const context = createContext<{
   showGenericToolOutput: () => boolean
   diffWrapMode: () => "word" | "none"
   frameworkMode: () => boolean
+  modelLabel: (input: { providerID: string; modelID: string; agentID?: string; scope?: ModelLabelScope }) => string
   providers: () => ReadonlyMap<string, Provider>
   sync: ReturnType<typeof useSync>
   tui: ReturnType<typeof useTuiConfig>
@@ -244,6 +248,54 @@ export function Session() {
       agentModel: local.agent.current()?.model,
     }),
   )
+  const agencyProviderOptions = createMemo(() =>
+    readAgencyProviderOptions({
+      configuredProvider: sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID],
+      connectedProvider: sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID),
+    }),
+  )
+  const agencyDiscoveryInput = createMemo(() => {
+    if (!frameworkMode()) return undefined
+    const options = agencyProviderOptions()
+    return {
+      baseURL: options.baseURL,
+      token: options.token,
+      timeoutMs: options.discoveryTimeoutMs,
+    }
+  })
+  const [agencyDiscovery] = createResource(
+    agencyDiscoveryInput,
+    async (input): Promise<AgencySwarmAdapter.AgencyDescriptor[]> => {
+      try {
+        const result = await AgencySwarmAdapter.discover({
+          baseURL: input.baseURL,
+          token: input.token,
+          timeoutMs: input.timeoutMs,
+        })
+        return result.agencies
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw error
+        return []
+      }
+    },
+    {
+      initialValue: [],
+    },
+  )
+  const modelLabel = (input: { providerID: string; modelID: string; agentID?: string; scope?: ModelLabelScope }) => {
+    const options = agencyProviderOptions()
+    return resolveAssistantModelLabel({
+      providers: providers(),
+      agencies: agencyDiscovery(),
+      agencyID: options.agency,
+      agentID: input.agentID,
+      providerID: input.providerID,
+      modelID: input.modelID,
+      recipientAgent: options.recipientAgent,
+      frameworkMode: frameworkMode(),
+      scope: input.scope,
+    })
+  }
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
   const toast = useToast()
@@ -921,6 +973,9 @@ export function Session() {
               toolDetails: showDetails(),
               assistantMetadata: showAssistantMetadata(),
               providers: sync.data.provider,
+              agencies: agencyDiscovery(),
+              agencyID: agencyProviderOptions().agency,
+              recipientAgent: agencyProviderOptions().recipientAgent,
             },
           )
           await Clipboard.copy(transcript)
@@ -965,6 +1020,9 @@ export function Session() {
               toolDetails: options.toolDetails,
               assistantMetadata: options.assistantMetadata,
               providers: sync.data.provider,
+              agencies: agencyDiscovery(),
+              agencyID: agencyProviderOptions().agency,
+              recipientAgent: agencyProviderOptions().recipientAgent,
             },
           )
 
@@ -1104,6 +1162,7 @@ export function Session() {
           showGenericToolOutput,
           diffWrapMode,
           frameworkMode,
+          modelLabel,
           providers,
           sync,
           tui: tuiConfig,
@@ -1255,6 +1314,7 @@ export function Session() {
                         toBottom()
                       }}
                       sessionID={route.sessionID}
+                      agencyDiscovery={agencyDiscovery}
                       right={<TuiPluginRuntime.Slot name="session_prompt_right" session_id={route.sessionID} />}
                     />
                   </TuiPluginRuntime.Slot>
@@ -1415,7 +1475,13 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
     const msg = props.message.error?.data.message
     return typeof msg === "string" ? describeStreamAuthError(msg) : null
   })
-  const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
+  const model = createMemo(() =>
+    ctx.modelLabel({
+      providerID: props.message.providerID,
+      modelID: props.message.modelID,
+      agentID: props.message.agent,
+    }),
+  )
 
   const final = createMemo(() => {
     return props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish)
