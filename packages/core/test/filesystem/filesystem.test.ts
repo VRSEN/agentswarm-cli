@@ -356,19 +356,39 @@ describe("AppFileSystem", () => {
       expect(AppFileSystem.contains("/a/b", "/a/b/c")).toBe(true)
       expect(AppFileSystem.contains("/a/b", "/a/b")).toBe(true)
       expect(AppFileSystem.contains("/a/b", "/a/b/..c")).toBe(true)
+      expect(AppFileSystem.contains("/a/b", "/a/b/..c/file")).toBe(true)
       expect(AppFileSystem.contains("/a/b", "/a/c")).toBe(false)
       expect(AppFileSystem.contains("/a/b", "/a")).toBe(false)
       expect(AppFileSystem.contains("/a/b", "/a/bc")).toBe(false)
+    })
+
+    test("contains rejects Windows root-relative prefix collisions", () => {
+      if (process.platform !== "win32") return
+
+      expect(AppFileSystem.contains("/project", "/project-other/file")).toBe(false)
+      expect(AppFileSystem.contains("/project", "/projectfile")).toBe(false)
+      expect(AppFileSystem.contains("/project", "/project/..config")).toBe(true)
+      expect(AppFileSystem.contains("/project", "/project/..config/file")).toBe(true)
     })
 
     test("overlaps detects overlapping paths", () => {
       expect(AppFileSystem.overlaps("/a/b", "/a/b/c")).toBe(true)
       expect(AppFileSystem.overlaps("/a/b", "/a/b")).toBe(true)
       expect(AppFileSystem.overlaps("/a/b", "/a/b/..c")).toBe(true)
+      expect(AppFileSystem.overlaps("/a/b", "/a/b/..c/file")).toBe(true)
       expect(AppFileSystem.overlaps("/a/b/c", "/a/b")).toBe(true)
       expect(AppFileSystem.overlaps("/a/b", "/a")).toBe(true)
       expect(AppFileSystem.overlaps("/a", "/b")).toBe(false)
       expect(AppFileSystem.overlaps("/a/b", "/a/bc")).toBe(false)
+    })
+
+    test("overlaps rejects Windows root-relative prefix collisions", () => {
+      if (process.platform !== "win32") return
+
+      expect(AppFileSystem.overlaps("/project", "/project-other/file")).toBe(false)
+      expect(AppFileSystem.overlaps("/project", "/projectfile")).toBe(false)
+      expect(AppFileSystem.overlaps("/project", "/project/..config")).toBe(true)
+      expect(AppFileSystem.overlaps("/project", "/project/..config/file")).toBe(true)
     })
   })
 })
