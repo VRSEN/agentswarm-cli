@@ -3569,6 +3569,7 @@ describe("session.agency-swarm", () => {
           usage: {
             input_tokens: 2,
             output_tokens: 3,
+            total_cost: 0.42,
             output_tokens_details: { reasoning_tokens: 1 },
             input_tokens_details: { cached_tokens: 1 },
           },
@@ -3608,6 +3609,11 @@ describe("session.agency-swarm", () => {
       outputTokens: 3,
       reasoningTokens: 1,
       cachedInputTokens: 1,
+    })
+    expect(events.find((event) => event.type === "finish-step")?.providerMetadata).toMatchObject({
+      agency_swarm: {
+        totalCost: 0.42,
+      },
     })
     expect(runs).toEqual(["run_1", "run_1"])
     expect(appended[0]).toEqual([{ type: "function_call_output", call_id: "call_1", output: "done" }])

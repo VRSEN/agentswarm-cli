@@ -381,9 +381,19 @@ export const getUsage = (input: { model: Provider.Model; usage: LanguageModelUsa
     if (!Number.isFinite(value)) return 0
     return Math.max(0, value)
   }
+  const finite = (value: unknown) => {
+    if (typeof value !== "number") return undefined
+    if (!Number.isFinite(value)) return undefined
+    return Math.max(0, value)
+  }
+  const record = (value: unknown) => {
+    if (!value || typeof value !== "object") return undefined
+    return value as Record<string, unknown>
+  }
   const inputTokens = safe(input.usage.inputTokens ?? 0)
   const outputTokens = safe(input.usage.outputTokens ?? 0)
   const reasoningTokens = safe(input.usage.outputTokenDetails?.reasoningTokens ?? input.usage.reasoningTokens ?? 0)
+  const agencySwarmCost = finite(record(input.metadata?.["agency_swarm"])?.["totalCost"])
 
   const cacheReadInputTokens = safe(
     input.usage.inputTokenDetails?.cacheReadTokens ?? input.usage.cachedInputTokens ?? 0,
@@ -429,18 +439,19 @@ export const getUsage = (input: { model: Provider.Model; usage: LanguageModelUsa
     (input.model.cost?.experimentalOver200K && contextTokens > 200_000
       ? input.model.cost.experimentalOver200K
       : input.model.cost)
+  const calculatedCost = safe(
+    new Decimal(0)
+      .add(new Decimal(tokens.input).mul(costInfo?.input ?? 0).div(1_000_000))
+      .add(new Decimal(tokens.output).mul(costInfo?.output ?? 0).div(1_000_000))
+      .add(new Decimal(tokens.cache.read).mul(costInfo?.cache?.read ?? 0).div(1_000_000))
+      .add(new Decimal(tokens.cache.write).mul(costInfo?.cache?.write ?? 0).div(1_000_000))
+      // TODO: update models.dev to have better pricing model, for now:
+      // charge reasoning tokens at the same rate as output tokens
+      .add(new Decimal(tokens.reasoning).mul(costInfo?.output ?? 0).div(1_000_000))
+      .toNumber(),
+  )
   return {
-    cost: safe(
-      new Decimal(0)
-        .add(new Decimal(tokens.input).mul(costInfo?.input ?? 0).div(1_000_000))
-        .add(new Decimal(tokens.output).mul(costInfo?.output ?? 0).div(1_000_000))
-        .add(new Decimal(tokens.cache.read).mul(costInfo?.cache?.read ?? 0).div(1_000_000))
-        .add(new Decimal(tokens.cache.write).mul(costInfo?.cache?.write ?? 0).div(1_000_000))
-        // TODO: update models.dev to have better pricing model, for now:
-        // charge reasoning tokens at the same rate as output tokens
-        .add(new Decimal(tokens.reasoning).mul(costInfo?.output ?? 0).div(1_000_000))
-        .toNumber(),
-    ),
+    cost: agencySwarmCost ?? calculatedCost,
     tokens,
   }
 }
