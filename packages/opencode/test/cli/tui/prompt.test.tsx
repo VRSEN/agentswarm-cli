@@ -735,7 +735,7 @@ describe("prompt auth rejection handling", () => {
     expect(editorText).toContain("\\u0060\\u0060\\u0060")
     expect(editorText).toContain("\\u003c/system-reminder\\u003e")
     expect(editorText).toContain("\\u003csystem-reminder\\u003e")
-    expect(markSelectionSent).not.toHaveBeenCalled()
+    expect(markSelectionSent).toHaveBeenCalledTimes(1)
     expect(appendHistory).toHaveBeenCalledWith({
       input: "clear right away",
       parts: [],
@@ -1329,7 +1329,7 @@ describe("prompt auth rejection handling", () => {
     })
   })
 
-  test("routes first-prompt SDK auth error through auth without blocking prompt clearing", async () => {
+  test("routes first-prompt SDK auth error through auth after upstream-style prompt clearing", async () => {
     process.env.OPENAI_API_KEY = "sk-test"
 
     const routeStates: string[] = []
@@ -1362,7 +1362,7 @@ describe("prompt auth rejection handling", () => {
       {
         prompt: async () => {
           await Bun.sleep(75)
-          return { error: promptError, response: new Response(null, { status: 403 }) }
+          throw promptError
         },
       },
       "prompt",
@@ -1623,14 +1623,12 @@ describe("prompt auth rejection handling", () => {
       },
     })
     expect(promptSession).toHaveBeenCalledTimes(1)
-    expect(markSelectionSent).not.toHaveBeenCalled()
-    expect(deleteSession).toHaveBeenCalledWith({
-      sessionID: "session_auth_race",
-    })
+    expect(markSelectionSent).toHaveBeenCalledTimes(1)
+    expect(deleteSession).not.toHaveBeenCalled()
     expect(routeStates.some((state) => state.startsWith("session:"))).toBe(true)
-    expect(routeStates.at(-1)).toBe("home")
+    expect(routeStates.at(-1)).toBe("session:session_auth_race")
     expect(promptRef!.current).toEqual({
-      input: "recover this draft",
+      input: "",
       parts: [],
     })
     expect(promptRef!.focused).toBe(false)
