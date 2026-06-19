@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import {
+  CodexAuthPlugin,
   parseJwtClaims,
   extractAccountIdFromClaims,
   extractAccountId,
   type IdTokenClaims,
 } from "../../src/plugin/codex"
+import type { Auth, Model, Provider } from "@opencode-ai/sdk/v2"
 
 function createTestJwt(payload: object): string {
   const header = Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url")
@@ -12,7 +14,132 @@ function createTestJwt(payload: object): string {
   return `${header}.${body}.sig`
 }
 
+function createModel(id: string, apiID = id): Model {
+  return {
+    id,
+    providerID: "openai",
+    api: {
+      id: apiID,
+      url: "https://api.openai.com/v1",
+      npm: "@ai-sdk/openai",
+    },
+    name: id,
+    capabilities: {
+      temperature: true,
+      reasoning: true,
+      attachment: false,
+      toolcall: true,
+      input: {
+        text: true,
+        audio: false,
+        image: true,
+        video: false,
+        pdf: true,
+      },
+      output: {
+        text: true,
+        audio: false,
+        image: false,
+        video: false,
+        pdf: false,
+      },
+      interleaved: false,
+    },
+    cost: {
+      input: 1,
+      output: 2,
+      cache: {
+        read: 3,
+        write: 4,
+      },
+    },
+    limit: {
+      context: 128_000,
+      output: 16_384,
+    },
+    status: "active",
+    options: {},
+    headers: {},
+    release_date: "2026-01-01",
+  }
+}
+
+function createProvider(models: Record<string, Model>): Provider {
+  return {
+    id: "openai",
+    name: "OpenAI",
+    source: "api",
+    env: [],
+    options: {},
+    models,
+  }
+}
+
+async function loadModels(provider: Provider, auth: Auth | undefined) {
+  const hooks = await CodexAuthPlugin({} as never)
+  const models = hooks.provider?.models
+  if (!models) throw new Error("Codex provider hook missing")
+  return models(provider, { auth })
+}
+
 describe("plugin.codex", () => {
+  describe("models", () => {
+    test("filters Codex OAuth models by visible model key", async () => {
+      const result = await loadModels(
+        createProvider({
+          "gpt-5.2": createModel("gpt-5.2"),
+          "gpt-5.3-codex": createModel("gpt-5.3-codex"),
+          "gpt-5.3-codex-spark": createModel("gpt-5.3-codex-spark"),
+          "gpt-5.4": createModel("gpt-5.4"),
+          "gpt-5.4-fast": createModel("gpt-5.4-fast", "gpt-5.4"),
+          "gpt-5.4-mini": createModel("gpt-5.4-mini"),
+          "gpt-5.4-mini-fast": createModel("gpt-5.4-mini-fast", "gpt-5.4-mini"),
+          "gpt-5.5": createModel("gpt-5.5"),
+          "gpt-5.5-fast": createModel("gpt-5.5-fast", "gpt-5.5"),
+          "gpt-5.5-pro": createModel("gpt-5.5-pro", "gpt-5.5"),
+        }),
+        {
+          type: "oauth",
+          refresh: "refresh",
+          access: "access",
+          expires: Date.now() + 60_000,
+        },
+      )
+
+      expect(Object.keys(result)).toEqual(["gpt-5.4-mini", "gpt-5.5"])
+      expect(result["gpt-5.4-mini"]?.cost).toEqual({
+        input: 0,
+        output: 0,
+        cache: { read: 0, write: 0 },
+      })
+      expect(result["gpt-5.4-mini"]?.limit).toEqual({
+        context: 128_000,
+        output: 16_384,
+      })
+      expect(result["gpt-5.5"]?.limit).toEqual({
+        context: 400_000,
+        input: 272_000,
+        output: 128_000,
+      })
+    })
+
+    test("keeps API key models unfiltered", async () => {
+      const provider = createProvider({
+        "gpt-5.4": createModel("gpt-5.4"),
+        "gpt-5.4-mini": createModel("gpt-5.4-mini"),
+        "gpt-5.5-fast": createModel("gpt-5.5-fast", "gpt-5.5"),
+        "gpt-5.5-pro": createModel("gpt-5.5-pro", "gpt-5.5"),
+      })
+
+      const result = await loadModels(provider, {
+        type: "api",
+        key: "sk-test",
+      })
+
+      expect(result).toBe(provider.models)
+    })
+  })
+
   describe("parseJwtClaims", () => {
     test("parses valid JWT with claims", () => {
       const payload = { email: "test@example.com", chatgpt_account_id: "acc-123" }

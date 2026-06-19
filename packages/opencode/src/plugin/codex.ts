@@ -15,14 +15,7 @@ export const CODEX_API_BASE_URL = "https://chatgpt.com/backend-api/codex"
 const CODEX_API_ENDPOINT = `${CODEX_API_BASE_URL}/responses`
 const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
-const ALLOWED_MODELS = new Set([
-  "gpt-5.5",
-  "gpt-5.2",
-  "gpt-5.3-codex",
-  "gpt-5.3-codex-spark",
-  "gpt-5.4",
-  "gpt-5.4-mini",
-])
+const CODEX_OAUTH_MODELS = new Set(["gpt-5.4-mini", "gpt-5.5"])
 
 interface PkceCodes {
   verifier: string
@@ -374,11 +367,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
 
         return Object.fromEntries(
           Object.entries(provider.models)
-            .filter(([, model]) => {
-              if (ALLOWED_MODELS.has(model.api.id)) return true
-              const match = model.api.id.match(/^gpt-(\d+\.\d+)/)
-              return match ? parseFloat(match[1]) > 5.4 : false
-            })
+            .filter(([modelID]) => CODEX_OAUTH_MODELS.has(modelID))
             .map(([modelID, model]) => [
               modelID,
               {
@@ -388,13 +377,14 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
                   output: 0,
                   cache: { read: 0, write: 0 },
                 },
-                limit: model.id.includes("gpt-5.5")
-                  ? {
-                      context: 400_000,
-                      input: 272_000,
-                      output: 128_000,
-                    }
-                  : model.limit,
+                limit:
+                  modelID === "gpt-5.5"
+                    ? {
+                        context: 400_000,
+                        input: 272_000,
+                        output: 128_000,
+                      }
+                    : model.limit,
               },
             ]),
         )
