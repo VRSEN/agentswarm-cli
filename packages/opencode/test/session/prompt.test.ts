@@ -1408,7 +1408,7 @@ it.instance(
       expect(JSON.stringify(inputs.at(-1)?.messages)).toContain("second")
     }),
   { git: true },
-  5_000,
+  3_000,
 )
 
 it.instance(
