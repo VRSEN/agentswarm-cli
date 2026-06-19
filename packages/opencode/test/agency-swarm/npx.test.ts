@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { mkdir, symlink } from "node:fs/promises"
 import os from "node:os"
@@ -42,6 +42,23 @@ describe("agency-swarm npx onboarding", () => {
     starterProjectName: "example-project",
     agencyEntryFiles: ["main.py"],
   }
+  let spinnerStarts: string[] = []
+  let spinnerStops: string[] = []
+
+  // The launcher wraps long setup/startup waits in a clack spinner. Stub it for every test so
+  // assertions on product-state logs and commands run without spinner frames leaking into output.
+  beforeEach(() => {
+    spinnerStarts = []
+    spinnerStops = []
+    spyOn(prompts, "spinner").mockReturnValue({
+      start(message: string) {
+        spinnerStarts.push(message)
+      },
+      stop(message: string) {
+        spinnerStops.push(message)
+      },
+    } as never)
+  })
 
   afterEach(() => {
     mock.restore()
@@ -765,6 +782,8 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(warn).not.toHaveBeenCalled()
+    expect(spinnerStarts).toEqual(["Starting Agent Swarm"])
+    expect(spinnerStops).toEqual(["Agent Swarm ready"])
     expect(commands.some(isPythonPipInstallUvCommand)).toBe(false)
     expect(commands.some(isUvPipInstallCommand)).toBe(false)
     expect(commands.some(isPythonVenvCommand)).toBe(false)
@@ -1464,10 +1483,6 @@ describe("agency-swarm npx onboarding", () => {
       confirms.push(String(input.message))
       return Promise.resolve(true as never)
     })
-    spyOn(prompts, "spinner").mockReturnValue({
-      start() {},
-      stop() {},
-    } as never)
     const info = spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
     spyOn(Date.prototype, "toISOString").mockReturnValue(iso)
@@ -1538,6 +1553,8 @@ describe("agency-swarm npx onboarding", () => {
     expect(confirms).toContain("Set up this project now?")
     expect(confirms.join("\n")).not.toContain(".venv")
     expect(info).toHaveBeenCalledWith("Preparing Agent Swarm...")
+    expect(spinnerStarts).toEqual(["Setting up Agent Swarm", "Starting Agent Swarm"])
+    expect(spinnerStops).toEqual(["Agent Swarm setup ready", "Agent Swarm ready"])
     expect(visible).not.toContain("Installing project dependencies...")
     expect(visible).not.toContain("Detected Python:")
     expect(visible).not.toContain("Verifying Agency Swarm imports")
