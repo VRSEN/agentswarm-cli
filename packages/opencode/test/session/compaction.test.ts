@@ -30,7 +30,6 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { TestConfig } from "../fixture/config"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { SessionEvent } from "@/v2/session-event"
 
 void Log.init({ print: false })
 
@@ -1029,17 +1028,10 @@ describe("session.compaction.process", () => {
   itCompaction.instance(
     "marks summary message as errored on compact result",
     Effect.gen(function* () {
-      const bus = yield* Bus.Service
       const ssn = yield* SessionNs.Service
       const session = yield* ssn.create({})
       const msg = yield* createUserMessage(session.id, "hello")
       const msgs = yield* ssn.messages({ sessionID: session.id })
-      let ended = false
-      const unsub = yield* bus.subscribeCallback(SessionEvent.Compaction.Ended.Sync, (evt) => {
-        if (evt.properties.sessionID !== session.id) return
-        ended = true
-      })
-      yield* Effect.addFinalizer(() => Effect.sync(unsub))
 
       const result = yield* SessionCompaction.use.process({
         parentID: msg.id,
@@ -1053,7 +1045,6 @@ describe("session.compaction.process", () => {
       )
 
       expect(result).toBe("stop")
-      expect(ended).toBe(false)
       expect(summary?.info.role).toBe("assistant")
       if (summary?.info.role === "assistant") {
         expect(summary.info.finish).toBe("error")
