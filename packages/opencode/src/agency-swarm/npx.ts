@@ -15,7 +15,6 @@ import { AgencyProduct } from "./product"
 import {
   collectUnixPythonCandidates,
   findPythonExecutable,
-  formatPython,
   inspectPython,
   isCondaPython,
   type PythonInfo,
@@ -709,11 +708,6 @@ async function chooseLaunchChoice(
   project: AgencyProject | undefined,
   profile: Pick<ProductProfile, "custom" | "name" | "stateRoot"> = AgencyProduct,
 ) {
-  prompts.log.info("1. Choose how to start the terminal UI.")
-  prompts.log.info(
-    "   The launcher can use a detected project, create a starter project, or connect to an existing server.",
-  )
-
   const result = await prompts.select<LaunchChoice>({
     message: "How do you want to start?",
     options: [
@@ -834,8 +828,7 @@ async function createStarterProject(input: {
   baseDirectory: string
   profile: ProductProfile
 }): Promise<AgencyProject | undefined> {
-  prompts.log.info("2. Create the starter project.")
-  prompts.log.info(`   This gives the terminal UI a ready-to-run ${input.profile.name} project to launch.`)
+  prompts.log.info(`Creating ${input.profile.name} project...`)
 
   const starterProfile = input.profile.customStarter ? input.profile : AgencyProduct
 
@@ -845,7 +838,6 @@ async function createStarterProject(input: {
     if (await Filesystem.exists(targetDirectory)) {
       throw new Error(`Target directory already exists: ${targetDirectory}`)
     }
-    prompts.log.step(`Creating starter project in \`${name}/\``)
     const clone = await runCommand(["git", "clone", "--depth=1", starterTemplateUrl(input.profile), targetDirectory])
     if (clone.code !== 0) {
       throw new Error(clone.stderr.trim() || clone.stdout.trim() || "Starter template clone failed")
@@ -859,8 +851,8 @@ async function createStarterProject(input: {
   }
 
   const repoName = await prompts.text({
-    message: "Project or repository name",
-    placeholder: input.profile.starterProjectName,
+    message: "Project name",
+    initialValue: input.profile.starterProjectName,
     validate(value) {
       return validateStarterName(input.baseDirectory, value)
     },
@@ -871,17 +863,17 @@ async function createStarterProject(input: {
   let mode: StarterMode = "local"
   if (ghReady) {
     const selected = await prompts.select<StarterMode>({
-      message: "How should the starter be created?",
+      message: "Where should this project be created?",
       options: [
         {
           value: "github",
-          label: "Create a GitHub repository from the template",
+          label: "On GitHub",
           hint: "recommended",
         },
         {
           value: "local",
-          label: "Create a local folder from the template",
-          hint: "skip GitHub for now",
+          label: "On this computer",
+          hint: "skip GitHub",
         },
       ],
     })
@@ -895,7 +887,6 @@ async function createStarterProject(input: {
     throw new Error(`Target directory already exists: ${targetDirectory}`)
   }
 
-  prompts.log.step(mode === "github" ? "Creating repository from the starter template" : "Cloning the starter template")
   try {
     if (mode === "github") {
       const visibility = await prompts.select<"private" | "public">({
@@ -936,7 +927,6 @@ async function createStarterProject(input: {
       }).catch(() => undefined)
       await runCommand(["git", "init", "-b", "main"], { cwd: targetDirectory })
     }
-    prompts.log.step("Starter project ready")
   } catch (error) {
     prompts.log.error("Starter project setup failed")
     throw error
@@ -949,13 +939,11 @@ async function createProductStateRootProject(input: {
   directory: string
   profile: ProductProfile
 }): Promise<AgencyProject | undefined> {
-  prompts.log.info("2. Create the product state project.")
-  prompts.log.info(`   This keeps ${input.profile.name} launcher state in one user folder.`)
+  prompts.log.info(`Creating ${input.profile.name} project...`)
 
   const starterProfile = input.profile.customStarter ? input.profile : AgencyProduct
 
   await mkdir(path.dirname(input.directory), { recursive: true })
-  prompts.log.step(`Creating starter project in \`${input.directory}\``)
   const clone = await runCommand(["git", "clone", "--depth=1", starterTemplateUrl(input.profile), input.directory])
   if (clone.code !== 0) {
     throw new Error(clone.stderr.trim() || clone.stdout.trim() || "Starter template clone failed")
@@ -972,15 +960,11 @@ export async function prepareProjectLaunch(
   project: AgencyProject,
   profile: LaunchProfile = AgencyProduct,
 ): Promise<PreparedNpxLaunch | undefined> {
-  prompts.log.info(`Starting the ${profile.name} project.`)
-  prompts.log.info(
-    "The launcher will reuse a project `.venv`, start a local FastAPI server, and connect the terminal UI to it.",
-  )
+  prompts.log.info(`Preparing ${profile.name}...`)
 
   const python = await ensureProjectPython(project.directory, profile)
   if (!python) return
 
-  prompts.log.info("Starting your agency project.")
   const server = await startProjectServer(project.directory, python, project.moduleName, project.agencyFile)
   return {
     directory: project.directory,
@@ -1022,8 +1006,6 @@ async function ensureProjectPython(
       prompts.log.warn("Project `.venv` uses a Conda-family Python. Rebuilding with a standalone Python...")
       corruptedVenv = true
     } else {
-      prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
-      prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
       let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
       try {
         canary = await venvCanaryPasses([venvPython], {
@@ -1035,7 +1017,6 @@ async function ensureProjectPython(
         canary = { healthy: false, stderr: "", timedOut: false }
       }
       if (canary.healthy) {
-        prompts.log.success("Agency Swarm packages ready")
         return [venvPython]
       }
       const refreshLogFile = await tryCreateProjectCommandLogFile(
@@ -1044,7 +1025,6 @@ async function ensureProjectPython(
         "launcher refresh",
         profile,
       )
-      prompts.log.info("Refreshing project dependencies...")
       let localUv: string | undefined
       try {
         localUv = await ensureLocalUv(directory, venvPython, {
@@ -1064,7 +1044,6 @@ async function ensureProjectPython(
         if (refresh.installerFailed) corruptedVenv = true
       }
       if (!corruptedVenv) {
-        prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
         let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
         try {
           canary = await venvCanaryPasses([venvPython], {
@@ -1075,7 +1054,6 @@ async function ensureProjectPython(
           canary = { healthy: false, stderr: "", timedOut: false }
         }
         if (canary.healthy) {
-          prompts.log.success("Agency Swarm packages ready")
           return [venvPython]
         }
         corruptedVenv = true
@@ -1104,7 +1082,6 @@ async function ensureProjectPython(
   // (python3 etc.) resolves via PATH and, in an activated broken venv, still points at
   // the .venv binary we are about to delete.
   const rebuildCmd = corruptedVenv ? [detected.executable] : detected.cmd
-  prompts.log.info(`Detected Python: ${formatPython(detected, rebuildCmd)}`)
 
   if (corruptedVenv) {
     prompts.log.warn("Project `.venv` is incomplete or corrupted. Rebuilding...")
@@ -1114,7 +1091,7 @@ async function ensureProjectPython(
 
   if (!selfHealing) {
     const createVenv = await prompts.confirm({
-      message: "Create a local `.venv` in this project?",
+      message: "Set up this project now?",
       initialValue: true,
     })
     if (prompts.isCancel(createVenv)) {
@@ -1131,7 +1108,6 @@ async function ensureProjectPython(
     }
   }
 
-  prompts.log.step("Creating `.venv`")
   const created = await runCommand([...rebuildCmd, "-m", "venv", ".venv"], {
     cwd: directory,
   })
@@ -1140,14 +1116,12 @@ async function ensureProjectPython(
     throw new Error(created.stderr.trim() || created.stdout.trim() || "Virtual environment creation failed")
   }
 
-  prompts.log.step("`.venv` created")
   const installLogFile = await tryCreateProjectCommandLogFile(
     directory,
     "launcher-rebuild",
     "launcher rebuild",
     profile,
   )
-  prompts.log.info("Installing project dependencies...")
   const localUv = await ensureLocalUv(directory, venvPython, {
     forceInstall: true,
     logFile: installLogFile,
@@ -1163,7 +1137,6 @@ async function ensureProjectPython(
   if (install.code !== 0) {
     throw new Error(formatCommandFailure(install, "Dependency install failed"))
   }
-  prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
   const canary = await venvCanaryPasses([venvPython], {
     cwd: directory,
     includeStderr: true,
@@ -1177,7 +1150,6 @@ async function ensureProjectPython(
       await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr, install.logFile),
     )
   }
-  prompts.log.success("Agency Swarm packages ready")
   return [venvPython]
 }
 

@@ -1459,7 +1459,11 @@ describe("agency-swarm npx onboarding", () => {
     await writeAgency(dir.path)
     const iso = "2026-04-23T02:15:00.000Z"
 
-    spyOn(prompts, "confirm").mockResolvedValue(true as never)
+    const confirms: string[] = []
+    spyOn(prompts, "confirm").mockImplementation((input) => {
+      confirms.push(String(input.message))
+      return Promise.resolve(true as never)
+    })
     spyOn(prompts, "spinner").mockReturnValue({
       start() {},
       stop() {},
@@ -1530,8 +1534,14 @@ describe("agency-swarm npx onboarding", () => {
       moduleName: "agency",
     })
 
-    expect(info).toHaveBeenCalledWith("Installing project dependencies...")
-    expect(info.mock.calls.map((call) => String(call[0])).join("\n")).not.toContain("Full log")
+    const visible = info.mock.calls.map((call) => String(call[0])).join("\n")
+    expect(confirms).toContain("Set up this project now?")
+    expect(confirms.join("\n")).not.toContain(".venv")
+    expect(info).toHaveBeenCalledWith("Preparing Agent Swarm...")
+    expect(visible).not.toContain("Installing project dependencies...")
+    expect(visible).not.toContain("Detected Python:")
+    expect(visible).not.toContain("Verifying Agency Swarm imports")
+    expect(visible).not.toContain("Full log")
     expect(stderrWrite.mock.calls.map((call) => call[0]).join("")).not.toContain("Resolving packages")
     const logContent = await Bun.file(launcherLogFilePath(dir.path, "launcher-rebuild", iso)).text()
     expect(logContent).toContain("Resolving packages...")
@@ -2004,8 +2014,11 @@ describe("agency-swarm npx onboarding", () => {
       moduleName: "agency",
     })
 
-    expect(info).toHaveBeenCalledWith("Refreshing project dependencies...")
-    expect(info.mock.calls.map((call) => String(call[0])).join("\n")).not.toContain("Full log")
+    const visible = info.mock.calls.map((call) => String(call[0])).join("\n")
+    expect(info).toHaveBeenCalledWith("Preparing Agent Swarm...")
+    expect(visible).not.toContain("Refreshing project dependencies...")
+    expect(visible).not.toContain("Verifying Agency Swarm imports")
+    expect(visible).not.toContain("Full log")
     expect(stderrWrite.mock.calls.map((call) => call[0]).join("")).not.toContain("Collecting agency-swarm")
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("Installer output: ERROR: No matching distribution found"),
@@ -2510,8 +2523,8 @@ describe("agency-swarm npx onboarding", () => {
       "Fix the missing import or dependency in this project, then run agentswarm again.",
     )
     expect(outcome.message).not.toContain("Agency Swarm server exited with code 1")
-    expect(success).toHaveBeenCalledWith("Agency Swarm packages ready")
-    expect(info).toHaveBeenCalledWith("Starting your agency project.")
+    expect(success).not.toHaveBeenCalled()
+    expect(info).toHaveBeenCalledWith("Preparing Agent Swarm...")
   })
 
   test("prepareProjectLaunch points startup import failures at the active entry file", async () => {
@@ -3767,9 +3780,9 @@ describe("agency-swarm npx onboarding", () => {
     const target = path.join(dir.path, downstreamProfile.starterProjectName)
     const commands: string[][] = []
 
-    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
-    spyOn(prompts.log, "step").mockImplementation(() => undefined as never)
-    spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
+    const info = spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    const step = spyOn(prompts.log, "step").mockImplementation(() => undefined as never)
+    const success = spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
     spyOn(prompts, "outro").mockImplementation(() => undefined as never)
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
     spyOn(Bun, "spawn").mockImplementation((options: any) => {
@@ -3827,6 +3840,18 @@ describe("agency-swarm npx onboarding", () => {
     expect(launch?.runProjectDirectory).toBe(target)
     expect(commands.find((cmd) => cmd[1]?.endsWith("launch_agency.py"))?.at(-1)).toBe("main")
     expect(launch?.configContent).toContain("agency-swarm/default")
+    const visible = info.mock.calls.map((call) => String(call[0])).join("\n")
+    expect(visible).toContain("Checking Example Product project files...")
+    expect(visible).toContain("Creating Example Product project...")
+    expect(visible).toContain("Preparing Example Product...")
+    expect(visible).not.toContain("Choose how to start the terminal UI")
+    expect(visible).not.toContain("ready-to-run")
+    expect(visible).not.toContain("Detected Python:")
+    expect(visible).not.toContain("Verifying Agency Swarm imports")
+    expect(visible).not.toContain("Agency Swarm packages ready")
+    expect(visible).not.toContain("FastAPI server")
+    expect(step).not.toHaveBeenCalled()
+    expect(success).not.toHaveBeenCalled()
 
     await launch?.cleanup?.()
   })
@@ -3841,16 +3866,24 @@ describe("agency-swarm npx onboarding", () => {
       starterProjectName: "my-agency",
       agencyEntryFiles: ["main.py"],
     }
-    const name = "entry-only-starter"
-    const target = path.join(dir.path, name)
+    const target = path.join(dir.path, profile.starterProjectName)
     const commands: string[][] = []
+    const choices: Parameters<typeof prompts.select>[0][] = []
 
-    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    const info = spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     spyOn(prompts.log, "step").mockImplementation(() => undefined as never)
     spyOn(prompts.log, "success").mockImplementation(() => undefined as never)
     spyOn(prompts, "outro").mockImplementation(() => undefined as never)
-    spyOn(prompts, "select").mockResolvedValue("starter" as never)
-    spyOn(prompts, "text").mockResolvedValue(name as never)
+    spyOn(prompts, "select").mockImplementation((input) => {
+      choices.push(input)
+      return Promise.resolve((input.message === "How do you want to start?" ? "starter" : "local") as never)
+    })
+    const text = spyOn(prompts, "text").mockImplementation((input) => {
+      const value = input.initialValue
+      const result = input.validate?.(value)
+      if (result) throw result instanceof Error ? result : new Error(String(result))
+      return Promise.resolve(value as never)
+    })
     spyOn(prompts, "spinner").mockReturnValue({
       start() {},
       stop() {},
@@ -3861,8 +3894,8 @@ describe("agency-swarm npx onboarding", () => {
       if (!cmd) throw new Error("Missing command")
       commands.push(cmd)
 
-      if (cmd[0] === "gh") {
-        return { exited: Promise.resolve(1), stdout: "", stderr: "gh unavailable" } as never
+      if (cmd[0] === "gh" && (cmd[1] === "--version" || (cmd[1] === "auth" && cmd[2] === "status"))) {
+        return { exited: Promise.resolve(0), stdout: "gh ready", stderr: "" } as never
       }
 
       if (cmd[0] === "git" && cmd[1] === "clone") {
@@ -3913,6 +3946,18 @@ describe("agency-swarm npx onboarding", () => {
     expect(commands).toContainEqual(["git", "clone", "--depth=1", starterTemplateUrl(), target])
     expect(launch?.runProjectDirectory).toBe(target)
     expect(commands.find((cmd) => cmd[1]?.endsWith("launch_agency.py"))?.at(-1)).toBe("agency")
+    expect(text.mock.calls[0]?.[0].message).toBe("Project name")
+    expect(text.mock.calls[0]?.[0].initialValue).toBe(profile.starterProjectName)
+    expect(text.mock.calls[0]?.[0].placeholder).toBeUndefined()
+    expect(text.mock.calls[0]?.[0].defaultValue).toBeUndefined()
+    expect(choices[1]?.message).toBe("Where should this project be created?")
+    expect(choices[1]?.options.map((option) => option.label)).toEqual(["On GitHub", "On this computer"])
+    expect(choices[1]?.options.map((option) => option.hint)).toEqual(["recommended", "skip GitHub"])
+    const visible = info.mock.calls.map((call) => String(call[0])).join("\n")
+    expect(visible).not.toContain("Choose how to start the terminal UI")
+    expect(visible).not.toContain("launcher can use a detected project")
+    expect(visible).not.toContain("Create the starter project")
+    expect(visible).not.toContain("ready-to-run")
 
     await launch?.cleanup?.()
   })
