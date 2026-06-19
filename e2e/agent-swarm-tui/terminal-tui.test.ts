@@ -591,6 +591,26 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
   })
 
+  test("run-mode prompt footer does not show false zero percent for placeholder context", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+      cols: 150,
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    await waitForConfiguredDemoRecipient(currentTui)
+    currentTui.write("usage footer proof\r")
+    await currentTui.waitForText("Usage footer response complete.", tuiInteractionTimeoutMs)
+    const screen = await currentTui.waitForText("1.5K · $0.42", tuiInteractionTimeoutMs)
+
+    expect(screen).toContain("1.5K · $0.42")
+    expect(screen).not.toContain("1.5K (0%)")
+  })
+
   test("/connect opens the Agency Swarm server dialog with visible OpenAI model state", async () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({

@@ -781,6 +781,33 @@ const tuiDemoAgencyFixture: AgencyFixture = {
       ])
     }
 
+    if (message.includes("usage footer proof")) {
+      return sse([
+        ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+        [
+          "messages",
+          {
+            new_messages: [
+              {
+                id: `msg_usage_${requestCount}`,
+                type: "message",
+                role: "assistant",
+                agent: body.recipient_agent || "UserSupportAgent",
+                content: [{ type: "output_text", text: "Usage footer response complete." }],
+              },
+            ],
+            usage: {
+              input_tokens: 1_000,
+              output_tokens: 500,
+              total_tokens: 1_500,
+              total_cost: 0.42,
+            },
+          },
+        ],
+        ["end", {}],
+      ])
+    }
+
     return sse([
       ["meta", { run_id: `run_tui_demo_${requestCount}` }],
       [

@@ -2,6 +2,7 @@ import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo } from "solid-js"
+import { contextLimit, tokenTotal } from "../../util/usage-display"
 
 const id = "internal:sidebar-context"
 
@@ -9,25 +10,6 @@ const money = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 })
-
-function tokenTotal(message: AssistantMessage) {
-  const total = message.tokens.total
-  if (typeof total === "number" && total > 0) return total
-  return (
-    message.tokens.input +
-    message.tokens.output +
-    message.tokens.reasoning +
-    message.tokens.cache.read +
-    message.tokens.cache.write
-  )
-}
-
-function contextLimit(model: { limit?: { context?: number } } | undefined) {
-  const context = model?.limit?.context
-  if (typeof context !== "number" || context <= 0) return undefined
-  if (context >= Number.MAX_SAFE_INTEGER) return undefined
-  return context
-}
 
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
