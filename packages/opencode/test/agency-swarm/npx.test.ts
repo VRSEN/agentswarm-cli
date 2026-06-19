@@ -1506,11 +1506,18 @@ describe("agency-swarm npx onboarding", () => {
           stderr: "",
         } as never
       }
-      if (isPythonVenvCommand(cmd) || isPythonPipInstallUvCommand(cmd)) {
+      if (isPythonVenvCommand(cmd)) {
         return {
           exited: Promise.resolve(0),
           stdout: "",
           stderr: "",
+        } as never
+      }
+      if (isPythonPipInstallUvCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "Collecting uv...\n",
+          stderr: "Installing uv...\n",
         } as never
       }
       if (isUvPipInstallCommand(cmd)) {
@@ -1559,8 +1566,13 @@ describe("agency-swarm npx onboarding", () => {
     expect(visible).not.toContain("Detected Python:")
     expect(visible).not.toContain("Verifying Agency Swarm imports")
     expect(visible).not.toContain("Full log")
-    expect(stderrWrite.mock.calls.map((call) => call[0]).join("")).not.toContain("Resolving packages")
+    const mirrored = stderrWrite.mock.calls.map((call) => call[0]).join("")
+    expect(mirrored).not.toContain("Collecting uv")
+    expect(mirrored).not.toContain("Installing uv")
+    expect(mirrored).not.toContain("Resolving packages")
     const logContent = await Bun.file(launcherLogFilePath(dir.path, "launcher-rebuild", iso)).text()
+    expect(logContent).toContain("Collecting uv...")
+    expect(logContent).toContain("Installing uv...")
     expect(logContent).toContain("Resolving packages...")
     expect(logContent).toContain("Downloading wheels...")
 
