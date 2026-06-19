@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { AgencySwarmAdapter } from "../../../src/agency-swarm/adapter"
 import {
-  resolveAgencyDefaultModelLabel,
   resolveAssistantModelLabel,
   resolveModelLabel,
 } from "../../../src/cli/cmd/tui/util/model-label"
@@ -35,15 +34,6 @@ const agencies: AgencySwarmAdapter.AgencyDescriptor[] = [
 ]
 
 describe("model-label", () => {
-  test("formats unique agency default model labels", () => {
-    expect(
-      resolveAgencyDefaultModelLabel({
-        agencies,
-        agencyID: "demo",
-      }),
-    ).toBe("Swarm models: gpt-5.4-mini +1")
-  })
-
   test("uses matched agent model before agency aggregate", () => {
     const result = resolveModelLabel({
       agencies,

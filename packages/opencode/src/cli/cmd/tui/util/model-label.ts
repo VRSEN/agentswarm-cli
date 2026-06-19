@@ -47,15 +47,6 @@ export function resolveAssistantModelLabel(input: AssistantModelLabelInput) {
   })
 }
 
-export function resolveAgencyDefaultModelLabel(input: {
-  agencies?: readonly AgencySwarmAdapter.AgencyDescriptor[]
-  agencyID?: string
-}) {
-  const agency = resolveAgency(input.agencies ?? [], input.agencyID)
-  if (!agency) return undefined
-  return formatAgencyModelLabel(agency)
-}
-
 function resolveAgencyModelAgentID(input: {
   providerID: string
   modelID: string
