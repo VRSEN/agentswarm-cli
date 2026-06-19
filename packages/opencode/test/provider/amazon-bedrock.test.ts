@@ -2,7 +2,7 @@ import { test, expect, describe } from "bun:test"
 import path from "path"
 import { unlink } from "fs/promises"
 
-import { ProviderID } from "../../src/provider/schema"
+import { ModelID, ProviderID } from "../../src/provider/schema"
 import { tmpdir } from "../fixture/fixture"
 import { Instance } from "../../src/project/instance"
 import { WithInstance } from "../../src/project/with-instance"
@@ -25,6 +25,74 @@ async function list() {
     }),
   )
 }
+
+async function getModel(providerID: ProviderID, modelID: ModelID) {
+  return AppRuntime.runPromise(
+    Effect.gen(function* () {
+      const provider = yield* Provider.Service
+      return yield* provider.getModel(providerID, modelID)
+    }),
+  )
+}
+
+async function getLanguage(model: Provider.Model) {
+  return AppRuntime.runPromise(
+    Effect.gen(function* () {
+      const provider = yield* Provider.Service
+      return yield* provider.getLanguage(model)
+    }),
+  )
+}
+
+test("Bedrock Mantle: uses chat for safeguard models and responses otherwise", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Filesystem.write(
+        path.join(dir, "opencode.json"),
+        JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          provider: {
+            "amazon-bedrock": {
+              options: {
+                region: "us-east-1",
+              },
+              models: {
+                "openai.gpt-oss-20b": {
+                  name: "GPT OSS 20B",
+                  reasoning: true,
+                  provider: { npm: "@ai-sdk/amazon-bedrock/mantle" },
+                },
+                "openai.gpt-oss-safeguard-20b": {
+                  name: "GPT OSS Safeguard 20B",
+                  reasoning: true,
+                  provider: { npm: "@ai-sdk/amazon-bedrock/mantle" },
+                },
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+
+  await WithInstance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      set("AWS_REGION", "us-east-1")
+      set("AWS_PROFILE", "")
+      set("AWS_ACCESS_KEY_ID", "test-key-id")
+      set("AWS_SECRET_ACCESS_KEY", "test-secret")
+
+      const responses = await getLanguage(await getModel(ProviderID.amazonBedrock, ModelID.make("openai.gpt-oss-20b")))
+      const chat = await getLanguage(
+        await getModel(ProviderID.amazonBedrock, ModelID.make("openai.gpt-oss-safeguard-20b")),
+      )
+
+      expect((responses as { provider: string }).provider).toBe("bedrock-mantle.responses")
+      expect((chat as { provider: string }).provider).toBe("bedrock-mantle.chat")
+    },
+  })
+})
 
 test("Bedrock: config region takes precedence over AWS_REGION env var", async () => {
   await using tmp = await tmpdir({

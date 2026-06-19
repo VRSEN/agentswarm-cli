@@ -1311,6 +1311,7 @@ describe("ProviderTransform.schema - openai supported schema subset", () => {
     ["opencode", "@ai-sdk/openai"],
     ["custom-openai-compatible", "@ai-sdk/openai"],
     ["azure", "@ai-sdk/azure"],
+    ["amazon-bedrock", "@ai-sdk/amazon-bedrock/mantle"],
   ])("sanitizes %s models using %s", (providerID, npm) => {
     expect(
       ProviderTransform.schema(
@@ -3727,6 +3728,41 @@ describe("ProviderTransform.variants", () => {
         include: ["reasoning.encrypted_content"],
       })
     })
+
+    test("dotted gpt-5 returns base OpenAI reasoning variants", () => {
+      const model = createMockModel({
+        id: "openai.gpt-5",
+        providerID: "amazon-bedrock",
+        api: {
+          id: "openai.gpt-5",
+          url: "https://bedrock-mantle.us-east-2.api.aws/openai/v1",
+          npm: "@ai-sdk/amazon-bedrock/mantle",
+        },
+        release_date: "2025-08-07",
+      })
+      const result = ProviderTransform.variants(model)
+      expect(Object.keys(result)).toEqual(["minimal", "low", "medium", "high"])
+      expect(result.minimal).toEqual({
+        reasoningEffort: "minimal",
+        reasoningSummary: "auto",
+        include: ["reasoning.encrypted_content"],
+      })
+    })
+
+    test("dotted gpt-5-pro returns only high effort", () => {
+      const model = createMockModel({
+        id: "openai.gpt-5-pro",
+        providerID: "amazon-bedrock",
+        api: {
+          id: "openai.gpt-5-pro",
+          url: "https://bedrock-mantle.us-east-2.api.aws/openai/v1",
+          npm: "@ai-sdk/amazon-bedrock/mantle",
+        },
+        release_date: "2025-08-07",
+      })
+      const result = ProviderTransform.variants(model)
+      expect(Object.keys(result)).toEqual(["high"])
+    })
   })
 
   describe("@ai-sdk/anthropic", () => {
@@ -4289,6 +4325,48 @@ describe("ProviderTransform.smallOptions - gpt-5 chat/search", () => {
       expect(ProviderTransform.smallOptions(createModel(testCase.id))).toEqual(testCase.options)
     })
   }
+})
+
+test("ProviderTransform.smallOptions keeps store=false for Bedrock Mantle", () => {
+  const model: Provider.Model = {
+    id: ModelID.make("openai.gpt-5"),
+    providerID: ProviderID.amazonBedrock,
+    api: {
+      id: "openai.gpt-5",
+      url: "https://bedrock-mantle.us-east-2.api.aws/openai/v1",
+      npm: "@ai-sdk/amazon-bedrock/mantle",
+    },
+    name: "GPT 5",
+    capabilities: {
+      temperature: true,
+      reasoning: true,
+      attachment: true,
+      toolcall: true,
+      input: { text: true, audio: false, image: true, video: false, pdf: false },
+      output: { text: true, audio: false, image: false, video: false, pdf: false },
+      interleaved: false,
+    },
+    cost: { input: 0.03, output: 0.06, cache: { read: 0.001, write: 0.002 } },
+    limit: { context: 128_000, output: 4_096 },
+    status: "active",
+    options: {},
+    headers: {},
+    release_date: "2025-08-07",
+    variants: {
+      minimal: {
+        reasoningEffort: "minimal",
+        reasoningSummary: "auto",
+        include: ["reasoning.encrypted_content"],
+      },
+    },
+  }
+
+  expect(ProviderTransform.smallOptions(model)).toEqual({
+    store: false,
+    reasoningEffort: "minimal",
+    reasoningSummary: "auto",
+    include: ["reasoning.encrypted_content"],
+  })
 })
 
 test("ProviderTransform.smallOptions disables OpenRouter reasoning when the weakest effort is low", () => {

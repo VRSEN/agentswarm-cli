@@ -610,6 +610,10 @@ function openaiCompatibleReasoningEfforts(id: string) {
   return gpt5CodexReasoningEfforts(apiId) ?? versionedGpt5ReasoningEfforts(apiId) ?? OPENAI_EFFORTS
 }
 
+function mantleOpenAIModelID(id: string) {
+  return id.replace(/^openai\.(?=gpt-)/i, "")
+}
+
 function anthropicOpus47OrLater(apiId: string) {
   // Matches "opus-4.7" (Anthropic/Bedrock/Vertex) and "claude-4.7-opus" (SAP AI Core inverted).
   // Greedy \d+ correctly extends to multi-digit majors (e.g. "claude-10.0-opus") for forward compatibility.
@@ -871,7 +875,8 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
     case "@ai-sdk/amazon-bedrock/mantle":
     case "@ai-sdk/openai": {
       // https://v5.ai-sdk.dev/providers/ai-sdk-providers/openai
-      const efforts = openaiReasoningEfforts(model.api.id, model.release_date)
+      const apiID = model.api.npm === "@ai-sdk/amazon-bedrock/mantle" ? mantleOpenAIModelID(model.api.id) : model.api.id
+      const efforts = openaiReasoningEfforts(apiID, model.release_date)
       return Object.fromEntries(
         efforts.map((effort) => [
           effort,
@@ -1219,7 +1224,8 @@ export function smallOptions(model: Provider.Model) {
   if (
     model.providerID === "openai" ||
     model.api.npm === "@ai-sdk/openai" ||
-    model.api.npm === "@ai-sdk/github-copilot"
+    model.api.npm === "@ai-sdk/github-copilot" ||
+    model.api.npm === "@ai-sdk/amazon-bedrock/mantle"
   ) {
     const base = { store: false }
     return mergeDeep(base, small)
@@ -1410,7 +1416,11 @@ export function schema(model: Provider.Model, schema: JSONSchema7): JSONSchema7 
   }
   */
 
-  if (model.api.npm === "@ai-sdk/openai" || model.api.npm === "@ai-sdk/azure") {
+  if (
+    model.api.npm === "@ai-sdk/openai" ||
+    model.api.npm === "@ai-sdk/azure" ||
+    model.api.npm === "@ai-sdk/amazon-bedrock/mantle"
+  ) {
     schema = sanitizeOpenAISchema(schema) as JSONSchema7
     // Codex also applies lossy compaction above 4 KB; defer that until OpenCode needs the same schema budget.
   }
