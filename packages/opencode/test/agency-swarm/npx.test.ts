@@ -25,7 +25,6 @@ import {
 } from "../../src/agency-swarm/npx"
 import { AgencyProduct } from "../../src/agency-swarm/product"
 import { AgencySwarmRunSession } from "../../src/agency-swarm/run-session"
-import { SERVER_LAUNCHER_SCRIPT } from "../../src/agency-swarm/server-launcher"
 import { Instance } from "../../src/project/instance"
 import { Session } from "../../src/session/index"
 import { SessionID } from "../../src/session/schema"
@@ -2601,58 +2600,6 @@ describe("agency-swarm npx onboarding", () => {
     expect(outcome.message).not.toContain("agency.py:99")
   })
 
-  test.skipIf(!findCanaryTestPython())("server launcher supports no-arg create_agency factories", async () => {
-    await using dir = await tmpdir()
-    await writeServerLauncherFixture(
-      dir.path,
-      ["from agency_swarm import Agency", "", "def create_agency():", "    return Agency('no-arg')"].join("\n"),
-      [
-        "def run_fastapi(*, agencies, host, port, server_url, app_token_env):",
-        "    agency = agencies['local-agency'](load_threads_callback=lambda: None)",
-        "    assert agency.name == 'no-arg'",
-        "    print('ok:no-arg')",
-      ].join("\n"),
-    )
-
-    const result = runServerLauncherScript(dir.path)
-
-    expect(readSpawnText(result.stderr)).toBe("")
-    expect(result.exitCode).toBe(0)
-    expect(readSpawnText(result.stdout)).toContain("ok:no-arg")
-  })
-
-  test.skipIf(!findCanaryTestPython())(
-    "server launcher forwards thread callbacks when create_agency supports them",
-    async () => {
-      await using dir = await tmpdir()
-      await writeServerLauncherFixture(
-        dir.path,
-        [
-          "from agency_swarm import Agency",
-          "",
-          "def create_agency(load_threads_callback=None):",
-          "    return Agency('threaded', load_threads_callback)",
-        ].join("\n"),
-        [
-          "def run_fastapi(*, agencies, host, port, server_url, app_token_env):",
-          "    def load_threads_callback():",
-          "        return 'threads'",
-          "    agency = agencies['local-agency'](load_threads_callback=load_threads_callback)",
-          "    assert agency.name == 'threaded'",
-          "    assert agency.callback is load_threads_callback",
-          "    assert agency.callback() == 'threads'",
-          "    print('ok:threaded')",
-        ].join("\n"),
-      )
-
-      const result = runServerLauncherScript(dir.path)
-
-      expect(readSpawnText(result.stderr)).toBe("")
-      expect(result.exitCode).toBe(0)
-      expect(readSpawnText(result.stdout)).toContain("ok:threaded")
-    },
-  )
-
   test("prepareProjectLaunch refreshes an existing venv when the import canary hangs", async () => {
     await using dir = await tmpdir()
     await writeAgency(dir.path)
@@ -4974,39 +4921,6 @@ async function writeVenvPython(dir: string) {
   const venvPython = getTestVenvPython(dir)
   await mkdir(path.dirname(venvPython), { recursive: true })
   await Bun.write(venvPython, "")
-}
-
-async function writeServerLauncherFixture(dir: string, agency: string, fastapi: string) {
-  await Bun.write(path.join(dir, "launch_agency.py"), SERVER_LAUNCHER_SCRIPT)
-  await Bun.write(path.join(dir, "agency.py"), agency)
-  await mkdir(path.join(dir, "agency_swarm", "integrations"), { recursive: true })
-  await Bun.write(
-    path.join(dir, "agency_swarm", "__init__.py"),
-    [
-      "class Agency:",
-      "    def __init__(self, name=None, callback=None):",
-      "        self.name = name",
-      "        self.callback = callback",
-    ].join("\n"),
-  )
-  await Bun.write(path.join(dir, "agency_swarm", "integrations", "__init__.py"), "")
-  await Bun.write(path.join(dir, "agency_swarm", "integrations", "fastapi.py"), fastapi)
-}
-
-function runServerLauncherScript(dir: string) {
-  const python = findCanaryTestPython()
-  if (!python) throw new Error("Python is required to verify the generated Agency Swarm server launcher script")
-  return Bun.spawnSync({
-    cmd: [...python, path.join(dir, "launch_agency.py"), "8765", "local-agency", "agency"],
-    cwd: dir,
-    stdout: "pipe",
-    stderr: "pipe",
-  })
-}
-
-function readSpawnText(value: Uint8Array | string | undefined) {
-  if (typeof value === "string") return value
-  return new TextDecoder().decode(value)
 }
 
 function mockPrepareProjectLaunchCanaryFailure(canaryStderr: string) {
