@@ -22,7 +22,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     if (!last) {
       return {
         tokens: 0,
-        percent: null,
+        percent: 0,
       }
     }
 

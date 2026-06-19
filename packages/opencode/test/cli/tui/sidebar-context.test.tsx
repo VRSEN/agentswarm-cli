@@ -78,25 +78,26 @@ function provider(context: number): Provider {
   }
 }
 
-async function renderContext(input: { context: number }) {
+async function renderContext(input: { context: number; messages?: AssistantMessage[]; cost?: number }) {
   let render: SidebarContent | undefined
   const api = createTuiPluginApi({
     state: {
       provider: [provider(input.context)],
       session: {
-        get: () => ({ cost: 0.42 }) as never,
-        messages: () => [
-          assistant({
-            total: 1_500,
-            input: 1_200,
-            output: 0,
-            reasoning: 0,
-            cache: {
-              read: 0,
-              write: 0,
-            },
-          }),
-        ],
+        get: () => ({ cost: input.cost ?? 0.42 }) as never,
+        messages: () =>
+          input.messages ?? [
+            assistant({
+              total: 1_500,
+              input: 1_200,
+              output: 0,
+              reasoning: 0,
+              cache: {
+                read: 0,
+                write: 0,
+              },
+            }),
+          ],
       },
     },
   })
@@ -132,6 +133,15 @@ async function renderContext(input: { context: number }) {
 }
 
 describe("sidebar context plugin", () => {
+  test("shows zero percent for fresh sessions without assistant usage", async () => {
+    const frame = await renderContext({ context: 3_000, messages: [], cost: 0 })
+
+    expect(frame).toContain("0 tokens")
+    expect(frame).toContain("0% used")
+    expect(frame).toContain("$0.00 spent")
+    expect(frame).not.toContain("Usage percent unavailable")
+  })
+
   test("shows real usage totals and spend when output tokens are zero", async () => {
     const frame = await renderContext({ context: 3_000 })
     const lines = frame.split("\n").map((line) => line.trim())
