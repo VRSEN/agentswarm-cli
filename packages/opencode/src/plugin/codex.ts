@@ -15,7 +15,7 @@ export const CODEX_API_BASE_URL = "https://chatgpt.com/backend-api/codex"
 const CODEX_API_ENDPOINT = `${CODEX_API_BASE_URL}/responses`
 const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
-const CODEX_OAUTH_MODELS = new Set(["gpt-5.4-mini", "gpt-5.5"])
+const CODEX_OAUTH_MODELS = new Set(["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"])
 
 interface PkceCodes {
   verifier: string

@@ -87,16 +87,21 @@ describe("plugin.codex", () => {
     test("filters Codex OAuth models by visible model key", async () => {
       const result = await loadModels(
         createProvider({
-          "gpt-5.2": createModel("gpt-5.2"),
-          "gpt-5.3-codex": createModel("gpt-5.3-codex"),
-          "gpt-5.3-codex-spark": createModel("gpt-5.3-codex-spark"),
-          "gpt-5.4": createModel("gpt-5.4"),
-          "gpt-5.4-fast": createModel("gpt-5.4-fast", "gpt-5.4"),
-          "gpt-5.4-mini": createModel("gpt-5.4-mini"),
-          "gpt-5.4-mini-fast": createModel("gpt-5.4-mini-fast", "gpt-5.4-mini"),
           "gpt-5.5": createModel("gpt-5.5"),
+          "gpt-5.5-2026-06-18": createModel("gpt-5.5-2026-06-18", "gpt-5.5"),
           "gpt-5.5-fast": createModel("gpt-5.5-fast", "gpt-5.5"),
           "gpt-5.5-pro": createModel("gpt-5.5-pro", "gpt-5.5"),
+          "gpt-5.4": createModel("gpt-5.4"),
+          "gpt-5.4-2026-06-18": createModel("gpt-5.4-2026-06-18", "gpt-5.4"),
+          "gpt-5.4-fast": createModel("gpt-5.4-fast", "gpt-5.4"),
+          "gpt-5.4-nano": createModel("gpt-5.4-nano"),
+          "gpt-5.4-pro": createModel("gpt-5.4-pro", "gpt-5.4"),
+          "gpt-5.4-mini": createModel("gpt-5.4-mini"),
+          "gpt-5.4-mini-2026-06-18": createModel("gpt-5.4-mini-2026-06-18", "gpt-5.4-mini"),
+          "gpt-5.4-mini-fast": createModel("gpt-5.4-mini-fast", "gpt-5.4-mini"),
+          "gpt-5.3-codex-spark": createModel("gpt-5.3-codex-spark"),
+          "gpt-5.2": createModel("gpt-5.2"),
+          "gpt-5.3-codex": createModel("gpt-5.3-codex"),
         }),
         {
           type: "oauth",
@@ -106,13 +111,27 @@ describe("plugin.codex", () => {
         },
       )
 
-      expect(Object.keys(result)).toEqual(["gpt-5.4-mini", "gpt-5.5"])
+      expect(Object.keys(result)).toEqual(["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"])
+      expect(result["gpt-5.4"]?.cost).toEqual({
+        input: 0,
+        output: 0,
+        cache: { read: 0, write: 0 },
+      })
       expect(result["gpt-5.4-mini"]?.cost).toEqual({
         input: 0,
         output: 0,
         cache: { read: 0, write: 0 },
       })
+      expect(result["gpt-5.3-codex-spark"]?.cost).toEqual({
+        input: 0,
+        output: 0,
+        cache: { read: 0, write: 0 },
+      })
       expect(result["gpt-5.4-mini"]?.limit).toEqual({
+        context: 128_000,
+        output: 16_384,
+      })
+      expect(result["gpt-5.3-codex-spark"]?.limit).toEqual({
         context: 128_000,
         output: 16_384,
       })
@@ -125,8 +144,14 @@ describe("plugin.codex", () => {
 
     test("keeps API key models unfiltered", async () => {
       const provider = createProvider({
+        "gpt-5.2": createModel("gpt-5.2"),
+        "gpt-5.3-codex": createModel("gpt-5.3-codex"),
+        "gpt-5.3-codex-spark": createModel("gpt-5.3-codex-spark"),
         "gpt-5.4": createModel("gpt-5.4"),
+        "gpt-5.4-nano": createModel("gpt-5.4-nano"),
         "gpt-5.4-mini": createModel("gpt-5.4-mini"),
+        "gpt-5.4-mini-2026-06-18": createModel("gpt-5.4-mini-2026-06-18", "gpt-5.4-mini"),
+        "gpt-5.5": createModel("gpt-5.5"),
         "gpt-5.5-fast": createModel("gpt-5.5-fast", "gpt-5.5"),
         "gpt-5.5-pro": createModel("gpt-5.5-pro", "gpt-5.5"),
       })
