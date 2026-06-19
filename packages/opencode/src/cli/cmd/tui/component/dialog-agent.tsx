@@ -9,6 +9,7 @@ import { useToast } from "@tui/ui/toast"
 import { createMemo, createResource } from "solid-js"
 import { DialogAgencySwarmConnect } from "./dialog-provider"
 import { isAgencySwarmFrameworkMode } from "../session-error"
+import { formatAgencyCategory } from "../util/agency-counts"
 import {
   buildAgencyTargetOptions,
   readAgencyProviderOptions,
@@ -144,7 +145,7 @@ export function DialogAgent() {
 
     const agencies = discovered?.agencies ?? []
     for (const agency of agencies) {
-      const category = `Swarm: ${agency.name}`
+      const category = formatAgencyCategory(agency)
       const entry = agency.agents.find((agent) => agent.isEntryPoint) ?? agency.agents[0]
       const description =
         agency.description && agency.description !== entry?.description ? agency.description : undefined

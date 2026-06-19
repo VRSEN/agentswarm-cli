@@ -265,8 +265,9 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 
 - **Run-target labels use live agency names**
   - Intent: show the names users know from Agency Swarm instead of stale or generic labels.
-  - Behavior: agent pickers and run-target labels reflect current live agency names.
-  - Implementation: `resolveAgencyTargetSelection` in `packages/opencode/src/cli/cmd/tui/util/agency-target.ts` and `DialogAgent` in `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`.
+  - Behavior: agent pickers, run-target labels, and the sidebar reflect current live agency names.
+  - Behavior: Run mode shows the selected swarm and metadata-derived main-agent and subagent counts in the sidebar, and `/agents` shows those counts in swarm sections.
+  - Implementation: `resolveAgencyTargetSelection` in `packages/opencode/src/cli/cmd/tui/util/agency-target.ts`, `formatAgencyCategory` in `packages/opencode/src/cli/cmd/tui/util/agency-counts.ts`, `DialogAgent` in `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, and `SidebarAgency` in `packages/opencode/src/cli/cmd/tui/feature-plugins/sidebar/agency.tsx`.
   - Added by: `a798a402`
 
 - **Agent Swarm theme stays on the dark palette**

@@ -367,6 +367,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentTui.write("/agents\r")
     const screen = await currentTui.waitForText("Live QA Agency")
 
+    expect(screen).toContain("Swarm: Live QA Agency (1 main / 1 sub)")
     expect(screen).toContain("Entry Agent")
     expect(screen).toContain("Review Agent")
     expect(screen).not.toContain("local-agency")
@@ -424,7 +425,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     const screen = await currentTui.waitForText("TuiDemoAgency")
 
     expect(screen).toContain("Select swarm")
-    expect(screen).toContain("Swarm: TuiDemoAgency")
+    expect(screen).toContain("Swarm: TuiDemoAgency (1 main / 1 sub)")
     expect(screen).toContain("UserSupportAgent")
     expect(screen).toContain("MathAgent")
     expect(screen.toLowerCase()).not.toContain("recipient")
@@ -552,6 +553,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       agency: "tui-demo-agency",
       recipientAgent: "UserSupportAgent",
       args: ["--model", alternateOpenAITestModel],
+      cols: 150,
       env: {
         AGENTSWARM_RUN_PROJECT: runProject,
         XDG_STATE_HOME: stateHome,
@@ -563,6 +565,10 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentTui.write("run through agency despite visible openai model state\r")
     await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
     const screen = await currentTui.waitForText("Run · GPT-5.2", tuiInteractionTimeoutMs)
+    expect(screen).toContain("Swarm")
+    expect(screen).toContain("TuiDemoAgency")
+    expect(screen).toContain("1 main / 1 sub")
+    expect(screen).toContain("Active: UserSupportAgent")
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
       "agency request with visible openai model state",
