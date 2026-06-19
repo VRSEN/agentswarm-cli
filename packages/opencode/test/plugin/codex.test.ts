@@ -84,7 +84,7 @@ async function loadModels(provider: Provider, auth: Auth | undefined) {
 
 describe("plugin.codex", () => {
   describe("models", () => {
-    test("keeps only supported Codex OAuth visible model keys", async () => {
+    test("keeps recommended Codex OAuth visible model keys", async () => {
       const result = await loadModels(
         createProvider({
           "gpt-5.5": createModel("gpt-5.5"),
@@ -112,7 +112,9 @@ describe("plugin.codex", () => {
         },
       )
 
-      expect(Object.keys(result)).toEqual(["gpt-5.5", "gpt-5.4-mini"])
+      expect(Object.keys(result)).toEqual(["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"])
+      expect(result["gpt-5.2"]).toBeUndefined()
+      expect(result["gpt-5.3-codex"]).toBeUndefined()
       expect(result["gpt-5.4-mini"]?.cost).toEqual({
         input: 0,
         output: 0,
