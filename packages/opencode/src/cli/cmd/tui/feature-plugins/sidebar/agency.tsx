@@ -5,7 +5,11 @@ import { useLocal } from "../../context/local"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 import { isAgencySwarmFrameworkMode } from "../../session-error"
 import { countAgencyAgents, formatAgencyCounts } from "../../util/agency-counts"
-import { readAgencyProviderOptions, resolveAgencyTargetSelection } from "../../util/agency-target"
+import {
+  readAgencyProviderOptions,
+  resolveAgencyHandoffRecipientFromMessages,
+  resolveAgencyTargetSelection,
+} from "../../util/agency-target"
 
 const id = "internal:sidebar-agency"
 
@@ -14,7 +18,7 @@ type Discovery = {
   error?: string
 }
 
-function View(props: { api: TuiPluginApi }) {
+function View(props: { api: TuiPluginApi; session_id: string }) {
   const local = useLocal()
   const theme = () => props.api.theme.current
   const options = createMemo(() => {
@@ -68,11 +72,29 @@ function View(props: { api: TuiPluginApi }) {
     if (!selected) return undefined
     return discovery().agencies.find((item) => item.id === selected.agency)
   })
+  const messages = createMemo(() => [...props.api.state.session.messages(props.session_id)])
+  const parts = createMemo(() =>
+    Object.fromEntries(messages().map((item) => [item.id, [...props.api.state.part(item.id)]])),
+  )
+  const handoff = createMemo(() => {
+    const opts = options()
+    if (!opts) return undefined
+    return resolveAgencyHandoffRecipientFromMessages({
+      frameworkMode: true,
+      agency: opts.agency,
+      currentRecipient: opts.recipientAgent,
+      currentRecipientSelectedAt: opts.recipientAgentSelectedAt,
+      sessionID: props.session_id,
+      messages: messages(),
+      partsByMessage: parts(),
+    })
+  })
   const active = createMemo(() => {
     const item = agency()
     const selected = selection()
-    if (!item || !selected?.recipientAgent) return undefined
-    return item.agents.find((agent) => agent.id === selected.recipientAgent)?.name ?? selected.recipientAgent
+    const agentID = handoff()?.agent ?? selected?.recipientAgent
+    if (!item || !agentID) return undefined
+    return item.agents.find((agent) => agent.id === agentID)?.name ?? agentID
   })
   const empty = createMemo(() => {
     if (!discovery().agencies.length) return "No swarms"
@@ -114,8 +136,8 @@ const tui: TuiPlugin = async (api) => {
   api.slots.register({
     order: 150,
     slots: {
-      sidebar_content() {
-        return <View api={api} />
+      sidebar_content(_ctx, props) {
+        return <View api={api} session_id={props.session_id} />
       },
     },
   })

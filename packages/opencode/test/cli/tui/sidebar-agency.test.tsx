@@ -2,10 +2,14 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { RGBA } from "@opentui/core"
+import type { TuiPluginApi } from "@opencode-ai/plugin/tui"
 import { AgencySwarmAdapter } from "../../../src/agency-swarm/adapter"
 import * as LocalContext from "../../../src/cli/cmd/tui/context/local"
 import { countAgencyAgents, formatAgencyCounts } from "../../../src/cli/cmd/tui/util/agency-counts"
 import { createTuiPluginApi } from "../../fixture/tui-plugin"
+
+type StateMessage = ReturnType<TuiPluginApi["state"]["session"]["messages"]>[number]
+type StatePart = ReturnType<TuiPluginApi["state"]["part"]>[number]
 
 function flushEffects() {
   return Promise.resolve().then(() => Promise.resolve())
@@ -37,6 +41,59 @@ function sub(id: string): AgencySwarmAdapter.AgencyAgentDescriptor {
     id,
     name: id,
     isEntryPoint: false,
+  }
+}
+
+function assistant(input: { id: string; sessionID: string; agent: string; completed: number }): StateMessage {
+  return {
+    id: input.id,
+    sessionID: input.sessionID,
+    role: "assistant",
+    time: {
+      created: input.completed - 1,
+      completed: input.completed,
+    },
+    parentID: "message_user_1",
+    modelID: AgencySwarmAdapter.DEFAULT_MODEL_ID,
+    providerID: AgencySwarmAdapter.PROVIDER_ID,
+    mode: "build",
+    agent: input.agent,
+    path: {
+      cwd: "",
+      root: "",
+    },
+    cost: 0,
+    tokens: {
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cache: {
+        read: 0,
+        write: 0,
+      },
+    },
+  }
+}
+
+function transfer(input: { id: string; sessionID: string; messageID: string; agent: string }): StatePart {
+  return {
+    id: input.id,
+    sessionID: input.sessionID,
+    messageID: input.messageID,
+    type: "tool",
+    callID: "call_transfer",
+    tool: `transfer_to_${input.agent}`,
+    state: {
+      status: "completed",
+      input: {},
+      output: "",
+      title: "Transfer",
+      metadata: {},
+      time: {
+        start: 1,
+        end: 2,
+      },
+    },
   }
 }
 
@@ -73,9 +130,14 @@ async function renderSidebar(input: {
   error?: Error
   agency?: string
   recipientAgent?: string
+  recipientAgentSelectedAt?: number
+  sessionID?: string
+  messages?: StateMessage[]
+  parts?: Record<string, StatePart[]>
   providerID?: string
 }) {
   const providerID = input.providerID ?? AgencySwarmAdapter.PROVIDER_ID
+  const sessionID = input.sessionID ?? "session_1"
   stubLocal(providerID)
   if (input.error) {
     spyOn(AgencySwarmAdapter, "discover").mockRejectedValue(input.error)
@@ -86,7 +148,7 @@ async function renderSidebar(input: {
     })
   }
 
-  let render: (() => unknown) | undefined
+  let render: ((ctx: unknown, props: { session_id: string }) => unknown) | undefined
   const base = createTuiPluginApi({
     state: {
       config: {
@@ -100,6 +162,7 @@ async function renderSidebar(input: {
               baseURL: "http://127.0.0.1:8000",
               agency: input.agency,
               recipientAgent: input.recipientAgent,
+              recipientAgentSelectedAt: input.recipientAgentSelectedAt,
             },
           },
         },
@@ -115,12 +178,16 @@ async function renderSidebar(input: {
           key: "token",
         },
       ],
+      session: {
+        messages: (id) => (id === sessionID ? (input.messages ?? []) : []),
+      },
+      part: (id) => input.parts?.[id] ?? [],
     },
   })
   const api = {
     ...base,
     slots: {
-      register(plugin: { slots: { sidebar_content?: () => unknown } }) {
+      register(plugin: { slots: { sidebar_content?: (ctx: unknown, props: { session_id: string }) => unknown } }) {
         render = plugin.slots.sidebar_content
         return "fixture-slot"
       },
@@ -140,7 +207,7 @@ async function renderSidebar(input: {
     load_count: 1,
     fingerprint: "internal:sidebar-agency",
   })
-  const rendered = await testRender(() => render?.() ?? null, { width: 80, height: 16 })
+  const rendered = await testRender(() => render?.({}, { session_id: sessionID }) ?? null, { width: 80, height: 16 })
   await flushEffects()
   await Bun.sleep(0)
   await flushEffects()
@@ -180,6 +247,27 @@ describe("sidebar agency plugin", () => {
     expect(frame).toContain("Live Agency")
     expect(frame).toContain("1 main / 2 sub")
     expect(frame).toContain("Active: Review")
+  })
+
+  test("shows handed off recipient from session history as active", async () => {
+    const sessionID = "session_1"
+    const messageID = "message_assistant_1"
+    const frame = await renderSidebar({
+      agency: "live",
+      recipientAgent: "Lead",
+      recipientAgentSelectedAt: 1,
+      sessionID,
+      messages: [assistant({ id: messageID, sessionID, agent: "Lead", completed: 2 })],
+      parts: {
+        [messageID]: [transfer({ id: "part_transfer", sessionID, messageID, agent: "Review" })],
+      },
+      agencies: [agency({ id: "live", name: "Live Agency", agents: [main("Lead"), sub("Review")] })],
+    })
+
+    expect(frame).toContain("Swarm")
+    expect(frame).toContain("Live Agency")
+    expect(frame).toContain("Active: Review")
+    expect(frame).not.toContain("Active: Lead")
   })
 
   test("shows concise fallback states", async () => {
