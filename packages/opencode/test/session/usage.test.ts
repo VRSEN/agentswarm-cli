@@ -68,4 +68,56 @@ describe("Session.getUsage", () => {
     expect(result.tokens.output).toBe(500)
     expect(result.cost).toBe(0.42)
   })
+
+  test("falls back to model pricing when Agency Swarm metadata omits cost", () => {
+    const result = Session.getUsage({
+      model: createModel(),
+      usage: {
+        inputTokens: 1_000,
+        outputTokens: 500,
+        totalTokens: 1_500,
+        inputTokenDetails: {
+          cacheReadTokens: undefined,
+          cacheWriteTokens: undefined,
+          noCacheTokens: undefined,
+        },
+        outputTokenDetails: {
+          reasoningTokens: undefined,
+          textTokens: undefined,
+        },
+      },
+      metadata: {
+        agency_swarm: {},
+      },
+    })
+
+    expect(result.cost).toBe(0.024)
+  })
+
+  test("preserves explicit zero-cost Agency Swarm metadata", () => {
+    const result = Session.getUsage({
+      model: createModel(),
+      usage: {
+        inputTokens: 1_000,
+        outputTokens: 500,
+        totalTokens: 1_500,
+        inputTokenDetails: {
+          cacheReadTokens: undefined,
+          cacheWriteTokens: undefined,
+          noCacheTokens: undefined,
+        },
+        outputTokenDetails: {
+          reasoningTokens: undefined,
+          textTokens: undefined,
+        },
+      },
+      metadata: {
+        agency_swarm: {
+          totalCost: 0,
+        },
+      },
+    })
+
+    expect(result.cost).toBe(0)
+  })
 })
