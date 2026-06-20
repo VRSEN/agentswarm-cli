@@ -958,7 +958,7 @@ async function createProductStateRootProject(input: {
 
 // Run a long, silent step under a clack spinner so the terminal animates instead of looking hung.
 // Compact product-state lines (`prompts.log.info`) stay as phase headers; the spinner covers the wait.
-async function withSpinner<T>(start: string, done: string, task: () => Promise<T>): Promise<T> {
+async function withSpinner<T>(start: string, done: string, fail: string, task: () => Promise<T>): Promise<T> {
   const spin = prompts.spinner()
   spin.start(start)
   try {
@@ -966,7 +966,7 @@ async function withSpinner<T>(start: string, done: string, task: () => Promise<T
     spin.stop(done)
     return result
   } catch (error) {
-    spin.stop(start, 1)
+    spin.stop(fail, 1)
     throw error
   }
 }
@@ -980,8 +980,11 @@ export async function prepareProjectLaunch(
   const python = await ensureProjectPython(project.directory, profile)
   if (!python) return
 
-  const server = await withSpinner(`Starting ${profile.name}`, `${profile.name} ready`, () =>
-    startProjectServer(project.directory, python, project.moduleName, project.agencyFile),
+  const server = await withSpinner(
+    `Starting ${profile.name}`,
+    `${profile.name} ready`,
+    `${profile.name} start failed`,
+    () => startProjectServer(project.directory, python, project.moduleName, project.agencyFile),
   )
   return {
     directory: project.directory,
@@ -1042,24 +1045,29 @@ async function ensureProjectPython(
         "launcher refresh",
         profile,
       )
-      let localUv: string | undefined
-      try {
-        localUv = await ensureLocalUv(directory, venvPython, {
-          logFile: refreshLogFile,
-          timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
-        })
-      } catch {
+      const refresh = await withSpinner(
+        `Refreshing ${profile.name}`,
+        `${profile.name} refresh checked`,
+        `${profile.name} refresh failed`,
+        async () => {
+          const localUv = await ensureLocalUv(directory, venvPython, {
+            logFile: refreshLogFile,
+            timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+          }).catch(() => undefined)
+          if (!localUv) return { installerFailed: false, skippedUv: true }
+          const result = await refreshProjectDependencies(directory, venvPython, localUv, {
+            logFile: refreshLogFile,
+            timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+          })
+          return { ...result, skippedUv: false }
+        },
+      )
+      if (refresh.skippedUv) {
         prompts.log.warn(
           "Local uv could not be installed, so dependency refresh was skipped. The current venv package set will be used as-is.",
         )
       }
-      if (localUv) {
-        const refresh = await refreshProjectDependencies(directory, venvPython, localUv, {
-          logFile: refreshLogFile,
-          timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
-        })
-        if (refresh.installerFailed) corruptedVenv = true
-      }
+      if (refresh.installerFailed) corruptedVenv = true
       if (!corruptedVenv) {
         let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
         try {
@@ -1139,37 +1147,42 @@ async function ensureProjectPython(
     "launcher rebuild",
     profile,
   )
-  return withSpinner(`Setting up ${profile.name}`, `${profile.name} setup ready`, async () => {
-    const localUv = await ensureLocalUv(directory, venvPython, {
-      forceInstall: true,
-      logFile: installLogFile,
-      timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
-    })
-    const install = await installProjectDependencies(directory, venvPython, localUv, {
-      logFile: installLogFile,
-      timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
-    })
-    if (install.timedOut) {
-      throw new Error(formatCommandTimeout(install, "Dependency install", REBUILD_INSTALL_TIMEOUT_MS))
-    }
-    if (install.code !== 0) {
-      throw new Error(formatCommandFailure(install, "Dependency install failed"))
-    }
-    const canary = await venvCanaryPasses([venvPython], {
-      cwd: directory,
-      includeStderr: true,
-      minimumAgencySwarmVersion: install.hadManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
-    })
-    if (canary.timedOut) {
-      throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
-    }
-    if (!canary.healthy) {
-      throw new Error(
-        await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr, install.logFile),
-      )
-    }
-    return [venvPython]
-  })
+  return withSpinner(
+    `Setting up ${profile.name}`,
+    `${profile.name} setup ready`,
+    `${profile.name} setup failed`,
+    async () => {
+      const localUv = await ensureLocalUv(directory, venvPython, {
+        forceInstall: true,
+        logFile: installLogFile,
+        timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+      })
+      const install = await installProjectDependencies(directory, venvPython, localUv, {
+        logFile: installLogFile,
+        timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+      })
+      if (install.timedOut) {
+        throw new Error(formatCommandTimeout(install, "Dependency install", REBUILD_INSTALL_TIMEOUT_MS))
+      }
+      if (install.code !== 0) {
+        throw new Error(formatCommandFailure(install, "Dependency install failed"))
+      }
+      const canary = await venvCanaryPasses([venvPython], {
+        cwd: directory,
+        includeStderr: true,
+        minimumAgencySwarmVersion: install.hadManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
+      })
+      if (canary.timedOut) {
+        throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
+      }
+      if (!canary.healthy) {
+        throw new Error(
+          await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr, install.logFile),
+        )
+      }
+      return [venvPython]
+    },
+  )
 }
 
 async function installProjectDependencies(

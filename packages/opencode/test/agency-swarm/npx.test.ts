@@ -44,18 +44,21 @@ describe("agency-swarm npx onboarding", () => {
   }
   let spinnerStarts: string[] = []
   let spinnerStops: string[] = []
+  let spinnerStopCodes: Array<number | undefined> = []
 
   // The launcher wraps long setup/startup waits in a clack spinner. Stub it for every test so
   // assertions on product-state logs and commands run without spinner frames leaking into output.
   beforeEach(() => {
     spinnerStarts = []
     spinnerStops = []
+    spinnerStopCodes = []
     spyOn(prompts, "spinner").mockReturnValue({
       start(message: string) {
         spinnerStarts.push(message)
       },
-      stop(message: string) {
+      stop(message: string, code?: number) {
         spinnerStops.push(message)
+        spinnerStopCodes.push(code)
       },
     } as never)
   })
@@ -629,6 +632,9 @@ describe("agency-swarm npx onboarding", () => {
     expect(uvInstallCommands.some((cmd) => cmd.includes("agency-swarm[fastapi,litellm]"))).toBe(false)
     expect(commands.filter(isCanaryCommand).every((cmd) => !(cmd.at(-1) ?? "").includes("meets_floor"))).toBe(true)
     expect(canaryRuns).toBe(2)
+    expect(spinnerStarts).toEqual(["Refreshing Agent Swarm", "Starting Agent Swarm"])
+    expect(spinnerStops).toEqual(["Agent Swarm refresh checked", "Agent Swarm ready"])
+    expect(spinnerStopCodes).toEqual([undefined, undefined])
 
     await launch?.cleanup?.()
   })
@@ -1584,10 +1590,6 @@ describe("agency-swarm npx onboarding", () => {
     await writeAgency(dir.path)
 
     spyOn(prompts, "confirm").mockResolvedValue(true as never)
-    spyOn(prompts, "spinner").mockReturnValue({
-      start() {},
-      stop() {},
-    } as never)
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     let timeoutCurrentInstall = false
     spyOn(globalThis, "setTimeout").mockImplementation(((fn: TimerHandler) => {
@@ -1663,6 +1665,9 @@ describe("agency-swarm npx onboarding", () => {
       /Dependency install timed out after 10 minutes\. Last output: still working\.\.\..*launcher-rebuild\.log/,
     )
     expect(error.message).not.toContain(dir.path)
+    expect(spinnerStarts).toEqual(["Setting up Agent Swarm"])
+    expect(spinnerStops).toEqual(["Agent Swarm setup failed"])
+    expect(spinnerStopCodes).toEqual([1])
   })
 
   test("prepareProjectLaunch times out even when the install process ignores kill", async () => {
@@ -2053,6 +2058,9 @@ describe("agency-swarm npx onboarding", () => {
       expect.stringContaining("Installer output: ERROR: No matching distribution found"),
     )
     expect(canaryRuns).toBe(2)
+    expect(spinnerStarts).toEqual(["Refreshing Agent Swarm", "Starting Agent Swarm"])
+    expect(spinnerStops).toEqual(["Agent Swarm refresh checked", "Agent Swarm ready"])
+    expect(spinnerStopCodes).toEqual([undefined, undefined])
     const logContent = await Bun.file(launcherLogFilePath(dir.path, "launcher-refresh", iso)).text()
     expect(logContent).toContain("Collecting agency-swarm...")
     expect(logContent).toContain("ERROR: No matching distribution found for agency-swarm[fastapi,litellm]")
