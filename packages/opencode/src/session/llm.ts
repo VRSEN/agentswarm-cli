@@ -31,7 +31,12 @@ type Result = Awaited<ReturnType<typeof streamText>>
 // Avoid re-instantiating remeda's deep merge types in this hot LLM path; the runtime behavior is still mergeDeep.
 const mergeOptions = (target: Record<string, any>, source: Record<string, any> | undefined): Record<string, any> => {
   const result = mergeDeep(target, source ?? {}) as Record<string, any>
-  if (source?.reasoning && typeof source.reasoning === "object" && !Array.isArray(source.reasoning)) {
+  if (
+    source?.reasoning &&
+    typeof source.reasoning === "object" &&
+    !Array.isArray(source.reasoning) &&
+    source.reasoning["enabled"] === false
+  ) {
     result.reasoning = source.reasoning
   }
   return result
