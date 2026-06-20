@@ -1026,16 +1026,17 @@ async function ensureProjectPython(
       prompts.log.warn("Project `.venv` uses a Conda-family Python. Rebuilding with a standalone Python...")
       corruptedVenv = true
     } else {
-      let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
-      try {
-        canary = await venvCanaryPasses([venvPython], {
-          includeStderr: true,
-          minimumAgencySwarmVersion: hasManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
-          timeoutMs: EXISTING_VENV_CANARY_TIMEOUT_MS,
-        })
-      } catch {
-        canary = { healthy: false, stderr: "", timedOut: false }
-      }
+      const canary = await withSpinner(
+        `Checking ${profile.name} environment`,
+        `${profile.name} environment checked`,
+        `${profile.name} environment check failed`,
+        () =>
+          checkVenvCanary([venvPython], {
+            includeStderr: true,
+            minimumAgencySwarmVersion: hasManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
+            timeoutMs: EXISTING_VENV_CANARY_TIMEOUT_MS,
+          }),
+      )
       if (canary.healthy) {
         return [venvPython]
       }
@@ -1054,12 +1055,30 @@ async function ensureProjectPython(
             logFile: refreshLogFile,
             timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
           }).catch(() => undefined)
-          if (!localUv) return { installerFailed: false, skippedUv: true }
+          if (!localUv) {
+            return {
+              canary: await checkVenvCanary([venvPython], {
+                includeStderr: true,
+                minimumAgencySwarmVersion: hasManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
+              }),
+              installerFailed: false,
+              skippedUv: true,
+            }
+          }
           const result = await refreshProjectDependencies(directory, venvPython, localUv, {
             logFile: refreshLogFile,
             timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
           })
-          return { ...result, skippedUv: false }
+          return {
+            ...result,
+            canary: result.installerFailed
+              ? undefined
+              : await checkVenvCanary([venvPython], {
+                  includeStderr: true,
+                  minimumAgencySwarmVersion: hasManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
+                }),
+            skippedUv: false,
+          }
         },
       )
       if (refresh.skippedUv) {
@@ -1069,16 +1088,7 @@ async function ensureProjectPython(
       }
       if (refresh.installerFailed) corruptedVenv = true
       if (!corruptedVenv) {
-        let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
-        try {
-          canary = await venvCanaryPasses([venvPython], {
-            includeStderr: true,
-            minimumAgencySwarmVersion: hasManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
-          })
-        } catch {
-          canary = { healthy: false, stderr: "", timedOut: false }
-        }
-        if (canary.healthy) {
+        if (refresh.canary?.healthy) {
           return [venvPython]
         }
         corruptedVenv = true
@@ -1183,6 +1193,22 @@ async function ensureProjectPython(
       return [venvPython]
     },
   )
+}
+
+async function checkVenvCanary(
+  python: string[],
+  options: { cwd?: string; includeStderr: true; minimumAgencySwarmVersion?: string; timeoutMs?: number },
+): Promise<VenvCanaryResult> {
+  try {
+    return await venvCanaryPasses(python, {
+      cwd: options.cwd,
+      includeStderr: true,
+      minimumAgencySwarmVersion: options.minimumAgencySwarmVersion,
+      timeoutMs: options.timeoutMs,
+    })
+  } catch {
+    return { healthy: false, stderr: "", timedOut: false }
+  }
 }
 
 async function installProjectDependencies(

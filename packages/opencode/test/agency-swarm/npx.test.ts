@@ -632,9 +632,17 @@ describe("agency-swarm npx onboarding", () => {
     expect(uvInstallCommands.some((cmd) => cmd.includes("agency-swarm[fastapi,litellm]"))).toBe(false)
     expect(commands.filter(isCanaryCommand).every((cmd) => !(cmd.at(-1) ?? "").includes("meets_floor"))).toBe(true)
     expect(canaryRuns).toBe(2)
-    expect(spinnerStarts).toEqual(["Refreshing Agent Swarm", "Starting Agent Swarm"])
-    expect(spinnerStops).toEqual(["Agent Swarm refresh checked", "Agent Swarm ready"])
-    expect(spinnerStopCodes).toEqual([undefined, undefined])
+    expect(spinnerStarts).toEqual([
+      "Checking Agent Swarm environment",
+      "Refreshing Agent Swarm",
+      "Starting Agent Swarm",
+    ])
+    expect(spinnerStops).toEqual([
+      "Agent Swarm environment checked",
+      "Agent Swarm refresh checked",
+      "Agent Swarm ready",
+    ])
+    expect(spinnerStopCodes).toEqual([undefined, undefined, undefined])
 
     await launch?.cleanup?.()
   })
@@ -788,8 +796,8 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(warn).not.toHaveBeenCalled()
-    expect(spinnerStarts).toEqual(["Starting Agent Swarm"])
-    expect(spinnerStops).toEqual(["Agent Swarm ready"])
+    expect(spinnerStarts).toEqual(["Checking Agent Swarm environment", "Starting Agent Swarm"])
+    expect(spinnerStops).toEqual(["Agent Swarm environment checked", "Agent Swarm ready"])
     expect(commands.some(isPythonPipInstallUvCommand)).toBe(false)
     expect(commands.some(isUvPipInstallCommand)).toBe(false)
     expect(commands.some(isPythonVenvCommand)).toBe(false)
@@ -2058,9 +2066,17 @@ describe("agency-swarm npx onboarding", () => {
       expect.stringContaining("Installer output: ERROR: No matching distribution found"),
     )
     expect(canaryRuns).toBe(2)
-    expect(spinnerStarts).toEqual(["Refreshing Agent Swarm", "Starting Agent Swarm"])
-    expect(spinnerStops).toEqual(["Agent Swarm refresh checked", "Agent Swarm ready"])
-    expect(spinnerStopCodes).toEqual([undefined, undefined])
+    expect(spinnerStarts).toEqual([
+      "Checking Agent Swarm environment",
+      "Refreshing Agent Swarm",
+      "Starting Agent Swarm",
+    ])
+    expect(spinnerStops).toEqual([
+      "Agent Swarm environment checked",
+      "Agent Swarm refresh checked",
+      "Agent Swarm ready",
+    ])
+    expect(spinnerStopCodes).toEqual([undefined, undefined, undefined])
     const logContent = await Bun.file(launcherLogFilePath(dir.path, "launcher-refresh", iso)).text()
     expect(logContent).toContain("Collecting agency-swarm...")
     expect(logContent).toContain("ERROR: No matching distribution found for agency-swarm[fastapi,litellm]")
@@ -2759,6 +2775,7 @@ describe("agency-swarm npx onboarding", () => {
       ),
     ])
     if (canaryStartedResult !== true) throw canaryStartedResult
+    expect(spinnerStarts).toEqual(["Checking Agent Swarm environment"])
 
     const outcome = await Promise.race([
       launch.catch((error) => error),
@@ -2776,6 +2793,9 @@ describe("agency-swarm npx onboarding", () => {
     expect(outcome.message).toContain("Project `.venv` appears corrupted")
     expect(killSignals).toEqual([undefined, "SIGKILL"])
     expect(canaryRuns).toBe(2)
+    expect(spinnerStarts).toEqual(["Checking Agent Swarm environment", "Refreshing Agent Swarm"])
+    expect(spinnerStops).toEqual(["Agent Swarm environment checked", "Agent Swarm refresh checked"])
+    expect(spinnerStopCodes).toEqual([undefined, undefined])
     expect(commands.filter(isUvPipInstallCommand)).toEqual([
       [
         getTestVenvUv(dir.path),
