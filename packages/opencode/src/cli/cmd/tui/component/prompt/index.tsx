@@ -1767,7 +1767,14 @@ export function Prompt(props: PromptProps) {
       const agencyLabelRecipientAgent = frameworkMode()
         ? (mentionedRecipient ?? agencyRecipientAgent ?? options.recipientAgent)
         : undefined
-      const agencyLabelAgency = frameworkMode() ? options.agency : undefined
+      const agencyLabelSelection = frameworkMode()
+        ? resolveAgencyTargetSelection({
+            agencies: frameworkRecipientDiscovery(),
+            configuredAgency: options.agency,
+            configuredRecipient: agencyLabelRecipientAgent,
+          })
+        : undefined
+      const agencyLabelAgency = frameworkMode() ? (agencyLabelSelection?.agency ?? options.agency) : undefined
       const usedExplicitRecipient = !!explicitRecipient && agencyRecipientAgent === explicitRecipient
       const promptPayload: Parameters<typeof sdk.client.session.prompt>[0] & {
         $body_agencyRecipientAgent?: string

@@ -528,6 +528,18 @@ describe("prompt framework-mode footer", () => {
     expect(calls[6][0].$body_agencyRecipientAgent).toBe("slides_agent")
     expect(calls[6][0].$body_agencyLabelAgency).toBe("demo")
     expect(calls[6][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
+
+    setSyncData("config", "provider", "agency-swarm", "options", "agency", undefined)
+    await flushEffects()
+
+    promptRef!.set({ input: "after omitted agency config", parts: [] })
+    await promptRef!.submit()
+    await flushEffects()
+
+    expect(prompt).toHaveBeenCalledTimes(8)
+    expect(calls[7][0].$body_agencyRecipientAgent).toBeUndefined()
+    expect(calls[7][0].$body_agencyLabelAgency).toBe("demo")
+    expect(calls[7][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
   })
 
   test("sends agency handoff recipient through the generated sdk prompt body", async () => {
