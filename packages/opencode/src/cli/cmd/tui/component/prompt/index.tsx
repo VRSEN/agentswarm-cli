@@ -1740,8 +1740,11 @@ export function Prompt(props: PromptProps) {
       )?.name
       const hasAgentParts = !!mentionedRecipient
       const options = agencyProviderOptions()
+      const explicitSelectedAt = explicitRecipientSelectedAt()
       const explicitRecipient =
-        options.recipientAgentSelectedAt === explicitRecipientSelectedAt() ? options.recipientAgent : undefined
+        explicitSelectedAt !== undefined && options.recipientAgentSelectedAt === explicitSelectedAt
+          ? options.recipientAgent
+          : undefined
       const agencyRecipientAgent =
         frameworkMode() && !hasAgentParts
           ? handoff?.sessionID === sessionID

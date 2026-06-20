@@ -198,7 +198,6 @@ describe("prompt framework-mode footer", () => {
               options: {
                 agency: "demo",
                 recipientAgent: "orchestrator-slug",
-                recipientAgentSelectedAt: 1,
                 baseURL: "http://127.0.0.1:8000",
               },
             },
