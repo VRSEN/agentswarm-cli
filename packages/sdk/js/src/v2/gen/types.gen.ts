@@ -410,6 +410,7 @@ export type UserMessage = {
     [key: string]: boolean
   }
   agencyRecipientAgent?: string
+  agencyLabelRecipientAgent?: string
 }
 
 export type AssistantMessage = {
@@ -5755,6 +5756,7 @@ export type SessionPromptData = {
     system?: string
     variant?: string
     agencyRecipientAgent?: string
+    agencyLabelRecipientAgent?: string
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -6091,6 +6093,7 @@ export type SessionPromptAsyncData = {
     system?: string
     variant?: string
     agencyRecipientAgent?: string
+    agencyLabelRecipientAgent?: string
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {

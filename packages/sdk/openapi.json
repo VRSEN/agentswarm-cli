@@ -5296,6 +5296,9 @@
                   "agencyRecipientAgent": {
                     "type": "string"
                   },
+                  "agencyLabelRecipientAgent": {
+                    "type": "string"
+                  },
                   "parts": {
                     "type": "array",
                     "items": {
@@ -6100,6 +6103,9 @@
                     "type": "string"
                   },
                   "agencyRecipientAgent": {
+                    "type": "string"
+                  },
+                  "agencyLabelRecipientAgent": {
                     "type": "string"
                   },
                   "parts": {
@@ -7648,6 +7654,22 @@
         "operationId": "v2.model.list",
         "parameters": [
           {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
             "name": "instance",
             "in": "query",
             "schema": {
@@ -7697,6 +7719,22 @@
         "tags": ["v2 providers"],
         "operationId": "v2.provider.list",
         "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
           {
             "name": "instance",
             "in": "query",
@@ -7754,6 +7792,22 @@
               "type": "string"
             },
             "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           },
           {
             "name": "instance",
@@ -10201,6 +10255,9 @@
             }
           },
           "agencyRecipientAgent": {
+            "type": "string"
+          },
+          "agencyLabelRecipientAgent": {
             "type": "string"
           }
         },
