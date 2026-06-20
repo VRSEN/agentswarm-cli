@@ -1,3 +1,5 @@
+import { createBedrockMantle } from "@ai-sdk/amazon-bedrock/mantle"
+import { generateText } from "ai"
 import { test, expect, describe } from "bun:test"
 import path from "path"
 import { unlink } from "fs/promises"
@@ -7,12 +9,17 @@ import { tmpdir } from "../fixture/fixture"
 import { Instance } from "../../src/project/instance"
 import { WithInstance } from "../../src/project/with-instance"
 import { Provider } from "@/provider/provider"
+import { ProviderTransform } from "@/provider/transform"
 import { Env } from "../../src/env"
 import { Global } from "@opencode-ai/core/global"
 import { Filesystem } from "@/util/filesystem"
 import { Effect } from "effect"
 import { AppRuntime } from "../../src/effect/app-runtime"
 import { makeRuntime } from "../../src/effect/run-service"
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
 
 const env = makeRuntime(Env.Service, Env.defaultLayer)
 const set = (k: string, v: string) => env.runSync((svc) => svc.set(k, v))
@@ -92,6 +99,85 @@ test("Bedrock Mantle: uses chat for safeguard models and responses otherwise", a
       expect((chat as { provider: string }).provider).toBe("bedrock-mantle.chat")
     },
   })
+})
+
+test("Bedrock Mantle: prefixed GPT-5 responses send reasoning controls", async () => {
+  let captured: { url: string; body: Record<string, unknown> } | undefined
+  const handle = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): Promise<Response> => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    const text = typeof init?.body === "string" ? init.body : ""
+    const body = text ? JSON.parse(text) : {}
+    captured = { url, body: isRecord(body) ? body : {} }
+
+    return new Response(
+      JSON.stringify({
+        id: "resp_test",
+        created_at: 0,
+        model: "openai.gpt-5.5",
+        output: [
+          {
+            type: "message",
+            id: "msg_test",
+            role: "assistant",
+            content: [{ type: "output_text", text: "ok", annotations: [] }],
+          },
+        ],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    )
+  }
+
+  const model: Provider.Model = {
+    id: ModelID.make("openai.gpt-5.5"),
+    providerID: ProviderID.amazonBedrock,
+    api: {
+      id: "openai.gpt-5.5",
+      url: "https://bedrock-mantle.us-east-2.api.aws/openai/v1",
+      npm: "@ai-sdk/amazon-bedrock/mantle",
+    },
+    name: "GPT 5.5",
+    capabilities: {
+      temperature: true,
+      reasoning: true,
+      attachment: true,
+      toolcall: true,
+      input: { text: true, audio: false, image: true, video: false, pdf: false },
+      output: { text: true, audio: false, image: false, video: false, pdf: false },
+      interleaved: false,
+    },
+    cost: { input: 0.03, output: 0.06, cache: { read: 0.001, write: 0.002 } },
+    limit: { context: 128_000, output: 4_096 },
+    status: "active",
+    options: {},
+    headers: {},
+    release_date: "2026-04-23",
+  }
+
+  const variants = ProviderTransform.variants(model)
+  const options = ProviderTransform.providerOptions(model, variants.medium)
+  const fetch: typeof globalThis.fetch = Object.assign(handle, {
+    preconnect: globalThis.fetch.preconnect.bind(globalThis.fetch),
+  })
+  const mantle = createBedrockMantle({ region: "us-east-2", apiKey: "test-key", fetch })
+
+  await generateText({
+    model: mantle.responses("openai.gpt-5.5"),
+    prompt: "hi",
+    providerOptions: options,
+  })
+
+  expect(options).toEqual({
+    openai: {
+      reasoningEffort: "medium",
+      reasoningSummary: "auto",
+      forceReasoning: true,
+      include: ["reasoning.encrypted_content"],
+    },
+  })
+  expect(captured?.url).toBe("https://bedrock-mantle.us-east-2.api.aws/v1/responses")
+  expect(captured?.body.model).toBe("openai.gpt-5.5")
+  expect(captured?.body.reasoning).toEqual({ effort: "medium", summary: "auto" })
 })
 
 test("Bedrock: config region takes precedence over AWS_REGION env var", async () => {

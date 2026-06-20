@@ -354,6 +354,7 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
     expect(result.store).toBe(false)
     expect(result.reasoningEffort).toBe("medium")
     expect(result.reasoningSummary).toBe("auto")
+    expect(result.forceReasoning).toBe(true)
     expect(result.include).toEqual(["reasoning.encrypted_content"])
     expect(result.textVerbosity).toBe("low")
   })
@@ -673,8 +674,8 @@ describe("ProviderTransform.providerOptions", () => {
       },
     })
 
-    expect(ProviderTransform.providerOptions(model, { reasoningEffort: "medium" })).toEqual({
-      openai: { reasoningEffort: "medium" },
+    expect(ProviderTransform.providerOptions(model, { reasoningEffort: "medium", forceReasoning: true })).toEqual({
+      openai: { reasoningEffort: "medium", forceReasoning: true },
     })
   })
 
@@ -3762,6 +3763,7 @@ describe("ProviderTransform.variants", () => {
       expect(result.medium).toEqual({
         reasoningEffort: "medium",
         reasoningSummary: "auto",
+        forceReasoning: true,
         include: ["reasoning.encrypted_content"],
       })
     })
@@ -3782,6 +3784,7 @@ describe("ProviderTransform.variants", () => {
       expect(result.minimal).toEqual({
         reasoningEffort: "minimal",
         reasoningSummary: "auto",
+        forceReasoning: true,
         include: ["reasoning.encrypted_content"],
       })
     })
@@ -4393,6 +4396,7 @@ test("ProviderTransform.smallOptions keeps store=false for Bedrock Mantle", () =
       minimal: {
         reasoningEffort: "minimal",
         reasoningSummary: "auto",
+        forceReasoning: true,
         include: ["reasoning.encrypted_content"],
       },
     },
@@ -4402,6 +4406,7 @@ test("ProviderTransform.smallOptions keeps store=false for Bedrock Mantle", () =
     store: false,
     reasoningEffort: "minimal",
     reasoningSummary: "auto",
+    forceReasoning: true,
     include: ["reasoning.encrypted_content"],
   })
 })

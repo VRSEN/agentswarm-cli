@@ -883,6 +883,7 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
           {
             reasoningEffort: effort,
             reasoningSummary: "auto",
+            ...(model.api.npm === "@ai-sdk/amazon-bedrock/mantle" ? { forceReasoning: true } : {}),
             include: INCLUDE_ENCRYPTED_REASONING,
           },
         ]),
@@ -1182,6 +1183,9 @@ export function options(input: {
       }
       if (input.model.api.npm === "@ai-sdk/openai" || input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle") {
         result["include"] = INCLUDE_ENCRYPTED_REASONING
+      }
+      if (input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle") {
+        result["forceReasoning"] = true
       }
     }
 
