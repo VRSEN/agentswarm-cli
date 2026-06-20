@@ -1161,6 +1161,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         system: input.system,
         format: input.format,
         ...(input.agencyRecipientAgent ? { agencyRecipientAgent: input.agencyRecipientAgent } : {}),
+        ...(input.agencyLabelRecipientAgent ? { agencyLabelRecipientAgent: input.agencyLabelRecipientAgent } : {}),
       }
 
       if (current?.agent !== info.agent) {
@@ -2172,6 +2173,7 @@ export const PromptInput = Schema.Struct({
   system: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
   agencyRecipientAgent: Schema.optional(Schema.String),
+  agencyLabelRecipientAgent: Schema.optional(Schema.String),
   parts: Schema.Array(
     Schema.Union([
       MessageV2.TextPartInput,

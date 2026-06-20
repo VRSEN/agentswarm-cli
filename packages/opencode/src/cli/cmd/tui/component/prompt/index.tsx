@@ -1735,7 +1735,10 @@ export function Prompt(props: PromptProps) {
       })
     } else {
       const handoff = effectiveHandoffRecipient()
-      const hasAgentParts = nonTextParts.some((part) => part.type === "agent")
+      const mentionedRecipient = nonTextParts.findLast(
+        (part): part is Extract<(typeof nonTextParts)[number], { type: "agent" }> => part.type === "agent",
+      )?.name
+      const hasAgentParts = !!mentionedRecipient
       const options = agencyProviderOptions()
       const explicitRecipient =
         options.recipientAgentSelectedAt === explicitRecipientSelectedAt() ? options.recipientAgent : undefined
@@ -1745,9 +1748,13 @@ export function Prompt(props: PromptProps) {
             ? handoff.agent
             : explicitRecipient
           : undefined
+      const agencyLabelRecipientAgent = frameworkMode()
+        ? (mentionedRecipient ?? agencyRecipientAgent ?? options.recipientAgent)
+        : undefined
       const usedExplicitRecipient = !!explicitRecipient && agencyRecipientAgent === explicitRecipient
       const promptPayload: Parameters<typeof sdk.client.session.prompt>[0] & {
         $body_agencyRecipientAgent?: string
+        $body_agencyLabelRecipientAgent?: string
       } = {
         sessionID,
         ...selectedModel,
@@ -1756,6 +1763,7 @@ export function Prompt(props: PromptProps) {
         model: selectedModel,
         variant,
         $body_agencyRecipientAgent: agencyRecipientAgent,
+        $body_agencyLabelRecipientAgent: agencyLabelRecipientAgent,
         parts: [
           ...editorParts,
           {

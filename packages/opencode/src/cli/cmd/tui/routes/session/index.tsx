@@ -103,6 +103,15 @@ const GO_UPSELL_FREE_TIER_DONT_SHOW = "go_upsell_dont_show"
 const GO_UPSELL_ACCOUNT_RATE_LIMIT_LAST_SEEN_AT = "go_upsell_account_rate_limit_last_seen_at"
 const GO_UPSELL_ACCOUNT_RATE_LIMIT_DONT_SHOW = "go_upsell_account_rate_limit_dont_show"
 const GO_UPSELL_WINDOW = 86_400_000 // 24 hrs
+
+type AgencyLabelUserMessage = UserMessage & {
+  agencyLabelRecipientAgent?: string
+}
+
+function readAgencyLabelRecipient(message: UserMessage | undefined) {
+  if (!message) return undefined
+  return (message as AgencyLabelUserMessage).agencyLabelRecipientAgent ?? message.agencyRecipientAgent
+}
 const GO_UPSELL_PROVIDERS = new Set(["opencode", "opencode-go"])
 
 function goUpsellKeys(action: SessionRetry.Retryable["action"]) {
@@ -1510,7 +1519,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       providerID: props.message.providerID,
       modelID: props.message.modelID,
       agentID: props.message.agent,
-      recipientAgent: parent()?.agencyRecipientAgent,
+      recipientAgent: readAgencyLabelRecipient(parent()),
       submittedModel: parent()?.model,
       turnStartedAt: parent()?.time.created,
     }),

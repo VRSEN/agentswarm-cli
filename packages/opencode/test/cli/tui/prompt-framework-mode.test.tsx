@@ -363,8 +363,17 @@ describe("prompt framework-mode footer", () => {
     await flushEffects()
 
     expect(prompt).toHaveBeenCalledTimes(1)
-    const calls = prompt.mock.calls as unknown as Array<[{ parts: unknown[]; $body_agencyRecipientAgent?: string }]>
+    const calls = prompt.mock.calls as unknown as Array<
+      [
+        {
+          parts: unknown[]
+          $body_agencyRecipientAgent?: string
+          $body_agencyLabelRecipientAgent?: string
+        },
+      ]
+    >
     expect(calls[0][0].$body_agencyRecipientAgent).toBeUndefined()
+    expect(calls[0][0].$body_agencyLabelRecipientAgent).toBe("orchestrator-slug")
 
     eventHandlers["message.updated"]?.({
       properties: {
@@ -403,6 +412,7 @@ describe("prompt framework-mode footer", () => {
     )
     expect(payload.parts).not.toContainEqual(expect.objectContaining({ type: "agent" }))
     expect(payload.$body_agencyRecipientAgent).toBe("slides_agent")
+    expect(payload.$body_agencyLabelRecipientAgent).toBe("slides_agent")
 
     eventHandlers["message.updated"]?.({
       properties: {
@@ -434,6 +444,7 @@ describe("prompt framework-mode footer", () => {
 
     expect(prompt).toHaveBeenCalledTimes(3)
     expect(calls[2][0].$body_agencyRecipientAgent).toBe("slides_agent")
+    expect(calls[2][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
 
     eventHandlers["message.part.updated"]?.({
       properties: {
@@ -458,6 +469,28 @@ describe("prompt framework-mode footer", () => {
 
     expect(prompt).toHaveBeenCalledTimes(4)
     expect(calls[3][0].$body_agencyRecipientAgent).toBe("support_agent")
+    expect(calls[3][0].$body_agencyLabelRecipientAgent).toBe("support_agent")
+
+    promptRef!.set({
+      input: "mention explicit agent",
+      parts: [
+        {
+          type: "agent",
+          name: "slides_agent",
+          source: {
+            start: 0,
+            end: 0,
+            value: "",
+          },
+        },
+      ],
+    })
+    await promptRef!.submit()
+    await flushEffects()
+
+    expect(prompt).toHaveBeenCalledTimes(5)
+    expect(calls[4][0].$body_agencyRecipientAgent).toBeUndefined()
+    expect(calls[4][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
   })
 
   test("sends agency handoff recipient through the generated sdk prompt body", async () => {
@@ -481,6 +514,7 @@ describe("prompt framework-mode footer", () => {
       },
       agent: "orchestrator",
       $body_agencyRecipientAgent: "slides_agent",
+      $body_agencyLabelRecipientAgent: "slides_agent",
       parts: [
         {
           id: "part",
@@ -488,9 +522,13 @@ describe("prompt framework-mode footer", () => {
           text: "continue",
         },
       ],
-    } as Parameters<typeof client.session.prompt>[0] & { $body_agencyRecipientAgent?: string })
+    } as Parameters<typeof client.session.prompt>[0] & {
+      $body_agencyRecipientAgent?: string
+      $body_agencyLabelRecipientAgent?: string
+    })
 
     expect(body.agencyRecipientAgent).toBe("slides_agent")
+    expect(body.agencyLabelRecipientAgent).toBe("slides_agent")
     expect(body.parts).not.toContainEqual(expect.objectContaining({ type: "agent" }))
   })
 })

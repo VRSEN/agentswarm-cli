@@ -587,6 +587,31 @@ const boot = Effect.fn("test.boot")(function* (input?: { title?: string }) {
   return { prompt, run, sessions, chat }
 })
 
+it.instance(
+  "stores agency label recipient without setting the routing recipient",
+  () =>
+    Effect.gen(function* () {
+      const { prompt, chat } = yield* boot({ title: "Agency label recipient" })
+
+      const msg = yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: {
+          providerID: ProviderID.make("agency-swarm"),
+          modelID: ModelID.make("default"),
+        },
+        noReply: true,
+        agencyLabelRecipientAgent: "MathAgent",
+        parts: [{ type: "text", text: "label only" }],
+      })
+
+      if (msg.info.role !== "user") throw new Error("expected user message")
+      expect(msg.info.agencyLabelRecipientAgent).toBe("MathAgent")
+      expect(msg.info.agencyRecipientAgent).toBeUndefined()
+    }),
+  { git: true, config: cfg },
+)
+
 // Loop semantics
 
 it.instance(
