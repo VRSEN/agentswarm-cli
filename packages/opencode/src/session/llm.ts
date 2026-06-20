@@ -39,9 +39,11 @@ const mergeOptions = (target: Record<string, any>, source: Record<string, any> |
     removeReasoningControls(result)
     const params = result.modelParams
     if (params && typeof params === "object" && !Array.isArray(params)) {
-      delete params.reasoning
-      removeReasoningControls(params)
-      if (Object.keys(params).length === 0) delete result.modelParams
+      const next = { ...params }
+      result.modelParams = next
+      delete next.reasoning
+      removeReasoningControls(next)
+      if (Object.keys(next).length === 0) delete result.modelParams
     }
   }
   return result
@@ -58,9 +60,10 @@ function removeReasoningControls(options: Record<string, unknown>) {
 
   const output = options.output_config
   if (output && typeof output === "object" && !Array.isArray(output)) {
-    const config = output as Record<string, unknown>
+    const config = { ...(output as Record<string, unknown>) }
     delete config.effort
     if (Object.keys(config).length === 0) delete options.output_config
+    else options.output_config = config
   }
 
   const include = options.include

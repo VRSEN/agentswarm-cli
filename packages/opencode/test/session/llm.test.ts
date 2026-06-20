@@ -705,6 +705,18 @@ describe("session.llm.stream", () => {
           options: {},
           permission: [{ permission: "*", pattern: "*", action: "allow" }],
         } satisfies Agent.Info
+        const variant = {
+          modelParams: {
+            reasoning: { effort: "high" },
+            reasoning_effort: "high",
+            thinking: { type: "enabled", budget_tokens: 16000 },
+            thinkingConfig: { includeThoughts: true, thinkingBudget: 16000 },
+            include: ["reasoning.encrypted_content", "message.output_text.logprobs"],
+            output_config: { effort: "high", format: "text" },
+            retained: "value",
+          },
+        }
+        const original = structuredClone(variant)
         const current: Provider.Model = {
           ...resolved,
           options: {
@@ -713,17 +725,7 @@ describe("session.llm.stream", () => {
           },
           variants: {
             ...resolved.variants,
-            high: {
-              modelParams: {
-                reasoning: { effort: "high" },
-                reasoning_effort: "high",
-                thinking: { type: "enabled", budget_tokens: 16000 },
-                thinkingConfig: { includeThoughts: true, thinkingBudget: 16000 },
-                include: ["reasoning.encrypted_content", "message.output_text.logprobs"],
-                output_config: { effort: "high", format: "text" },
-                retained: "value",
-              },
-            },
+            high: variant,
           },
         }
 
@@ -759,6 +761,7 @@ describe("session.llm.stream", () => {
           output_config: { format: "text" },
           retained: "value",
         })
+        expect(variant).toEqual(original)
         expect(capture.body.reasoning).toEqual({ enabled: false })
       },
     })
