@@ -555,6 +555,7 @@ const GPT5_FAMILY_RE = /(?:^|\/)gpt-5(?:[.-]|$)/
 const GPT5_VERSION_RE = /(?:^|\/)gpt-5[.-](\d+)(?:[.-]|$)/
 const GPT5_PRO_RE = /(?:^|\/)gpt-5[.-]?pro(?:[.-]|$)/
 const GPT5_VERSIONED_PRO_RE = /(?:^|\/)gpt-5[.-]\d+[.-]pro(?:[.-]|$)/
+const OPENAI_O_SERIES_RE = /(?:^|\/)o[1-9](?:[.-]|$)/
 
 function gpt5Version(apiId: string) {
   return Number(GPT5_VERSION_RE.exec(apiId)?.[1]) || undefined
@@ -581,12 +582,19 @@ function gpt5ChatReasoningEfforts(apiId: string) {
   return gpt5Version(apiId) === undefined ? [] : OPENAI_GPT5_CHAT_EFFORTS
 }
 
+function openaiOSeriesReasoningEfforts(apiId: string) {
+  if (!OPENAI_O_SERIES_RE.test(apiId)) return undefined
+  if (apiId.includes("deep-research")) return ["medium"]
+  return WIDELY_SUPPORTED_EFFORTS
+}
+
 // Computes the reasoning_effort tiers an OpenAI (or OpenAI-compatible upstream
 // routed through it, e.g. cf-ai-gateway) model exposes. Effort order: weakest
 // to strongest.
 function openaiReasoningEfforts(apiId: string, releaseDate: string) {
   const id = apiId.toLowerCase()
-  if (id.includes("deep-research")) return ["medium"]
+  const oSeriesEfforts = openaiOSeriesReasoningEfforts(id)
+  if (oSeriesEfforts) return oSeriesEfforts
   const chatEfforts = gpt5ChatReasoningEfforts(id)
   if (chatEfforts) return chatEfforts
   if (GPT5_PRO_RE.test(id)) return OPENAI_GPT5_PRO_EFFORTS
@@ -605,6 +613,8 @@ function openaiReasoningEfforts(apiId: string, releaseDate: string) {
 
 function openaiCompatibleReasoningEfforts(id: string) {
   const apiId = id.toLowerCase()
+  const oSeriesEfforts = openaiOSeriesReasoningEfforts(apiId)
+  if (oSeriesEfforts) return oSeriesEfforts
   const chatEfforts = gpt5ChatReasoningEfforts(apiId)
   if (chatEfforts) return chatEfforts
   if (GPT5_PRO_RE.test(apiId)) return OPENAI_GPT5_PRO_EFFORTS

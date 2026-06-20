@@ -23,6 +23,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const env = makeRuntime(Env.Service, Env.defaultLayer)
 const set = (k: string, v: string) => env.runSync((svc) => svc.set(k, v))
+const remove = (k: string) => env.runSync((svc) => svc.remove(k))
 
 async function list() {
   return AppRuntime.runPromise(
@@ -181,6 +182,93 @@ test("Bedrock Mantle: custom provider IDs use responses for GPT-5 models", async
 
       expect(captured?.url).toBe("https://bedrock-mantle.us-east-2.api.aws/v1/responses")
       expect(captured?.body.model).toBe("openai.gpt-5.5")
+    },
+  })
+})
+
+test("Bedrock Mantle: resolves AWS_REGION placeholder from configured region", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Filesystem.write(
+        path.join(dir, "opencode.json"),
+        JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          provider: {
+            "amazon-bedrock": {
+              options: {
+                region: "us-west-2",
+              },
+              models: {
+                "openai.gpt-5.5": {
+                  name: "GPT 5.5",
+                  reasoning: true,
+                  release_date: "2026-04-23",
+                  provider: {
+                    api: "https://bedrock-mantle.${AWS_REGION}.api.aws/openai/v1",
+                    npm: "@ai-sdk/amazon-bedrock/mantle",
+                  },
+                },
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+
+  await WithInstance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      remove("AWS_REGION")
+      const token = process.env.AWS_BEARER_TOKEN_BEDROCK
+      process.env.AWS_BEARER_TOKEN_BEDROCK = "test-bearer-token"
+
+      try {
+        const model = await getModel(ProviderID.amazonBedrock, ModelID.make("openai.gpt-5.5"))
+        let captured: { url: string; body: Record<string, unknown> } | undefined
+        const handle = async (
+          input: Parameters<typeof fetch>[0],
+          init?: Parameters<typeof fetch>[1],
+        ): Promise<Response> => {
+          const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+          const text = typeof init?.body === "string" ? init.body : ""
+          const body = text ? JSON.parse(text) : {}
+          captured = { url, body: isRecord(body) ? body : {} }
+
+          return new Response(
+            JSON.stringify({
+              id: "resp_test",
+              created_at: 0,
+              model: "openai.gpt-5.5",
+              output: [
+                {
+                  type: "message",
+                  id: "msg_test",
+                  role: "assistant",
+                  content: [{ type: "output_text", text: "ok", annotations: [] }],
+                },
+              ],
+              usage: { input_tokens: 1, output_tokens: 1 },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
+        }
+        const fetch: typeof globalThis.fetch = Object.assign(handle, {
+          preconnect: globalThis.fetch.preconnect.bind(globalThis.fetch),
+        })
+        const providers = await list()
+        providers[ProviderID.amazonBedrock].options.fetch = fetch
+
+        await generateText({
+          model: await getLanguage(model),
+          prompt: "hi",
+        })
+
+        expect(captured?.url).toBe("https://bedrock-mantle.us-west-2.api.aws/v1/responses")
+      } finally {
+        if (token === undefined) delete process.env.AWS_BEARER_TOKEN_BEDROCK
+        else process.env.AWS_BEARER_TOKEN_BEDROCK = token
+      }
     },
   })
 })

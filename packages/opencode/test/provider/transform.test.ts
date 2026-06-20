@@ -3084,7 +3084,7 @@ describe("ProviderTransform.variants", () => {
     })
 
     for (const testCase of [
-      { id: "openai/o3-mini", efforts: ["none", "minimal", "low", "medium", "high", "xhigh"] },
+      { id: "openai/o3-mini", efforts: ["low", "medium", "high"] },
       { id: "openai/gpt-5.4", efforts: ["none", "low", "medium", "high", "xhigh"] },
       { id: "openai/gpt-5-pro", efforts: ["high"] },
       { id: "openai/gpt-5.5-pro", efforts: ["medium", "high", "xhigh"] },
