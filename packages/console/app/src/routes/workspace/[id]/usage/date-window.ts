@@ -41,10 +41,9 @@ function local(format: Intl.DateTimeFormat, at: Date): LocalTime {
   }
 }
 
-function offset(format: Intl.DateTimeFormat, at: Date): number {
+function localDateKey(format: Intl.DateTimeFormat, at: Date): string {
   const parts = local(format, at)
-  const utc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second)
-  return Math.round((utc - at.getTime()) / 60_000)
+  return dateKey(parts.year, parts.month - 1, parts.day)
 }
 
 function dateKey(year: number, month: number, day: number): string {
@@ -56,9 +55,28 @@ function dateKey(year: number, month: number, day: number): string {
 }
 
 function dayStart(format: Intl.DateTimeFormat, year: number, month: number, day: number): Date {
-  const wall = Date.UTC(year, month, day, 0, 0, 0)
-  const first = new Date(wall - offset(format, new Date(wall)) * 60_000)
-  return new Date(wall - offset(format, first) * 60_000)
+  const target = dateKey(year, month, day)
+  const hour = 60 * 60 * 1000
+  const full = 24 * hour
+  const wall = Date.UTC(year, month, day)
+  let low = wall - 36 * hour
+  let high = wall + 36 * hour
+
+  while (localDateKey(format, new Date(low)) >= target) low -= full
+  while (localDateKey(format, new Date(high)) < target) high += full
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2)
+    if (localDateKey(format, new Date(mid)) < target) {
+      low = mid + 1
+      continue
+    }
+    high = mid
+  }
+
+  const start = new Date(low)
+  if (localDateKey(format, start) !== target) throw new Error(`Missing local date boundary for ${target}`)
+  return start
 }
 
 export function getMonthDayWindows(timezone: string, year: number, month: number): DayWindow[] {
