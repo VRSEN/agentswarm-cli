@@ -3,21 +3,16 @@ import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo } from "solid-js"
 import { useLocal } from "../../context/local"
-import { contextLimit, tokenTotal } from "../../util/usage-display"
+import { contextLimit, formatCostDisplay, tokenTotal } from "../../util/usage-display"
 
 const id = "internal:sidebar-context"
-
-const money = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-})
 
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const local = useLocal()
   const theme = () => props.api.theme.current
   const msg = createMemo(() => props.api.state.session.messages(props.session_id))
   const session = createMemo(() => props.api.state.session.get(props.session_id))
-  const cost = createMemo(() => session()?.cost ?? 0)
+  const cost = createMemo(() => formatCostDisplay(session()?.cost ?? 0, { zero: true }))
   const model = createMemo(() => {
     const current = local.model.current()
     if (!current) return undefined
@@ -50,7 +45,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       </text>
       <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
       {state().percent === null ? null : <text fg={theme().textMuted}>{state().percent}% used</text>}
-      <text fg={theme().textMuted}>{money.format(cost())} spent</text>
+      {cost() ? <text fg={theme().textMuted}>{cost()} spent</text> : null}
     </box>
   )
 }

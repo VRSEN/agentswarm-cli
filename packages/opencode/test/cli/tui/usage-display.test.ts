@@ -43,4 +43,32 @@ describe("usage display", () => {
       cost: "$0.42",
     })
   })
+
+  test("shows positive rounded-zero cost as less than one cent", () => {
+    const display = formatUsageDisplay({
+      message: message(tokens),
+      model: { limit: { context: 3_000 } },
+      cost: 0.001,
+    })
+
+    expect(display?.context).toBe("1.5K (50%)")
+    expect(display?.cost).toBe("<$0.01")
+  })
+
+  test("hides absent and zero cost", () => {
+    const absent = formatUsageDisplay({
+      message: message(tokens),
+      model: { limit: { context: 3_000 } },
+    })
+    const zero = formatUsageDisplay({
+      message: message(tokens),
+      model: { limit: { context: 3_000 } },
+      cost: 0,
+    })
+
+    expect(absent?.context).toBe("1.5K (50%)")
+    expect(absent?.cost).toBeUndefined()
+    expect(zero?.context).toBe("1.5K (50%)")
+    expect(zero?.cost).toBeUndefined()
+  })
 })

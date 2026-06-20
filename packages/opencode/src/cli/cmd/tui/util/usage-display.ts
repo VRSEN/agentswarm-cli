@@ -5,6 +5,7 @@ const money = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 })
+const zero = money.format(0)
 
 type ContextModel = { limit?: { context?: number } } | undefined
 
@@ -33,6 +34,15 @@ export function usagePercent(tokens: number, model: ContextModel) {
   return Math.round((tokens / limit) * 100)
 }
 
+export function formatCostDisplay(cost: number | undefined, opts: { zero?: boolean } = {}) {
+  if (typeof cost !== "number" || !Number.isFinite(cost)) return undefined
+  if (cost < 0) return undefined
+  if (cost === 0) return opts.zero ? zero : undefined
+
+  const formatted = money.format(cost)
+  return formatted === zero ? "<$0.01" : formatted
+}
+
 export function formatUsageDisplay(input: {
   message: Pick<AssistantMessage, "tokens">
   model: ContextModel
@@ -42,9 +52,8 @@ export function formatUsageDisplay(input: {
   if (tokens <= 0) return undefined
 
   const pct = usagePercent(tokens, input.model)
-  const cost = input.cost ?? 0
   return {
     context: pct === undefined ? Locale.number(tokens) : `${Locale.number(tokens)} (${pct}%)`,
-    cost: cost > 0 ? money.format(cost) : undefined,
+    cost: formatCostDisplay(input.cost),
   }
 }

@@ -178,6 +178,16 @@ describe("sidebar context plugin", () => {
     expect(frame).not.toContain("$0.00 spent")
   })
 
+  test("shows positive rounded-zero spend as less than one cent", async () => {
+    mockLocal()
+    const frame = await renderContext({ context: 3_000, cost: 0.001 })
+
+    expect(frame).toContain("1,500 tokens")
+    expect(frame).toContain("50% used")
+    expect(frame).not.toContain("$0.00 spent")
+    expect(frame).toContain("<$0.01 spent")
+  })
+
   test("hides percent for placeholder Agency Swarm context limits", async () => {
     mockLocal()
     const frame = await renderContext({ context: Number.MAX_SAFE_INTEGER })
