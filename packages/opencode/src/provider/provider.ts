@@ -1871,17 +1871,21 @@ export const layer = Layer.effect(
       return yield* EffectPromise.refineRejection(
         async () => {
           const sdk = await resolveSDK(model, s, envs)
-          const language = s.modelLoaders[model.providerID]
-            ? await s.modelLoaders[model.providerID](
-                sdk,
-                model.api.id,
-                {
-                  ...provider.options,
-                  ...model.options,
-                },
-                model,
-              )
-            : sdk.languageModel(model.api.id)
+          const loader = s.modelLoaders[model.providerID]
+          const language =
+            model.api.npm === "@ai-sdk/amazon-bedrock/mantle"
+              ? selectBedrockMantleLanguageModel(sdk as BundledSDK, model.api.id)
+              : loader
+                ? await loader(
+                    sdk,
+                    model.api.id,
+                    {
+                      ...provider.options,
+                      ...model.options,
+                    },
+                    model,
+                  )
+                : sdk.languageModel(model.api.id)
           s.models.set(key, language)
           return language
         },

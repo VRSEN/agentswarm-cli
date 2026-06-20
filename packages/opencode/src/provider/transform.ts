@@ -681,6 +681,10 @@ function googleThinkingVariants(model: Provider.Model): Record<string, Record<st
   )
 }
 
+function isGrok43(id: string) {
+  return id.includes("grok-4.3") || id.includes("grok-4-3")
+}
+
 export function variants(model: Provider.Model): Record<string, Record<string, any>> {
   if (!model.capabilities.reasoning) return {}
 
@@ -722,6 +726,13 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
       low: { reasoningEffort: "low" },
       high: { reasoningEffort: "high" },
     }
+  }
+  if (id.includes("grok") && isGrok43(id)) {
+    const efforts = ["none", ...WIDELY_SUPPORTED_EFFORTS]
+    if (model.api.npm === "@openrouter/ai-sdk-provider") {
+      return Object.fromEntries(efforts.map((effort) => [effort, { reasoning: { effort } }]))
+    }
+    return Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }]))
   }
   if (id.includes("grok")) return {}
 
@@ -1235,9 +1246,6 @@ export function smallOptions(model: Provider.Model) {
     return mergeDeep(base, small)
   }
   if (model.providerID === "openrouter" || model.providerID === "llmgateway") {
-    if (model.providerID === "openrouter" && small.reasoning?.effort === "low") {
-      return { reasoning: { effort: "none" } }
-    }
     if (Object.keys(small).length === 0 && model.api.id.includes("google")) {
       return { reasoning: { enabled: false } }
     }

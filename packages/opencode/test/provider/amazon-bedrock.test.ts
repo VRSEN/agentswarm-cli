@@ -101,6 +101,46 @@ test("Bedrock Mantle: uses chat for safeguard models and responses otherwise", a
   })
 })
 
+test("Bedrock Mantle: custom provider IDs use responses for GPT-5 models", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Filesystem.write(
+        path.join(dir, "opencode.json"),
+        JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          provider: {
+            "custom-mantle": {
+              name: "Custom Mantle",
+              npm: "@ai-sdk/amazon-bedrock/mantle",
+              api: "https://bedrock-mantle.us-east-2.api.aws/openai/v1",
+              options: {
+                region: "us-east-2",
+                apiKey: "test-key",
+              },
+              models: {
+                "openai.gpt-5.5": {
+                  name: "GPT 5.5",
+                  reasoning: true,
+                  release_date: "2026-04-23",
+                },
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+
+  await WithInstance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const model = await getModel(ProviderID.make("custom-mantle"), ModelID.make("openai.gpt-5.5"))
+      const language = await getLanguage(model)
+      expect((language as { provider: string }).provider).toBe("bedrock-mantle.responses")
+    },
+  })
+})
+
 test("Bedrock Mantle: prefixed GPT-5 responses send reasoning controls", async () => {
   let captured: { url: string; body: Record<string, unknown> } | undefined
   const handle = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): Promise<Response> => {

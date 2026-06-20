@@ -3072,6 +3072,24 @@ describe("ProviderTransform.variants", () => {
       expect(result).toEqual({})
     })
 
+    test("grok-4.3 keeps OpenRouter reasoning controls", () => {
+      for (const id of ["grok-4.3", "grok-4-3"]) {
+        const model = createMockModel({
+          id: `openrouter/${id}`,
+          providerID: "openrouter",
+          api: {
+            id,
+            url: "https://openrouter.ai",
+            npm: "@openrouter/ai-sdk-provider",
+          },
+        })
+        const result = ProviderTransform.variants(model)
+        expect(Object.keys(result)).toEqual(["none", "low", "medium", "high"])
+        expect(result.none).toEqual({ reasoning: { effort: "none" } })
+        expect(result.high).toEqual({ reasoning: { effort: "high" } })
+      }
+    })
+
     test("grok-3-mini returns low and high with reasoning", () => {
       const model = createMockModel({
         id: "openrouter/grok-3-mini",
@@ -3476,6 +3494,24 @@ describe("ProviderTransform.variants", () => {
       })
       const result = ProviderTransform.variants(model)
       expect(result).toEqual({})
+    })
+
+    test("grok-4.3 keeps xAI reasoning controls", () => {
+      for (const id of ["grok-4.3", "grok-4-3"]) {
+        const model = createMockModel({
+          id: `xai/${id}`,
+          providerID: "xai",
+          api: {
+            id,
+            url: "https://api.x.ai/v1",
+            npm: "@ai-sdk/xai",
+          },
+        })
+        const result = ProviderTransform.variants(model)
+        expect(Object.keys(result)).toEqual(["none", "low", "medium", "high"])
+        expect(result.none).toEqual({ reasoningEffort: "none" })
+        expect(result.high).toEqual({ reasoningEffort: "high" })
+      }
     })
 
     test("grok-3-mini returns low and high with reasoningEffort", () => {
@@ -4411,7 +4447,7 @@ test("ProviderTransform.smallOptions keeps store=false for Bedrock Mantle", () =
   })
 })
 
-test("ProviderTransform.smallOptions disables OpenRouter reasoning when the weakest effort is low", () => {
+test("ProviderTransform.smallOptions uses OpenRouter low effort when it is the weakest supported option", () => {
   expect(
     ProviderTransform.smallOptions({
       providerID: "openrouter",
@@ -4425,7 +4461,7 @@ test("ProviderTransform.smallOptions disables OpenRouter reasoning when the weak
         high: { reasoning: { effort: "high" } },
       },
     } as any),
-  ).toEqual({ reasoning: { effort: "none" } })
+  ).toEqual({ reasoning: { effort: "low" } })
 })
 
 describe("ProviderTransform.smallOptions - google thinking controls", () => {
