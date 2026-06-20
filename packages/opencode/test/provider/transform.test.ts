@@ -1233,6 +1233,43 @@ describe("ProviderTransform.schema - openai supported schema subset", () => {
     })
   })
 
+  test("infers omitted enum and const types from scalar values", () => {
+    const result = ProviderTransform.schema(openaiModel, {
+      type: "object",
+      properties: {
+        count: {
+          const: 1,
+        },
+        ratio: {
+          enum: [0.5, 1.25],
+        },
+        active: {
+          enum: [true, false],
+        },
+        mixed: {
+          enum: ["one", 1, null],
+        },
+      },
+    } as JSONSchema7) as { properties: Record<string, unknown> }
+
+    expect(result.properties.count).toEqual({
+      enum: [1],
+      type: "integer",
+    })
+    expect(result.properties.ratio).toEqual({
+      enum: [0.5, 1.25],
+      type: "number",
+    })
+    expect(result.properties.active).toEqual({
+      enum: [true, false],
+      type: "boolean",
+    })
+    expect(result.properties.mixed).toEqual({
+      enum: ["one", 1, null],
+      type: ["string", "integer", "null"],
+    })
+  })
+
   test("keeps local references and sanitizes definitions", () => {
     const result = ProviderTransform.schema(openaiModel, {
       type: "object",

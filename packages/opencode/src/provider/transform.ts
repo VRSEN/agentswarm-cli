@@ -1313,6 +1313,27 @@ function isPlainObject(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
+function scalarTypes(values: unknown[]): string[] {
+  const result: string[] = []
+  for (const value of values) {
+    const type =
+      typeof value === "number"
+        ? Number.isInteger(value)
+          ? "integer"
+          : "number"
+        : value === null
+          ? "null"
+          : typeof value === "string" || typeof value === "boolean"
+            ? typeof value
+            : undefined
+    if (type && !result.includes(type)) result.push(type)
+  }
+  if (result.includes("number") && result.includes("integer")) {
+    return result.filter((type) => type !== "integer")
+  }
+  return result
+}
+
 // Mirrors Codex's Rust JSON schema compatibility lowering for OpenAI tool schemas.
 function sanitizeOpenAISchema(value: unknown): unknown {
   const types = ["string", "number", "boolean", "integer", "object", "array", "null"]
@@ -1376,6 +1397,7 @@ function sanitizeOpenAISchema(value: unknown): unknown {
 
   // MCP schemas may omit `type` while still using keywords that imply one.
   // Keep the schema usable after unsupported keywords are dropped.
+  const enumTypes = Array.isArray(result.enum) ? scalarTypes(result.enum) : []
   const inferredTypes =
     schemaTypes.length > 0
       ? schemaTypes
@@ -1383,11 +1405,13 @@ function sanitizeOpenAISchema(value: unknown): unknown {
         ? ["object"]
         : ["items", "prefixItems"].some((key) => key in value)
           ? ["array"]
-          : "enum" in result || "format" in value
-            ? ["string"]
-            : ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"].some((key) => key in value)
-              ? ["number"]
-              : []
+          : enumTypes.length > 0
+            ? enumTypes
+            : "enum" in result || "format" in value
+              ? ["string"]
+              : ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"].some((key) => key in value)
+                ? ["number"]
+                : []
 
   if (inferredTypes.length === 0) return {}
 
