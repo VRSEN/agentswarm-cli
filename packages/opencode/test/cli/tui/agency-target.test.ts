@@ -4,6 +4,7 @@ import {
   resolveAgencyHandoffRecipientFromMessages,
   resolveAgencyTargetFromPicker,
   shouldAdoptAgencyHandoffRecipient,
+  updateAgencyRecipientSelectionState,
 } from "../../../src/cli/cmd/tui/util/agency-target"
 
 describe("agency target options", () => {
@@ -477,6 +478,46 @@ describe("agency target options", () => {
 
     expect(options.recipientAgent).toBeNull()
     expect(typeof options.recipientAgentSelectedAt).toBe("number")
+  })
+
+  test("keeps late loaded recipient timestamps as config baseline", () => {
+    const pending = updateAgencyRecipientSelectionState({
+      state: {
+        ready: false,
+      },
+      syncReady: false,
+      selectedAt: undefined,
+    })
+    const loaded = updateAgencyRecipientSelectionState({
+      state: pending.state,
+      syncReady: true,
+      selectedAt: 10,
+    })
+
+    expect(loaded).toEqual({
+      state: {
+        ready: true,
+        selectedAt: 10,
+      },
+    })
+  })
+
+  test("marks first ready recipient timestamp as an explicit selection", () => {
+    const selected = updateAgencyRecipientSelectionState({
+      state: {
+        ready: true,
+      },
+      syncReady: true,
+      selectedAt: 10,
+    })
+
+    expect(selected).toEqual({
+      state: {
+        ready: true,
+        selectedAt: 10,
+      },
+      explicitSelectedAt: 10,
+    })
   })
 
   test("does not re-adopt when agent is unchanged or matches build", () => {

@@ -76,12 +76,14 @@ import {
 import { cancelQueuedRunModeMessages } from "../../util/run-queued-messages"
 import { errorMessage as toErrorMessage } from "@/util/error"
 import {
+  type AgencyRecipientSelectionState,
   displayRunOnlyAgentLabel,
   readAgencyProviderOptions,
   resolveAgencyHandoffRecipientFromParts,
   resolveAgencyHandoffRecipientFromMessages,
   resolveAgencyTargetSelection,
   shouldAdoptAgencyHandoffRecipient,
+  updateAgencyRecipientSelectionState,
 } from "../../util/agency-target"
 import { resolveModelLabel } from "../../util/model-label"
 import { hasAgencyHandoffEvidence } from "@/session/agency-swarm-utils"
@@ -264,7 +266,10 @@ export function Prompt(props: PromptProps) {
   )
   // Pre-existing configured recipients stay server-ranked config, not prompt overrides.
   // A target picked while this prompt is mounted can annotate the submitted turn.
-  let recipientSelectedAtBaseline = agencyProviderOptions().recipientAgentSelectedAt
+  let recipientSelectionState: AgencyRecipientSelectionState = {
+    ready: sync.ready,
+    selectedAt: agencyProviderOptions().recipientAgentSelectedAt,
+  }
   const [explicitRecipientSelectedAt, setExplicitRecipientSelectedAt] = createSignal<number>()
   const frameworkRecipientDiscoveryInput = createMemo(() => {
     if (!frameworkMode()) return undefined
@@ -337,7 +342,10 @@ export function Prompt(props: PromptProps) {
       () => props.sessionID,
       () => {
         setHandoffRecipient(undefined)
-        recipientSelectedAtBaseline = agencyProviderOptions().recipientAgentSelectedAt
+        recipientSelectionState = {
+          ready: sync.ready,
+          selectedAt: agencyProviderOptions().recipientAgentSelectedAt,
+        }
         setExplicitRecipientSelectedAt(undefined)
         assistantMessagesByID.clear()
       },
@@ -346,13 +354,13 @@ export function Prompt(props: PromptProps) {
 
   createEffect(() => {
     const options = agencyProviderOptions()
-    if (!options.recipientAgentSelectedAt) return
-    if (recipientSelectedAtBaseline === undefined) {
-      recipientSelectedAtBaseline = options.recipientAgentSelectedAt
-      return
-    }
-    if (options.recipientAgentSelectedAt === recipientSelectedAtBaseline) return
-    setExplicitRecipientSelectedAt(options.recipientAgentSelectedAt)
+    const next = updateAgencyRecipientSelectionState({
+      state: recipientSelectionState,
+      syncReady: sync.ready,
+      selectedAt: options.recipientAgentSelectedAt,
+    })
+    recipientSelectionState = next.state
+    if (next.explicitSelectedAt !== undefined) setExplicitRecipientSelectedAt(next.explicitSelectedAt)
   })
 
   createEffect(() => {
