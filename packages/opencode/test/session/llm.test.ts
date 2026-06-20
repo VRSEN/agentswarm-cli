@@ -620,6 +620,8 @@ describe("session.llm.stream", () => {
               reasoning: { effort: "high", summary: "auto" },
               reasoningEffort: "high",
               reasoningSummary: "auto",
+              effort: "high",
+              reasoningConfig: { type: "enabled", maxReasoningEffort: "high" },
               include: ["reasoning.encrypted_content"],
             },
           },
@@ -634,17 +636,23 @@ describe("session.llm.stream", () => {
           model: { providerID: ProviderID.make(providerID), modelID: current.id, variant: "high" },
         } satisfies MessageV2.User
 
-        await drain({
-          user,
-          sessionID,
-          model: current,
-          agent,
-          system: ["You are a helpful assistant."],
-          messages: [{ role: "user", content: "Hello" }],
-          tools: {},
-        })
+        const captured: { options?: Record<string, unknown> } = {}
+        await drainCaptureParams(
+          {
+            user,
+            sessionID,
+            model: current,
+            agent,
+            system: ["You are a helpful assistant."],
+            messages: [{ role: "user", content: "Hello" }],
+            tools: {},
+          },
+          captured,
+        )
 
         const capture = await request
+        expect(captured.options?.effort).toBeUndefined()
+        expect(captured.options?.reasoningConfig).toBeUndefined()
         expect(capture.body.reasoning).toEqual({ enabled: false })
         expect(capture.body.reasoningEffort).toBeUndefined()
         expect(capture.body.reasoning_effort).toBeUndefined()
@@ -709,6 +717,8 @@ describe("session.llm.stream", () => {
           modelParams: {
             reasoning: { effort: "high" },
             reasoning_effort: "high",
+            effort: "high",
+            reasoningConfig: { type: "enabled", maxReasoningEffort: "high" },
             thinking: { type: "enabled", budget_tokens: 16000 },
             thinkingConfig: { includeThoughts: true, thinkingBudget: 16000 },
             include: ["reasoning.encrypted_content", "message.output_text.logprobs"],

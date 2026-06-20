@@ -55,6 +55,8 @@ function removeReasoningControls(options: Record<string, unknown>) {
   delete options.reasoningSummary
   delete options.reasoning_summary
   delete options.forceReasoning
+  delete options.effort
+  delete options.reasoningConfig
   delete options.thinking
   delete options.thinkingConfig
 
