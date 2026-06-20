@@ -7,6 +7,7 @@ export type ModelLabelContext = {
   agencies?: readonly AgencySwarmAdapter.AgencyDescriptor[]
   agencyID?: string
   agentID?: string
+  allowSingleAgency?: boolean
 }
 
 export type ModelLabelScope = "agent" | "agency"
@@ -90,9 +91,10 @@ function resolveAgencyModelLabel(input: {
   agencies?: readonly AgencySwarmAdapter.AgencyDescriptor[]
   agencyID?: string
   agentID?: string
+  allowSingleAgency?: boolean
   scope?: ModelLabelScope
 }) {
-  const agency = resolveAgency(input.agencies ?? [], input.agencyID)
+  const agency = resolveAgency(input.agencies ?? [], input.agencyID, input.allowSingleAgency)
   if (!agency) return undefined
   const model = resolveAgencyAgentModelLabel(agency, input.agentID)
   if (model) return model
@@ -126,7 +128,11 @@ function formatAgencyModelLabel(agency: AgencySwarmAdapter.AgencyDescriptor) {
   return `Swarm models: ${label}`
 }
 
-function resolveAgency(agencies: readonly AgencySwarmAdapter.AgencyDescriptor[], agencyID: string | undefined) {
-  if (!agencyID) return undefined
+function resolveAgency(
+  agencies: readonly AgencySwarmAdapter.AgencyDescriptor[],
+  agencyID: string | undefined,
+  allowSingleAgency: boolean | undefined,
+) {
+  if (!agencyID) return allowSingleAgency && agencies.length === 1 ? agencies[0] : undefined
   return agencies.find((item) => item.id === agencyID)
 }

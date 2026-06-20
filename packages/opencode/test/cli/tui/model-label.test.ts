@@ -80,6 +80,47 @@ describe("model-label", () => {
     expect(result).toBe("Swarm Default")
   })
 
+  test("uses sole discovered agency when configured agency is omitted", () => {
+    const result = resolveModelLabel({
+      agencies,
+      allowSingleAgency: true,
+      agentID: "reviewer",
+      providerID: AgencySwarmAdapter.PROVIDER_ID,
+      modelID: AgencySwarmAdapter.DEFAULT_MODEL_ID,
+      fallback: "Swarm Default",
+    })
+
+    expect(result).toBe("claude-sonnet-4-5")
+  })
+
+  test("falls back when configured agency is omitted and discovery is ambiguous", () => {
+    const result = resolveModelLabel({
+      agencies: [
+        ...agencies,
+        {
+          id: "other",
+          name: "Other Agency",
+          agents: [
+            {
+              id: "other-agent",
+              name: "Other Agent",
+              model: "gpt-5.5-pro",
+              isEntryPoint: true,
+            },
+          ],
+          metadata: {},
+        },
+      ],
+      allowSingleAgency: true,
+      agentID: "reviewer",
+      providerID: AgencySwarmAdapter.PROVIDER_ID,
+      modelID: AgencySwarmAdapter.DEFAULT_MODEL_ID,
+      fallback: "Swarm Default",
+    })
+
+    expect(result).toBe("Swarm Default")
+  })
+
   test("uses configured recipient model for visible internal build assistant label", () => {
     const result = resolveAssistantModelLabel({
       agencies,

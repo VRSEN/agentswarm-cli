@@ -563,6 +563,7 @@ export function Prompt(props: PromptProps) {
       providers: sync.data.provider,
       agencies: frameworkRecipientDiscovery(),
       agencyID: options.agency,
+      allowSingleAgency: !options.agency,
       agentID,
       providerID: current.providerID,
       modelID: current.modelID,

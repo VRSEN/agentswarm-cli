@@ -325,6 +325,7 @@ export function Session() {
       providers: providers(),
       agencies: agencyDiscovery(),
       agencyID: input.agencyID ?? (configuredTargetChangedAfterTurn ? undefined : options.agency),
+      allowSingleAgency: !input.agencyID && !configuredTargetChangedAfterTurn && !options.agency,
       agentID: input.agentID,
       providerID: input.providerID,
       modelID: input.modelID,
