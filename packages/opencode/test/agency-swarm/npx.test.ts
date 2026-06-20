@@ -2580,6 +2580,105 @@ describe("agency-swarm npx onboarding", () => {
     expect(info).toHaveBeenCalledWith("Preparing Agent Swarm...")
   })
 
+  test("prepareProjectLaunch cancels spinner-wrapped server startup without printing success", async () => {
+    await using dir = await tmpdir()
+    await writeAgency(dir.path)
+    await mkdir(path.join(dir.path, ".venv", process.platform === "win32" ? "Scripts" : "bin"), {
+      recursive: true,
+    })
+    await Bun.write(
+      path.join(
+        dir.path,
+        ".venv",
+        process.platform === "win32" ? "Scripts" : "bin",
+        process.platform === "win32" ? "python.exe" : "python",
+      ),
+      "",
+    )
+
+    const killSignals: Array<string | undefined> = []
+    let cancelStartup: (() => void) | undefined
+    let resolveServerExit!: (code: number) => void
+
+    spyOn(prompts, "spinner").mockImplementation((options?: Parameters<typeof prompts.spinner>[0]) => {
+      let cancelled = false
+      return {
+        start(message: string) {
+          spinnerStarts.push(message)
+          if (message === "Starting Agent Swarm") {
+            cancelStartup = () => {
+              cancelled = true
+              options?.onCancel?.()
+            }
+          }
+        },
+        stop(message: string, code?: number) {
+          spinnerStops.push(message)
+          spinnerStopCodes.push(code)
+        },
+        message() {},
+        get isCancelled() {
+          return cancelled
+        },
+      } as ReturnType<typeof prompts.spinner>
+    })
+    spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
+
+    spyOn(Bun, "spawn").mockImplementation((options: unknown) => {
+      const cmd = (options as { cmd?: string[] }).cmd
+      if (!cmd) throw new Error("Missing command")
+      if (isUvVersionCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "uv 0.8.0\n",
+          stderr: "",
+        } as never
+      }
+      if (cmd.includes("import sys; print(sys.executable); print(sys.version.split()[0])")) {
+        const target = cmd[0] ?? ""
+        return {
+          exited: Promise.resolve(0),
+          stdout: `${target}\n3.12.7\n`,
+          stderr: "",
+        } as never
+      }
+      if (isCanaryCommand(cmd)) {
+        return {
+          exited: Promise.resolve(0),
+          stdout: "",
+          stderr: "",
+        } as never
+      }
+      if (cmd[1]?.endsWith("launch_agency.py")) {
+        queueMicrotask(() => cancelStartup?.())
+        return {
+          exited: new Promise<number>((resolve) => {
+            resolveServerExit = resolve
+          }),
+          stderr: "",
+          kill(signal?: string) {
+            killSignals.push(signal)
+            resolveServerExit(0)
+          },
+        } as never
+      }
+      throw new Error(`Unexpected command: ${cmd.join(" ")}`)
+    })
+
+    const launch = await prepareProjectLaunch({
+      directory: dir.path,
+      agencyFile: path.join(dir.path, "agency.py"),
+      moduleName: "agency",
+    })
+
+    expect(launch).toBeUndefined()
+    expect(killSignals).toContain(undefined)
+    expect(spinnerStarts).toEqual(["Checking Agent Swarm environment", "Starting Agent Swarm"])
+    expect(spinnerStops).toEqual(["Agent Swarm environment checked"])
+    expect(spinnerStops).not.toContain("Agent Swarm ready")
+    expect(spinnerStopCodes).toEqual([undefined])
+  })
+
   test("prepareProjectLaunch points startup import failures at the active entry file", async () => {
     await using dir = await tmpdir()
     await Bun.write(
