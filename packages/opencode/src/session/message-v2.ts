@@ -347,6 +347,7 @@ export const User = Schema.Struct({
   system: Schema.optional(Schema.String),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
   agencyRecipientAgent: Schema.optional(Schema.String),
+  agencyLabelAgency: Schema.optional(Schema.String),
   agencyLabelRecipientAgent: Schema.optional(Schema.String),
 }).annotate({ identifier: "UserMessage" })
 export type User = Types.DeepMutable<Schema.Schema.Type<typeof User>>
@@ -627,7 +628,8 @@ function providerMeta(metadata: Record<string, any> | undefined) {
   if (!metadata) return undefined
   const rest = Object.fromEntries(
     Object.entries(metadata).filter(
-      ([key, value]) => key !== "providerExecuted" && typeof value === "object" && value !== null && !Array.isArray(value),
+      ([key, value]) =>
+        key !== "providerExecuted" && typeof value === "object" && value !== null && !Array.isArray(value),
     ),
   )
   return Object.keys(rest).length > 0 ? rest : undefined

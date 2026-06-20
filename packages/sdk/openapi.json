@@ -5296,6 +5296,9 @@
                   "agencyRecipientAgent": {
                     "type": "string"
                   },
+                  "agencyLabelAgency": {
+                    "type": "string"
+                  },
                   "agencyLabelRecipientAgent": {
                     "type": "string"
                   },
@@ -6103,6 +6106,9 @@
                     "type": "string"
                   },
                   "agencyRecipientAgent": {
+                    "type": "string"
+                  },
+                  "agencyLabelAgency": {
                     "type": "string"
                   },
                   "agencyLabelRecipientAgent": {
@@ -10255,6 +10261,9 @@
             }
           },
           "agencyRecipientAgent": {
+            "type": "string"
+          },
+          "agencyLabelAgency": {
             "type": "string"
           },
           "agencyLabelRecipientAgent": {

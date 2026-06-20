@@ -1751,9 +1751,11 @@ export function Prompt(props: PromptProps) {
       const agencyLabelRecipientAgent = frameworkMode()
         ? (mentionedRecipient ?? agencyRecipientAgent ?? options.recipientAgent)
         : undefined
+      const agencyLabelAgency = frameworkMode() ? options.agency : undefined
       const usedExplicitRecipient = !!explicitRecipient && agencyRecipientAgent === explicitRecipient
       const promptPayload: Parameters<typeof sdk.client.session.prompt>[0] & {
         $body_agencyRecipientAgent?: string
+        $body_agencyLabelAgency?: string
         $body_agencyLabelRecipientAgent?: string
       } = {
         sessionID,
@@ -1763,6 +1765,7 @@ export function Prompt(props: PromptProps) {
         model: selectedModel,
         variant,
         $body_agencyRecipientAgent: agencyRecipientAgent,
+        $body_agencyLabelAgency: agencyLabelAgency,
         $body_agencyLabelRecipientAgent: agencyLabelRecipientAgent,
         parts: [
           ...editorParts,

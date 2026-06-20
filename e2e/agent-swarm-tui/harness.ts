@@ -47,30 +47,41 @@ export type AgencyProtocolServer = {
   stop(): void
 }
 
-type AgencyServerScenario = "qa" | "tui-demo"
+type AgencyServerScenario = "qa" | "tui-demo" | "multi-agency"
+
+function fixturesForScenario(scenario: AgencyServerScenario) {
+  if (scenario === "tui-demo") return [tuiDemoAgencyFixture]
+  if (scenario === "multi-agency") return multiAgencyFixtures
+  return [qaAgencyFixture]
+}
 
 export async function startAgencyProtocolServer(
   input: { scenario?: AgencyServerScenario } = {},
 ): Promise<AgencyProtocolServer> {
   const scenario = input.scenario ?? "qa"
+  const fixtures = fixturesForScenario(scenario)
   const requests: AgencyProtocolServer["requests"] = []
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch: async (request) => {
       const url = new URL(request.url)
-      const fixture = scenario === "tui-demo" ? tuiDemoAgencyFixture : qaAgencyFixture
 
       if (url.pathname === "/openapi.json") {
         return Response.json({
           openapi: "3.1.0",
-          paths: {
-            [`/${fixture.agencyID}/get_metadata`]: { get: {} },
-            [`/${fixture.agencyID}/get_response_stream`]: { post: {} },
-            [`/${fixture.agencyID}/cancel_response_stream`]: { post: {} },
-          },
+          paths: Object.fromEntries(
+            fixtures.flatMap((fixture) => [
+              [`/${fixture.agencyID}/get_metadata`, { get: {} }],
+              [`/${fixture.agencyID}/get_response_stream`, { post: {} }],
+              [`/${fixture.agencyID}/cancel_response_stream`, { post: {} }],
+            ]),
+          ),
         })
       }
+
+      const fixture = fixtures.find((item) => url.pathname.startsWith(`/${item.agencyID}/`))
+      if (!fixture) return new Response("not found", { status: 404 })
 
       if (url.pathname === `/${fixture.agencyID}/get_metadata`) {
         return Response.json(fixture.metadata)
@@ -122,6 +133,10 @@ export async function startAgencyProtocolServer(
 
 export async function startTuiDemoAgencyServer(): Promise<AgencyProtocolServer> {
   return startAgencyProtocolServer({ scenario: "tui-demo" })
+}
+
+export async function startMultiAgencyServer(): Promise<AgencyProtocolServer> {
+  return startAgencyProtocolServer({ scenario: "multi-agency" })
 }
 
 export type TuiProcess = {
@@ -776,6 +791,67 @@ const tuiDemoAgencyFixture: AgencyFixture = {
     ])
   },
 }
+
+const multiAgencyFixtures: AgencyFixture[] = [
+  {
+    agencyID: "sales-agency",
+    metadata: {
+      agency_swarm_version: "1.9.6",
+      metadata: {
+        agencyName: "SalesAgency",
+        agents: ["SharedAgent"],
+        entryPoints: ["SharedAgent"],
+      },
+      nodes: [
+        {
+          id: "SharedAgent",
+          type: "agent",
+          data: {
+            label: "SharedAgent",
+            description: "Handles sales requests.",
+            isEntryPoint: true,
+            model: "gpt-sales-mini",
+          },
+        },
+      ],
+    },
+    stream(_body, requestCount) {
+      return sse([
+        ["meta", { run_id: `run_sales_${requestCount}` }],
+        ["end", {}],
+      ])
+    },
+  },
+  {
+    agencyID: "support-agency",
+    metadata: {
+      agency_swarm_version: "1.9.6",
+      metadata: {
+        agencyName: "SupportAgency",
+        agents: ["SharedAgent"],
+        entryPoints: ["SharedAgent"],
+      },
+      nodes: [
+        {
+          id: "SharedAgent",
+          type: "agent",
+          data: {
+            label: "SharedAgent",
+            description: "Handles support requests.",
+            isEntryPoint: true,
+            model: "claude-support-sonnet",
+          },
+        },
+      ],
+    },
+    stream(_body, requestCount) {
+      return sse([
+        ["meta", { run_id: `run_support_${requestCount}` }],
+        ["end", {}],
+      ])
+    },
+  },
+]
 
 function sse(events: Array<[event: string, data: Record<string, unknown>]>) {
   return events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("")

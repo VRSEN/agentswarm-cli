@@ -105,7 +105,13 @@ const GO_UPSELL_ACCOUNT_RATE_LIMIT_DONT_SHOW = "go_upsell_account_rate_limit_don
 const GO_UPSELL_WINDOW = 86_400_000 // 24 hrs
 
 type AgencyLabelUserMessage = UserMessage & {
+  agencyLabelAgency?: string
   agencyLabelRecipientAgent?: string
+}
+
+function readAgencyLabelAgency(message: UserMessage | undefined) {
+  if (!message) return undefined
+  return (message as AgencyLabelUserMessage).agencyLabelAgency
 }
 
 function readAgencyLabelRecipient(message: UserMessage | undefined) {
@@ -180,6 +186,7 @@ const context = createContext<{
   modelLabel: (input: {
     providerID: string
     modelID: string
+    agencyID?: string
     agentID?: string
     recipientAgent?: string
     submittedModel?: { providerID: string; modelID: string }
@@ -302,6 +309,7 @@ export function Session() {
   const modelLabel = (input: {
     providerID: string
     modelID: string
+    agencyID?: string
     agentID?: string
     recipientAgent?: string
     submittedModel?: { providerID: string; modelID: string }
@@ -309,21 +317,19 @@ export function Session() {
     turnStartedAt?: number
   }) => {
     const options = agencyProviderOptions()
-    const configuredRecipientChangedAfterTurn =
-      !input.recipientAgent &&
+    const configuredTargetChangedAfterTurn =
       !!input.turnStartedAt &&
       !!options.recipientAgentSelectedAt &&
       options.recipientAgentSelectedAt > input.turnStartedAt
     return resolveAssistantModelLabel({
       providers: providers(),
       agencies: agencyDiscovery(),
-      agencyID: options.agency,
+      agencyID: input.agencyID ?? (configuredTargetChangedAfterTurn ? undefined : options.agency),
       agentID: input.agentID,
       providerID: input.providerID,
       modelID: input.modelID,
       submittedModel: input.submittedModel,
-      recipientAgent:
-        input.recipientAgent ?? (configuredRecipientChangedAfterTurn ? undefined : options.recipientAgent),
+      recipientAgent: input.recipientAgent ?? (configuredTargetChangedAfterTurn ? undefined : options.recipientAgent),
       frameworkMode: frameworkMode(),
       scope: input.scope,
     })
@@ -1518,6 +1524,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
     ctx.modelLabel({
       providerID: props.message.providerID,
       modelID: props.message.modelID,
+      agencyID: readAgencyLabelAgency(parent()),
       agentID: props.message.agent,
       recipientAgent: readAgencyLabelRecipient(parent()),
       submittedModel: parent()?.model,

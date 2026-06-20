@@ -1161,6 +1161,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         system: input.system,
         format: input.format,
         ...(input.agencyRecipientAgent ? { agencyRecipientAgent: input.agencyRecipientAgent } : {}),
+        ...(input.agencyLabelAgency ? { agencyLabelAgency: input.agencyLabelAgency } : {}),
         ...(input.agencyLabelRecipientAgent ? { agencyLabelRecipientAgent: input.agencyLabelRecipientAgent } : {}),
       }
 
@@ -1978,11 +1979,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       },
     )
 
-    const loop: (input: RunLoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
-      input: RunLoopInput,
-    ) {
-      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input))
-    })
+    const loop: (input: RunLoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(
+      function* (input: RunLoopInput) {
+        return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input))
+      },
+    )
 
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError> = Effect.fn(
       "SessionPrompt.shell",
@@ -2173,6 +2174,7 @@ export const PromptInput = Schema.Struct({
   system: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
   agencyRecipientAgent: Schema.optional(Schema.String),
+  agencyLabelAgency: Schema.optional(Schema.String),
   agencyLabelRecipientAgent: Schema.optional(Schema.String),
   parts: Schema.Array(
     Schema.Union([

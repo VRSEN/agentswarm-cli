@@ -601,11 +601,13 @@ it.instance(
           modelID: ModelID.make("default"),
         },
         noReply: true,
+        agencyLabelAgency: "demo",
         agencyLabelRecipientAgent: "MathAgent",
         parts: [{ type: "text", text: "label only" }],
       })
 
       if (msg.info.role !== "user") throw new Error("expected user message")
+      expect(msg.info.agencyLabelAgency).toBe("demo")
       expect(msg.info.agencyLabelRecipientAgent).toBe("MathAgent")
       expect(msg.info.agencyRecipientAgent).toBeUndefined()
     }),

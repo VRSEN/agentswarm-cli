@@ -39,6 +39,7 @@ type TranscriptMessageOptions = TranscriptOptions & {
 }
 
 type AgencyLabelUserMessage = UserMessage & {
+  agencyLabelAgency?: string
   agencyLabelRecipientAgent?: string
 }
 
@@ -58,19 +59,18 @@ export function formatTranscript(
 
   for (const msg of messages) {
     const user = msg.info.role === "assistant" ? users.get(msg.info.parentID) : undefined
+    const agencyID = readAgencyLabelAgency(user)
     const recipientAgent = readAgencyLabelRecipient(user)
-    const configuredRecipientChangedAfterTurn =
-      !recipientAgent &&
-      !!user?.time.created &&
-      !!options.recipientAgentSelectedAt &&
-      options.recipientAgentSelectedAt > user.time.created
+    const configuredTargetChangedAfterTurn =
+      !!user?.time.created && !!options.recipientAgentSelectedAt && options.recipientAgentSelectedAt > user.time.created
     transcript += formatMessage(
       msg.info,
       msg.parts,
       {
         ...options,
+        agencyID: agencyID ?? (configuredTargetChangedAfterTurn ? undefined : options.agencyID),
         submittedModel: user?.model,
-        recipientAgent: recipientAgent ?? (configuredRecipientChangedAfterTurn ? undefined : options.recipientAgent),
+        recipientAgent: recipientAgent ?? (configuredTargetChangedAfterTurn ? undefined : options.recipientAgent),
       },
       providers,
     )
@@ -78,6 +78,11 @@ export function formatTranscript(
   }
 
   return transcript
+}
+
+function readAgencyLabelAgency(message: UserMessage | undefined) {
+  if (!message) return undefined
+  return (message as AgencyLabelUserMessage).agencyLabelAgency
 }
 
 function readAgencyLabelRecipient(message: UserMessage | undefined) {

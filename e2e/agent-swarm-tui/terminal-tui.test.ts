@@ -10,6 +10,7 @@ import {
   latestOpenAITestModelLabel,
   openAIProviderTestConfig,
   startAgencyProtocolServer,
+  startMultiAgencyServer,
   startTui,
   startTuiDemoAgencyServer,
   writeAgencyProject,
@@ -493,6 +494,35 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(screen).not.toContain("Run · gpt-5.4-mini")
     expect(currentServer.requests[0]?.body).toMatchObject({
       recipient_agent: "MathAgent",
+    })
+  })
+
+  test("completed build-route model labels stay tied to the submitted agency", async () => {
+    currentServer = await startMultiAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "sales-agency",
+      recipientAgent: "SharedAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("SharedAgent · gpt-sales-mini", tuiReadyTimeoutMs)
+    currentTui.write("multi agency stable label\r")
+    await currentTui.waitForText("Run · gpt-sales-mini", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "submitted-agency label request",
+      tuiInteractionTimeoutMs,
+    )
+    await selectAgencySwarm(currentTui, "SupportAgency")
+    await currentTui.waitForText("SupportAgency · claude-support-sonnet", tuiInteractionTimeoutMs)
+    const screen = currentTui.screen()
+
+    expect(screen).toContain("Run · gpt-sales-mini")
+    expect(screen).not.toContain("Run · claude-support-sonnet")
+    expect(currentServer.requests[0]?.path).toBe("/sales-agency/get_response_stream")
+    expect(currentServer.requests[0]?.body).toMatchObject({
+      recipient_agent: "SharedAgent",
     })
   })
 
@@ -1001,6 +1031,15 @@ async function selectCurrentSwarm(tui: TuiProcess) {
   await tui.waitForText("TuiDemoAgency")
   tui.write("\x1b[A\x1b[A\r")
   await tui.waitForText("Selected swarm TuiDemoAgency", tuiInteractionTimeoutMs)
+}
+
+async function selectAgencySwarm(tui: TuiProcess, agency: string) {
+  tui.write("/agents\r")
+  await tui.waitForText("Select swarm")
+  tui.write(agency)
+  await tui.waitForText(agency)
+  tui.write("\r")
+  await tui.waitForText(`Selected swarm ${agency}`, tuiInteractionTimeoutMs)
 }
 
 async function startAuthFailureAgencyServer(): Promise<AgencyProtocolServer> {

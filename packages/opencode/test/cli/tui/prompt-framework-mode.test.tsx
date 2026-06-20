@@ -368,11 +368,13 @@ describe("prompt framework-mode footer", () => {
         {
           parts: unknown[]
           $body_agencyRecipientAgent?: string
+          $body_agencyLabelAgency?: string
           $body_agencyLabelRecipientAgent?: string
         },
       ]
     >
     expect(calls[0][0].$body_agencyRecipientAgent).toBeUndefined()
+    expect(calls[0][0].$body_agencyLabelAgency).toBe("demo")
     expect(calls[0][0].$body_agencyLabelRecipientAgent).toBe("orchestrator-slug")
 
     eventHandlers["message.updated"]?.({
@@ -412,6 +414,7 @@ describe("prompt framework-mode footer", () => {
     )
     expect(payload.parts).not.toContainEqual(expect.objectContaining({ type: "agent" }))
     expect(payload.$body_agencyRecipientAgent).toBe("slides_agent")
+    expect(payload.$body_agencyLabelAgency).toBe("demo")
     expect(payload.$body_agencyLabelRecipientAgent).toBe("slides_agent")
 
     eventHandlers["message.updated"]?.({
@@ -444,6 +447,7 @@ describe("prompt framework-mode footer", () => {
 
     expect(prompt).toHaveBeenCalledTimes(3)
     expect(calls[2][0].$body_agencyRecipientAgent).toBe("slides_agent")
+    expect(calls[2][0].$body_agencyLabelAgency).toBe("demo")
     expect(calls[2][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
 
     eventHandlers["message.part.updated"]?.({
@@ -469,6 +473,7 @@ describe("prompt framework-mode footer", () => {
 
     expect(prompt).toHaveBeenCalledTimes(4)
     expect(calls[3][0].$body_agencyRecipientAgent).toBe("support_agent")
+    expect(calls[3][0].$body_agencyLabelAgency).toBe("demo")
     expect(calls[3][0].$body_agencyLabelRecipientAgent).toBe("support_agent")
 
     promptRef!.set({
@@ -490,6 +495,7 @@ describe("prompt framework-mode footer", () => {
 
     expect(prompt).toHaveBeenCalledTimes(5)
     expect(calls[4][0].$body_agencyRecipientAgent).toBeUndefined()
+    expect(calls[4][0].$body_agencyLabelAgency).toBe("demo")
     expect(calls[4][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
   })
 
@@ -514,6 +520,7 @@ describe("prompt framework-mode footer", () => {
       },
       agent: "orchestrator",
       $body_agencyRecipientAgent: "slides_agent",
+      $body_agencyLabelAgency: "demo",
       $body_agencyLabelRecipientAgent: "slides_agent",
       parts: [
         {
@@ -524,10 +531,12 @@ describe("prompt framework-mode footer", () => {
       ],
     } as Parameters<typeof client.session.prompt>[0] & {
       $body_agencyRecipientAgent?: string
+      $body_agencyLabelAgency?: string
       $body_agencyLabelRecipientAgent?: string
     })
 
     expect(body.agencyRecipientAgent).toBe("slides_agent")
+    expect(body.agencyLabelAgency).toBe("demo")
     expect(body.agencyLabelRecipientAgent).toBe("slides_agent")
     expect(body.parts).not.toContainEqual(expect.objectContaining({ type: "agent" }))
   })

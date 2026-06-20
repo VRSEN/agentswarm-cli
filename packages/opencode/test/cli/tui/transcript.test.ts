@@ -671,6 +671,87 @@ describe("transcript", () => {
       expect(result).not.toContain("Agent Builder · gpt-5.4-mini")
     })
 
+    test("uses the submitted agency for completed build-route labels after the current agency changes", () => {
+      const session = {
+        id: "ses_abc123",
+        title: "Test Session",
+        time: { created: 1000000000000, updated: 1000000001000 },
+      }
+      const messages = [
+        {
+          info: {
+            id: "msg_1",
+            sessionID: "ses_abc123",
+            role: "user" as const,
+            agent: "build",
+            model: { providerID: "agency-swarm", modelID: "default" },
+            agencyLabelAgency: "submitted",
+            agencyLabelRecipientAgent: "reviewer",
+            time: { created: 1000000000000 },
+          },
+          parts: [{ id: "p1", sessionID: "ses_abc123", messageID: "msg_1", type: "text" as const, text: "Review" }],
+        },
+        {
+          info: {
+            id: "msg_2",
+            sessionID: "ses_abc123",
+            role: "assistant" as const,
+            agent: "build",
+            modelID: "default",
+            providerID: "agency-swarm",
+            mode: "build",
+            parentID: "msg_1",
+            path: { cwd: "/test", root: "/test" },
+            cost: 0.001,
+            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+            time: { created: 1000000000100, completed: 1000000000600 },
+          },
+          parts: [{ id: "p2", sessionID: "ses_abc123", messageID: "msg_2", type: "text" as const, text: "Done" }],
+        },
+      ]
+
+      const result = formatTranscript(session, messages, {
+        thinking: false,
+        toolDetails: false,
+        assistantMetadata: true,
+        providers: agencyProviders,
+        agencyID: "current",
+        recipientAgent: "reviewer",
+        recipientAgentSelectedAt: 1000000002000,
+        agencies: [
+          {
+            id: "submitted",
+            name: "Submitted Agency",
+            agents: [
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "claude-sonnet-4-5",
+                isEntryPoint: true,
+              },
+            ],
+            metadata: {},
+          },
+          {
+            id: "current",
+            name: "Current Agency",
+            agents: [
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "gpt-5.4-mini",
+                isEntryPoint: true,
+              },
+            ],
+            metadata: {},
+          },
+        ],
+      })
+
+      expect(result).toContain("## Assistant (Agent Builder · claude-sonnet-4-5 · 0.5s)")
+      expect(result).not.toContain("Agent Builder · gpt-5.4-mini")
+    })
+
     test("uses submitted real model before agency metadata for completed bridge labels", () => {
       const session = {
         id: "ses_abc123",
