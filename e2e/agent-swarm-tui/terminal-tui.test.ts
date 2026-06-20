@@ -864,6 +864,36 @@ describe("Agent Swarm terminal TUI e2e", () => {
     ).toBeFalse()
   })
 
+  test("default single-swarm transfer_to handoff shows target agent as active in sidebar", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      cols: 150,
+      config: {
+        provider: {
+          "agency-swarm": {
+            options: {
+              agency: undefined,
+              recipientAgent: undefined,
+              recipientAgentSelectedAt: undefined,
+            },
+          },
+        },
+      },
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    currentTui.write("please handoff this calculation\r")
+    await currentTui.waitForText("Math agent now has control.", tuiInteractionTimeoutMs)
+    const screen = await currentTui.waitForText("Active: MathAgent", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(() => currentServer!.requests.length === 1, "default swarm handoff request")
+
+    const body = currentServer.requests[0]?.body
+    expect(body?.message).toContain("please handoff this calculation")
+    expect(body).not.toHaveProperty("recipient_agent")
+    expect(screen).toContain("TuiDemoAgency")
+  })
+
   test("top-level handoff wins over later nested handoff-like metadata", async () => {
     currentServer = await startTuiDemoAgencyServer()
     currentTui = await startTui({

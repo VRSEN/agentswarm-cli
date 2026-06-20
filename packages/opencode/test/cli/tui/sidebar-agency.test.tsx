@@ -270,6 +270,24 @@ describe("sidebar agency plugin", () => {
     expect(frame).not.toContain("Active: Lead")
   })
 
+  test("shows handed off recipient as active for default single swarm", async () => {
+    const sessionID = "session_1"
+    const messageID = "message_assistant_1"
+    const frame = await renderSidebar({
+      sessionID,
+      messages: [assistant({ id: messageID, sessionID, agent: "Lead", completed: 2 })],
+      parts: {
+        [messageID]: [transfer({ id: "part_transfer", sessionID, messageID, agent: "Review" })],
+      },
+      agencies: [agency({ id: "live", name: "Live Agency", agents: [main("Lead"), sub("Review")] })],
+    })
+
+    expect(frame).toContain("Swarm")
+    expect(frame).toContain("Live Agency")
+    expect(frame).toContain("Active: Review")
+    expect(frame).not.toContain("Active: Lead")
+  })
+
   test("shows concise fallback states", async () => {
     const empty = await renderSidebar({
       agencies: [],

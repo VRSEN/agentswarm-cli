@@ -79,9 +79,10 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const handoff = createMemo(() => {
     const opts = options()
     if (!opts) return undefined
+    const selected = selection()
     return resolveAgencyHandoffRecipientFromMessages({
       frameworkMode: true,
-      agency: opts.agency,
+      agency: selected?.agency ?? opts.agency,
       currentRecipient: opts.recipientAgent,
       currentRecipientSelectedAt: opts.recipientAgentSelectedAt,
       sessionID: props.session_id,
