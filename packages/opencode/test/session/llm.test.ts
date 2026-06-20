@@ -76,6 +76,43 @@ async function drainStoreTrue(input: LLM.StreamInput) {
   )
 }
 
+async function drainCaptureParams(input: LLM.StreamInput, capture: { options?: Record<string, unknown> }) {
+  const capturePlugin = Layer.succeed(
+    Plugin.Service,
+    Plugin.Service.of({
+      trigger: (_name, _input, output) =>
+        Effect.sync(() => {
+          if (_name === "chat.params") {
+            const params = output as { options?: Record<string, unknown> }
+            capture.options = params.options
+          }
+          return output
+        }),
+      list: () => Effect.succeed([]),
+      init: () => Effect.void,
+    }),
+  )
+  const providerLayer = Provider.layer.pipe(
+    Layer.provide(AppFileSystem.defaultLayer),
+    Layer.provide(Env.defaultLayer),
+    Layer.provide(Config.defaultLayer),
+    Layer.provide(Auth.defaultLayer),
+    Layer.provide(capturePlugin),
+    Layer.provide(ModelsDev.defaultLayer),
+    Layer.provide(RuntimeFlags.defaultLayer),
+  )
+  const layer = LLM.layer.pipe(
+    Layer.provide(Auth.defaultLayer),
+    Layer.provide(Config.defaultLayer),
+    Layer.provide(providerLayer),
+    Layer.provide(capturePlugin),
+    Layer.provide(RuntimeFlags.defaultLayer),
+  )
+  return Effect.runPromise(
+    attach(LLM.Service.use((svc) => svc.stream(input).pipe(Stream.runDrain))).pipe(Effect.provide(layer)),
+  )
+}
+
 describe("session.llm.hasToolCalls", () => {
   test("returns false for empty messages array", () => {
     expect(LLM.hasToolCalls([])).toBe(false)
@@ -614,6 +651,115 @@ describe("session.llm.stream", () => {
         expect(capture.body.reasoningSummary).toBeUndefined()
         expect(capture.body.reasoning_summary).toBeUndefined()
         expect(capture.body.include).toBeUndefined()
+      },
+    })
+  })
+
+  test("disabled reasoning removes nested modelParams reasoning controls", async () => {
+    const server = state.server
+    if (!server) {
+      throw new Error("Server not initialized")
+    }
+
+    const providerID = "openrouter"
+    const modelID = "google/gemini-2.5-flash"
+    const fixture = await loadFixture(providerID, modelID)
+    const model = fixture.model
+
+    const request = waitRequest(
+      "/chat/completions",
+      new Response(createChatStream("Hello"), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    )
+
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(
+          path.join(dir, "opencode.json"),
+          JSON.stringify({
+            $schema: "https://opencode.ai/config.json",
+            enabled_providers: [providerID],
+            provider: {
+              [providerID]: {
+                options: {
+                  apiKey: "test-key",
+                  baseURL: `${server.url.origin}/v1`,
+                },
+              },
+            },
+          }),
+        )
+      },
+    })
+
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const resolved = await getModel(ProviderID.make(providerID), ModelID.make(model.id))
+        const sessionID = SessionID.make("session-test-openrouter-disabled-modelparams-reasoning")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+        const current: Provider.Model = {
+          ...resolved,
+          options: {
+            ...resolved.options,
+            reasoning: { enabled: false },
+          },
+          variants: {
+            ...resolved.variants,
+            high: {
+              modelParams: {
+                reasoning: { effort: "high" },
+                reasoning_effort: "high",
+                thinking: { type: "enabled", budget_tokens: 16000 },
+                thinkingConfig: { includeThoughts: true, thinkingBudget: 16000 },
+                include: ["reasoning.encrypted_content", "message.output_text.logprobs"],
+                output_config: { effort: "high", format: "text" },
+                retained: "value",
+              },
+            },
+          },
+        }
+
+        const user = {
+          id: MessageID.make("msg_user-openrouter-disabled-modelparams-reasoning"),
+          sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: agent.name,
+          model: { providerID: ProviderID.make(providerID), modelID: current.id, variant: "high" },
+        } satisfies MessageV2.User
+
+        const captured: { options?: Record<string, unknown> } = {}
+        await drainCaptureParams(
+          {
+            user,
+            sessionID,
+            model: current,
+            agent,
+            system: ["You are a helpful assistant."],
+            messages: [{ role: "user", content: "Hello" }],
+            tools: {},
+          },
+          captured,
+        )
+
+        const capture = await request
+        const options = captured.options
+        expect(options?.reasoning).toEqual({ enabled: false })
+        const params = options?.modelParams as Record<string, unknown> | undefined
+        expect(params).toEqual({
+          include: ["message.output_text.logprobs"],
+          output_config: { format: "text" },
+          retained: "value",
+        })
+        expect(capture.body.reasoning).toEqual({ enabled: false })
       },
     })
   })

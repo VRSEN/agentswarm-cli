@@ -36,19 +36,39 @@ const mergeOptions = (target: Record<string, any>, source: Record<string, any> |
   const result = mergeDeep(target, source ?? {}) as Record<string, any>
   if (disabled) {
     result.reasoning = { enabled: false }
-    delete result.reasoningEffort
-    delete result.reasoning_effort
-    delete result.reasoningSummary
-    delete result.reasoning_summary
-    delete result.forceReasoning
-    const include = result.include
-    if (Array.isArray(include)) {
-      const next = include.filter((item) => item !== ENCRYPTED_REASONING_INCLUDE)
-      if (next.length === 0) delete result.include
-      else result.include = next
+    removeReasoningControls(result)
+    const params = result.modelParams
+    if (params && typeof params === "object" && !Array.isArray(params)) {
+      delete params.reasoning
+      removeReasoningControls(params)
+      if (Object.keys(params).length === 0) delete result.modelParams
     }
   }
   return result
+}
+
+function removeReasoningControls(options: Record<string, unknown>) {
+  delete options.reasoningEffort
+  delete options.reasoning_effort
+  delete options.reasoningSummary
+  delete options.reasoning_summary
+  delete options.forceReasoning
+  delete options.thinking
+  delete options.thinkingConfig
+
+  const output = options.output_config
+  if (output && typeof output === "object" && !Array.isArray(output)) {
+    const config = output as Record<string, unknown>
+    delete config.effort
+    if (Object.keys(config).length === 0) delete options.output_config
+  }
+
+  const include = options.include
+  if (Array.isArray(include)) {
+    const next = include.filter((item) => item !== ENCRYPTED_REASONING_INCLUDE)
+    if (next.length === 0) delete options.include
+    else options.include = next
+  }
 }
 
 function isReasoningDisabled(value: unknown) {
