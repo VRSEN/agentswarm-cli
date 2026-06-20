@@ -376,6 +376,17 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
     expect(result.include).toEqual(["reasoning.encrypted_content"])
   })
 
+  test("gpt-5 options return fresh encrypted reasoning include arrays", () => {
+    const model = createGpt5Model("gpt-5.2")
+    const first = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+    const include = first.include as string[]
+    include.push("leaked")
+
+    const second = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+    expect(second.include).toEqual(["reasoning.encrypted_content"])
+    expect(second.include).not.toBe(first.include)
+  })
+
   test("Bedrock Mantle gpt-5.5 uses OpenAI Responses defaults", () => {
     const model = {
       ...createGpt5Model("openai.gpt-5.5"),
