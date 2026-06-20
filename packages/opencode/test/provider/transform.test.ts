@@ -396,6 +396,24 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
     expect(result.textVerbosity).toBe("low")
   })
 
+  test("Bedrock Mantle gpt-5-pro keeps stateless reasoning defaults", () => {
+    const model = {
+      ...createGpt5Model("openai.gpt-5-pro"),
+      id: "amazon-bedrock/openai.gpt-5-pro",
+      providerID: "amazon-bedrock",
+      api: {
+        id: "openai.gpt-5-pro",
+        url: "https://bedrock-mantle.us-east-2.api.aws/openai/v1",
+        npm: "@ai-sdk/amazon-bedrock/mantle",
+      },
+    }
+    const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+    expect(result.store).toBe(false)
+    expect(result.reasoningEffort).toBeUndefined()
+    expect(result.forceReasoning).toBe(true)
+    expect(result.include).toEqual(["reasoning.encrypted_content"])
+  })
+
   test("openai-compatible gpt-5 models omit Responses-only reasoningSummary", () => {
     const model = {
       ...createGpt5Model("gpt-5.4"),

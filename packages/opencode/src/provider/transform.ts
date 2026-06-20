@@ -1193,12 +1193,13 @@ export function options(input: {
       ) {
         result["reasoningSummary"] = "auto"
       }
-      if (input.model.api.npm === "@ai-sdk/openai" || input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle") {
+      if (input.model.api.npm === "@ai-sdk/openai") {
         result["include"] = INCLUDE_ENCRYPTED_REASONING
       }
-      if (input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle") {
-        result["forceReasoning"] = true
-      }
+    }
+    if (input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle") {
+      result["include"] = INCLUDE_ENCRYPTED_REASONING
+      result["forceReasoning"] = true
     }
 
     // Only set textVerbosity for non-chat gpt-5.x models

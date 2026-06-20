@@ -1,15 +1,21 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test"
 import path from "path"
 import { tool, type ModelMessage } from "ai"
-import { Cause, Effect, Exit, Stream } from "effect"
+import { Cause, Effect, Exit, Layer, Stream } from "effect"
 import z from "zod"
-import { makeRuntime } from "../../src/effect/run-service"
+import { attach, makeRuntime } from "../../src/effect/run-service"
 import { LLM } from "../../src/session/llm"
 import { Instance } from "../../src/project/instance"
 import { WithInstance } from "../../src/project/with-instance"
 import { Provider } from "@/provider/provider"
+import { Auth } from "@/auth"
+import { Config } from "@/config/config"
+import { Plugin } from "@/plugin"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Env } from "@/env"
 import { ProviderTransform } from "@/provider/transform"
 import { ModelsDev } from "@opencode-ai/core/models"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { ProviderID, ModelID } from "../../src/provider/schema"
 import { Filesystem } from "@/util/filesystem"
 import { tmpdir } from "../fixture/fixture"
@@ -28,9 +34,46 @@ async function getModel(providerID: ProviderID, modelID: ModelID) {
 }
 
 const llm = makeRuntime(LLM.Service, LLM.defaultLayer)
+const storeTruePlugin = Layer.succeed(
+  Plugin.Service,
+  Plugin.Service.of({
+    trigger: (_name, _input, output) =>
+      Effect.sync(() => {
+        if (_name === "chat.params") {
+          const params = output as { options?: Record<string, unknown> }
+          params.options = { ...(params.options ?? {}), store: true }
+        }
+        return output
+      }),
+    list: () => Effect.succeed([]),
+    init: () => Effect.void,
+  }),
+)
+const providerStoreTrueLayer = Provider.layer.pipe(
+  Layer.provide(AppFileSystem.defaultLayer),
+  Layer.provide(Env.defaultLayer),
+  Layer.provide(Config.defaultLayer),
+  Layer.provide(Auth.defaultLayer),
+  Layer.provide(storeTruePlugin),
+  Layer.provide(ModelsDev.defaultLayer),
+  Layer.provide(RuntimeFlags.defaultLayer),
+)
+const llmStoreTrueLayer = LLM.layer.pipe(
+  Layer.provide(Auth.defaultLayer),
+  Layer.provide(Config.defaultLayer),
+  Layer.provide(providerStoreTrueLayer),
+  Layer.provide(storeTruePlugin),
+  Layer.provide(RuntimeFlags.defaultLayer),
+)
 
 async function drain(input: LLM.StreamInput) {
   return llm.runPromise((svc) => svc.stream(input).pipe(Stream.runDrain))
+}
+
+async function drainStoreTrue(input: LLM.StreamInput) {
+  return Effect.runPromise(
+    attach(LLM.Service.use((svc) => svc.stream(input).pipe(Stream.runDrain))).pipe(Effect.provide(llmStoreTrueLayer)),
+  )
 }
 
 describe("session.llm.hasToolCalls", () => {
@@ -1038,6 +1081,139 @@ describe("session.llm.stream", () => {
 
         const maxTokens = body.max_output_tokens as number | undefined
         expect(maxTokens).toBe(undefined) // match codex cli behavior
+      },
+    })
+  })
+
+  test("preserves Responses item IDs when a plugin enables store", async () => {
+    const server = state.server
+    if (!server) {
+      throw new Error("Server not initialized")
+    }
+
+    const source = await loadFixture("openai", "gpt-5.2")
+    const model = source.model
+    const chunks = [
+      {
+        type: "response.created",
+        response: {
+          id: "resp-store-true",
+          created_at: Math.floor(Date.now() / 1000),
+          model: model.id,
+          service_tier: null,
+        },
+      },
+      {
+        type: "response.output_text.delta",
+        item_id: "item-store-true",
+        delta: "Hello",
+        logprobs: null,
+      },
+      {
+        type: "response.completed",
+        response: {
+          incomplete_details: null,
+          usage: {
+            input_tokens: 1,
+            input_tokens_details: null,
+            output_tokens: 1,
+            output_tokens_details: null,
+          },
+          service_tier: null,
+        },
+      },
+    ]
+    const request = waitRequest("/responses", createEventResponse(chunks, true))
+
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(
+          path.join(dir, "opencode.json"),
+          JSON.stringify({
+            $schema: "https://opencode.ai/config.json",
+            enabled_providers: ["openai"],
+            provider: {
+              openai: {
+                name: "OpenAI",
+                env: ["OPENAI_API_KEY"],
+                npm: "@ai-sdk/openai",
+                api: "https://api.openai.com/v1",
+                models: {
+                  [model.id]: configModel(model),
+                },
+                options: {
+                  apiKey: "test-openai-key",
+                  baseURL: `${server.url.origin}/v1`,
+                },
+              },
+            },
+          }),
+        )
+      },
+    })
+
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const resolved = await getModel(ProviderID.openai, ModelID.make(model.id))
+        const sessionID = SessionID.make("session-test-store-true-item-ids")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        const user = {
+          id: MessageID.make("msg_user-store-true-item-ids"),
+          sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: agent.name,
+          model: { providerID: ProviderID.make("openai"), modelID: resolved.id },
+        } satisfies MessageV2.User
+
+        await drainStoreTrue({
+          user,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["You are a helpful assistant."],
+          messages: [
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "reasoning",
+                  text: "thinking",
+                  providerOptions: {
+                    openai: {
+                      itemId: "rs_keep",
+                      reasoningEncryptedContent: "encrypted",
+                    },
+                  },
+                },
+                {
+                  type: "text",
+                  text: "Earlier answer",
+                  providerOptions: {
+                    openai: {
+                      itemId: "msg_keep",
+                    },
+                  },
+                },
+              ],
+            },
+            { role: "user", content: "Continue" },
+          ] as ModelMessage[],
+          tools: {},
+        })
+
+        const capture = await request
+        const raw = JSON.stringify(capture.body)
+        expect(capture.body.store).toBe(true)
+        expect(raw).toContain("rs_keep")
+        expect(raw).toContain("msg_keep")
       },
     })
   })
