@@ -153,12 +153,13 @@ describe("sidebar context plugin", () => {
     expect(frame).not.toContain("$0.00 spent")
   })
 
-  test("does not show a false zero percent for placeholder Agency Swarm context limits", async () => {
+  test("hides percent for placeholder Agency Swarm context limits", async () => {
     const frame = await renderContext({ context: Number.MAX_SAFE_INTEGER })
     const lines = frame.split("\n").map((line) => line.trim())
 
     expect(frame).toContain("1,500 tokens")
-    expect(frame).toContain("Usage percent unavailable")
+    expect(frame).not.toContain("Usage percent unavailable")
     expect(lines).not.toContain("0% used")
+    expect(frame).not.toContain("% used")
   })
 })

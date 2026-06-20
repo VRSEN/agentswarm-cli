@@ -608,6 +608,11 @@ describe("Agent Swarm terminal TUI e2e", () => {
     const screen = await currentTui.waitForText("1.5K · $0.42", tuiInteractionTimeoutMs)
 
     expect(screen).toContain("1.5K · $0.42")
+    expect(screen).toContain("Context")
+    expect(screen).toContain("1,500 tokens")
+    expect(screen).toContain("$0.42 spent")
+    expect(screen).not.toContain("Usage percent unavailable")
+    expect(screen).not.toContain("% used")
     expect(screen).not.toContain("1.5K (0%)")
   })
 
