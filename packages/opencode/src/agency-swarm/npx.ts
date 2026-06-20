@@ -15,7 +15,6 @@ import { AgencyProduct } from "./product"
 import {
   collectUnixPythonCandidates,
   findPythonExecutable,
-  formatPython,
   inspectPython,
   isCondaPython,
   type PythonInfo,
@@ -121,6 +120,20 @@ class ProjectEntryReadError extends Error {
   }
 }
 
+class StartupCancelledError extends Error {
+  constructor() {
+    super("Startup cancelled.")
+  }
+}
+
+function isStartupCancelledError(error: unknown) {
+  return error instanceof StartupCancelledError
+}
+
+function throwIfStartupCancelled(signal?: AbortSignal) {
+  if (signal?.aborted) throw new StartupCancelledError()
+}
+
 interface DependencyInstallResult extends CommandResult {
   hadManifests: boolean
 }
@@ -129,6 +142,7 @@ interface RunCommandOptions {
   cwd?: string
   env?: NodeJS.ProcessEnv
   logFile?: string
+  signal?: AbortSignal
   streamOutputToStderr?: boolean
   suppressPythonTracebackStderr?: boolean
   timeoutMs?: number
@@ -709,11 +723,6 @@ async function chooseLaunchChoice(
   project: AgencyProject | undefined,
   profile: Pick<ProductProfile, "custom" | "name" | "stateRoot"> = AgencyProduct,
 ) {
-  prompts.log.info("1. Choose how to start the terminal UI.")
-  prompts.log.info(
-    "   The launcher can use a detected project, create a starter project, or connect to an existing server.",
-  )
-
   const result = await prompts.select<LaunchChoice>({
     message: "How do you want to start?",
     options: [
@@ -834,8 +843,7 @@ async function createStarterProject(input: {
   baseDirectory: string
   profile: ProductProfile
 }): Promise<AgencyProject | undefined> {
-  prompts.log.info("2. Create the starter project.")
-  prompts.log.info(`   This gives the terminal UI a ready-to-run ${input.profile.name} project to launch.`)
+  prompts.log.info(`Creating ${input.profile.name} project...`)
 
   const starterProfile = input.profile.customStarter ? input.profile : AgencyProduct
 
@@ -845,7 +853,6 @@ async function createStarterProject(input: {
     if (await Filesystem.exists(targetDirectory)) {
       throw new Error(`Target directory already exists: ${targetDirectory}`)
     }
-    prompts.log.step(`Creating starter project in \`${name}/\``)
     const clone = await runCommand(["git", "clone", "--depth=1", starterTemplateUrl(input.profile), targetDirectory])
     if (clone.code !== 0) {
       throw new Error(clone.stderr.trim() || clone.stdout.trim() || "Starter template clone failed")
@@ -859,8 +866,8 @@ async function createStarterProject(input: {
   }
 
   const repoName = await prompts.text({
-    message: "Project or repository name",
-    placeholder: input.profile.starterProjectName,
+    message: "Project name",
+    initialValue: input.profile.starterProjectName,
     validate(value) {
       return validateStarterName(input.baseDirectory, value)
     },
@@ -871,17 +878,17 @@ async function createStarterProject(input: {
   let mode: StarterMode = "local"
   if (ghReady) {
     const selected = await prompts.select<StarterMode>({
-      message: "How should the starter be created?",
+      message: "Where should this project be created?",
       options: [
         {
           value: "github",
-          label: "Create a GitHub repository from the template",
+          label: "On GitHub",
           hint: "recommended",
         },
         {
           value: "local",
-          label: "Create a local folder from the template",
-          hint: "skip GitHub for now",
+          label: "On this computer",
+          hint: "skip GitHub",
         },
       ],
     })
@@ -895,7 +902,6 @@ async function createStarterProject(input: {
     throw new Error(`Target directory already exists: ${targetDirectory}`)
   }
 
-  prompts.log.step(mode === "github" ? "Creating repository from the starter template" : "Cloning the starter template")
   try {
     if (mode === "github") {
       const visibility = await prompts.select<"private" | "public">({
@@ -936,7 +942,6 @@ async function createStarterProject(input: {
       }).catch(() => undefined)
       await runCommand(["git", "init", "-b", "main"], { cwd: targetDirectory })
     }
-    prompts.log.step("Starter project ready")
   } catch (error) {
     prompts.log.error("Starter project setup failed")
     throw error
@@ -949,13 +954,11 @@ async function createProductStateRootProject(input: {
   directory: string
   profile: ProductProfile
 }): Promise<AgencyProject | undefined> {
-  prompts.log.info("2. Create the product state project.")
-  prompts.log.info(`   This keeps ${input.profile.name} launcher state in one user folder.`)
+  prompts.log.info(`Creating ${input.profile.name} project...`)
 
   const starterProfile = input.profile.customStarter ? input.profile : AgencyProduct
 
   await mkdir(path.dirname(input.directory), { recursive: true })
-  prompts.log.step(`Creating starter project in \`${input.directory}\``)
   const clone = await runCommand(["git", "clone", "--depth=1", starterTemplateUrl(input.profile), input.directory])
   if (clone.code !== 0) {
     throw new Error(clone.stderr.trim() || clone.stdout.trim() || "Starter template clone failed")
@@ -968,34 +971,79 @@ async function createProductStateRootProject(input: {
   return requireDetectedStarterProject(input.directory, starterProfile)
 }
 
+// Run a long, silent step under a clack spinner so the terminal animates instead of looking hung.
+// Compact product-state lines (`prompts.log.info`) stay as phase headers; the spinner covers the wait.
+async function withSpinner<T>(
+  start: string,
+  done: string,
+  fail: string,
+  task: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const abort = new AbortController()
+  let settled = false
+  let cancel!: () => void
+  const cancelled = new Promise<never>((_, reject) => {
+    cancel = () => {
+      if (settled) return
+      abort.abort()
+      reject(new StartupCancelledError())
+    }
+  })
+  const spin = prompts.spinner({ onCancel: cancel })
+  spin.start(start)
+  try {
+    throwIfStartupCancelled(abort.signal)
+    const result = await Promise.race([task(abort.signal), cancelled])
+    throwIfStartupCancelled(abort.signal)
+    if (spin.isCancelled) throw new StartupCancelledError()
+    settled = true
+    spin.stop(done)
+    return result
+  } catch (error) {
+    settled = true
+    if (isStartupCancelledError(error) || abort.signal.aborted || spin.isCancelled) {
+      abort.abort()
+      throw isStartupCancelledError(error) ? error : new StartupCancelledError()
+    }
+    spin.stop(fail, 1)
+    throw error
+  }
+}
+
 export async function prepareProjectLaunch(
   project: AgencyProject,
   profile: LaunchProfile = AgencyProduct,
 ): Promise<PreparedNpxLaunch | undefined> {
-  prompts.log.info(`Starting the ${profile.name} project.`)
-  prompts.log.info(
-    "The launcher will reuse a project `.venv`, start a local FastAPI server, and connect the terminal UI to it.",
-  )
+  try {
+    prompts.log.info(`Preparing ${profile.name}...`)
 
-  const python = await ensureProjectPython(project.directory, profile)
-  if (!python) return
+    const python = await ensureProjectPython(project.directory, profile)
+    if (!python) return
 
-  prompts.log.info("Starting your agency project.")
-  const server = await startProjectServer(project.directory, python, project.moduleName, project.agencyFile)
-  return {
-    directory: project.directory,
-    runProjectDirectory: project.directory,
-    configContent: buildAgencyConfig({
-      baseURL: server.baseURL,
-      agency: LOCAL_AGENCY_ID,
-    }),
-    cleanup: server.cleanup,
+    const server = await withSpinner(
+      `Starting ${profile.name}`,
+      `${profile.name} ready`,
+      `${profile.name} start failed`,
+      (signal) => startProjectServer(project.directory, python, project.moduleName, project.agencyFile, signal),
+    )
+    return {
+      directory: project.directory,
+      runProjectDirectory: project.directory,
+      configContent: buildAgencyConfig({
+        baseURL: server.baseURL,
+        agency: LOCAL_AGENCY_ID,
+      }),
+      cleanup: server.cleanup,
+    }
+  } catch (error) {
+    if (isStartupCancelledError(error)) return
+    throw error
   }
 }
 
 async function ensureProjectPython(
   directory: string,
-  profile: Pick<LaunchProfile, "launcherPackageName" | "pythonEnvironment" | "stateRoot">,
+  profile: Pick<LaunchProfile, "launcherPackageName" | "name" | "pythonEnvironment" | "stateRoot">,
 ) {
   const venvPython = getVenvPythonPath(directory)
   const venvDir = path.resolve(path.join(directory, ".venv"))
@@ -1022,20 +1070,19 @@ async function ensureProjectPython(
       prompts.log.warn("Project `.venv` uses a Conda-family Python. Rebuilding with a standalone Python...")
       corruptedVenv = true
     } else {
-      prompts.log.info(`Using project Python: ${formatPython(info, [venvPython])}`)
-      prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
-      let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
-      try {
-        canary = await venvCanaryPasses([venvPython], {
-          includeStderr: true,
-          minimumAgencySwarmVersion: hasManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
-          timeoutMs: EXISTING_VENV_CANARY_TIMEOUT_MS,
-        })
-      } catch {
-        canary = { healthy: false, stderr: "", timedOut: false }
-      }
+      const canary = await withSpinner(
+        `Checking ${profile.name} environment`,
+        `${profile.name} environment checked`,
+        `${profile.name} environment check failed`,
+        (signal) =>
+          checkVenvCanary([venvPython], {
+            includeStderr: true,
+            minimumAgencySwarmVersion: hasManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
+            signal,
+            timeoutMs: EXISTING_VENV_CANARY_TIMEOUT_MS,
+          }),
+      )
       if (canary.healthy) {
-        prompts.log.success("Agency Swarm packages ready")
         return [venvPython]
       }
       const refreshLogFile = await tryCreateProjectCommandLogFile(
@@ -1044,38 +1091,56 @@ async function ensureProjectPython(
         "launcher refresh",
         profile,
       )
-      prompts.log.info("Refreshing project dependencies...")
-      let localUv: string | undefined
-      try {
-        localUv = await ensureLocalUv(directory, venvPython, {
-          logFile: refreshLogFile,
-          timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
-        })
-      } catch {
+      const refresh = await withSpinner(
+        `Refreshing ${profile.name}`,
+        `${profile.name} refresh checked`,
+        `${profile.name} refresh failed`,
+        async (signal) => {
+          const localUv = await ensureLocalUv(directory, venvPython, {
+            logFile: refreshLogFile,
+            signal,
+            timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+          }).catch((error) => {
+            if (isStartupCancelledError(error)) throw error
+            return undefined
+          })
+          if (!localUv) {
+            return {
+              canary: await checkVenvCanary([venvPython], {
+                includeStderr: true,
+                minimumAgencySwarmVersion: hasManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
+                signal,
+              }),
+              installerFailed: false,
+              skippedUv: true,
+            }
+          }
+          const result = await refreshProjectDependencies(directory, venvPython, localUv, {
+            logFile: refreshLogFile,
+            signal,
+            timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+          })
+          return {
+            ...result,
+            canary: result.installerFailed
+              ? undefined
+              : await checkVenvCanary([venvPython], {
+                  includeStderr: true,
+                  minimumAgencySwarmVersion: hasManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
+                  signal,
+                }),
+            skippedUv: false,
+          }
+        },
+      )
+      if (refresh.skippedUv) {
         prompts.log.warn(
           "Local uv could not be installed, so dependency refresh was skipped. The current venv package set will be used as-is.",
         )
       }
-      if (localUv) {
-        const refresh = await refreshProjectDependencies(directory, venvPython, localUv, {
-          logFile: refreshLogFile,
-          timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
-        })
-        if (refresh.installerFailed) corruptedVenv = true
-      }
+      if (refresh.installerFailed) corruptedVenv = true
       if (!corruptedVenv) {
-        prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
-        let canary: VenvCanaryResult = { healthy: false, stderr: "", timedOut: false }
-        try {
-          canary = await venvCanaryPasses([venvPython], {
-            includeStderr: true,
-            minimumAgencySwarmVersion: hasManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
-          })
-        } catch {
-          canary = { healthy: false, stderr: "", timedOut: false }
-        }
-        if (canary.healthy) {
-          prompts.log.success("Agency Swarm packages ready")
+        if (refresh.canary?.healthy) {
           return [venvPython]
         }
         corruptedVenv = true
@@ -1104,7 +1169,6 @@ async function ensureProjectPython(
   // (python3 etc.) resolves via PATH and, in an activated broken venv, still points at
   // the .venv binary we are about to delete.
   const rebuildCmd = corruptedVenv ? [detected.executable] : detected.cmd
-  prompts.log.info(`Detected Python: ${formatPython(detected, rebuildCmd)}`)
 
   if (corruptedVenv) {
     prompts.log.warn("Project `.venv` is incomplete or corrupted. Rebuilding...")
@@ -1114,7 +1178,7 @@ async function ensureProjectPython(
 
   if (!selfHealing) {
     const createVenv = await prompts.confirm({
-      message: "Create a local `.venv` in this project?",
+      message: "Set up this project now?",
       initialValue: true,
     })
     if (prompts.isCancel(createVenv)) {
@@ -1131,7 +1195,6 @@ async function ensureProjectPython(
     }
   }
 
-  prompts.log.step("Creating `.venv`")
   const created = await runCommand([...rebuildCmd, "-m", "venv", ".venv"], {
     cwd: directory,
   })
@@ -1140,45 +1203,75 @@ async function ensureProjectPython(
     throw new Error(created.stderr.trim() || created.stdout.trim() || "Virtual environment creation failed")
   }
 
-  prompts.log.step("`.venv` created")
   const installLogFile = await tryCreateProjectCommandLogFile(
     directory,
     "launcher-rebuild",
     "launcher rebuild",
     profile,
   )
-  prompts.log.info("Installing project dependencies...")
-  const localUv = await ensureLocalUv(directory, venvPython, {
-    forceInstall: true,
-    logFile: installLogFile,
-    timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
-  })
-  const install = await installProjectDependencies(directory, venvPython, localUv, {
-    logFile: installLogFile,
-    timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
-  })
-  if (install.timedOut) {
-    throw new Error(formatCommandTimeout(install, "Dependency install", REBUILD_INSTALL_TIMEOUT_MS))
+  return withSpinner(
+    `Setting up ${profile.name}`,
+    `${profile.name} setup ready`,
+    `${profile.name} setup failed`,
+    async (signal) => {
+      const localUv = await ensureLocalUv(directory, venvPython, {
+        forceInstall: true,
+        logFile: installLogFile,
+        signal,
+        timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+      })
+      const install = await installProjectDependencies(directory, venvPython, localUv, {
+        logFile: installLogFile,
+        signal,
+        timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+      })
+      if (install.timedOut) {
+        throw new Error(formatCommandTimeout(install, "Dependency install", REBUILD_INSTALL_TIMEOUT_MS))
+      }
+      if (install.code !== 0) {
+        throw new Error(formatCommandFailure(install, "Dependency install failed"))
+      }
+      const canary = await venvCanaryPasses([venvPython], {
+        cwd: directory,
+        includeStderr: true,
+        minimumAgencySwarmVersion: install.hadManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
+        signal,
+      })
+      if (canary.timedOut) {
+        throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
+      }
+      if (!canary.healthy) {
+        throw new Error(
+          await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr, install.logFile),
+        )
+      }
+      return [venvPython]
+    },
+  )
+}
+
+async function checkVenvCanary(
+  python: string[],
+  options: {
+    cwd?: string
+    includeStderr: true
+    minimumAgencySwarmVersion?: string
+    signal?: AbortSignal
+    timeoutMs?: number
+  },
+): Promise<VenvCanaryResult> {
+  try {
+    return await venvCanaryPasses(python, {
+      cwd: options.cwd,
+      includeStderr: true,
+      minimumAgencySwarmVersion: options.minimumAgencySwarmVersion,
+      signal: options.signal,
+      timeoutMs: options.timeoutMs,
+    })
+  } catch (error) {
+    if (isStartupCancelledError(error)) throw error
+    return { healthy: false, stderr: "", timedOut: false }
   }
-  if (install.code !== 0) {
-    throw new Error(formatCommandFailure(install, "Dependency install failed"))
-  }
-  prompts.log.info("Verifying Agency Swarm imports. First launch can take a minute.")
-  const canary = await venvCanaryPasses([venvPython], {
-    cwd: directory,
-    includeStderr: true,
-    minimumAgencySwarmVersion: install.hadManifests ? undefined : MIN_AGENCY_SWARM_VERSION,
-  })
-  if (canary.timedOut) {
-    throw new Error(await formatCanaryTimeoutFailure(directory, canary.stderr))
-  }
-  if (!canary.healthy) {
-    throw new Error(
-      await formatPostInstallCanaryFailure(directory, install.hadManifests, canary.stderr, install.logFile),
-    )
-  }
-  prompts.log.success("Agency Swarm packages ready")
-  return [venvPython]
 }
 
 async function installProjectDependencies(
@@ -1187,6 +1280,7 @@ async function installProjectDependencies(
   localUv: string,
   options: {
     logFile?: string
+    signal?: AbortSignal
     timeoutMs: number
   },
 ): Promise<DependencyInstallResult> {
@@ -1197,6 +1291,7 @@ async function installProjectDependencies(
       {
         cwd: directory,
         logFile: options.logFile,
+        signal: options.signal,
         timeoutMs: options.timeoutMs,
       },
     )
@@ -1208,6 +1303,7 @@ async function installProjectDependencies(
     const result = await runCommand([localUv, "pip", "install", "--python", venvPython, "--upgrade", "-e", "."], {
       cwd: directory,
       logFile: options.logFile,
+      signal: options.signal,
       timeoutMs: options.timeoutMs,
     })
     return { ...result, hadManifests: true }
@@ -1217,6 +1313,7 @@ async function installProjectDependencies(
     [localUv, "pip", "install", "--python", venvPython, FALLBACK_AGENCY_SWARM_REQUIREMENT],
     {
       logFile: options.logFile,
+      signal: options.signal,
       timeoutMs: options.timeoutMs,
     },
   )
@@ -1229,6 +1326,7 @@ async function refreshProjectDependencies(
   localUv: string,
   options: {
     logFile?: string
+    signal?: AbortSignal
     timeoutMs: number
   },
 ): Promise<{ installerFailed: boolean }> {
@@ -1303,15 +1401,27 @@ async function findProjectShadowingFiles(directory: string) {
 
 async function venvCanaryPasses(
   python: string[],
-  options?: { cwd?: string; minimumAgencySwarmVersion?: string; timeoutMs?: number },
+  options?: { cwd?: string; minimumAgencySwarmVersion?: string; signal?: AbortSignal; timeoutMs?: number },
 ): Promise<boolean>
 async function venvCanaryPasses(
   python: string[],
-  options: { cwd?: string; includeStderr: true; minimumAgencySwarmVersion?: string; timeoutMs?: number },
+  options: {
+    cwd?: string
+    includeStderr: true
+    minimumAgencySwarmVersion?: string
+    signal?: AbortSignal
+    timeoutMs?: number
+  },
 ): Promise<VenvCanaryResult>
 async function venvCanaryPasses(
   python: string[],
-  options?: { cwd?: string; includeStderr?: boolean; minimumAgencySwarmVersion?: string; timeoutMs?: number },
+  options?: {
+    cwd?: string
+    includeStderr?: boolean
+    minimumAgencySwarmVersion?: string
+    signal?: AbortSignal
+    timeoutMs?: number
+  },
 ) {
   // No cwd by default: the canary must not pick up project-local modules (e.g. `fastapi.py`
   // sitting next to `agency.py`) that shadow installed packages and falsely flag a healthy
@@ -1319,6 +1429,7 @@ async function venvCanaryPasses(
   // pass it explicitly.
   const result = await runCommand([...python, "-c", buildVenvCanaryScript(options?.minimumAgencySwarmVersion)], {
     cwd: options?.cwd,
+    signal: options?.signal,
     timeoutMs: options?.timeoutMs ?? VENV_CANARY_TIMEOUT_MS,
   })
   if (options?.includeStderr) {
@@ -1337,6 +1448,7 @@ async function ensureLatestAgencySwarm(
   localUv: string,
   options?: {
     logFile?: string
+    signal?: AbortSignal
     timeoutMs?: number
   },
 ): Promise<{ installerFailed: boolean }> {
@@ -1354,6 +1466,7 @@ async function ensureLatestAgencySwarm(
       {
         cwd: directory,
         logFile: options?.logFile,
+        signal: options?.signal,
         suppressPythonTracebackStderr: true,
         timeoutMs: options?.timeoutMs,
       },
@@ -1379,7 +1492,8 @@ async function ensureLatestAgencySwarm(
       )
       return { installerFailed: isUvLaunchFailure(`${result.stderr}\n${result.stdout}`) }
     }
-  } catch {
+  } catch (error) {
+    if (isStartupCancelledError(error)) throw error
     prompts.log.warn("Could not refresh launcher-managed agency-swarm. The current venv package will be used as-is.")
   }
   return { installerFailed: false }
@@ -1391,15 +1505,17 @@ async function ensureLocalUv(
   options: {
     forceInstall?: boolean
     logFile?: string
+    signal?: AbortSignal
     timeoutMs: number
   },
 ) {
   const localUv = getVenvUvPath(directory)
-  if (!options.forceInstall && (await localUvWorks(localUv))) return localUv
+  if (!options.forceInstall && (await localUvWorks(localUv, options.signal))) return localUv
 
   const result = await runCommand([venvPython, "-m", "pip", "install", "--upgrade", "uv"], {
     cwd: directory,
     logFile: options.logFile,
+    signal: options.signal,
     timeoutMs: options.timeoutMs,
   })
   if (result.timedOut) {
@@ -1411,18 +1527,21 @@ async function ensureLocalUv(
     throw new Error(formatCommandFailure(result, "Project Python environment setup failed while installing uv"))
   }
   try {
-    const verified = await runCommand([localUv, "--version"])
+    const verified = await runCommand([localUv, "--version"], { signal: options.signal })
     if (verified.code === 0) return localUv
-  } catch {}
+  } catch (error) {
+    if (isStartupCancelledError(error)) throw error
+  }
 
   throw new Error("Project Python environment setup installed uv, but the local `.venv` uv command is not runnable.")
 }
 
-async function localUvWorks(localUv: string) {
+async function localUvWorks(localUv: string, signal?: AbortSignal) {
   try {
-    const result = await runCommand([localUv, "--version"])
+    const result = await runCommand([localUv, "--version"], { signal })
     return result.code === 0
-  } catch {
+  } catch (error) {
+    if (isStartupCancelledError(error)) throw error
     return false
   }
 }
@@ -1492,8 +1611,16 @@ function formatInstallDuration(ms: number) {
   return `${ms}ms`
 }
 
-async function startProjectServer(directory: string, python: string[], moduleName: string, entryFile: string) {
+async function startProjectServer(
+  directory: string,
+  python: string[],
+  moduleName: string,
+  entryFile: string,
+  signal?: AbortSignal,
+) {
+  throwIfStartupCancelled(signal)
   const port = await getFreePort()
+  throwIfStartupCancelled(signal)
   const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "agentswarm-npx-"))
   const scriptPath = path.join(tempDirectory, "launch_agency.py")
   const remove = () =>
@@ -1511,6 +1638,7 @@ async function startProjectServer(directory: string, python: string[], moduleNam
 
   let child
   try {
+    throwIfStartupCancelled(signal)
     child = Bun.spawn({
       cmd: [...python, scriptPath, String(port), LOCAL_AGENCY_ID, moduleName],
       cwd: directory,
@@ -1530,19 +1658,27 @@ async function startProjectServer(directory: string, python: string[], moduleNam
     await Promise.race([child.exited, sleep(5000)])
     await remove()
   }
+  const abort = () => {
+    void cleanup()
+  }
+  signal?.addEventListener("abort", abort, { once: true })
 
   try {
     await waitForServer({
       baseURL: `http://127.0.0.1:${port}`,
       child,
       entryFile,
+      signal,
       stderr,
     })
   } catch (error) {
     await cleanup()
     throw error
+  } finally {
+    signal?.removeEventListener("abort", abort)
   }
 
+  throwIfStartupCancelled(signal)
   return {
     baseURL: `http://127.0.0.1:${port}`,
     cleanup,
@@ -1553,21 +1689,25 @@ async function waitForServer(input: {
   baseURL: string
   child: ReturnType<typeof Bun.spawn>
   entryFile: string
+  signal?: AbortSignal
   stderr: ServerStderrCollector
 }) {
   const deadline = Date.now() + SERVER_START_TIMEOUT_MS
   const metadataURL = `${input.baseURL}/${LOCAL_AGENCY_ID}/get_metadata`
   while (Date.now() < deadline) {
+    throwIfStartupCancelled(input.signal)
     const exited = await Promise.race([input.child.exited.then((code: number) => code), sleep(200).then(() => null)])
+    throwIfStartupCancelled(input.signal)
     if (typeof exited === "number") {
       const stderr = await input.stderr.read(SERVER_STDERR_COLLECT_TIMEOUT_MS)
       throw new Error(formatAgencyServerExitFailure(exited, stderr, input.entryFile))
     }
 
     try {
-      const response = await fetch(metadataURL)
+      const response = await fetch(metadataURL, { signal: input.signal })
       if (response.ok) return
     } catch {
+      throwIfStartupCancelled(input.signal)
       // server still starting
     }
   }
@@ -1792,6 +1932,7 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
     suppressPythonTracebacks: options?.suppressPythonTracebackStderr === true,
   })
   try {
+    throwIfStartupCancelled(options?.signal)
     const proc = Bun.spawn({
       cmd: resolveLauncherCommand(cmd),
       cwd: options?.cwd,
@@ -1801,8 +1942,31 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
     })
     const outputAbort = new AbortController()
     let timeout: ReturnType<typeof setTimeout> | undefined
+    let forceKill: ReturnType<typeof setTimeout> | undefined
+    let cancelRun: (() => void) | undefined
+    const cancelResult =
+      options?.signal === undefined
+        ? undefined
+        : new Promise<{ code: -1; timedOut: false; cancelled: true }>((resolve) => {
+            cancelRun = () => {
+              try {
+                proc.kill()
+              } catch {}
+              outputAbort.abort()
+              forceKill = globalThis.setTimeout(() => {
+                try {
+                  proc.kill("SIGKILL")
+                } catch {}
+              }, PROCESS_KILL_GRACE_MS)
+              resolve({ code: -1, timedOut: false, cancelled: true })
+            }
+          })
+    if (options?.signal?.aborted) cancelRun?.()
+    else if (cancelRun) options?.signal?.addEventListener("abort", cancelRun, { once: true })
     const exitPromise = proc.exited.finally(() => {
       if (timeout) globalThis.clearTimeout(timeout)
+      if (forceKill) globalThis.clearTimeout(forceKill)
+      if (options?.signal && cancelRun) options.signal.removeEventListener("abort", cancelRun)
     })
     const exitResult = exitPromise.then((code) => ({ code, timedOut: false as const }))
     const timeoutResult =
@@ -1815,19 +1979,26 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
                 try {
                   proc.kill()
                 } catch {}
-                const forceKill = globalThis.setTimeout(() => {
+                const timeoutKill = globalThis.setTimeout(() => {
                   try {
                     proc.kill("SIGKILL")
                   } catch {}
                 }, PROCESS_KILL_GRACE_MS)
                 await exitPromise.catch(() => undefined)
-                globalThis.clearTimeout(forceKill)
+                globalThis.clearTimeout(timeoutKill)
                 outputAbort.abort()
               })()
             }, options.timeoutMs)
           })
+    const resultPromise = cancelResult
+      ? timeoutResult
+        ? Promise.race([exitResult, timeoutResult, cancelResult])
+        : Promise.race([exitResult, cancelResult])
+      : timeoutResult
+        ? Promise.race([exitResult, timeoutResult])
+        : exitResult
     const [result, stdout, stderr] = await Promise.all([
-      timeoutResult ? Promise.race([exitResult, timeoutResult]) : exitResult,
+      resultPromise,
       readCommandOutput(
         proc.stdout,
         (chunk) => writeChunk(chunk, options?.streamOutputToStderr === true),
@@ -1835,10 +2006,12 @@ async function runCommand(cmd: string[], options?: RunCommandOptions): Promise<C
       ),
       readCommandOutput(proc.stderr, stderrWriter, outputAbort.signal),
     ])
+    if ("cancelled" in result) throw new StartupCancelledError()
     const logFile = await closeCommandLog(commandLog)
     return { code: result.code, stdout, stderr, timedOut: result.timedOut, logFile }
   } catch (error) {
     const logFile = await closeCommandLog(commandLog)
+    if (isStartupCancelledError(error)) throw error
     return {
       code: -1,
       stdout: "",
@@ -1994,6 +2167,7 @@ async function readCommandOutput(
     void reader.cancel().catch(() => undefined)
   }
   signal?.addEventListener("abort", abortRead, { once: true })
+  if (signal?.aborted) abortRead()
 
   try {
     while (true) {

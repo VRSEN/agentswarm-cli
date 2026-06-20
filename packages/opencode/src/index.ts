@@ -130,7 +130,7 @@ const cli = yargs(args)
     const marker = path.join(Global.Path.data, "opencode.db")
     if (!(await Filesystem.exists(marker))) {
       const tty = process.stderr.isTTY
-      process.stderr.write("Performing one time database migration, may take a few minutes..." + EOL)
+      process.stderr.write(`Getting ${AgencyProduct.name} ready for first use. This can take a few minutes...` + EOL)
       const width = 36
       const orange = "\x1b[38;5;214m"
       const muted = "\x1b[0;2m"
@@ -161,7 +161,7 @@ const cli = yargs(args)
           process.stderr.write(`sqlite-migration:done${EOL}`)
         }
       }
-      process.stderr.write("Database migration complete." + EOL)
+      process.stderr.write(`${AgencyProduct.name} is ready.` + EOL)
     }
   })
   .usage("")
