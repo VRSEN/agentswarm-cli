@@ -1,5 +1,5 @@
 import { NodeFileSystem } from "@effect/platform-node"
-import { dirname, isAbsolute, join, relative, resolve as pathResolve } from "path"
+import { dirname, join, resolve as pathResolve, sep } from "path"
 import { realpathSync } from "fs"
 import * as NFS from "fs/promises"
 import { lookup } from "mime-types"
@@ -233,13 +233,15 @@ export namespace AppFileSystem {
   }
 
   export function overlaps(a: string, b: string) {
-    const relA = relative(a, b)
-    const relB = relative(b, a)
-    return !relA || !relA.startsWith("..") || !relB || !relB.startsWith("..")
+    return contains(a, b) || contains(b, a)
   }
 
   export function contains(parent: string, child: string) {
-    const rel = relative(parent, child)
-    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
+    const dir = pathResolve(parent)
+    const file = pathResolve(child)
+    const base = process.platform === "win32" ? dir.toLowerCase() : dir
+    const target = process.platform === "win32" ? file.toLowerCase() : file
+    const prefix = base.endsWith(sep) ? base : `${base}${sep}`
+    return target === base || target.startsWith(prefix)
   }
 }
