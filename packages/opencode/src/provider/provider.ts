@@ -289,6 +289,9 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
 
       const awsAccessKeyId = env["AWS_ACCESS_KEY_ID"]
       const configApiKey = providerConfig?.options?.apiKey
+      const configSigV4Credentials = Boolean(
+        providerConfig?.options?.accessKeyId && providerConfig?.options?.secretAccessKey,
+      )
 
       // TODO: Using process.env directly because Env.set only updates a process.env shallow copy,
       // until the scope of the Env API is clarified (test only or runtime?)
@@ -313,6 +316,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         !awsAccessKeyId &&
         !awsBearerToken &&
         !configApiKey &&
+        !configSigV4Credentials &&
         !awsWebIdentityTokenFile &&
         !containerCreds
       )
@@ -326,7 +330,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
 
       // Only use credential chain if no bearer token exists
       // Bearer token takes precedence over credential chain (profiles, access keys, IAM roles, web identity tokens)
-      if (!awsBearerToken && !configApiKey) {
+      if (!awsBearerToken && !configApiKey && !configSigV4Credentials) {
         // Build credential provider options (only pass profile if specified)
         const credentialProviderOptions = profile ? { profile } : {}
 
