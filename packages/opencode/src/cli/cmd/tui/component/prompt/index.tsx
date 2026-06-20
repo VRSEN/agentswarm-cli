@@ -1722,9 +1722,12 @@ export function Prompt(props: PromptProps) {
       })
     } else {
       const handoff = effectiveHandoffRecipient()
+      const hasAgentParts = nonTextParts.some((part) => part.type === "agent")
       const agencyRecipientAgent =
-        frameworkMode() && handoff?.sessionID === sessionID && !nonTextParts.some((part) => part.type === "agent")
-          ? handoff.agent
+        frameworkMode() && !hasAgentParts
+          ? handoff?.sessionID === sessionID
+            ? handoff.agent
+            : agencyProviderOptions().recipientAgent
           : undefined
       const promptPayload: Parameters<typeof sdk.client.session.prompt>[0] & {
         $body_agencyRecipientAgent?: string
@@ -1751,7 +1754,7 @@ export function Prompt(props: PromptProps) {
         started: Date.now(),
         properties: {
           framework_mode: frameworkMode(),
-          has_agent_parts: nonTextParts.some((part) => part.type === "agent"),
+          has_agent_parts: hasAgentParts,
           has_file_parts: nonTextParts.some((part) => part.type === "file"),
           mode: "normal",
           provider_id: productProviderID,

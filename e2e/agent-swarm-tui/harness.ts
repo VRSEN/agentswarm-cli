@@ -686,6 +686,12 @@ const tuiDemoAgencyFixture: AgencyFixture = {
         ["end", {}],
       ])
     }
+    if (message.includes("build label stable")) {
+      return sse([
+        ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+        ["end", {}],
+      ])
+    }
     if (message.includes("handoff")) {
       return sse([
         ["meta", { run_id: `run_tui_demo_${requestCount}` }],

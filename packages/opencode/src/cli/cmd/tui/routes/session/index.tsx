@@ -168,7 +168,14 @@ const context = createContext<{
   showGenericToolOutput: () => boolean
   diffWrapMode: () => "word" | "none"
   frameworkMode: () => boolean
-  modelLabel: (input: { providerID: string; modelID: string; agentID?: string; scope?: ModelLabelScope }) => string
+  modelLabel: (input: {
+    providerID: string
+    modelID: string
+    agentID?: string
+    recipientAgent?: string
+    scope?: ModelLabelScope
+    turnStartedAt?: number
+  }) => string
   providers: () => ReadonlyMap<string, Provider>
   sync: ReturnType<typeof useSync>
   tui: ReturnType<typeof useTuiConfig>
@@ -282,8 +289,20 @@ export function Session() {
       initialValue: [],
     },
   )
-  const modelLabel = (input: { providerID: string; modelID: string; agentID?: string; scope?: ModelLabelScope }) => {
+  const modelLabel = (input: {
+    providerID: string
+    modelID: string
+    agentID?: string
+    recipientAgent?: string
+    scope?: ModelLabelScope
+    turnStartedAt?: number
+  }) => {
     const options = agencyProviderOptions()
+    const configuredRecipientChangedAfterTurn =
+      !input.recipientAgent &&
+      !!input.turnStartedAt &&
+      !!options.recipientAgentSelectedAt &&
+      options.recipientAgentSelectedAt > input.turnStartedAt
     return resolveAssistantModelLabel({
       providers: providers(),
       agencies: agencyDiscovery(),
@@ -291,7 +310,8 @@ export function Session() {
       agentID: input.agentID,
       providerID: input.providerID,
       modelID: input.modelID,
-      recipientAgent: options.recipientAgent,
+      recipientAgent:
+        input.recipientAgent ?? (configuredRecipientChangedAfterTurn ? undefined : options.recipientAgent),
       frameworkMode: frameworkMode(),
       scope: input.scope,
     })
@@ -976,6 +996,7 @@ export function Session() {
               agencies: agencyDiscovery(),
               agencyID: agencyProviderOptions().agency,
               recipientAgent: agencyProviderOptions().recipientAgent,
+              recipientAgentSelectedAt: agencyProviderOptions().recipientAgentSelectedAt,
             },
           )
           await Clipboard.copy(transcript)
@@ -1023,6 +1044,7 @@ export function Session() {
               agencies: agencyDiscovery(),
               agencyID: agencyProviderOptions().agency,
               recipientAgent: agencyProviderOptions().recipientAgent,
+              recipientAgentSelectedAt: agencyProviderOptions().recipientAgentSelectedAt,
             },
           )
 
@@ -1475,11 +1497,18 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
     const msg = props.message.error?.data.message
     return typeof msg === "string" ? describeStreamAuthError(msg) : null
   })
+  const parent = createMemo(() =>
+    messages().find(
+      (message): message is UserMessage => message.role === "user" && message.id === props.message.parentID,
+    ),
+  )
   const model = createMemo(() =>
     ctx.modelLabel({
       providerID: props.message.providerID,
       modelID: props.message.modelID,
       agentID: props.message.agent,
+      recipientAgent: parent()?.agencyRecipientAgent,
+      turnStartedAt: parent()?.time.created,
     }),
   )
 

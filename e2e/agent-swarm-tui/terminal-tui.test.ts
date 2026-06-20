@@ -174,7 +174,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     )
     const appEvent = currentTelemetryServer.events.find((event) => event.event === "app_started")
     expect(appEvent?.properties).toMatchObject({
-      "$process_person_profile": false,
+      $process_person_profile: false,
       app: "Agent Swarm",
       entrypoint: "tui",
       framework_mode: true,
@@ -187,12 +187,17 @@ describe("Agent Swarm terminal TUI e2e", () => {
       tuiInteractionTimeoutMs,
     )
     const commandEvent = currentTelemetryServer.events.find((event) => event.event === "ui_command_executed")
-    expect(commandEvent?.properties).toMatchObject({ "$process_person_profile": false, app: "Agent Swarm", command: "auth", source: "slash" })
+    expect(commandEvent?.properties).toMatchObject({
+      $process_person_profile: false,
+      app: "Agent Swarm",
+      command: "auth",
+      source: "slash",
+    })
     expect(JSON.stringify(commandEvent)).not.toContain("sk-test-telemetry")
     expect(JSON.stringify(commandEvent)).not.toContain("refresh")
     const requested = currentTelemetryServer.events.find((event) => event.event === "provider_requested")
     expect(requested?.properties).toMatchObject({
-      "$process_person_profile": false,
+      $process_person_profile: false,
       app: "Agent Swarm",
       connected_before: false,
       framework_mode: true,
@@ -201,7 +206,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
     const started = currentTelemetryServer.events.find((event) => event.event === "provider_auth_started")
     expect(started?.properties).toMatchObject({
-      "$process_person_profile": false,
+      $process_person_profile: false,
       app: "Agent Swarm",
       auth_method: "api",
       framework_mode: true,
@@ -211,7 +216,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     const authEvent = currentTelemetryServer.events.find((event) => event.event === "provider_auth_configured")
     expect(authEvent?.api_key).toBe("ph_test")
     expect(authEvent?.properties).toMatchObject({
-      "$process_person_profile": false,
+      $process_person_profile: false,
       app: "Agent Swarm",
       auth_method: "api",
       framework_mode: true,
@@ -455,6 +460,36 @@ describe("Agent Swarm terminal TUI e2e", () => {
     const body = currentServer.requests[0]?.body
     expect(body?.message).toContain("calculate through the selected agent")
     expect(body).toMatchObject({
+      recipient_agent: "MathAgent",
+    })
+  })
+
+  test("completed build-route model labels stay tied to the submitted recipient", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    await selectRunTarget(currentTui, "MathAgent", "Selected MathAgent in swarm TuiDemoAgency")
+    await currentTui.waitForText("MathAgent · claude-sonnet-4-5", tuiInteractionTimeoutMs)
+    currentTui.write("build label stable turn\r")
+    await currentTui.waitForText("Run · claude-sonnet-4-5", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "build-label agency request",
+      tuiInteractionTimeoutMs,
+    )
+    currentTui.write("\t")
+    await currentTui.waitForText("UserSupportAgent · gpt-5.4-mini", tuiInteractionTimeoutMs)
+    const screen = currentTui.screen()
+
+    expect(screen).toContain("Run · claude-sonnet-4-5")
+    expect(screen).not.toContain("Run · gpt-5.4-mini")
+    expect(currentServer.requests[0]?.body).toMatchObject({
       recipient_agent: "MathAgent",
     })
   })

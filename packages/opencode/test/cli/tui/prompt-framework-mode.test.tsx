@@ -364,7 +364,7 @@ describe("prompt framework-mode footer", () => {
 
     expect(prompt).toHaveBeenCalledTimes(1)
     const calls = prompt.mock.calls as unknown as Array<[{ parts: unknown[]; $body_agencyRecipientAgent?: string }]>
-    expect(calls[0][0].$body_agencyRecipientAgent).toBeUndefined()
+    expect(calls[0][0].$body_agencyRecipientAgent).toBe("orchestrator-slug")
 
     eventHandlers["message.updated"]?.({
       properties: {

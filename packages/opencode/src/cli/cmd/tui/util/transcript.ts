@@ -12,6 +12,7 @@ export type TranscriptOptions = {
   agencies?: ModelLabelContext["agencies"]
   agencyID?: string
   recipientAgent?: string
+  recipientAgentSelectedAt?: number
 }
 
 export type SessionInfo = {
@@ -40,8 +41,25 @@ export function formatTranscript(
   transcript += `**Updated:** ${new Date(session.time.updated).toLocaleString()}\n\n`
   transcript += `---\n\n`
 
+  const users = new Map(messages.flatMap((msg) => (msg.info.role === "user" ? [[msg.info.id, msg.info] as const] : [])))
+
   for (const msg of messages) {
-    transcript += formatMessage(msg.info, msg.parts, options, providers)
+    const user = msg.info.role === "assistant" ? users.get(msg.info.parentID) : undefined
+    const configuredRecipientChangedAfterTurn =
+      !user?.agencyRecipientAgent &&
+      !!user?.time.created &&
+      !!options.recipientAgentSelectedAt &&
+      options.recipientAgentSelectedAt > user.time.created
+    transcript += formatMessage(
+      msg.info,
+      msg.parts,
+      {
+        ...options,
+        recipientAgent:
+          user?.agencyRecipientAgent ?? (configuredRecipientChangedAfterTurn ? undefined : options.recipientAgent),
+      },
+      providers,
+    )
     transcript += `---\n\n`
   }
 
