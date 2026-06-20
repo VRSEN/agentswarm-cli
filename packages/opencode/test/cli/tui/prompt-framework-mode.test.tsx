@@ -52,7 +52,7 @@ describe("prompt framework-mode footer", () => {
     mock.restore()
   })
 
-  test("shows the agency recipient display name instead of the configured id or local Agent Builder label", async () => {
+  test("shows the agency recipient display name without using configured recipient as a prompt override", async () => {
     const eventHandlers: Record<string, (event: any) => void> = {}
     const updateGlobalConfig = mock(async () => ({}))
     const prompt = mock(async () => ({}))
@@ -364,7 +364,7 @@ describe("prompt framework-mode footer", () => {
 
     expect(prompt).toHaveBeenCalledTimes(1)
     const calls = prompt.mock.calls as unknown as Array<[{ parts: unknown[]; $body_agencyRecipientAgent?: string }]>
-    expect(calls[0][0].$body_agencyRecipientAgent).toBe("orchestrator-slug")
+    expect(calls[0][0].$body_agencyRecipientAgent).toBeUndefined()
 
     eventHandlers["message.updated"]?.({
       properties: {

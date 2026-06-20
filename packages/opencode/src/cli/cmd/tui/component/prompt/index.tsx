@@ -262,6 +262,10 @@ export function Prompt(props: PromptProps) {
       connectedProvider: sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID),
     }),
   )
+  // Pre-existing configured recipients stay server-ranked config, not prompt overrides.
+  // A target picked while this prompt is mounted can annotate the submitted turn.
+  let recipientSelectedAtBaseline = agencyProviderOptions().recipientAgentSelectedAt
+  const [explicitRecipientSelectedAt, setExplicitRecipientSelectedAt] = createSignal<number>()
   const frameworkRecipientDiscoveryInput = createMemo(() => {
     if (!frameworkMode()) return undefined
     if (props.agencyDiscovery) return undefined
@@ -333,10 +337,19 @@ export function Prompt(props: PromptProps) {
       () => props.sessionID,
       () => {
         setHandoffRecipient(undefined)
+        recipientSelectedAtBaseline = agencyProviderOptions().recipientAgentSelectedAt
+        setExplicitRecipientSelectedAt(undefined)
         assistantMessagesByID.clear()
       },
     ),
   )
+
+  createEffect(() => {
+    const options = agencyProviderOptions()
+    if (!options.recipientAgentSelectedAt) return
+    if (options.recipientAgentSelectedAt === recipientSelectedAtBaseline) return
+    setExplicitRecipientSelectedAt(options.recipientAgentSelectedAt)
+  })
 
   createEffect(() => {
     const handoff = handoffRecipient()
@@ -1723,12 +1736,16 @@ export function Prompt(props: PromptProps) {
     } else {
       const handoff = effectiveHandoffRecipient()
       const hasAgentParts = nonTextParts.some((part) => part.type === "agent")
+      const options = agencyProviderOptions()
+      const explicitRecipient =
+        options.recipientAgentSelectedAt === explicitRecipientSelectedAt() ? options.recipientAgent : undefined
       const agencyRecipientAgent =
         frameworkMode() && !hasAgentParts
           ? handoff?.sessionID === sessionID
             ? handoff.agent
-            : agencyProviderOptions().recipientAgent
+            : explicitRecipient
           : undefined
+      const usedExplicitRecipient = !!explicitRecipient && agencyRecipientAgent === explicitRecipient
       const promptPayload: Parameters<typeof sdk.client.session.prompt>[0] & {
         $body_agencyRecipientAgent?: string
       } = {
@@ -1760,6 +1777,7 @@ export function Prompt(props: PromptProps) {
           provider_id: productProviderID,
         },
       })
+      if (usedExplicitRecipient) setExplicitRecipientSelectedAt(undefined)
       sdk.client.session
         .prompt(promptPayload, { throwOnError: true })
         .then((result) => {
