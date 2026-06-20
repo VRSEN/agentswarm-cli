@@ -1,10 +1,19 @@
 /** @jsxImportSource @opentui/solid */
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import type { AssistantMessage, Provider } from "@opencode-ai/sdk/v2"
+import * as LocalContext from "../../../src/cli/cmd/tui/context/local"
 import { createTuiPluginApi } from "../../fixture/tui-plugin"
 
 type SidebarContent = (ctx: unknown, props: { session_id: string }) => unknown
+
+function mockLocal() {
+  spyOn(LocalContext, "useLocal").mockReturnValue({
+    model: {
+      current: () => ({ providerID: "agency-swarm", modelID: "default" }),
+    },
+  } as unknown as ReturnType<typeof LocalContext.useLocal>)
+}
 
 function assistant(tokens: AssistantMessage["tokens"]): AssistantMessage {
   return {
@@ -133,7 +142,12 @@ async function renderContext(input: { context: number; messages?: AssistantMessa
 }
 
 describe("sidebar context plugin", () => {
+  afterEach(() => {
+    mock.restore()
+  })
+
   test("shows zero percent for fresh sessions without assistant usage", async () => {
+    mockLocal()
     const frame = await renderContext({ context: 3_000, messages: [], cost: 0 })
 
     expect(frame).toContain("0 tokens")
@@ -142,7 +156,18 @@ describe("sidebar context plugin", () => {
     expect(frame).not.toContain("Usage percent unavailable")
   })
 
+  test("hides percent for fresh sessions with placeholder Agency Swarm context limits", async () => {
+    mockLocal()
+    const frame = await renderContext({ context: Number.MAX_SAFE_INTEGER, messages: [], cost: 0 })
+
+    expect(frame).toContain("0 tokens")
+    expect(frame).toContain("$0.00 spent")
+    expect(frame).not.toContain("Usage percent unavailable")
+    expect(frame).not.toContain("% used")
+  })
+
   test("shows real usage totals and spend when output tokens are zero", async () => {
+    mockLocal()
     const frame = await renderContext({ context: 3_000 })
     const lines = frame.split("\n").map((line) => line.trim())
 
@@ -154,6 +179,7 @@ describe("sidebar context plugin", () => {
   })
 
   test("hides percent for placeholder Agency Swarm context limits", async () => {
+    mockLocal()
     const frame = await renderContext({ context: Number.MAX_SAFE_INTEGER })
     const lines = frame.split("\n").map((line) => line.trim())
 
