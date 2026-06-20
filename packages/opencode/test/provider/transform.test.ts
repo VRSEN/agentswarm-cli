@@ -237,6 +237,43 @@ describe("ProviderTransform.options - minimax m3 thinking", () => {
   })
 })
 
+describe("ProviderTransform.options - OpenRouter and LLMGateway Gemini 3 defaults", () => {
+  const createModel = (npm: "@openrouter/ai-sdk-provider" | "@llmgateway/ai-sdk-provider", reasoning: boolean) =>
+    ({
+      id: "openrouter/google/gemini-3-pro",
+      providerID: npm === "@openrouter/ai-sdk-provider" ? "openrouter" : "llmgateway",
+      api: {
+        id: "google/gemini-3-pro",
+        url: "https://gateway.example.test",
+        npm,
+      },
+      capabilities: {
+        reasoning,
+      },
+    }) as Provider.Model
+
+  for (const npm of ["@openrouter/ai-sdk-provider", "@llmgateway/ai-sdk-provider"] as const) {
+    test(`${npm} does not default Gemini 3 reasoning when unsupported`, () => {
+      const result = ProviderTransform.options({
+        model: createModel(npm, false),
+        sessionID: "test-session-123",
+      })
+
+      expect(result.usage).toEqual({ include: true })
+      expect(result.reasoning).toBeUndefined()
+    })
+
+    test(`${npm} defaults Gemini 3 reasoning when supported`, () => {
+      const result = ProviderTransform.options({
+        model: createModel(npm, true),
+        sessionID: "test-session-123",
+      })
+
+      expect(result.reasoning).toEqual({ effort: "high" })
+    })
+  }
+})
+
 describe("ProviderTransform.options - google thinkingConfig gating", () => {
   const sessionID = "test-session-123"
 
@@ -4188,9 +4225,9 @@ describe("ProviderTransform.variants", () => {
   })
 
   describe("@jerome-benoit/sap-ai-provider-v2", () => {
-    const sapModel = (apiId: string, releaseDate = "2024-01-01") =>
+    const sapModel = (apiId: string, releaseDate = "2024-01-01", id = `sap-ai-core/${apiId}`) =>
       createMockModel({
-        id: `sap-ai-core/${apiId}`,
+        id,
         providerID: "sap-ai-core",
         api: {
           id: apiId,
@@ -4199,6 +4236,24 @@ describe("ProviderTransform.variants", () => {
         },
         release_date: releaseDate,
       })
+
+    test("classifies aliased SAP models by API id", () => {
+      const anthropic = ProviderTransform.variants(sapModel("anthropic--claude-sonnet-4", "2024-01-01", "claude"))
+      expect(Object.keys(anthropic)).toEqual(["high", "max"])
+      expect(anthropic.high).toEqual({
+        modelParams: { thinking: { type: "enabled", budget_tokens: 16000 } },
+      })
+
+      const gemini = ProviderTransform.variants(sapModel("gemini-2.5-pro", "2024-01-01", "gemini"))
+      expect(Object.keys(gemini)).toEqual(["high", "max"])
+      expect(gemini.max).toEqual({
+        modelParams: { thinkingConfig: { includeThoughts: true, thinkingBudget: 32768 } },
+      })
+
+      const gpt = ProviderTransform.variants(sapModel("gpt-5", "2025-08-07", "gpt"))
+      expect(Object.keys(gpt)).toEqual(["minimal", "low", "medium", "high"])
+      expect(gpt.minimal).toEqual({ modelParams: { reasoning_effort: "minimal" } })
+    })
 
     for (const testCase of [
       {

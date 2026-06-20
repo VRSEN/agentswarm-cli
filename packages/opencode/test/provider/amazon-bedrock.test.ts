@@ -135,8 +135,52 @@ test("Bedrock Mantle: custom provider IDs use responses for GPT-5 models", async
     directory: tmp.path,
     fn: async () => {
       const model = await getModel(ProviderID.make("custom-mantle"), ModelID.make("openai.gpt-5.5"))
+      let captured: { url: string; body: Record<string, unknown> } | undefined
+      const handle = async (
+        input: Parameters<typeof fetch>[0],
+        init?: Parameters<typeof fetch>[1],
+      ): Promise<Response> => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+        const text = typeof init?.body === "string" ? init.body : ""
+        const body = text ? JSON.parse(text) : {}
+        captured = { url, body: isRecord(body) ? body : {} }
+
+        return new Response(
+          JSON.stringify({
+            id: "resp_test",
+            created_at: 0,
+            model: "openai.gpt-5.5",
+            output: [
+              {
+                type: "message",
+                id: "msg_test",
+                role: "assistant",
+                content: [{ type: "output_text", text: "ok", annotations: [] }],
+              },
+            ],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
+      }
+      const fetch: typeof globalThis.fetch = Object.assign(handle, {
+        preconnect: globalThis.fetch.preconnect.bind(globalThis.fetch),
+      })
+      const providers = await list()
+      providers[ProviderID.make("custom-mantle")].options.fetch = fetch
       const language = await getLanguage(model)
       expect((language as { provider: string }).provider).toBe("bedrock-mantle.responses")
+
+      const variants = ProviderTransform.variants(model)
+      const options = ProviderTransform.providerOptions(model, variants.medium)
+      await generateText({
+        model: language,
+        prompt: "hi",
+        providerOptions: options,
+      })
+
+      expect(captured?.url).toBe("https://bedrock-mantle.us-east-2.api.aws/v1/responses")
+      expect(captured?.body.model).toBe("openai.gpt-5.5")
     },
   })
 })

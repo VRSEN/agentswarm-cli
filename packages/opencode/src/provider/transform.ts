@@ -1038,7 +1038,8 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
       return {}
 
     case "@jerome-benoit/sap-ai-provider-v2": {
-      if (id.includes("anthropic")) {
+      const apiID = model.api.id.toLowerCase()
+      if (apiID.includes("anthropic")) {
         if (adaptiveEfforts) {
           // Bedrock adaptive splits `effort` out into `output_config` (vs Anthropic
           // native which inlines it). Opus 4.7+ flipped `display` default to "omitted".
@@ -1059,11 +1060,11 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
           max: { thinking: { type: "enabled", budget_tokens: 31999 } },
         })
       }
-      if (id.includes("gemini") && id.includes("2.5")) {
+      if (apiID.includes("gemini") && apiID.includes("2.5")) {
         return wrapInSapModelParams(googleThinkingVariants(model))
       }
-      if (id.includes("gpt") || /\bo[1-9]/.test(id)) {
-        const efforts = openaiReasoningEfforts(id, model.release_date)
+      if (apiID.includes("gpt") || /\bo[1-9]/.test(apiID)) {
+        const efforts = openaiReasoningEfforts(apiID, model.release_date)
         return wrapInSapModelParams(Object.fromEntries(efforts.map((effort) => [effort, { reasoning_effort: effort }])))
       }
       return wrapInSapModelParams(
@@ -1107,7 +1108,7 @@ export function options(input: {
     result["usage"] = {
       include: true,
     }
-    if (input.model.api.id.includes("gemini-3")) {
+    if (input.model.capabilities.reasoning && input.model.api.id.includes("gemini-3")) {
       result["reasoning"] = { effort: "high" }
     }
   }

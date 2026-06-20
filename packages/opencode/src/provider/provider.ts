@@ -157,6 +157,10 @@ function selectBedrockMantleLanguageModel(sdk: BundledSDK, modelID: string) {
   return sdk.responses?.(modelID) ?? sdk.languageModel(modelID)
 }
 
+function normalizeBedrockMantleBaseURL(url: string) {
+  return url.replace(/\/openai\/v1\/?$/i, "/v1")
+}
+
 function custom(dep: CustomDep): Record<string, CustomLoader> {
   return {
     anthropic: () =>
@@ -1727,7 +1731,10 @@ export const layer = Layer.effect(
           return url
         })
 
-        if (baseURL !== undefined) options["baseURL"] = baseURL
+        if (baseURL !== undefined) {
+          options["baseURL"] =
+            model.api.npm === "@ai-sdk/amazon-bedrock/mantle" ? normalizeBedrockMantleBaseURL(baseURL) : baseURL
+        }
         if (options["apiKey"] === undefined && provider.key) options["apiKey"] = provider.key
         if (model.headers)
           options["headers"] = {
