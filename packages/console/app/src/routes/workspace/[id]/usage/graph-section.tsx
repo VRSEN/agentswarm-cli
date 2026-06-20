@@ -1,4 +1,4 @@
-import { and, Database, eq, gte, inArray, isNull, lt, or, sql } from "@opencode-ai/console-core/drizzle/index.js"
+import { and, Database, eq, gte, inArray, isNull, lt, or, sql, sum } from "@opencode-ai/console-core/drizzle/index.js"
 import { UsageTable } from "@opencode-ai/console-core/schema/billing.sql.js"
 import { KeyTable } from "@opencode-ai/console-core/schema/key.sql.js"
 import { UserTable } from "@opencode-ai/console-core/schema/user.sql.js"
@@ -9,8 +9,8 @@ import { createStore } from "solid-js/store"
 import { withActor } from "~/context/auth.withActor"
 import { Dropdown } from "~/component/dropdown"
 import { IconChevronLeft, IconChevronRight } from "~/component/icon"
+import { getMonthDayWindows, type DayWindow } from "./date-window"
 import styles from "./graph-section.module.css"
-import { localDateLabel, localDateUTC } from "./usage-time"
 import {
   Chart,
   BarController,
@@ -25,53 +25,45 @@ import { useI18n } from "~/context/i18n"
 
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend)
 
+function getDateExpr(windows: DayWindow[]) {
+  return sql<string>`CASE ${sql.join(
+    windows.map(
+      (day) =>
+        sql`WHEN ${UsageTable.timeCreated} >= ${day.start} AND ${UsageTable.timeCreated} < ${day.end} THEN ${day.date}`,
+    ),
+    sql` `,
+  )} END`
+}
+
 async function getCosts(workspaceID: string, year: number, month: number, timezone: string) {
   "use server"
   return withActor(async () => {
-    const monthEnd = localDateLabel(year, month + 1, 1)
-    const planExpr = sql<string | null>`JSON_EXTRACT(${UsageTable.enrichment}, '$.plan')`
-    const windows: Array<{ date: string; start: Date; end: Date }> = []
-    for (let day = 1; ; day++) {
-      const date = localDateLabel(year, month, day)
-      if (date >= monthEnd) break
-      windows.push({
-        date,
-        start: localDateUTC(timezone, year, month, day),
-        end: localDateUTC(timezone, year, month, day + 1),
-      })
-    }
-
-    const first = windows[0]!
-    const last = windows[windows.length - 1]!
-    const dateExpr = sql<string>`case ${sql.join(
-      windows.map(
-        (window) =>
-          sql`when ${UsageTable.timeCreated} >= ${window.start} and ${UsageTable.timeCreated} < ${window.end} then ${window.date}`,
-      ),
-      sql` `,
-    )} end`
+    const windows = getMonthDayWindows(timezone, year, month)
+    const monthStartUTC = windows[0].start
+    const monthEndUTC = windows[windows.length - 1].end
+    const dateExpr = getDateExpr(windows)
     const usageData = await Database.use((tx) =>
       tx
         .select({
           date: dateExpr,
           model: UsageTable.model,
-          totalCost: sql<number>`coalesce(sum(${UsageTable.cost}), 0)`,
+          totalCost: sum(UsageTable.cost),
           keyId: UsageTable.keyID,
-          plan: planExpr,
+          plan: sql<string | null>`JSON_EXTRACT(${UsageTable.enrichment}, '$.plan')`,
         })
         .from(UsageTable)
         .where(
           and(
             eq(UsageTable.workspaceID, workspaceID),
-            gte(UsageTable.timeCreated, first.start),
-            lt(UsageTable.timeCreated, last.end),
+            gte(UsageTable.timeCreated, monthStartUTC),
+            lt(UsageTable.timeCreated, monthEndUTC),
           ),
         )
-        .groupBy(dateExpr, UsageTable.model, UsageTable.keyID, planExpr)
-        .then((rows) =>
-          rows.map((r) => ({
+        .groupBy(dateExpr, UsageTable.model, UsageTable.keyID, sql`JSON_EXTRACT(${UsageTable.enrichment}, '$.plan')`)
+        .then((x) =>
+          x.map((r) => ({
             ...r,
-            totalCost: Number(r.totalCost ?? 0),
+            totalCost: r.totalCost ? parseInt(r.totalCost) : 0,
             plan: r.plan as "sub" | "lite" | "byok" | null,
           })),
         ),

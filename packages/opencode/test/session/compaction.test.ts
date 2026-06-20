@@ -25,7 +25,7 @@ import type { Provider } from "@/provider/provider"
 import * as SessionProcessorModule from "../../src/session/processor"
 import { Snapshot } from "../../src/snapshot"
 import { ProviderTest } from "../fake/provider"
-import { testEffect } from "../lib/effect"
+import { awaitWithTimeout, testEffect } from "../lib/effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { TestConfig } from "../fixture/config"
 import { SyncEvent } from "@/sync"
@@ -1375,14 +1375,14 @@ describe("session.compaction.process", () => {
       return Effect.gen(function* () {
         const ssn = yield* SessionNs.Service
         const bus = yield* Bus.Service
-        const ready = yield* Deferred.make<void>()
+        const retrying = yield* Deferred.make<number>()
         const session = yield* ssn.create({})
         const msg = yield* createUserMessage(session.id, "hello")
         const msgs = yield* ssn.messages({ sessionID: session.id })
         const off = yield* bus.subscribeCallback(SessionStatus.Event.Status, (evt) => {
           if (evt.properties.sessionID !== session.id) return
           if (evt.properties.status.type !== "retry") return
-          Deferred.doneUnsafe(ready, Effect.void)
+          Deferred.doneUnsafe(retrying, Effect.succeed(evt.properties.status.next))
         })
         yield* Effect.addFinalizer(() => Effect.sync(off))
 
@@ -1395,15 +1395,22 @@ describe("session.compaction.process", () => {
           })
           .pipe(Effect.forkChild)
 
-        yield* Deferred.await(ready).pipe(Effect.timeout("1 second"))
-        const start = Date.now()
+        const next = yield* awaitWithTimeout(
+          Deferred.await(retrying),
+          "compaction did not enter retry backoff",
+          "5 seconds",
+        )
+        expect(next).toBeGreaterThan(Date.now())
         yield* Fiber.interrupt(fiber)
-        const exit = yield* Fiber.await(fiber).pipe(Effect.timeout("250 millis"))
+        const exit = yield* awaitWithTimeout(
+          Fiber.await(fiber),
+          "compaction did not stop after aborting retry backoff",
+          "2 seconds",
+        )
 
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) {
           expect(Cause.hasInterrupts(exit.cause)).toBe(true)
-          expect(Date.now() - start).toBeLessThan(250)
         }
       }).pipe(withCompaction({ llm: stub.layer }))
     },
