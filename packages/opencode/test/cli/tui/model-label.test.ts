@@ -69,6 +69,17 @@ describe("model-label", () => {
     expect(result).toBe("Swarm models: gpt-5.4-mini +1")
   })
 
+  test("falls back when agency scope is intentionally unset", () => {
+    const result = resolveModelLabel({
+      agencies,
+      providerID: AgencySwarmAdapter.PROVIDER_ID,
+      modelID: AgencySwarmAdapter.DEFAULT_MODEL_ID,
+      fallback: "Swarm Default",
+    })
+
+    expect(result).toBe("Swarm Default")
+  })
+
   test("uses configured recipient model for visible internal build assistant label", () => {
     const result = resolveAssistantModelLabel({
       agencies,

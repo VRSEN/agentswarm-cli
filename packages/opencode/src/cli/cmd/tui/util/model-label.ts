@@ -127,7 +127,6 @@ function formatAgencyModelLabel(agency: AgencySwarmAdapter.AgencyDescriptor) {
 }
 
 function resolveAgency(agencies: readonly AgencySwarmAdapter.AgencyDescriptor[], agencyID: string | undefined) {
-  if (agencyID) return agencies.find((item) => item.id === agencyID)
-  if (agencies.length === 1) return agencies[0]
-  return undefined
+  if (!agencyID) return undefined
+  return agencies.find((item) => item.id === agencyID)
 }

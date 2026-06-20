@@ -347,6 +347,10 @@ export function Prompt(props: PromptProps) {
   createEffect(() => {
     const options = agencyProviderOptions()
     if (!options.recipientAgentSelectedAt) return
+    if (recipientSelectedAtBaseline === undefined) {
+      recipientSelectedAtBaseline = options.recipientAgentSelectedAt
+      return
+    }
     if (options.recipientAgentSelectedAt === recipientSelectedAtBaseline) return
     setExplicitRecipientSelectedAt(options.recipientAgentSelectedAt)
   })

@@ -514,7 +514,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       "submitted-agency label request",
       tuiInteractionTimeoutMs,
     )
-    await selectAgencySwarm(currentTui, "SupportAgency")
+    await selectNextAgencySwarm(currentTui, "SupportAgency")
     await currentTui.waitForText("SupportAgency · claude-support-sonnet", tuiInteractionTimeoutMs)
     const screen = currentTui.screen()
 
@@ -1033,12 +1033,10 @@ async function selectCurrentSwarm(tui: TuiProcess) {
   await tui.waitForText("Selected swarm TuiDemoAgency", tuiInteractionTimeoutMs)
 }
 
-async function selectAgencySwarm(tui: TuiProcess, agency: string) {
+async function selectNextAgencySwarm(tui: TuiProcess, agency: string) {
   tui.write("/agents\r")
-  await tui.waitForText("Select swarm")
-  tui.write(agency)
   await tui.waitForText(agency)
-  tui.write("\r")
+  tui.write("\x1b[B\r")
   await tui.waitForText(`Selected swarm ${agency}`, tuiInteractionTimeoutMs)
 }
 

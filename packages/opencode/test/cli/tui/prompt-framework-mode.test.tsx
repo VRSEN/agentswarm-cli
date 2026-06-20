@@ -4,6 +4,7 @@ import { RGBA } from "@opentui/core"
 import { testRender, useRenderer } from "@opentui/solid"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { type ParentProps } from "solid-js"
+import { createStore } from "solid-js/store"
 import * as AgencySwarmConnectionContext from "../../../src/cli/cmd/tui/context/agency-swarm-connection"
 import * as ArgsContext from "../../../src/cli/cmd/tui/context/args"
 import * as CommandDialogModule from "../../../src/cli/cmd/tui/component/dialog-command"
@@ -188,71 +189,72 @@ describe("prompt framework-mode footer", () => {
         on: () => () => {},
       },
     } as any)
-    spyOn(SyncContext, "useSync").mockReturnValue({
-      data: {
-        command: [],
-        config: {
-          model: "agency-swarm/default",
-          provider: {
-            "agency-swarm": {
-              options: {
-                agency: "demo",
-                recipientAgent: "orchestrator-slug",
-                baseURL: "http://127.0.0.1:8000",
-              },
+    const [syncData, setSyncData] = createStore({
+      command: [],
+      config: {
+        model: "agency-swarm/default",
+        provider: {
+          "agency-swarm": {
+            options: {
+              agency: "demo",
+              recipientAgent: "orchestrator-slug",
+              baseURL: "http://127.0.0.1:8000",
             },
           },
-          experimental: {},
         },
-        console_state: {
-          activeOrgName: "",
-          consoleManagedProviders: [],
-          switchableOrgCount: 0,
-        },
-        message: {},
-        part: {
-          message_assistant_1: [
-            {
-              type: "tool",
-              tool: "transfer_to_slides_agent",
-              state: {
-                status: "completed",
-              },
+        experimental: {},
+      },
+      console_state: {
+        activeOrgName: "",
+        consoleManagedProviders: [],
+        switchableOrgCount: 0,
+      },
+      message: {},
+      part: {
+        message_assistant_1: [
+          {
+            type: "tool",
+            tool: "transfer_to_slides_agent",
+            state: {
+              status: "completed",
             },
-          ],
-        },
-        provider: [
-          {
-            id: "agency-swarm",
-            name: "Agency Swarm",
-            source: "config",
-            env: [],
-            key: undefined,
-            options: {},
-            models: {},
-          },
-          {
-            id: "openai",
-            name: "OpenAI",
-            source: "api",
-            env: ["OPENAI_API_KEY"],
-            key: "sk-test",
-            options: {},
-            models: {},
           },
         ],
-        provider_auth: {
-          openai: [{ type: "api", label: "API key" }],
-        },
-        provider_next: {
-          all: [],
-          connected: [],
-          default: {},
-        },
-        session_status: {
-          session_1: { type: "busy" },
-        },
       },
+      provider: [
+        {
+          id: "agency-swarm",
+          name: "Agency Swarm",
+          source: "config",
+          env: [],
+          key: undefined,
+          options: {},
+          models: {},
+        },
+        {
+          id: "openai",
+          name: "OpenAI",
+          source: "api",
+          env: ["OPENAI_API_KEY"],
+          key: "sk-test",
+          options: {},
+          models: {},
+        },
+      ],
+      provider_auth: {
+        openai: [{ type: "api", label: "API key" }],
+      },
+      provider_next: {
+        all: [],
+        connected: [],
+        default: {},
+      },
+      session_status: {
+        session_1: { type: "busy" },
+      },
+    } as any)
+    spyOn(SyncContext, "useSync").mockReturnValue({
+      data: syncData,
       session: {
         get: () => undefined,
       },
@@ -376,6 +378,18 @@ describe("prompt framework-mode footer", () => {
     expect(calls[0][0].$body_agencyLabelAgency).toBe("demo")
     expect(calls[0][0].$body_agencyLabelRecipientAgent).toBe("orchestrator-slug")
 
+    setSyncData("config", "provider", "agency-swarm", "options", "recipientAgentSelectedAt", 1)
+    await flushEffects()
+
+    promptRef!.set({ input: "loaded config follow-up", parts: [] })
+    await promptRef!.submit()
+    await flushEffects()
+
+    expect(prompt).toHaveBeenCalledTimes(2)
+    expect(calls[1][0].$body_agencyRecipientAgent).toBeUndefined()
+    expect(calls[1][0].$body_agencyLabelAgency).toBe("demo")
+    expect(calls[1][0].$body_agencyLabelRecipientAgent).toBe("orchestrator-slug")
+
     eventHandlers["message.updated"]?.({
       properties: {
         info: {
@@ -401,8 +415,8 @@ describe("prompt framework-mode footer", () => {
     await promptRef!.submit()
     await flushEffects()
 
-    expect(prompt).toHaveBeenCalledTimes(2)
-    const payload = calls[1][0]
+    expect(prompt).toHaveBeenCalledTimes(3)
+    const payload = calls[2][0]
     expect(payload.parts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -444,10 +458,10 @@ describe("prompt framework-mode footer", () => {
     await promptRef!.submit()
     await flushEffects()
 
-    expect(prompt).toHaveBeenCalledTimes(3)
-    expect(calls[2][0].$body_agencyRecipientAgent).toBe("slides_agent")
-    expect(calls[2][0].$body_agencyLabelAgency).toBe("demo")
-    expect(calls[2][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
+    expect(prompt).toHaveBeenCalledTimes(4)
+    expect(calls[3][0].$body_agencyRecipientAgent).toBe("slides_agent")
+    expect(calls[3][0].$body_agencyLabelAgency).toBe("demo")
+    expect(calls[3][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
 
     eventHandlers["message.part.updated"]?.({
       properties: {
@@ -470,10 +484,10 @@ describe("prompt framework-mode footer", () => {
     await promptRef!.submit()
     await flushEffects()
 
-    expect(prompt).toHaveBeenCalledTimes(4)
-    expect(calls[3][0].$body_agencyRecipientAgent).toBe("support_agent")
-    expect(calls[3][0].$body_agencyLabelAgency).toBe("demo")
-    expect(calls[3][0].$body_agencyLabelRecipientAgent).toBe("support_agent")
+    expect(prompt).toHaveBeenCalledTimes(5)
+    expect(calls[4][0].$body_agencyRecipientAgent).toBe("support_agent")
+    expect(calls[4][0].$body_agencyLabelAgency).toBe("demo")
+    expect(calls[4][0].$body_agencyLabelRecipientAgent).toBe("support_agent")
 
     promptRef!.set({
       input: "mention explicit agent",
@@ -492,10 +506,10 @@ describe("prompt framework-mode footer", () => {
     await promptRef!.submit()
     await flushEffects()
 
-    expect(prompt).toHaveBeenCalledTimes(5)
-    expect(calls[4][0].$body_agencyRecipientAgent).toBeUndefined()
-    expect(calls[4][0].$body_agencyLabelAgency).toBe("demo")
-    expect(calls[4][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
+    expect(prompt).toHaveBeenCalledTimes(6)
+    expect(calls[5][0].$body_agencyRecipientAgent).toBeUndefined()
+    expect(calls[5][0].$body_agencyLabelAgency).toBe("demo")
+    expect(calls[5][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
   })
 
   test("sends agency handoff recipient through the generated sdk prompt body", async () => {
