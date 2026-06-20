@@ -521,6 +521,103 @@ describe("session.llm.stream", () => {
     })
   })
 
+  test("disabled reasoning overrides later selected variant reasoning options", async () => {
+    const server = state.server
+    if (!server) {
+      throw new Error("Server not initialized")
+    }
+
+    const providerID = "openrouter"
+    const modelID = "google/gemini-2.5-flash"
+    const fixture = await loadFixture(providerID, modelID)
+    const model = fixture.model
+
+    const request = waitRequest(
+      "/chat/completions",
+      new Response(createChatStream("Hello"), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    )
+
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(
+          path.join(dir, "opencode.json"),
+          JSON.stringify({
+            $schema: "https://opencode.ai/config.json",
+            enabled_providers: [providerID],
+            provider: {
+              [providerID]: {
+                options: {
+                  apiKey: "test-key",
+                  baseURL: `${server.url.origin}/v1`,
+                },
+              },
+            },
+          }),
+        )
+      },
+    })
+
+    await WithInstance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const resolved = await getModel(ProviderID.make(providerID), ModelID.make(model.id))
+        const sessionID = SessionID.make("session-test-openrouter-disabled-variant-reasoning")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+        const current: Provider.Model = {
+          ...resolved,
+          options: {
+            ...resolved.options,
+            reasoning: { enabled: false },
+          },
+          variants: {
+            ...resolved.variants,
+            high: {
+              reasoning: { effort: "high", summary: "auto" },
+              reasoningEffort: "high",
+              reasoningSummary: "auto",
+              include: ["reasoning.encrypted_content"],
+            },
+          },
+        }
+
+        const user = {
+          id: MessageID.make("msg_user-openrouter-disabled-variant-reasoning"),
+          sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: agent.name,
+          model: { providerID: ProviderID.make(providerID), modelID: current.id, variant: "high" },
+        } satisfies MessageV2.User
+
+        await drain({
+          user,
+          sessionID,
+          model: current,
+          agent,
+          system: ["You are a helpful assistant."],
+          messages: [{ role: "user", content: "Hello" }],
+          tools: {},
+        })
+
+        const capture = await request
+        expect(capture.body.reasoning).toEqual({ enabled: false })
+        expect(capture.body.reasoningEffort).toBeUndefined()
+        expect(capture.body.reasoning_effort).toBeUndefined()
+        expect(capture.body.reasoningSummary).toBeUndefined()
+        expect(capture.body.reasoning_summary).toBeUndefined()
+        expect(capture.body.include).toBeUndefined()
+      },
+    })
+  })
+
   test("partial reasoning options merge across model and agent layers", async () => {
     const server = state.server
     if (!server) {

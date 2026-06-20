@@ -28,18 +28,36 @@ const log = Log.create({ service: "llm" })
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 type Result = Awaited<ReturnType<typeof streamText>>
 
+const ENCRYPTED_REASONING_INCLUDE = "reasoning.encrypted_content"
+
 // Avoid re-instantiating remeda's deep merge types in this hot LLM path; the runtime behavior is still mergeDeep.
 const mergeOptions = (target: Record<string, any>, source: Record<string, any> | undefined): Record<string, any> => {
+  const disabled = isReasoningDisabled(target.reasoning) || isReasoningDisabled(source?.reasoning)
   const result = mergeDeep(target, source ?? {}) as Record<string, any>
-  if (
-    source?.reasoning &&
-    typeof source.reasoning === "object" &&
-    !Array.isArray(source.reasoning) &&
-    source.reasoning["enabled"] === false
-  ) {
-    result.reasoning = source.reasoning
+  if (disabled) {
+    result.reasoning = { enabled: false }
+    delete result.reasoningEffort
+    delete result.reasoning_effort
+    delete result.reasoningSummary
+    delete result.reasoning_summary
+    delete result.forceReasoning
+    const include = result.include
+    if (Array.isArray(include)) {
+      const next = include.filter((item) => item !== ENCRYPTED_REASONING_INCLUDE)
+      if (next.length === 0) delete result.include
+      else result.include = next
+    }
   }
   return result
+}
+
+function isReasoningDisabled(value: unknown) {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "enabled" in value &&
+    (value as Record<string, unknown>).enabled === false
+  )
 }
 
 export type StreamInput = {
