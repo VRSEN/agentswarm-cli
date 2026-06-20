@@ -4,6 +4,8 @@ import os from "node:os"
 import path from "node:path"
 import {
   agencyClientConfigModel,
+  alternateOpenAITestModel,
+  alternateOpenAITestModelLabel,
   latestOpenAITestModel,
   latestOpenAITestModelLabel,
   openAIProviderTestConfig,
@@ -503,7 +505,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       baseURL: currentServer.baseURL,
       agency: "tui-demo-agency",
       recipientAgent: "UserSupportAgent",
-      args: ["--model", latestOpenAITestModel],
+      args: ["--model", alternateOpenAITestModel],
       env: {
         AGENTSWARM_RUN_PROJECT: runProject,
         XDG_STATE_HOME: stateHome,
@@ -511,9 +513,10 @@ describe("Agent Swarm terminal TUI e2e", () => {
       config: openAIProviderTestConfig,
     })
 
-    await currentTui.waitForText(latestOpenAITestModelLabel, tuiReadyTimeoutMs)
+    await currentTui.waitForText(alternateOpenAITestModelLabel, tuiReadyTimeoutMs)
     currentTui.write("run through agency despite visible openai model state\r")
     await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
+    const screen = await currentTui.waitForText("Run · GPT-5.2", tuiInteractionTimeoutMs)
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
       "agency request with visible openai model state",
@@ -525,6 +528,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(body).toMatchObject({
       recipient_agent: "UserSupportAgent",
     })
+    expect(screen).not.toContain("Run · gpt-5.4-mini")
 
     const runSessionState = JSON.parse(
       await readFile(path.join(stateHome, "agentswarm", "agency-swarm-run-sessions.json"), "utf8"),

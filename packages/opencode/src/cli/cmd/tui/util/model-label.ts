@@ -11,12 +11,18 @@ export type ModelLabelContext = {
 
 export type ModelLabelScope = "agent" | "agency"
 
+type ModelRef = {
+  providerID: string
+  modelID: string
+}
+
 type AssistantModelLabelInput = ModelLabelContext & {
   providerID: string
   modelID: string
   fallback?: string
   scope?: ModelLabelScope
   recipientAgent?: string
+  submittedModel?: ModelRef
   frameworkMode?: boolean
 }
 
@@ -30,6 +36,8 @@ export function resolveModelLabel(
 }
 
 export function resolveAssistantModelLabel(input: AssistantModelLabelInput) {
+  const submitted = resolveSubmittedModelLabel(input)
+  if (submitted) return submitted
   const agentID =
     input.scope === "agency"
       ? undefined
@@ -47,6 +55,20 @@ export function resolveAssistantModelLabel(input: AssistantModelLabelInput) {
   })
 }
 
+function resolveSubmittedModelLabel(input: ModelLabelContext & ModelRef & { submittedModel?: ModelRef }) {
+  if (!input.submittedModel) return undefined
+  if (!isAgencyDefaultModel(input)) return undefined
+  if (isAgencyDefaultModel(input.submittedModel)) return undefined
+  return resolveModelLabel({
+    providers: input.providers,
+    agencies: input.agencies,
+    agencyID: input.agencyID,
+    agentID: input.agentID,
+    providerID: input.submittedModel.providerID,
+    modelID: input.submittedModel.modelID,
+  })
+}
+
 function resolveAgencyModelAgentID(input: {
   providerID: string
   modelID: string
@@ -55,10 +77,13 @@ function resolveAgencyModelAgentID(input: {
   frameworkMode?: boolean
 }) {
   if (input.frameworkMode === false) return input.agentID
-  if (input.providerID !== AgencySwarmAdapter.PROVIDER_ID) return input.agentID
-  if (input.modelID !== AgencySwarmAdapter.DEFAULT_MODEL_ID) return input.agentID
+  if (!isAgencyDefaultModel(input)) return input.agentID
   if (input.agentID && input.agentID !== "build") return input.agentID
   return input.recipientAgent
+}
+
+function isAgencyDefaultModel(input: ModelRef) {
+  return input.providerID === AgencySwarmAdapter.PROVIDER_ID && input.modelID === AgencySwarmAdapter.DEFAULT_MODEL_ID
 }
 
 function resolveAgencyModelLabel(input: {

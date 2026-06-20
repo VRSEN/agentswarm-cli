@@ -173,6 +173,7 @@ const context = createContext<{
     modelID: string
     agentID?: string
     recipientAgent?: string
+    submittedModel?: { providerID: string; modelID: string }
     scope?: ModelLabelScope
     turnStartedAt?: number
   }) => string
@@ -294,6 +295,7 @@ export function Session() {
     modelID: string
     agentID?: string
     recipientAgent?: string
+    submittedModel?: { providerID: string; modelID: string }
     scope?: ModelLabelScope
     turnStartedAt?: number
   }) => {
@@ -310,6 +312,7 @@ export function Session() {
       agentID: input.agentID,
       providerID: input.providerID,
       modelID: input.modelID,
+      submittedModel: input.submittedModel,
       recipientAgent:
         input.recipientAgent ?? (configuredRecipientChangedAfterTurn ? undefined : options.recipientAgent),
       frameworkMode: frameworkMode(),
@@ -1508,6 +1511,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       modelID: props.message.modelID,
       agentID: props.message.agent,
       recipientAgent: parent()?.agencyRecipientAgent,
+      submittedModel: parent()?.model,
       turnStartedAt: parent()?.time.created,
     }),
   )

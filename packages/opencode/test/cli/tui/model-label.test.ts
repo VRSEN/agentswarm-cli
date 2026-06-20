@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { AgencySwarmAdapter } from "../../../src/agency-swarm/adapter"
-import {
-  resolveAssistantModelLabel,
-  resolveModelLabel,
-} from "../../../src/cli/cmd/tui/util/model-label"
+import { resolveAssistantModelLabel, resolveModelLabel } from "../../../src/cli/cmd/tui/util/model-label"
 
 const agencies: AgencySwarmAdapter.AgencyDescriptor[] = [
   {
@@ -85,6 +82,26 @@ describe("model-label", () => {
     })
 
     expect(result).toBe("claude-sonnet-4-5")
+  })
+
+  test("uses submitted real model before agency metadata for bridge assistant label", () => {
+    const result = resolveAssistantModelLabel({
+      agencies,
+      agencyID: "demo",
+      agentID: "build",
+      recipientAgent: "orchestrator",
+      providerID: AgencySwarmAdapter.PROVIDER_ID,
+      modelID: AgencySwarmAdapter.DEFAULT_MODEL_ID,
+      submittedModel: {
+        providerID: "openrouter",
+        modelID: "anthropic/claude-sonnet-4.5",
+      },
+      fallback: "Swarm Default",
+      frameworkMode: true,
+    })
+
+    expect(result).toBe("anthropic/claude-sonnet-4.5")
+    expect(result).not.toBe("gpt-5.4-mini")
   })
 
   test("falls back for visible internal build assistant label when recipient is unresolvable", () => {

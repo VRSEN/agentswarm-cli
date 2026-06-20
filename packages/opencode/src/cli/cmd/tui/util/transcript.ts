@@ -29,6 +29,15 @@ export type MessageWithParts = {
   parts: Part[]
 }
 
+type ModelRef = {
+  providerID: string
+  modelID: string
+}
+
+type TranscriptMessageOptions = TranscriptOptions & {
+  submittedModel?: ModelRef
+}
+
 export function formatTranscript(
   session: SessionInfo,
   messages: MessageWithParts[],
@@ -55,6 +64,7 @@ export function formatTranscript(
       msg.parts,
       {
         ...options,
+        submittedModel: user?.model,
         recipientAgent:
           user?.agencyRecipientAgent ?? (configuredRecipientChangedAfterTurn ? undefined : options.recipientAgent),
       },
@@ -69,7 +79,7 @@ export function formatTranscript(
 export function formatMessage(
   msg: UserMessage | AssistantMessage,
   parts: Part[],
-  options: TranscriptOptions,
+  options: TranscriptMessageOptions,
   providers?: Provider[] | ReadonlyMap<string, Provider>,
 ): string {
   let result = ""
@@ -82,6 +92,7 @@ export function formatMessage(
       agencies: options.agencies,
       agencyID: options.agencyID,
       recipientAgent: options.recipientAgent,
+      submittedModel: options.submittedModel,
     })
   }
 
@@ -116,6 +127,7 @@ export function formatAssistantHeader(
 
 type TranscriptModelLabelContext = ModelLabelContext & {
   recipientAgent?: string
+  submittedModel?: ModelRef
 }
 
 function readModelLabelContext(
