@@ -536,6 +536,48 @@ describe("Agent Swarm terminal TUI e2e", () => {
     }
   })
 
+  test("/mode Build and Plan slash commands stay native when launcher-style env config defaults to Run", async () => {
+    for (const mode of ["Build", "Plan"] as const) {
+      const prompt = `agent-builder-command-route-${mode.toLowerCase()}`
+      currentServer = await startTuiDemoAgencyServer()
+      currentNativeServer = await startNativeLLMServer()
+      currentTui = await startTui({
+        baseURL: currentServer.baseURL,
+        agency: "tui-demo-agency",
+        recipientAgent: "UserSupportAgent",
+        config: {
+          enabled_providers: openAIProviderTestConfig.enabled_providers,
+          provider: {
+            openai: {
+              options: {
+                apiKey: "test-openai-key",
+                baseURL: currentNativeServer.baseURL,
+              },
+            },
+          },
+        },
+      })
+
+      await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+      await selectProductMode(currentTui, mode)
+      currentTui.write(`/review ${prompt}\r`)
+      await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
+
+      const request = await waitForNativeLLMRequest(currentTui, currentNativeServer, prompt)
+      const body = JSON.stringify(request.body)
+      expect(body).toContain(prompt)
+      expect(body).toContain("You are a code reviewer")
+      expect(currentServer.requests).toHaveLength(0)
+
+      await currentTui.close()
+      currentTui = undefined
+      currentServer.stop()
+      currentServer = undefined
+      currentNativeServer.stop()
+      currentNativeServer = undefined
+    }
+  })
+
   test("approving native Plan handoff switches the TUI to Build", async () => {
     const planPrompt = "finish test plan with native plan_exit"
     currentServer = await startTuiDemoAgencyServer()
@@ -569,7 +611,9 @@ describe("Agent Swarm terminal TUI e2e", () => {
       "Plan approval question",
       tuiInteractionTimeoutMs,
     )
-    currentTui.write("\r")
+    currentTui.write("\x1b[B")
+    await currentTui.waitFor(() => currentTui!.screen().includes("2. No"), "No option visible", tuiInteractionTimeoutMs)
+    currentTui.write("1")
     await currentTui.waitFor(
       () => footerHasMode(currentTui!.screen(), "Build"),
       "Build footer after plan approval",

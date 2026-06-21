@@ -204,6 +204,7 @@ export function shouldOpenStartupAuthDialog(input: {
 }
 
 export function shouldBlockAgencyPromptSend(input: {
+  productMode?: ProductMode
   currentProviderID?: string
   configuredModel?: string
   agentModel?: { providerID: string; modelID: string }
@@ -222,6 +223,7 @@ export function shouldBlockAgencyPromptSend(input: {
 }
 
 export function shouldBlockAgencyPromptSubmit(input: {
+  productMode?: ProductMode
   currentProviderID?: string
   configuredModel?: string
   agentModel?: { providerID: string; modelID: string }

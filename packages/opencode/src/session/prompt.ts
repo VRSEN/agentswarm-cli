@@ -64,7 +64,7 @@ import * as Database from "@/storage/db"
 import { SessionTable } from "./session.sql"
 import { SessionAgencySwarm } from "./agency-swarm"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
-import { isAgencySwarmModel, isAgencySwarmRunMode } from "@/agency-swarm/run-mode"
+import { isAgencySwarmRunMode } from "@/agency-swarm/run-mode"
 import { agentBuilderInstructions } from "./agent-builder"
 import { agentPlannerInstructions } from "./agent-planner"
 
@@ -99,13 +99,12 @@ export function shouldUseAgencySwarmBridge(input: {
   agentName?: string
   agencySwarmBridge?: boolean
 }) {
+  if (input.agencySwarmBridge === true) return true
   if (input.agencySwarmBridge === false) return false
-  const nativePrimary =
+  if (
     input.resolvedProviderID !== SessionAgencySwarm.PROVIDER_ID &&
     (input.agentName === "build" || input.agentName === "plan")
-  const configuredRunMode =
-    isAgencySwarmModel(input.configuredModel) || input.agentProviderID === SessionAgencySwarm.PROVIDER_ID
-  if (nativePrimary && !configuredRunMode) {
+  ) {
     return false
   }
   return isAgencySwarmRunMode({
@@ -2120,6 +2119,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         agent: userAgent,
         parts,
         variant: input.variant,
+        agencySwarmBridge: input.agencySwarmBridge,
       })
       yield* bus.publish(Command.Event.Executed, {
         name: input.command,
@@ -2232,6 +2232,7 @@ export const CommandInput = Schema.Struct({
   arguments: Schema.String,
   command: Schema.String,
   variant: Schema.optional(Schema.String),
+  agencySwarmBridge: Schema.optional(Schema.Boolean),
   // Inlined (no identifier annotation) to keep the original SDK output — the
   // PromptInput call site below references FilePartInput by ref via the
   // Schema export in message-v2.ts.

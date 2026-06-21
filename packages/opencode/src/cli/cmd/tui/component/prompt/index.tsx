@@ -1603,6 +1603,7 @@ export function Prompt(props: PromptProps) {
 
     if (
       shouldBlockAgencyPromptSubmit({
+        productMode: local.product?.current(),
         currentProviderID: selectedModel.providerID,
         configuredModel: sync.data.config.model,
         agentModel: local.agent.current()?.model,
@@ -1749,6 +1750,7 @@ export function Prompt(props: PromptProps) {
         sessionID,
         command: command.slice(1),
         arguments: args,
+        agencySwarmBridge: frameworkMode(),
         agent: effectiveAgentName(),
         model: `${selectedModel.providerID}/${selectedModel.modelID}`,
         messageID,

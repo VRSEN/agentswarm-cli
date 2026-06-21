@@ -57,6 +57,7 @@ export function isUsableModel(input: {
   if (input.model.modelID !== AgencySwarmAdapter.DEFAULT_MODEL_ID) return false
   if (input.enabledProviders && !input.enabledProviders.includes(AgencySwarmAdapter.PROVIDER_ID)) return false
   if (input.disabledProviders?.includes(AgencySwarmAdapter.PROVIDER_ID)) return false
+  if (input.productMode === "run") return true
   const selectedAgencySwarmModel = [input.argModel, input.configModel].some(
     (value) => value === `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
   )
@@ -89,6 +90,7 @@ export function selectCurrentModel(input: {
       configuredProviders: input.configuredProviders,
       enabledProviders: input.enabledProviders,
       disabledProviders: input.disabledProviders,
+      productMode: input.productMode,
     })
   }
 
@@ -203,6 +205,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         configuredProviders: sync.data.config.provider,
         enabledProviders: sync.data.config.enabled_providers,
         disabledProviders: sync.data.config.disabled_providers,
+        productMode: productStore.mode,
       })
     }
 
@@ -753,31 +756,16 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           const value = model.current()
           if (!value || value.providerID === AgencySwarmAdapter.PROVIDER_ID) return
           model.set(value, { explicit: true })
-          await updateConfigModel(value)
           return
         }
-        const runModel = {
-          providerID: AgencySwarmAdapter.PROVIDER_ID,
-          modelID: AgencySwarmAdapter.DEFAULT_MODEL_ID,
-        }
-        await updateConfigModel(runModel)
-        model.set(runModel, { explicit: true })
-      },
-    }
-
-    async function updateConfigModel(value: ModelSelection) {
-      await sdk.client.global.config.update(
-        {
-          config: {
-            model: `${value.providerID}/${value.modelID}`,
+        model.set(
+          {
+            providerID: AgencySwarmAdapter.PROVIDER_ID,
+            modelID: AgencySwarmAdapter.DEFAULT_MODEL_ID,
           },
-        },
-        {
-          throwOnError: true,
-        },
-      )
-      await sdk.client.instance.dispose()
-      await sync.bootstrap()
+          { explicit: true },
+        )
+      },
     }
 
     const result = {

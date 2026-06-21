@@ -5759,6 +5759,7 @@ export type SessionPromptData = {
     agencyRecipientAgent?: string
     agencyLabelAgency?: string
     agencyLabelRecipientAgent?: string
+    agencySwarmBridge?: boolean
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -6097,6 +6098,7 @@ export type SessionPromptAsyncData = {
     agencyRecipientAgent?: string
     agencyLabelAgency?: string
     agencyLabelRecipientAgent?: string
+    agencySwarmBridge?: boolean
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -6139,6 +6141,7 @@ export type SessionCommandData = {
     arguments: string
     command: string
     variant?: string
+    agencySwarmBridge?: boolean
     parts?: Array<{
       id?: string
       type: "file"

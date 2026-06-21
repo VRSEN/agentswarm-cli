@@ -97,9 +97,12 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     setStore("selected", 0)
   }
 
-  function selectOption() {
-    if (other()) {
+  function selectOption(selected = store.selected) {
+    const opts = options()
+    const customSelected = custom() && selected === opts.length
+    if (customSelected) {
       if (!multi()) {
+        setStore("selected", selected)
         setStore("editing", true)
         return
       }
@@ -111,8 +114,9 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
       setStore("editing", true)
       return
     }
-    const opt = options()[store.selected]
+    const opt = opts[selected]
     if (!opt) return
+    setStore("selected", selected)
     if (multi()) {
       toggle(opt.label)
       return
@@ -249,8 +253,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
                 desc: `Select answer ${index + 1}`,
                 group: "Question",
                 cmd: () => {
-                  moveTo(index)
-                  selectOption()
+                  selectOption(index)
                 },
               })),
               {
@@ -361,7 +364,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
                       onMouseDown={() => moveTo(i())}
                       onMouseUp={() => {
                         if (renderer.getSelection()?.getSelectedText()) return
-                        selectOption()
+                        selectOption(i())
                       }}
                     >
                       <box flexDirection="row">

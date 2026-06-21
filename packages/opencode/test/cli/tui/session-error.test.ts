@@ -479,6 +479,39 @@ describe("agency session errors", () => {
     ).toBe(true)
   })
 
+  test("prompt submit auth gating honors explicit Build and Plan product modes", () => {
+    const input = {
+      currentProviderID: "openai",
+      configuredModel: "agency-swarm/default",
+      providers: [
+        {
+          id: "agency-swarm",
+          name: "Agency Swarm",
+          source: "config",
+          env: [],
+          options: {},
+          models: {},
+        },
+        {
+          id: "openai",
+          name: "OpenAI",
+          source: "config",
+          env: ["OPENAI_API_KEY"],
+          options: {},
+          models: {},
+        },
+      ] satisfies Provider[],
+      providerAuth: {},
+      mode: "normal",
+      isSlashCommand: false,
+      env: {},
+    } satisfies Omit<Parameters<typeof shouldBlockAgencyPromptSubmit>[0], "productMode">
+
+    expect(shouldBlockAgencyPromptSubmit({ ...input, productMode: "build" })).toBe(false)
+    expect(shouldBlockAgencyPromptSubmit({ ...input, productMode: "plan" })).toBe(false)
+    expect(shouldBlockAgencyPromptSubmit({ ...input, productMode: "run" })).toBe(true)
+  })
+
   test("framework mode skips auth when explicit client_config exists", () => {
     expect(
       shouldOpenStartupAuthDialog({

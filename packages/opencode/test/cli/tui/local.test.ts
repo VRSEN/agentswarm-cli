@@ -74,6 +74,26 @@ describe("tui local model selection", () => {
     ).toBe(true)
   })
 
+  test("keeps Run mode agency-swarm model usable without global config", () => {
+    expect(
+      isUsableModel({
+        model: {
+          providerID: "agency-swarm",
+          modelID: "default",
+        },
+        providers: [
+          {
+            id: "openai",
+            models: {
+              "gpt-5": {},
+            },
+          },
+        ],
+        productMode: "run",
+      }),
+    ).toBe(true)
+  })
+
   test("does not keep agency-swarm usable when disabled_providers filters it out", () => {
     expect(
       isUsableModel({
@@ -90,6 +110,27 @@ describe("tui local model selection", () => {
           },
         ],
         configModel: "agency-swarm/default",
+        disabledProviders: ["agency-swarm"],
+      }),
+    ).toBe(false)
+  })
+
+  test("does not keep Run mode agency-swarm usable when disabled_providers filters it out", () => {
+    expect(
+      isUsableModel({
+        model: {
+          providerID: "agency-swarm",
+          modelID: "default",
+        },
+        providers: [
+          {
+            id: "openai",
+            models: {
+              "gpt-5": {},
+            },
+          },
+        ],
+        productMode: "run",
         disabledProviders: ["agency-swarm"],
       }),
     ).toBe(false)
@@ -114,6 +155,30 @@ describe("tui local model selection", () => {
         enabledProviders: ["openai"],
       }),
     ).toBe(false)
+  })
+
+  test("keeps local Run mode model state without global config", () => {
+    expect(
+      selectCurrentModel({
+        storedModel: {
+          providerID: "agency-swarm",
+          modelID: "default",
+          explicit: true,
+        },
+        providers: [
+          {
+            id: "openai",
+            models: {
+              "gpt-5": {},
+            },
+          },
+        ],
+        productMode: "run",
+      }),
+    ).toEqual({
+      providerID: "agency-swarm",
+      modelID: "default",
+    })
   })
 
   test("does not treat unrelated missing models as usable", () => {
