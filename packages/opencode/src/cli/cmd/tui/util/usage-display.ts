@@ -38,9 +38,9 @@ export function formatCostDisplay(cost: number | undefined, opts: { zero?: boole
   if (typeof cost !== "number" || !Number.isFinite(cost)) return undefined
   if (cost < 0) return undefined
   if (cost === 0) return opts.zero ? zero : undefined
+  if (cost < 0.01) return "<$0.01"
 
-  const formatted = money.format(cost)
-  return formatted === zero ? "<$0.01" : formatted
+  return money.format(cost)
 }
 
 export function formatUsageDisplay(input: {

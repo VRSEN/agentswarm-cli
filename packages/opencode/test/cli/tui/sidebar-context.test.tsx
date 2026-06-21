@@ -178,9 +178,9 @@ describe("sidebar context plugin", () => {
     expect(frame).not.toContain("$0.00 spent")
   })
 
-  test("shows positive rounded-zero spend as less than one cent", async () => {
+  test("shows positive sub-cent spend as less than one cent", async () => {
     mockLocal()
-    const frame = await renderContext({ context: 3_000, cost: 0.001 })
+    const frame = await renderContext({ context: 3_000, cost: 0.006 })
 
     expect(frame).toContain("1,500 tokens")
     expect(frame).toContain("50% used")

@@ -44,15 +44,26 @@ describe("usage display", () => {
     })
   })
 
-  test("shows positive rounded-zero cost as less than one cent", () => {
+  test("shows positive sub-cent cost as less than one cent", () => {
     const display = formatUsageDisplay({
       message: message(tokens),
       model: { limit: { context: 3_000 } },
-      cost: 0.001,
+      cost: 0.006,
     })
 
     expect(display?.context).toBe("1.5K (50%)")
     expect(display?.cost).toBe("<$0.01")
+  })
+
+  test("shows one-cent cost as normal currency", () => {
+    const display = formatUsageDisplay({
+      message: message(tokens),
+      model: { limit: { context: 3_000 } },
+      cost: 0.01,
+    })
+
+    expect(display?.context).toBe("1.5K (50%)")
+    expect(display?.cost).toBe("$0.01")
   })
 
   test("hides absent and zero cost", () => {
