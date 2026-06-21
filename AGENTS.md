@@ -8,6 +8,7 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 
 ## Project Context
 
+- `agentswarm-cli` is the maintained OpenCode fork and the foundation for the OpenSwarm terminal UI; repo work succeeds when the CLI stays user-friendly, reliable, maintainable, useful for OpenSwarm, and aligned with upstream OpenCode where possible.
 - When project context has been lost, condensed, or is unclear, rebuild it from current user instructions, this file, `FORK_CHANGELOG.md`, `USER_FLOWS.md`, and relevant source or docs before planning, delegation, policy work, deep analysis, implementation, or release decisions.
 - If relevant context is still present and has not been reduced to a stale summary, agents may use it without rereading every source.
 - Keep private ledger IDs, private local paths, internal task IDs, and internal review artifacts out of public repo policy, pull requests, issues, comments, release notes, docs, and other public artifacts.
@@ -67,6 +68,8 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
   - Keep all required template sections, check at least one type box, write real verification, and check checklist items only when true.
   - After creating or editing a PR, read live bot comments, labels, and checks; fix compliance comments within the 2-hour window or escalate before it can close.
   - Do not call a PR ready or mergeable while any compliance comment, needed label, or unresolved repo-gate issue remains.
+- Local-only repo state is not a finished deliverable. If code, docs, release-prep, or build-impact work matters to this repo, hand off a GitHub pull request, branch, commit, or compare URL after the allowed push, or stop on the exact approval or blocker that prevents that public artifact.
+- Repo policy changes must not use pull requests unless the user explicitly asks for that exact pull request. Push the allowed policy branch and hand off a GitHub compare link instead.
 - Build-impact changes must go through a pull request before they reach the fork default branch. Build-impact includes runtime code, packaging, release scripts, generated binaries, dependency manifests or lockfiles, CI/build workflows, and tests or harnesses that gate shipped behavior. Direct default-branch commits for build-impact changes are forbidden unless the user explicitly approves an emergency exception for that exact change.
 - Pull-request-specific work includes comment review, thread replies, issue-link checks, pull-request body edits, outside-signal polling, and other GitHub-side mutations. Keep those checks tied to the live pull request, current head SHA, and repo gates.
 - Before requesting merge approval, verify the final diff, source/base/head SHAs, required checks, unresolved threads, and official review findings. The latest head is merge-ready only with a clean current-head local Codex review, green required checks, and zero unresolved threads.
@@ -77,6 +80,7 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 ## Completion Artifacts And QA
 
 - Work is not done until the user has the real thing to run: a binary, package, script, or direct runnable artifact built from the exact code under test.
+- For binary or build QA, source edits and local commits are not enough; build the exact artifact and hand off its path or URL before asking for QA.
 - Final handoff must include the exact CLI command the user should run. If the artifact is a local file, use that exact path in the command.
 - Final handoff must include a clear QA script with step-by-step checks, expected results, and what failure looks like.
 - Do not replace the artifact, command, or QA script with hashes, version text, vague smoke proof, or a summary.
@@ -98,11 +102,12 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 
 ## Release Gate
 
-- For any npm-published package in this repo, follow this four-step release flow and never skip step 3:
+- For any npm-published package in this repo, follow this release flow and never skip the user-test gate:
   1. Build the fresh local change.
-  2. Install that local build globally so the user's normal command points to it.
-  3. The user tests that local build by hand and gives explicit approval.
-  4. Only then tag the release, create the GitHub Release, and publish to npm.
+  2. Prepare a local QA artifact using the least invasive path that proves the intended user flow. Prefer direct binary paths, local tarballs, or isolated temporary installs.
+  3. Do not mutate the user's global command, shell PATH, package-manager global install, shims, or caches unless the user explicitly approves that exact mutation.
+  4. The user tests that local build by hand and gives explicit approval.
+  5. Only then tag the release, create the GitHub Release, and publish to npm.
 - Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts changed.
 - Before release approval or any release safety claim, prove the exact release commit against the repo's release checks, TUI flow checks when relevant, installed-build proof, and human QA gate.
 - No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit against the fork default branch; if any review finding remains, stop and surface it to the user.
