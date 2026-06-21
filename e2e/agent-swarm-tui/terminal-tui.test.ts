@@ -562,21 +562,28 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
 
     await currentTui.waitForText(alternateOpenAITestModelLabel, tuiReadyTimeoutMs)
-    currentTui.write("run through agency despite visible openai model state\r")
+    currentTui.write("fresh sidebar hold despite visible openai model state\r")
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "held agency request with visible openai model state",
+      tuiInteractionTimeoutMs,
+    )
+    const activeRequest = currentServer.requests[0]
+    expect(activeRequest?.releaseStream).toBeDefined()
+    expect(activeRequest?.streamClosed).toBeDefined()
+    const fresh = await currentTui.waitForText("0 tokens", tuiInteractionTimeoutMs)
+    expect(fresh).toContain("Context")
+    expect(fresh).not.toContain("% used")
+    activeRequest!.releaseStream!()
+    await activeRequest!.streamClosed
     await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
     const screen = await currentTui.waitForText("Run · GPT-5.2", tuiInteractionTimeoutMs)
     expect(screen).toContain("Swarm")
     expect(screen).toContain("TuiDemoAgency")
     expect(screen).toContain("1 main / 1 sub")
     expect(screen).toContain("Active: UserSupportAgent")
-    await currentTui.waitFor(
-      () => currentServer!.requests.length === 1,
-      "agency request with visible openai model state",
-      tuiInteractionTimeoutMs,
-    )
-
     const body = currentServer.requests[0]?.body
-    expect(body?.message).toContain("run through agency despite visible openai model state")
+    expect(body?.message).toContain("fresh sidebar hold despite visible openai model state")
     expect(body).toMatchObject({
       recipient_agent: "UserSupportAgent",
     })

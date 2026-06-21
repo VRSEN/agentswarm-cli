@@ -478,8 +478,32 @@ const tuiDemoAgencyFixture: AgencyFixture = {
       },
     ],
   },
-  stream(body, requestCount) {
+  stream(body, requestCount, streamReleased, closeStream) {
     const message = typeof body.message === "string" ? body.message.toLowerCase() : ""
+    if (message.includes("fresh sidebar hold")) {
+      return controlledSse(
+        [
+          ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+          [
+            "messages",
+            {
+              new_messages: [
+                {
+                  id: `msg_fresh_sidebar_${requestCount}`,
+                  type: "message",
+                  role: "assistant",
+                  agent: body.recipient_agent || "UserSupportAgent",
+                  content: [{ type: "output_text", text: "TUI demo response complete." }],
+                },
+              ],
+            },
+          ],
+          ["end", {}],
+        ],
+        streamReleased,
+        closeStream,
+      )
+    }
     if (message.includes("nested delegate")) {
       return sse([
         ["meta", { run_id: `run_tui_demo_${requestCount}` }],

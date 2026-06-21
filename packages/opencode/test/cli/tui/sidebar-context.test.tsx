@@ -7,10 +7,22 @@ import { createTuiPluginApi } from "../../fixture/tui-plugin"
 
 type SidebarContent = (ctx: unknown, props: { session_id: string }) => unknown
 
-function mockLocal() {
+type ModelSelection = {
+  providerID: string
+  modelID: string
+}
+
+const agencyModel = { providerID: "agency-swarm", modelID: "default" }
+const openaiModel = { providerID: "openai", modelID: "gpt-5.1" }
+
+function mockLocal(input: { current?: ModelSelection; agentModel?: ModelSelection } = {}) {
+  const current = input.current ?? agencyModel
   spyOn(LocalContext, "useLocal").mockReturnValue({
     model: {
-      current: () => ({ providerID: "agency-swarm", modelID: "default" }),
+      current: () => current,
+    },
+    agent: {
+      current: () => ({ model: input.agentModel }),
     },
   } as unknown as ReturnType<typeof LocalContext.useLocal>)
 }
@@ -39,21 +51,22 @@ function assistant(tokens: AssistantMessage["tokens"]): AssistantMessage {
   } as unknown as AssistantMessage
 }
 
-function provider(context: number): Provider {
+function provider(input: { context: number; model?: ModelSelection; name?: string; modelName?: string }): Provider {
+  const model = input.model ?? agencyModel
   return {
-    id: "agency-swarm",
-    name: "Agency Swarm",
+    id: model.providerID,
+    name: input.name ?? "Agency Swarm",
     source: "config",
     env: [],
     options: {},
     key: "token",
     models: {
-      default: {
-        id: "default",
-        providerID: "agency-swarm",
-        name: "Swarm Default",
+      [model.modelID]: {
+        id: model.modelID,
+        providerID: model.providerID,
+        name: input.modelName ?? "Swarm Default",
         api: {
-          id: "default",
+          id: model.modelID,
           npm: "@ai-sdk/openai-compatible",
           url: "http://127.0.0.1:8000",
         },
@@ -70,7 +83,7 @@ function provider(context: number): Provider {
           },
         },
         limit: {
-          context,
+          context: input.context,
           output: 8_192,
         },
         capabilities: {
@@ -87,11 +100,18 @@ function provider(context: number): Provider {
   }
 }
 
-async function renderContext(input: { context: number; messages?: AssistantMessage[]; cost?: number }) {
+async function renderContext(input: {
+  context?: number
+  providers?: Provider[]
+  messages?: AssistantMessage[]
+  cost?: number
+  configModel?: string
+}) {
   let render: SidebarContent | undefined
   const api = createTuiPluginApi({
     state: {
-      provider: [provider(input.context)],
+      config: input.configModel ? ({ model: input.configModel } as never) : undefined,
+      provider: input.providers ?? [provider({ context: input.context ?? 3_000 })],
       session: {
         get: () => ({ cost: input.cost ?? 0.42 }) as never,
         messages: () =>
@@ -146,14 +166,36 @@ describe("sidebar context plugin", () => {
     mock.restore()
   })
 
-  test("shows zero percent for fresh sessions without assistant usage", async () => {
-    mockLocal()
-    const frame = await renderContext({ context: 3_000, messages: [], cost: 0 })
+  test("shows zero percent for fresh non-Run-mode sessions without assistant usage", async () => {
+    mockLocal({ current: openaiModel })
+    const frame = await renderContext({
+      providers: [provider({ context: 3_000, model: openaiModel, name: "OpenAI", modelName: "GPT-5.1" })],
+      messages: [],
+      cost: 0,
+    })
 
     expect(frame).toContain("0 tokens")
     expect(frame).toContain("0% used")
     expect(frame).toContain("$0.00 spent")
     expect(frame).not.toContain("Usage percent unavailable")
+  })
+
+  test("hides percent for fresh Run-mode sessions with visible OpenAI model state", async () => {
+    mockLocal({ current: openaiModel, agentModel: agencyModel })
+    const frame = await renderContext({
+      configModel: "agency-swarm/default",
+      providers: [
+        provider({ context: 128_000, model: openaiModel, name: "OpenAI", modelName: "GPT-5.1" }),
+        provider({ context: Number.MAX_SAFE_INTEGER, model: agencyModel }),
+      ],
+      messages: [],
+      cost: 0,
+    })
+
+    expect(frame).toContain("0 tokens")
+    expect(frame).toContain("$0.00 spent")
+    expect(frame).not.toContain("Usage percent unavailable")
+    expect(frame).not.toContain("% used")
   })
 
   test("hides percent for fresh sessions with placeholder Agency Swarm context limits", async () => {

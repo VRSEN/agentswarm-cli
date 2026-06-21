@@ -3,6 +3,7 @@ import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo } from "solid-js"
 import { useLocal } from "../../context/local"
+import { isAgencySwarmFrameworkMode } from "../../session-error"
 import { contextLimit, formatCostDisplay, tokenTotal } from "../../util/usage-display"
 
 const id = "internal:sidebar-context"
@@ -13,6 +14,13 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const msg = createMemo(() => props.api.state.session.messages(props.session_id))
   const session = createMemo(() => props.api.state.session.get(props.session_id))
   const cost = createMemo(() => formatCostDisplay(session()?.cost ?? 0, { zero: true }))
+  const framework = createMemo(() =>
+    isAgencySwarmFrameworkMode({
+      currentProviderID: local.model.current()?.providerID,
+      configuredModel: props.api.state.config.model,
+      agentModel: local.agent.current()?.model,
+    }),
+  )
   const model = createMemo(() => {
     const current = local.model.current()
     if (!current) return undefined
@@ -22,7 +30,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const state = createMemo(() => {
     const last = msg().findLast((item): item is AssistantMessage => item.role === "assistant" && tokenTotal(item) > 0)
     if (!last) {
-      const limit = contextLimit(model())
+      const limit = framework() ? undefined : contextLimit(model())
       return {
         tokens: 0,
         percent: limit ? 0 : null,
