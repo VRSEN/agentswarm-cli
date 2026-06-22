@@ -367,7 +367,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentTui.write("/agents\r")
     const screen = await currentTui.waitForText("Live QA Agency")
 
-    expect(screen).toContain("Swarm: Live QA Agency (1 main / 1 sub)")
+    expect(screen).toContain("Swarm: Live QA Agency (1 main / 1 other)")
     expect(screen).toContain("Entry Agent")
     expect(screen).toContain("Review Agent")
     expect(screen).not.toContain("local-agency")
@@ -425,7 +425,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     const screen = await currentTui.waitForText("TuiDemoAgency")
 
     expect(screen).toContain("Select swarm")
-    expect(screen).toContain("Swarm: TuiDemoAgency (1 main / 1 sub)")
+    expect(screen).toContain("Swarm: TuiDemoAgency (1 main / 1 other)")
     expect(screen).toContain("UserSupportAgent")
     expect(screen).toContain("MathAgent")
     expect(screen.toLowerCase()).not.toContain("recipient")
@@ -580,7 +580,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     const screen = await currentTui.waitForText("Run · GPT-5.2", tuiInteractionTimeoutMs)
     expect(screen).toContain("Swarm")
     expect(screen).toContain("TuiDemoAgency")
-    expect(screen).toContain("1 main / 1 sub")
+    expect(screen).toContain("1 main / 1 other")
     expect(screen).toContain("Active: UserSupportAgent")
     const body = currentServer.requests[0]?.body
     expect(body?.message).toContain("fresh sidebar hold despite visible openai model state")
