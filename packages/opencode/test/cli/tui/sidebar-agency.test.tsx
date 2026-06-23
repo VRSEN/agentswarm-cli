@@ -222,9 +222,12 @@ describe("sidebar agency plugin", () => {
   })
 
   test("formats main and subagent counts", () => {
-    expect(formatAgencyCounts(countAgencyAgents([]))).toBe("0 main / 0 other")
-    expect(formatAgencyCounts(countAgencyAgents([main("Lead")]))).toBe("1 main / 0 other")
-    expect(formatAgencyCounts(countAgencyAgents([main("Lead"), sub("Review"), sub("Write")]))).toBe("1 main / 2 other")
+    expect(formatAgencyCounts(countAgencyAgents([]))).toBe("0 main / 0 subagents")
+    expect(formatAgencyCounts(countAgencyAgents([main("Lead")]))).toBe("1 main / 0 subagents")
+    expect(formatAgencyCounts(countAgencyAgents([main("Lead"), sub("Review")]))).toBe("1 main / 1 subagent")
+    expect(formatAgencyCounts(countAgencyAgents([main("Lead"), sub("Review"), sub("Write")]))).toBe(
+      "1 main / 2 subagents",
+    )
   })
 
   test("does not discover or render outside framework mode", async () => {
@@ -245,7 +248,7 @@ describe("sidebar agency plugin", () => {
 
     expect(frame).toContain("Swarm")
     expect(frame).toContain("Live Agency")
-    expect(frame).toContain("1 main / 2 other")
+    expect(frame).toContain("1 main / 2 subagents")
     expect(frame).toContain("Active: Review")
   })
 
