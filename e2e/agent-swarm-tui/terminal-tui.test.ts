@@ -394,6 +394,22 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(screen).not.toContain("Live QA Agency · Swarm models")
   })
 
+  test("model picker current agency default row uses actual model label", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("UserSupportAgent · gpt-5.4-mini", tuiReadyTimeoutMs)
+    currentTui.write("/models\r")
+    const screen = await currentTui.waitForText("gpt-5.4-mini Agency Swarm", tuiInteractionTimeoutMs)
+
+    expect(screen).not.toContain("Swarm Default Agency Swarm")
+  })
+
   test("run-target picker uses Swarm and agent wording against the TUI demo swarm", async () => {
     currentServer = await startTuiDemoAgencyServer()
     currentTui = await startTui({

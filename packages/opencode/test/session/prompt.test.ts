@@ -614,6 +614,34 @@ it.instance(
   { git: true, config: cfg },
 )
 
+it.instance(
+  "defaults agency label recipient from the last agent prompt part",
+  () =>
+    Effect.gen(function* () {
+      const { prompt, chat } = yield* boot({ title: "Agency agent part label recipient" })
+
+      const msg = yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: {
+          providerID: ProviderID.make("agency-swarm"),
+          modelID: ModelID.make("default"),
+        },
+        noReply: true,
+        parts: [
+          { type: "text", text: "route by mention" },
+          { type: "agent", name: "MathAgent" },
+          { type: "agent", name: "support_agent" },
+        ],
+      })
+
+      if (msg.info.role !== "user") throw new Error("expected user message")
+      expect(msg.info.agencyLabelRecipientAgent).toBe("support_agent")
+      expect(msg.info.agencyRecipientAgent).toBeUndefined()
+    }),
+  { git: true, config: cfg },
+)
+
 // Loop semantics
 
 it.instance(

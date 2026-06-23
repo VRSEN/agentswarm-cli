@@ -1145,6 +1145,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)))
           : undefined
       const variant = input.variant ?? (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined)
+      const labelAgent = input.agencyLabelRecipientAgent ?? input.parts.findLast((part) => part.type === "agent")?.name
 
       const info: MessageV2.User = {
         id: input.messageID ?? MessageID.ascending(),
@@ -1162,7 +1163,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         format: input.format,
         ...(input.agencyRecipientAgent ? { agencyRecipientAgent: input.agencyRecipientAgent } : {}),
         ...(input.agencyLabelAgency ? { agencyLabelAgency: input.agencyLabelAgency } : {}),
-        ...(input.agencyLabelRecipientAgent ? { agencyLabelRecipientAgent: input.agencyLabelRecipientAgent } : {}),
+        ...(labelAgent ? { agencyLabelRecipientAgent: labelAgent } : {}),
       }
 
       if (current?.agent !== info.agent) {
