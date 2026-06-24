@@ -652,7 +652,7 @@ export namespace SessionAgencySwarm {
         cachedInputTokens: 0,
         cacheWriteInputTokens: 0,
       }
-      const cost = finalUsage.cost ?? 0
+      const cost = finalUsage.cost
 
       yield {
         type: "finish-step",
@@ -667,7 +667,7 @@ export namespace SessionAgencySwarm {
         providerMetadata: {
           agency_swarm: {
             cacheWriteInputTokens: finalUsage.cacheWriteInputTokens,
-            totalCost: cost,
+            ...(cost === undefined ? {} : { totalCost: cost }),
           },
         },
       }

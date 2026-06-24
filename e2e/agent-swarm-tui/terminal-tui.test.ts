@@ -367,6 +367,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentTui.write("/agents\r")
     const screen = await currentTui.waitForText("Live QA Agency")
 
+    expect(screen).toContain("Swarm: Live QA Agency")
     expect(screen).toContain("Entry Agent")
     expect(screen).toContain("Review Agent")
     expect(screen).not.toContain("local-agency")
@@ -552,6 +553,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       agency: "tui-demo-agency",
       recipientAgent: "UserSupportAgent",
       args: ["--model", alternateOpenAITestModel],
+      cols: 150,
       env: {
         AGENTSWARM_RUN_PROJECT: runProject,
         XDG_STATE_HOME: stateHome,
@@ -560,17 +562,28 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
 
     await currentTui.waitForText(alternateOpenAITestModelLabel, tuiReadyTimeoutMs)
-    currentTui.write("run through agency despite visible openai model state\r")
-    await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
-    const screen = await currentTui.waitForText("Run · GPT-5.2", tuiInteractionTimeoutMs)
+    currentTui.write("fresh sidebar hold despite visible openai model state\r")
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
-      "agency request with visible openai model state",
+      "held agency request with visible openai model state",
       tuiInteractionTimeoutMs,
     )
-
+    const activeRequest = currentServer.requests[0]
+    expect(activeRequest?.releaseStream).toBeDefined()
+    expect(activeRequest?.streamClosed).toBeDefined()
+    const fresh = await currentTui.waitForText("0 tokens", tuiInteractionTimeoutMs)
+    expect(fresh).toContain("Context")
+    expect(fresh).not.toContain("% used")
+    activeRequest!.releaseStream!()
+    await activeRequest!.streamClosed
+    await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
+    const screen = await currentTui.waitForText("Run · GPT-5.2", tuiInteractionTimeoutMs)
+    expect(screen).toContain("Swarm")
+    expect(screen).toContain("TuiDemoAgency")
+    expect(screen).toContain("1 main / 1 subagent")
+    expect(screen).toContain("Active: UserSupportAgent")
     const body = currentServer.requests[0]?.body
-    expect(body?.message).toContain("run through agency despite visible openai model state")
+    expect(body?.message).toContain("fresh sidebar hold despite visible openai model state")
     expect(body).toMatchObject({
       recipient_agent: "UserSupportAgent",
     })
@@ -583,6 +596,31 @@ describe("Agent Swarm terminal TUI e2e", () => {
       mode: "local-project",
       directory: runProject,
     })
+  })
+
+  test("run-mode prompt footer does not show false zero percent for placeholder context", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+      cols: 150,
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    await waitForConfiguredDemoRecipient(currentTui)
+    currentTui.write("usage footer proof\r")
+    await currentTui.waitForText("Usage footer response complete.", tuiInteractionTimeoutMs)
+    const screen = await currentTui.waitForText("1.5K · $0.42", tuiInteractionTimeoutMs)
+
+    expect(screen).toContain("1.5K · $0.42")
+    expect(screen).toContain("Context")
+    expect(screen).toContain("1,500 tokens")
+    expect(screen).toContain("$0.42 spent")
+    expect(screen).not.toContain("Usage percent unavailable")
+    expect(screen).not.toContain("% used")
+    expect(screen).not.toContain("1.5K (0%)")
   })
 
   test("/connect opens the Agency Swarm server dialog with visible OpenAI model state", async () => {
@@ -831,6 +869,36 @@ describe("Agent Swarm terminal TUI e2e", () => {
         (item: any) => item?.type === "message" && item?.role === "assistant" && !item?.content,
       ),
     ).toBeFalse()
+  })
+
+  test("default single-swarm transfer_to handoff shows target agent as active in sidebar", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      cols: 150,
+      config: {
+        provider: {
+          "agency-swarm": {
+            options: {
+              agency: undefined,
+              recipientAgent: undefined,
+              recipientAgentSelectedAt: undefined,
+            },
+          },
+        },
+      },
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    currentTui.write("please handoff this calculation\r")
+    await currentTui.waitForText("Math agent now has control.", tuiInteractionTimeoutMs)
+    const screen = await currentTui.waitForText("Active: MathAgent", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(() => currentServer!.requests.length === 1, "default swarm handoff request")
+
+    const body = currentServer.requests[0]?.body
+    expect(body?.message).toContain("please handoff this calculation")
+    expect(body).not.toHaveProperty("recipient_agent")
+    expect(screen).toContain("TuiDemoAgency")
   })
 
   test("top-level handoff wins over later nested handoff-like metadata", async () => {

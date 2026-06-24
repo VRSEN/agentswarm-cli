@@ -212,6 +212,8 @@ export async function startTui(input: {
   args?: string[]
   cwd?: string
   env?: Record<string, string | undefined>
+  cols?: number
+  rows?: number
   baseURL?: string
   agency?: string
   recipientAgent?: string
@@ -225,7 +227,9 @@ export async function startTui(input: {
   await mkdir(path.join(root, "data"), { recursive: true })
   await mkdir(path.join(root, "managed"), { recursive: true })
 
-  const screen = new TerminalScreen(100, 30)
+  const cols = input.cols ?? 100
+  const rows = input.rows ?? 30
+  const screen = new TerminalScreen(cols, rows)
   let raw = ""
   let exitCode: number | undefined
   const configContent = input.baseURL ? JSON.stringify(buildTuiConfig(input)) : undefined
@@ -256,7 +260,7 @@ export async function startTui(input: {
     ...(configContent && input.configSource !== "file" ? { OPENCODE_CONFIG_CONTENT: configContent } : {}),
     ...(input.env ?? {}),
   })
-  let proc = spawnTuiProcess({ args, cwd: input.cwd, env })
+  let proc = spawnTuiProcess({ args, cwd: input.cwd, env, cols, rows })
 
   let dataReceived = false
   let activeProc = proc
@@ -286,7 +290,7 @@ export async function startTui(input: {
       onRetry: async () => {
         await closeProcess(proc)
         await Bun.sleep(initialOutputRetryDelayMs)
-        proc = spawnTuiProcess({ args, cwd: input.cwd, env })
+        proc = spawnTuiProcess({ args, cwd: input.cwd, env, cols, rows })
         dataReceived = false
         exitCode = undefined
         attachProcess(proc)
@@ -343,11 +347,17 @@ export async function startTui(input: {
   }
 }
 
-function spawnTuiProcess(input: { args: string[]; cwd?: string; env: Record<string, string | undefined> }) {
+function spawnTuiProcess(input: {
+  args: string[]
+  cwd?: string
+  env: Record<string, string | undefined>
+  cols: number
+  rows: number
+}) {
   return spawn(process.execPath, ["--conditions=browser", "./src/index.ts", ...input.args], {
     cwd: input.cwd ?? packageRoot,
-    cols: 100,
-    rows: 30,
+    cols: input.cols,
+    rows: input.rows,
     name: "xterm-256color",
     env: cleanEnv(input.env),
   })
@@ -468,8 +478,32 @@ const tuiDemoAgencyFixture: AgencyFixture = {
       },
     ],
   },
-  stream(body, requestCount) {
+  stream(body, requestCount, streamReleased, closeStream) {
     const message = typeof body.message === "string" ? body.message.toLowerCase() : ""
+    if (message.includes("fresh sidebar hold")) {
+      return controlledSse(
+        [
+          ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+          [
+            "messages",
+            {
+              new_messages: [
+                {
+                  id: `msg_fresh_sidebar_${requestCount}`,
+                  type: "message",
+                  role: "assistant",
+                  agent: body.recipient_agent || "UserSupportAgent",
+                  content: [{ type: "output_text", text: "TUI demo response complete." }],
+                },
+              ],
+            },
+          ],
+          ["end", {}],
+        ],
+        streamReleased,
+        closeStream,
+      )
+    }
     if (message.includes("nested delegate")) {
       return sse([
         ["meta", { run_id: `run_tui_demo_${requestCount}` }],
@@ -765,6 +799,33 @@ const tuiDemoAgencyFixture: AgencyFixture = {
                 content: [{ type: "output_text", text: "Math agent now has control." }],
               },
             ],
+          },
+        ],
+        ["end", {}],
+      ])
+    }
+
+    if (message.includes("usage footer proof")) {
+      return sse([
+        ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+        [
+          "messages",
+          {
+            new_messages: [
+              {
+                id: `msg_usage_${requestCount}`,
+                type: "message",
+                role: "assistant",
+                agent: body.recipient_agent || "UserSupportAgent",
+                content: [{ type: "output_text", text: "Usage footer response complete." }],
+              },
+            ],
+            usage: {
+              input_tokens: 1_000,
+              output_tokens: 500,
+              total_tokens: 1_500,
+              total_cost: 0.42,
+            },
           },
         ],
         ["end", {}],

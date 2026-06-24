@@ -265,8 +265,10 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 
 - **Run-target labels use live agency names**
   - Intent: show the names users know from Agency Swarm instead of stale or generic labels.
-  - Behavior: agent pickers and run-target labels reflect current live agency names.
-  - Implementation: `resolveAgencyTargetSelection` in `packages/opencode/src/cli/cmd/tui/util/agency-target.ts` and `DialogAgent` in `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`.
+  - Behavior: agent pickers, run-target labels, and the sidebar reflect current live agency names.
+  - Behavior: Run mode shows the selected swarm and metadata-derived main and subagent counts in the sidebar.
+  - Behavior: Run mode usage surfaces Agency Swarm FastAPI token and cost totals, and hides context percentages when the visible model has only a placeholder context limit.
+  - Implementation: `resolveAgencyTargetSelection` in `packages/opencode/src/cli/cmd/tui/util/agency-target.ts`, `formatAgencyCounts` in `packages/opencode/src/cli/cmd/tui/util/agency-counts.ts`, `formatUsageDisplay` in `packages/opencode/src/cli/cmd/tui/util/usage-display.ts`, `getUsage` in `packages/opencode/src/session/session.ts`, `DialogAgent` in `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `SidebarAgency` in `packages/opencode/src/cli/cmd/tui/feature-plugins/sidebar/agency.tsx`, and `ContextSidebar` in `packages/opencode/src/cli/cmd/tui/feature-plugins/sidebar/context.tsx`.
   - Added by: `a798a402`
 
 - **Agent Swarm theme stays on the dark palette**

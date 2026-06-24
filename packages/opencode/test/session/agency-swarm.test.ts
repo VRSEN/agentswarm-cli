@@ -3569,6 +3569,7 @@ describe("session.agency-swarm", () => {
           usage: {
             input_tokens: 2,
             output_tokens: 3,
+            total_cost: 0.42,
             output_tokens_details: { reasoning_tokens: 1 },
             input_tokens_details: { cached_tokens: 1 },
           },
@@ -3609,8 +3610,81 @@ describe("session.agency-swarm", () => {
       reasoningTokens: 1,
       cachedInputTokens: 1,
     })
+    expect(events.find((event) => event.type === "finish-step")?.providerMetadata).toMatchObject({
+      agency_swarm: {
+        totalCost: 0.42,
+      },
+    })
     expect(runs).toEqual(["run_1", "run_1"])
     expect(appended[0]).toEqual([{ type: "function_call_output", call_id: "call_1", output: "done" }])
+  })
+
+  test("stream omits Agency Swarm total cost metadata when usage has no cost", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield { type: "meta", runID: "run_1" }
+      yield {
+        type: "messages",
+        payload: {
+          run_id: "run_1",
+          usage: {
+            input_tokens: 2,
+            output_tokens: 3,
+          },
+          new_messages: [],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    const metadata = events.find((event) => event.type === "finish-step")?.providerMetadata?.agency_swarm
+    expect(metadata).toMatchObject({
+      cacheWriteInputTokens: 0,
+    })
+    expect(Object.prototype.hasOwnProperty.call(metadata, "totalCost")).toBe(false)
+  })
+
+  test("stream preserves explicit zero Agency Swarm total cost metadata", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield { type: "meta", runID: "run_1" }
+      yield {
+        type: "messages",
+        payload: {
+          run_id: "run_1",
+          usage: {
+            input_tokens: 2,
+            output_tokens: 3,
+            total_cost: 0,
+          },
+          new_messages: [],
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    expect(events.find((event) => event.type === "finish-step")?.providerMetadata).toMatchObject({
+      agency_swarm: {
+        cacheWriteInputTokens: 0,
+        totalCost: 0,
+      },
+    })
   })
 
   test("stream maps non-function responses tool calls from response.*_call.* events", async () => {
