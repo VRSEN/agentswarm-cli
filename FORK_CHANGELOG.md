@@ -252,6 +252,11 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Implementation: model selection logic in `packages/opencode/src/cli/cmd/tui/context/local.tsx`.
   - Added by: `PR #51`
 
+- **Actual model labels for Agent Swarm default routing**
+  - Intent: keep Run mode labels from presenting the internal `agency-swarm/default` route as the user's actual model when metadata exposes the real model.
+  - Behavior: footer/status labels, completed assistant rows, and transcript headers show an agent model or concise swarm-model aggregate while preserving the internal routing identity.
+  - Implementation: Agent Swarm metadata parsing in `packages/opencode/src/agency-swarm/adapter.ts`, label resolution in `packages/opencode/src/cli/cmd/tui/util/model-label.ts`, and TUI/transcript display call sites.
+
 - **Run mode hides native OpenCode menus and limits model selection**
   - Intent: keep Run mode on the connected Agency Swarm surface while preserving native OpenCode menus for Builder and Plan when those modes are available again.
   - Behavior: Run mode hides native `/editor`, `/variants`, `/init`, and `/review`; model-selection and provider-auth surfaces remain as support flows for LLM choice and credentials, and are limited to intended Agent Swarm / Agency Swarm providers.

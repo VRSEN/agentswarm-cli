@@ -47,6 +47,46 @@ export type AgencyTargetSelection = {
   label: string
 }
 
+export type AgencyRecipientSelectionState = {
+  ready: boolean
+  selectedAt?: number
+}
+
+export function updateAgencyRecipientSelectionState(input: {
+  state: AgencyRecipientSelectionState
+  syncReady: boolean
+  selectedAt?: number
+}) {
+  if (!input.syncReady) {
+    return {
+      state: input.state,
+    }
+  }
+
+  if (!input.state.ready) {
+    return {
+      state: {
+        ready: true,
+        selectedAt: input.selectedAt,
+      },
+    }
+  }
+
+  if (input.selectedAt === undefined || input.selectedAt === input.state.selectedAt) {
+    return {
+      state: input.state,
+    }
+  }
+
+  return {
+    state: {
+      ready: true,
+      selectedAt: input.selectedAt,
+    },
+    explicitSelectedAt: input.selectedAt,
+  }
+}
+
 export function readAgencyProviderOptions(input: {
   configuredProvider?: { options?: Record<string, unknown> }
   connectedProvider?: { key?: string }

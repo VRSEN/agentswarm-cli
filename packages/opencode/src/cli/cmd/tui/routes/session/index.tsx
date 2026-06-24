@@ -3,6 +3,7 @@ import {
   createContext,
   createEffect,
   createMemo,
+  createResource,
   createSignal,
   For,
   Match,
@@ -90,8 +91,10 @@ import { useCommandPalette } from "../../context/command-palette"
 import { useBindings, useCommandShortcut } from "../../keymap"
 import { PathFormatterProvider, usePathFormatter } from "../../context/path-format"
 import { AgencyProduct } from "@/agency-swarm/product"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { describeStreamAuthError, isAgencySwarmFrameworkMode } from "../../session-error"
-import { displayRunOnlyModeLabel } from "../../util/agency-target"
+import { displayRunOnlyModeLabel, readAgencyProviderOptions } from "../../util/agency-target"
+import { resolveAssistantModelLabel, type ModelLabelScope } from "../../util/model-label"
 
 addDefaultParsers(parsers.parsers)
 
@@ -100,6 +103,21 @@ const GO_UPSELL_FREE_TIER_DONT_SHOW = "go_upsell_dont_show"
 const GO_UPSELL_ACCOUNT_RATE_LIMIT_LAST_SEEN_AT = "go_upsell_account_rate_limit_last_seen_at"
 const GO_UPSELL_ACCOUNT_RATE_LIMIT_DONT_SHOW = "go_upsell_account_rate_limit_dont_show"
 const GO_UPSELL_WINDOW = 86_400_000 // 24 hrs
+
+type AgencyLabelUserMessage = UserMessage & {
+  agencyLabelAgency?: string
+  agencyLabelRecipientAgent?: string
+}
+
+function readAgencyLabelAgency(message: UserMessage | undefined) {
+  if (!message) return undefined
+  return (message as AgencyLabelUserMessage).agencyLabelAgency
+}
+
+function readAgencyLabelRecipient(message: UserMessage | undefined) {
+  if (!message) return undefined
+  return (message as AgencyLabelUserMessage).agencyLabelRecipientAgent ?? message.agencyRecipientAgent
+}
 const GO_UPSELL_PROVIDERS = new Set(["opencode", "opencode-go"])
 
 function goUpsellKeys(action: SessionRetry.Retryable["action"]) {
@@ -165,6 +183,16 @@ const context = createContext<{
   showGenericToolOutput: () => boolean
   diffWrapMode: () => "word" | "none"
   frameworkMode: () => boolean
+  modelLabel: (input: {
+    providerID: string
+    modelID: string
+    agencyID?: string
+    agentID?: string
+    recipientAgent?: string
+    submittedModel?: { providerID: string; modelID: string }
+    scope?: ModelLabelScope
+    turnStartedAt?: number
+  }) => string
   providers: () => ReadonlyMap<string, Provider>
   sync: ReturnType<typeof useSync>
   tui: ReturnType<typeof useTuiConfig>
@@ -244,6 +272,69 @@ export function Session() {
       agentModel: local.agent.current()?.model,
     }),
   )
+  const agencyProviderOptions = createMemo(() =>
+    readAgencyProviderOptions({
+      configuredProvider: sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID],
+      connectedProvider: sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID),
+    }),
+  )
+  const agencyDiscoveryInput = createMemo(() => {
+    if (!frameworkMode()) return undefined
+    const options = agencyProviderOptions()
+    return {
+      baseURL: options.baseURL,
+      token: options.token,
+      timeoutMs: options.discoveryTimeoutMs,
+    }
+  })
+  const [agencyDiscovery] = createResource(
+    agencyDiscoveryInput,
+    async (input): Promise<AgencySwarmAdapter.AgencyDescriptor[]> => {
+      try {
+        const result = await AgencySwarmAdapter.discover({
+          baseURL: input.baseURL,
+          token: input.token,
+          timeoutMs: input.timeoutMs,
+        })
+        return result.agencies
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw error
+        return []
+      }
+    },
+    {
+      initialValue: [],
+    },
+  )
+  const modelLabel = (input: {
+    providerID: string
+    modelID: string
+    agencyID?: string
+    agentID?: string
+    recipientAgent?: string
+    submittedModel?: { providerID: string; modelID: string }
+    scope?: ModelLabelScope
+    turnStartedAt?: number
+  }) => {
+    const options = agencyProviderOptions()
+    const configuredTargetChangedAfterTurn =
+      !!input.turnStartedAt &&
+      !!options.recipientAgentSelectedAt &&
+      options.recipientAgentSelectedAt > input.turnStartedAt
+    return resolveAssistantModelLabel({
+      providers: providers(),
+      agencies: agencyDiscovery(),
+      agencyID: input.agencyID ?? (configuredTargetChangedAfterTurn ? undefined : options.agency),
+      allowSingleAgency: !input.agencyID && !configuredTargetChangedAfterTurn && !options.agency,
+      agentID: input.agentID,
+      providerID: input.providerID,
+      modelID: input.modelID,
+      submittedModel: input.submittedModel,
+      recipientAgent: input.recipientAgent ?? (configuredTargetChangedAfterTurn ? undefined : options.recipientAgent),
+      frameworkMode: frameworkMode(),
+      scope: input.scope,
+    })
+  }
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
   const toast = useToast()
@@ -921,6 +1012,10 @@ export function Session() {
               toolDetails: showDetails(),
               assistantMetadata: showAssistantMetadata(),
               providers: sync.data.provider,
+              agencies: agencyDiscovery(),
+              agencyID: agencyProviderOptions().agency,
+              recipientAgent: agencyProviderOptions().recipientAgent,
+              recipientAgentSelectedAt: agencyProviderOptions().recipientAgentSelectedAt,
             },
           )
           await Clipboard.copy(transcript)
@@ -965,6 +1060,10 @@ export function Session() {
               toolDetails: options.toolDetails,
               assistantMetadata: options.assistantMetadata,
               providers: sync.data.provider,
+              agencies: agencyDiscovery(),
+              agencyID: agencyProviderOptions().agency,
+              recipientAgent: agencyProviderOptions().recipientAgent,
+              recipientAgentSelectedAt: agencyProviderOptions().recipientAgentSelectedAt,
             },
           )
 
@@ -1104,6 +1203,7 @@ export function Session() {
           showGenericToolOutput,
           diffWrapMode,
           frameworkMode,
+          modelLabel,
           providers,
           sync,
           tui: tuiConfig,
@@ -1255,6 +1355,7 @@ export function Session() {
                         toBottom()
                       }}
                       sessionID={route.sessionID}
+                      agencyDiscovery={agencyDiscovery}
                       right={<TuiPluginRuntime.Slot name="session_prompt_right" session_id={route.sessionID} />}
                     />
                   </TuiPluginRuntime.Slot>
@@ -1415,7 +1516,22 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
     const msg = props.message.error?.data.message
     return typeof msg === "string" ? describeStreamAuthError(msg) : null
   })
-  const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
+  const parent = createMemo(() =>
+    messages().find(
+      (message): message is UserMessage => message.role === "user" && message.id === props.message.parentID,
+    ),
+  )
+  const model = createMemo(() =>
+    ctx.modelLabel({
+      providerID: props.message.providerID,
+      modelID: props.message.modelID,
+      agencyID: readAgencyLabelAgency(parent()),
+      agentID: props.message.agent,
+      recipientAgent: readAgencyLabelRecipient(parent()),
+      submittedModel: parent()?.model,
+      turnStartedAt: parent()?.time.created,
+    }),
+  )
 
   const final = createMemo(() => {
     return props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish)

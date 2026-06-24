@@ -66,6 +66,65 @@ const providers: Provider[] = [
   },
 ]
 
+const agencyProviders: Provider[] = [
+  {
+    id: "agency-swarm",
+    name: "Agency Swarm",
+    source: "config",
+    env: [],
+    options: {},
+    models: {
+      default: {
+        id: "default",
+        providerID: "agency-swarm",
+        api: {
+          id: "default",
+          url: "https://example.com/agency-swarm/default",
+          npm: "@ai-sdk/openai",
+        },
+        name: "Swarm Default",
+        capabilities: {
+          temperature: false,
+          reasoning: false,
+          attachment: false,
+          toolcall: false,
+          input: {
+            text: true,
+            audio: false,
+            image: false,
+            video: false,
+            pdf: false,
+          },
+          output: {
+            text: true,
+            audio: false,
+            image: false,
+            video: false,
+            pdf: false,
+          },
+          interleaved: false,
+        },
+        cost: {
+          input: 0,
+          output: 0,
+          cache: {
+            read: 0,
+            write: 0,
+          },
+        },
+        limit: {
+          context: 128_000,
+          output: 8_192,
+        },
+        status: "active",
+        options: {},
+        headers: {},
+        release_date: "2026-01-01",
+      },
+    },
+  },
+]
+
 describe("transcript", () => {
   describe("formatAssistantHeader", () => {
     const baseMsg: AssistantMessage = {
@@ -91,6 +150,118 @@ describe("transcript", () => {
     test("uses model display name when available", () => {
       const result = formatAssistantHeader(baseMsg, true, providers)
       expect(result).toBe("## Assistant (Agent Builder · Claude Sonnet 4 · 5.4s)\n\n")
+    })
+
+    test("uses assistant agent model label for agency-swarm default", () => {
+      const msg = {
+        ...baseMsg,
+        agent: "reviewer",
+        providerID: "agency-swarm",
+        modelID: "default",
+      }
+      const result = formatAssistantHeader(msg, true, {
+        providers: agencyProviders,
+        agencyID: "demo",
+        agencies: [
+          {
+            id: "demo",
+            name: "Demo Agency",
+            agents: [
+              {
+                id: "orchestrator",
+                name: "Orchestrator",
+                model: "gpt-5.4-mini",
+                isEntryPoint: true,
+              },
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "claude-sonnet-4-5",
+                isEntryPoint: false,
+              },
+            ],
+            metadata: {},
+          },
+        ],
+      })
+
+      expect(result).toBe("## Assistant (Reviewer · claude-sonnet-4-5 · 5.4s)\n\n")
+      expect(result).not.toContain("Swarm Default")
+    })
+
+    test("uses configured recipient model when assistant row still has internal route agent", () => {
+      const msg = {
+        ...baseMsg,
+        agent: "build",
+        providerID: "agency-swarm",
+        modelID: "default",
+      }
+      const result = formatAssistantHeader(msg, true, {
+        providers: agencyProviders,
+        agencyID: "demo",
+        recipientAgent: "reviewer",
+        agencies: [
+          {
+            id: "demo",
+            name: "Demo Agency",
+            agents: [
+              {
+                id: "orchestrator",
+                name: "Orchestrator",
+                model: "gpt-5.4-mini",
+                isEntryPoint: true,
+              },
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "claude-sonnet-4-5",
+                isEntryPoint: false,
+              },
+            ],
+            metadata: {},
+          },
+        ],
+      })
+
+      expect(result).toBe("## Assistant (Agent Builder · claude-sonnet-4-5 · 5.4s)\n\n")
+      expect(result).not.toContain("Swarm Default")
+      expect(result).not.toContain("Swarm models")
+    })
+
+    test("uses clear agency aggregate when no assistant or selected agent can be scoped", () => {
+      const msg = {
+        ...baseMsg,
+        agent: "build",
+        providerID: "agency-swarm",
+        modelID: "default",
+      }
+      const result = formatAssistantHeader(msg, true, {
+        providers: agencyProviders,
+        agencyID: "demo",
+        agencies: [
+          {
+            id: "demo",
+            name: "Demo Agency",
+            agents: [
+              {
+                id: "orchestrator",
+                name: "Orchestrator",
+                model: "gpt-5.4-mini",
+                isEntryPoint: true,
+              },
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "claude-sonnet-4-5",
+                isEntryPoint: false,
+              },
+            ],
+            metadata: {},
+          },
+        ],
+      })
+
+      expect(result).toBe("## Assistant (Agent Builder · Swarm models: gpt-5.4-mini +1 · 5.4s)\n\n")
     })
 
     test("excludes metadata when disabled", () => {
@@ -352,6 +523,443 @@ describe("transcript", () => {
       expect(result).toContain("## Assistant (Agent Builder · Claude Sonnet 4 · 0.5s)")
       expect(result).toContain("Hi!")
       expect(result).toContain("---")
+    })
+
+    test("keeps completed build-route labels tied to each submitted recipient", () => {
+      const session = {
+        id: "ses_abc123",
+        title: "Test Session",
+        time: { created: 1000000000000, updated: 1000000001000 },
+      }
+      const messages = [
+        {
+          info: {
+            id: "msg_1",
+            sessionID: "ses_abc123",
+            role: "user" as const,
+            agent: "build",
+            model: { providerID: "agency-swarm", modelID: "default" },
+            agencyLabelAgency: "demo",
+            agencyRecipientAgent: "reviewer",
+            time: { created: 1000000000000 },
+          },
+          parts: [{ id: "p1", sessionID: "ses_abc123", messageID: "msg_1", type: "text" as const, text: "Review" }],
+        },
+        {
+          info: {
+            id: "msg_2",
+            sessionID: "ses_abc123",
+            role: "assistant" as const,
+            agent: "build",
+            modelID: "default",
+            providerID: "agency-swarm",
+            mode: "build",
+            parentID: "msg_1",
+            path: { cwd: "/test", root: "/test" },
+            cost: 0.001,
+            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+            time: { created: 1000000000100, completed: 1000000000600 },
+          },
+          parts: [{ id: "p2", sessionID: "ses_abc123", messageID: "msg_2", type: "text" as const, text: "Done" }],
+        },
+      ]
+
+      const result = formatTranscript(session, messages, {
+        thinking: false,
+        toolDetails: false,
+        assistantMetadata: true,
+        providers: agencyProviders,
+        agencyID: "demo",
+        recipientAgent: "orchestrator",
+        recipientAgentSelectedAt: 1000000002000,
+        agencies: [
+          {
+            id: "demo",
+            name: "Demo Agency",
+            agents: [
+              {
+                id: "orchestrator",
+                name: "Orchestrator",
+                model: "gpt-5.4-mini",
+                isEntryPoint: true,
+              },
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "claude-sonnet-4-5",
+                isEntryPoint: false,
+              },
+            ],
+            metadata: {},
+          },
+        ],
+      })
+
+      expect(result).toContain("## Assistant (Agent Builder · claude-sonnet-4-5 · 0.5s)")
+      expect(result).not.toContain("Agent Builder · gpt-5.4-mini")
+    })
+
+    test("uses sole discovered agency when current config omits agency id", () => {
+      const session = {
+        id: "ses_abc123",
+        title: "Test Session",
+        time: { created: 1000000000000, updated: 1000000001000 },
+      }
+      const messages = [
+        {
+          info: {
+            id: "msg_1",
+            sessionID: "ses_abc123",
+            role: "user" as const,
+            agent: "build",
+            model: { providerID: "agency-swarm", modelID: "default" },
+            time: { created: 1000000000000 },
+          },
+          parts: [{ id: "p1", sessionID: "ses_abc123", messageID: "msg_1", type: "text" as const, text: "Review" }],
+        },
+        {
+          info: {
+            id: "msg_2",
+            sessionID: "ses_abc123",
+            role: "assistant" as const,
+            agent: "build",
+            modelID: "default",
+            providerID: "agency-swarm",
+            mode: "build",
+            parentID: "msg_1",
+            path: { cwd: "/test", root: "/test" },
+            cost: 0.001,
+            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+            time: { created: 1000000000100, completed: 1000000000600 },
+          },
+          parts: [{ id: "p2", sessionID: "ses_abc123", messageID: "msg_2", type: "text" as const, text: "Done" }],
+        },
+      ]
+
+      const result = formatTranscript(session, messages, {
+        thinking: false,
+        toolDetails: false,
+        assistantMetadata: true,
+        providers: agencyProviders,
+        recipientAgent: "reviewer",
+        agencies: [
+          {
+            id: "demo",
+            name: "Demo Agency",
+            agents: [
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "claude-sonnet-4-5",
+                isEntryPoint: true,
+              },
+            ],
+            metadata: {},
+          },
+        ],
+      })
+
+      expect(result).toContain("## Assistant (Agent Builder · claude-sonnet-4-5 · 0.5s)")
+      expect(result).not.toContain("Swarm Default")
+    })
+
+    test("uses label-only recipient for completed build-route labels", () => {
+      const session = {
+        id: "ses_abc123",
+        title: "Test Session",
+        time: { created: 1000000000000, updated: 1000000001000 },
+      }
+      const messages = [
+        {
+          info: {
+            id: "msg_1",
+            sessionID: "ses_abc123",
+            role: "user" as const,
+            agent: "build",
+            model: { providerID: "agency-swarm", modelID: "default" },
+            agencyLabelAgency: "demo",
+            agencyLabelRecipientAgent: "reviewer",
+            time: { created: 1000000000000 },
+          },
+          parts: [{ id: "p1", sessionID: "ses_abc123", messageID: "msg_1", type: "text" as const, text: "Review" }],
+        },
+        {
+          info: {
+            id: "msg_2",
+            sessionID: "ses_abc123",
+            role: "assistant" as const,
+            agent: "build",
+            modelID: "default",
+            providerID: "agency-swarm",
+            mode: "build",
+            parentID: "msg_1",
+            path: { cwd: "/test", root: "/test" },
+            cost: 0.001,
+            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+            time: { created: 1000000000100, completed: 1000000000600 },
+          },
+          parts: [{ id: "p2", sessionID: "ses_abc123", messageID: "msg_2", type: "text" as const, text: "Done" }],
+        },
+      ]
+
+      const result = formatTranscript(session, messages, {
+        thinking: false,
+        toolDetails: false,
+        assistantMetadata: true,
+        providers: agencyProviders,
+        agencyID: "demo",
+        recipientAgent: "orchestrator",
+        recipientAgentSelectedAt: 1000000002000,
+        agencies: [
+          {
+            id: "demo",
+            name: "Demo Agency",
+            agents: [
+              {
+                id: "orchestrator",
+                name: "Orchestrator",
+                model: "gpt-5.4-mini",
+                isEntryPoint: true,
+              },
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "claude-sonnet-4-5",
+                isEntryPoint: false,
+              },
+            ],
+            metadata: {},
+          },
+        ],
+      })
+
+      expect(result).toContain("## Assistant (Agent Builder · claude-sonnet-4-5 · 0.5s)")
+      expect(result).not.toContain("Agent Builder · gpt-5.4-mini")
+    })
+
+    test("uses the submitted agency for completed build-route labels after the current agency changes", () => {
+      const session = {
+        id: "ses_abc123",
+        title: "Test Session",
+        time: { created: 1000000000000, updated: 1000000001000 },
+      }
+      const messages = [
+        {
+          info: {
+            id: "msg_1",
+            sessionID: "ses_abc123",
+            role: "user" as const,
+            agent: "build",
+            model: { providerID: "agency-swarm", modelID: "default" },
+            agencyLabelAgency: "submitted",
+            agencyLabelRecipientAgent: "reviewer",
+            time: { created: 1000000000000 },
+          },
+          parts: [{ id: "p1", sessionID: "ses_abc123", messageID: "msg_1", type: "text" as const, text: "Review" }],
+        },
+        {
+          info: {
+            id: "msg_2",
+            sessionID: "ses_abc123",
+            role: "assistant" as const,
+            agent: "build",
+            modelID: "default",
+            providerID: "agency-swarm",
+            mode: "build",
+            parentID: "msg_1",
+            path: { cwd: "/test", root: "/test" },
+            cost: 0.001,
+            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+            time: { created: 1000000000100, completed: 1000000000600 },
+          },
+          parts: [{ id: "p2", sessionID: "ses_abc123", messageID: "msg_2", type: "text" as const, text: "Done" }],
+        },
+      ]
+
+      const result = formatTranscript(session, messages, {
+        thinking: false,
+        toolDetails: false,
+        assistantMetadata: true,
+        providers: agencyProviders,
+        agencyID: "current",
+        recipientAgent: "reviewer",
+        recipientAgentSelectedAt: 1000000002000,
+        agencies: [
+          {
+            id: "submitted",
+            name: "Submitted Agency",
+            agents: [
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "claude-sonnet-4-5",
+                isEntryPoint: true,
+              },
+            ],
+            metadata: {},
+          },
+          {
+            id: "current",
+            name: "Current Agency",
+            agents: [
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "gpt-5.4-mini",
+                isEntryPoint: true,
+              },
+            ],
+            metadata: {},
+          },
+        ],
+      })
+
+      expect(result).toContain("## Assistant (Agent Builder · claude-sonnet-4-5 · 0.5s)")
+      expect(result).not.toContain("Agent Builder · gpt-5.4-mini")
+    })
+
+    test("keeps auto-resolved submitted agency after another agency appears", () => {
+      const session = {
+        id: "ses_abc123",
+        title: "Test Session",
+        time: { created: 1000000000000, updated: 1000000001000 },
+      }
+      const messages = [
+        {
+          info: {
+            id: "msg_1",
+            sessionID: "ses_abc123",
+            role: "user" as const,
+            agent: "build",
+            model: { providerID: "agency-swarm", modelID: "default" },
+            agencyLabelAgency: "submitted",
+            agencyLabelRecipientAgent: "reviewer",
+            time: { created: 1000000000000 },
+          },
+          parts: [{ id: "p1", sessionID: "ses_abc123", messageID: "msg_1", type: "text" as const, text: "Review" }],
+        },
+        {
+          info: {
+            id: "msg_2",
+            sessionID: "ses_abc123",
+            role: "assistant" as const,
+            agent: "build",
+            modelID: "default",
+            providerID: "agency-swarm",
+            mode: "build",
+            parentID: "msg_1",
+            path: { cwd: "/test", root: "/test" },
+            cost: 0.001,
+            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+            time: { created: 1000000000100, completed: 1000000000600 },
+          },
+          parts: [{ id: "p2", sessionID: "ses_abc123", messageID: "msg_2", type: "text" as const, text: "Done" }],
+        },
+      ]
+
+      const result = formatTranscript(session, messages, {
+        thinking: false,
+        toolDetails: false,
+        assistantMetadata: true,
+        providers: agencyProviders,
+        agencies: [
+          {
+            id: "submitted",
+            name: "Submitted Agency",
+            agents: [
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "claude-sonnet-4-5",
+                isEntryPoint: true,
+              },
+            ],
+            metadata: {},
+          },
+          {
+            id: "current",
+            name: "Current Agency",
+            agents: [
+              {
+                id: "reviewer",
+                name: "Reviewer",
+                model: "gpt-5.4-mini",
+                isEntryPoint: true,
+              },
+            ],
+            metadata: {},
+          },
+        ],
+      })
+
+      expect(result).toContain("## Assistant (Agent Builder · claude-sonnet-4-5 · 0.5s)")
+      expect(result).not.toContain("Agent Builder · gpt-5.4-mini")
+      expect(result).not.toContain("Swarm Default")
+    })
+
+    test("uses submitted real model before agency metadata for completed bridge labels", () => {
+      const session = {
+        id: "ses_abc123",
+        title: "Test Session",
+        time: { created: 1000000000000, updated: 1000000001000 },
+      }
+      const messages = [
+        {
+          info: {
+            id: "msg_1",
+            sessionID: "ses_abc123",
+            role: "user" as const,
+            agent: "build",
+            model: { providerID: "anthropic", modelID: "claude-sonnet-4-20250514" },
+            time: { created: 1000000000000 },
+          },
+          parts: [{ id: "p1", sessionID: "ses_abc123", messageID: "msg_1", type: "text" as const, text: "Review" }],
+        },
+        {
+          info: {
+            id: "msg_2",
+            sessionID: "ses_abc123",
+            role: "assistant" as const,
+            agent: "build",
+            modelID: "default",
+            providerID: "agency-swarm",
+            mode: "build",
+            parentID: "msg_1",
+            path: { cwd: "/test", root: "/test" },
+            cost: 0.001,
+            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+            time: { created: 1000000000100, completed: 1000000000600 },
+          },
+          parts: [{ id: "p2", sessionID: "ses_abc123", messageID: "msg_2", type: "text" as const, text: "Done" }],
+        },
+      ]
+
+      const result = formatTranscript(session, messages, {
+        thinking: false,
+        toolDetails: false,
+        assistantMetadata: true,
+        providers: [...agencyProviders, ...providers],
+        agencyID: "demo",
+        agencies: [
+          {
+            id: "demo",
+            name: "Demo Agency",
+            agents: [
+              {
+                id: "orchestrator",
+                name: "Orchestrator",
+                model: "gpt-5.4-mini",
+                isEntryPoint: true,
+              },
+            ],
+            metadata: {},
+          },
+        ],
+      })
+
+      expect(result).toContain("## Assistant (Agent Builder · Claude Sonnet 4 · 0.5s)")
+      expect(result).not.toContain("Agent Builder · gpt-5.4-mini")
+      expect(result).not.toContain("Swarm Default")
     })
 
     test("falls back to raw model id when provider data is missing", () => {

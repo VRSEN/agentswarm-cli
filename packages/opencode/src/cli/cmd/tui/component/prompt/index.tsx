@@ -76,13 +76,16 @@ import {
 import { cancelQueuedRunModeMessages } from "../../util/run-queued-messages"
 import { errorMessage as toErrorMessage } from "@/util/error"
 import {
+  type AgencyRecipientSelectionState,
   displayRunOnlyAgentLabel,
   readAgencyProviderOptions,
   resolveAgencyHandoffRecipientFromParts,
   resolveAgencyHandoffRecipientFromMessages,
   resolveAgencyTargetSelection,
   shouldAdoptAgencyHandoffRecipient,
+  updateAgencyRecipientSelectionState,
 } from "../../util/agency-target"
+import { resolveModelLabel } from "../../util/model-label"
 import { hasAgencyHandoffEvidence } from "@/session/agency-swarm-utils"
 import {
   confirmWorkspaceFileChanges,
@@ -114,6 +117,7 @@ export type PromptProps = {
     normal?: string[]
     shell?: string[]
   }
+  agencyDiscovery?: () => AgencySwarmAdapter.AgencyDescriptor[]
 }
 
 export type PromptRef = {
@@ -260,17 +264,24 @@ export function Prompt(props: PromptProps) {
       connectedProvider: sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID),
     }),
   )
+  // Pre-existing configured recipients stay server-ranked config, not prompt overrides.
+  // A target picked while this prompt is mounted can annotate the submitted turn.
+  let recipientSelectionState: AgencyRecipientSelectionState = {
+    ready: sync.ready,
+    selectedAt: agencyProviderOptions().recipientAgentSelectedAt,
+  }
+  const [explicitRecipientSelectedAt, setExplicitRecipientSelectedAt] = createSignal<number>()
   const frameworkRecipientDiscoveryInput = createMemo(() => {
     if (!frameworkMode()) return undefined
+    if (props.agencyDiscovery) return undefined
     const options = agencyProviderOptions()
-    if (!options.recipientAgent) return undefined
     return {
       baseURL: options.baseURL,
       token: options.token,
       timeoutMs: options.discoveryTimeoutMs,
     }
   })
-  const [frameworkRecipientDiscovery] = createResource(
+  const [localFrameworkRecipientDiscovery] = createResource(
     frameworkRecipientDiscoveryInput,
     async (input): Promise<AgencySwarmAdapter.AgencyDescriptor[]> => {
       try {
@@ -289,6 +300,7 @@ export function Prompt(props: PromptProps) {
       initialValue: [],
     },
   )
+  const frameworkRecipientDiscovery = createMemo(() => props.agencyDiscovery?.() ?? localFrameworkRecipientDiscovery())
   const sessionHandoffRecipient = createMemo(() => {
     if (!props.sessionID) return undefined
     const options = agencyProviderOptions()
@@ -330,10 +342,26 @@ export function Prompt(props: PromptProps) {
       () => props.sessionID,
       () => {
         setHandoffRecipient(undefined)
+        recipientSelectionState = {
+          ready: sync.ready,
+          selectedAt: agencyProviderOptions().recipientAgentSelectedAt,
+        }
+        setExplicitRecipientSelectedAt(undefined)
         assistantMessagesByID.clear()
       },
     ),
   )
+
+  createEffect(() => {
+    const options = agencyProviderOptions()
+    const next = updateAgencyRecipientSelectionState({
+      state: recipientSelectionState,
+      syncReady: sync.ready,
+      selectedAt: options.recipientAgentSelectedAt,
+    })
+    recipientSelectionState = next.state
+    if (next.explicitSelectedAt !== undefined) setExplicitRecipientSelectedAt(next.explicitSelectedAt)
+  })
 
   createEffect(() => {
     const handoff = handoffRecipient()
@@ -525,6 +553,27 @@ export function Prompt(props: PromptProps) {
   const [workspaceCreatingDots, setWorkspaceCreatingDots] = createSignal(3)
   const [warpNotice, setWarpNotice] = createSignal<string>()
   const [cursorVersion, setCursorVersion] = createSignal(0)
+  const currentModelLabel = createMemo(() => {
+    const fallback = local.model.parsed().model
+    const current = local.model.current()
+    if (!current) return fallback
+    const options = agencyProviderOptions()
+    const agentID = effectiveHandoffRecipient()?.agent ?? options.recipientAgent
+    return resolveModelLabel({
+      providers: sync.data.provider,
+      agencies: frameworkRecipientDiscovery(),
+      agencyID: options.agency,
+      allowSingleAgency: !options.agency,
+      agentID,
+      providerID: current.providerID,
+      modelID: current.modelID,
+      fallback,
+      scope: agentID ? "agent" : "agency",
+    })
+  })
+  const currentModelLabelDisplay = createMemo(() =>
+    Locale.truncateMiddle(currentModelLabel(), Math.max(12, Math.min(48, Math.floor(dimensions().width / 3)))),
+  )
   const currentProviderLabel = createMemo(() => {
     const current = local.model.current()
     const provider = local.model.parsed().provider
@@ -1699,12 +1748,38 @@ export function Prompt(props: PromptProps) {
       })
     } else {
       const handoff = effectiveHandoffRecipient()
-      const agencyRecipientAgent =
-        frameworkMode() && handoff?.sessionID === sessionID && !nonTextParts.some((part) => part.type === "agent")
-          ? handoff.agent
+      const mentionedRecipient = nonTextParts.findLast(
+        (part): part is Extract<(typeof nonTextParts)[number], { type: "agent" }> => part.type === "agent",
+      )?.name
+      const hasAgentParts = !!mentionedRecipient
+      const options = agencyProviderOptions()
+      const explicitSelectedAt = explicitRecipientSelectedAt()
+      const explicitRecipient =
+        explicitSelectedAt !== undefined && options.recipientAgentSelectedAt === explicitSelectedAt
+          ? options.recipientAgent
           : undefined
+      const agencyRecipientAgent =
+        frameworkMode() && !hasAgentParts
+          ? handoff?.sessionID === sessionID
+            ? handoff.agent
+            : explicitRecipient
+          : undefined
+      const agencyLabelRecipientAgent = frameworkMode()
+        ? (mentionedRecipient ?? agencyRecipientAgent ?? options.recipientAgent)
+        : undefined
+      const agencyLabelSelection = frameworkMode()
+        ? resolveAgencyTargetSelection({
+            agencies: frameworkRecipientDiscovery(),
+            configuredAgency: options.agency,
+            configuredRecipient: agencyLabelRecipientAgent,
+          })
+        : undefined
+      const agencyLabelAgency = frameworkMode() ? (agencyLabelSelection?.agency ?? options.agency) : undefined
+      const usedExplicitRecipient = !!explicitRecipient && agencyRecipientAgent === explicitRecipient
       const promptPayload: Parameters<typeof sdk.client.session.prompt>[0] & {
         $body_agencyRecipientAgent?: string
+        $body_agencyLabelAgency?: string
+        $body_agencyLabelRecipientAgent?: string
       } = {
         sessionID,
         ...selectedModel,
@@ -1713,6 +1788,8 @@ export function Prompt(props: PromptProps) {
         model: selectedModel,
         variant,
         $body_agencyRecipientAgent: agencyRecipientAgent,
+        $body_agencyLabelAgency: agencyLabelAgency,
+        $body_agencyLabelRecipientAgent: agencyLabelRecipientAgent,
         parts: [
           ...editorParts,
           {
@@ -1728,12 +1805,13 @@ export function Prompt(props: PromptProps) {
         started: Date.now(),
         properties: {
           framework_mode: frameworkMode(),
-          has_agent_parts: nonTextParts.some((part) => part.type === "agent"),
+          has_agent_parts: hasAgentParts,
           has_file_parts: nonTextParts.some((part) => part.type === "file"),
           mode: "normal",
           provider_id: productProviderID,
         },
       })
+      if (usedExplicitRecipient) setExplicitRecipientSelectedAt(undefined)
       sdk.client.session
         .prompt(promptPayload, { throwOnError: true })
         .then((result) => {
@@ -2144,7 +2222,7 @@ export function Prompt(props: PromptProps) {
                             flexShrink={0}
                             fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}
                           >
-                            {local.model.parsed().model}
+                            {currentModelLabelDisplay()}
                           </text>
                           <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
                           <Show when={showAgencyReconnect()}>

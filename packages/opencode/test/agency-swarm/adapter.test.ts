@@ -62,6 +62,7 @@ describe("agency-swarm.adapter", () => {
                   label: "Project Manager",
                   description: "Planning agent",
                   isEntryPoint: true,
+                  model: "gpt-5.4-mini",
                 },
               },
               {
@@ -69,6 +70,7 @@ describe("agency-swarm.adapter", () => {
                 type: "agent",
                 data: {
                   description: "Research support",
+                  model: "claude-sonnet-4-5",
                 },
               },
             ],
@@ -93,12 +95,14 @@ describe("agency-swarm.adapter", () => {
         id: "PM",
         name: "Project Manager",
         description: "Planning agent",
+        model: "gpt-5.4-mini",
         isEntryPoint: true,
       },
       {
         id: "Researcher",
         name: "Researcher",
         description: "Research support",
+        model: "claude-sonnet-4-5",
         isEntryPoint: false,
       },
     ])

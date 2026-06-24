@@ -2,12 +2,17 @@ import type { AssistantMessage, Part, Provider, UserMessage } from "@opencode-ai
 import { displayAgentName } from "@/agent/display"
 import { Locale } from "@/util/locale"
 import * as Model from "./model"
+import { resolveAssistantModelLabel, type ModelLabelContext } from "./model-label"
 
 export type TranscriptOptions = {
   thinking: boolean
   toolDetails: boolean
   assistantMetadata: boolean
   providers?: Provider[]
+  agencies?: ModelLabelContext["agencies"]
+  agencyID?: string
+  recipientAgent?: string
+  recipientAgentSelectedAt?: number
 }
 
 export type SessionInfo = {
@@ -24,6 +29,21 @@ export type MessageWithParts = {
   parts: Part[]
 }
 
+type ModelRef = {
+  providerID: string
+  modelID: string
+}
+
+type TranscriptMessageOptions = TranscriptOptions & {
+  submittedModel?: ModelRef
+  allowSingleAgency?: boolean
+}
+
+type AgencyLabelUserMessage = UserMessage & {
+  agencyLabelAgency?: string
+  agencyLabelRecipientAgent?: string
+}
+
 export function formatTranscript(
   session: SessionInfo,
   messages: MessageWithParts[],
@@ -36,18 +56,47 @@ export function formatTranscript(
   transcript += `**Updated:** ${new Date(session.time.updated).toLocaleString()}\n\n`
   transcript += `---\n\n`
 
+  const users = new Map(messages.flatMap((msg) => (msg.info.role === "user" ? [[msg.info.id, msg.info] as const] : [])))
+
   for (const msg of messages) {
-    transcript += formatMessage(msg.info, msg.parts, options, providers)
+    const user = msg.info.role === "assistant" ? users.get(msg.info.parentID) : undefined
+    const labelAgency = readAgencyLabelAgency(user)
+    const recipientAgent = readAgencyLabelRecipient(user)
+    const configuredTargetChangedAfterTurn =
+      !!user?.time.created && !!options.recipientAgentSelectedAt && options.recipientAgentSelectedAt > user.time.created
+    const agencyID = labelAgency ?? (configuredTargetChangedAfterTurn ? undefined : options.agencyID)
+    transcript += formatMessage(
+      msg.info,
+      msg.parts,
+      {
+        ...options,
+        agencyID,
+        allowSingleAgency: !labelAgency && !configuredTargetChangedAfterTurn && !options.agencyID,
+        submittedModel: user?.model,
+        recipientAgent: recipientAgent ?? (configuredTargetChangedAfterTurn ? undefined : options.recipientAgent),
+      },
+      providers,
+    )
     transcript += `---\n\n`
   }
 
   return transcript
 }
 
+function readAgencyLabelAgency(message: UserMessage | undefined) {
+  if (!message) return undefined
+  return (message as AgencyLabelUserMessage).agencyLabelAgency
+}
+
+function readAgencyLabelRecipient(message: UserMessage | undefined) {
+  if (!message) return undefined
+  return (message as AgencyLabelUserMessage).agencyLabelRecipientAgent ?? message.agencyRecipientAgent
+}
+
 export function formatMessage(
   msg: UserMessage | AssistantMessage,
   parts: Part[],
-  options: TranscriptOptions,
+  options: TranscriptMessageOptions,
   providers?: Provider[] | ReadonlyMap<string, Provider>,
 ): string {
   let result = ""
@@ -55,7 +104,14 @@ export function formatMessage(
   if (msg.role === "user") {
     result += `## User\n\n`
   } else {
-    result += formatAssistantHeader(msg, options.assistantMetadata, providers ?? options.providers)
+    result += formatAssistantHeader(msg, options.assistantMetadata, {
+      providers: providers ?? options.providers,
+      agencies: options.agencies,
+      agencyID: options.agencyID,
+      allowSingleAgency: options.allowSingleAgency,
+      recipientAgent: options.recipientAgent,
+      submittedModel: options.submittedModel,
+    })
   }
 
   for (const part of parts) {
@@ -68,7 +124,7 @@ export function formatMessage(
 export function formatAssistantHeader(
   msg: AssistantMessage,
   includeMetadata: boolean,
-  providers?: Provider[] | ReadonlyMap<string, Provider>,
+  context?: Provider[] | ReadonlyMap<string, Provider> | TranscriptModelLabelContext,
 ): string {
   if (!includeMetadata) {
     return `## Assistant\n\n`
@@ -77,9 +133,34 @@ export function formatAssistantHeader(
   const duration =
     msg.time.completed && msg.time.created ? ((msg.time.completed - msg.time.created) / 1000).toFixed(1) + "s" : ""
 
-  const modelName = Model.name(providers, msg.providerID, msg.modelID)
+  const modelName = resolveAssistantModelLabel({
+    ...readModelLabelContext(context),
+    providerID: msg.providerID,
+    modelID: msg.modelID,
+    agentID: msg.agent,
+  })
 
   return `## Assistant (${displayAgentName(msg.agent)} · ${modelName}${duration ? ` · ${duration}` : ""})\n\n`
+}
+
+type TranscriptModelLabelContext = ModelLabelContext & {
+  recipientAgent?: string
+  submittedModel?: ModelRef
+}
+
+function readModelLabelContext(
+  context: Provider[] | ReadonlyMap<string, Provider> | TranscriptModelLabelContext | undefined,
+): TranscriptModelLabelContext {
+  if (!context) return {}
+  if (Array.isArray(context)) return { providers: context }
+  if (isProviderMap(context)) return { providers: context }
+  return context
+}
+
+function isProviderMap(
+  context: Provider[] | ReadonlyMap<string, Provider> | TranscriptModelLabelContext,
+): context is ReadonlyMap<string, Provider> {
+  return context instanceof Map
 }
 
 export function formatPart(part: Part, options: TranscriptOptions): string {

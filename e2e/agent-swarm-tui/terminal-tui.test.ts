@@ -4,10 +4,13 @@ import os from "node:os"
 import path from "node:path"
 import {
   agencyClientConfigModel,
+  alternateOpenAITestModel,
+  alternateOpenAITestModelLabel,
   latestOpenAITestModel,
   latestOpenAITestModelLabel,
   openAIProviderTestConfig,
   startAgencyProtocolServer,
+  startMultiAgencyServer,
   startTui,
   startTuiDemoAgencyServer,
   writeAgencyProject,
@@ -174,7 +177,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     )
     const appEvent = currentTelemetryServer.events.find((event) => event.event === "app_started")
     expect(appEvent?.properties).toMatchObject({
-      "$process_person_profile": false,
+      $process_person_profile: false,
       app: "Agent Swarm",
       entrypoint: "tui",
       framework_mode: true,
@@ -187,12 +190,17 @@ describe("Agent Swarm terminal TUI e2e", () => {
       tuiInteractionTimeoutMs,
     )
     const commandEvent = currentTelemetryServer.events.find((event) => event.event === "ui_command_executed")
-    expect(commandEvent?.properties).toMatchObject({ "$process_person_profile": false, app: "Agent Swarm", command: "auth", source: "slash" })
+    expect(commandEvent?.properties).toMatchObject({
+      $process_person_profile: false,
+      app: "Agent Swarm",
+      command: "auth",
+      source: "slash",
+    })
     expect(JSON.stringify(commandEvent)).not.toContain("sk-test-telemetry")
     expect(JSON.stringify(commandEvent)).not.toContain("refresh")
     const requested = currentTelemetryServer.events.find((event) => event.event === "provider_requested")
     expect(requested?.properties).toMatchObject({
-      "$process_person_profile": false,
+      $process_person_profile: false,
       app: "Agent Swarm",
       connected_before: false,
       framework_mode: true,
@@ -201,7 +209,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
     const started = currentTelemetryServer.events.find((event) => event.event === "provider_auth_started")
     expect(started?.properties).toMatchObject({
-      "$process_person_profile": false,
+      $process_person_profile: false,
       app: "Agent Swarm",
       auth_method: "api",
       framework_mode: true,
@@ -211,7 +219,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     const authEvent = currentTelemetryServer.events.find((event) => event.event === "provider_auth_configured")
     expect(authEvent?.api_key).toBe("ph_test")
     expect(authEvent?.properties).toMatchObject({
-      "$process_person_profile": false,
+      $process_person_profile: false,
       app: "Agent Swarm",
       auth_method: "api",
       framework_mode: true,
@@ -364,6 +372,44 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(screen).not.toContain("local-agency")
   })
 
+  test("swarm-level agency default footer uses metadata model label without a recipient agent", async () => {
+    currentServer = await startAgencyProtocolServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      config: {
+        provider: {
+          "agency-swarm": {
+            options: {
+              recipientAgent: undefined,
+              recipientAgentSelectedAt: undefined,
+            },
+          },
+        },
+      },
+    })
+
+    const screen = await currentTui.waitForText(agencyClientConfigModel, tuiReadyTimeoutMs)
+    expect(screen).toContain(`Live QA Agency · ${agencyClientConfigModel}`)
+    expect(screen).not.toContain("Live QA Agency · Swarm Default")
+    expect(screen).not.toContain("Live QA Agency · Swarm models")
+  })
+
+  test("model picker current agency default row uses actual model label", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("UserSupportAgent · gpt-5.4-mini", tuiReadyTimeoutMs)
+    currentTui.write("/models\r")
+    const screen = await currentTui.waitForText("gpt-5.4-mini Agency Swarm", tuiInteractionTimeoutMs)
+
+    expect(screen).not.toContain("Swarm Default Agency Swarm")
+  })
+
   test("run-target picker uses Swarm and agent wording against the TUI demo swarm", async () => {
     currentServer = await startTuiDemoAgencyServer()
     currentTui = await startTui({
@@ -395,13 +441,17 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await selectCurrentSwarm(currentTui)
+    const swarmScreen = await currentTui.waitForText("TuiDemoAgency · Swarm models: gpt-5.4-mini +1")
+    expect(swarmScreen).not.toContain("TuiDemoAgency · gpt-5.4-mini +1")
     currentTui.write("route through the whole swarm\r")
+    const screen = await currentTui.waitForText("Run · gpt-5.4-mini", tuiInteractionTimeoutMs)
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
       "swarm-routed request",
       tuiInteractionTimeoutMs,
     )
 
+    expect(screen).not.toContain("Run · Swarm Default")
     const body = currentServer.requests[0]?.body
     expect(body?.message).toContain("route through the whole swarm")
     expect(body).not.toHaveProperty("recipient_agent")
@@ -418,6 +468,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
     await selectRunTarget(currentTui, "MathAgent", "Selected MathAgent in swarm TuiDemoAgency")
+    await currentTui.waitForText("MathAgent · claude-sonnet-4-5", tuiInteractionTimeoutMs)
     currentTui.write("calculate through the selected agent\r")
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
@@ -432,6 +483,65 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
   })
 
+  test("completed build-route model labels stay tied to the submitted recipient", async () => {
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    await selectRunTarget(currentTui, "MathAgent", "Selected MathAgent in swarm TuiDemoAgency")
+    await currentTui.waitForText("MathAgent · claude-sonnet-4-5", tuiInteractionTimeoutMs)
+    currentTui.write("build label stable turn\r")
+    await currentTui.waitForText("Run · claude-sonnet-4-5", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "build-label agency request",
+      tuiInteractionTimeoutMs,
+    )
+    currentTui.write("\t")
+    await currentTui.waitForText("UserSupportAgent · gpt-5.4-mini", tuiInteractionTimeoutMs)
+    const screen = currentTui.screen()
+
+    expect(screen).toContain("Run · claude-sonnet-4-5")
+    expect(screen).not.toContain("Run · gpt-5.4-mini")
+    expect(currentServer.requests[0]?.body).toMatchObject({
+      recipient_agent: "MathAgent",
+    })
+  })
+
+  test("completed build-route model labels stay tied to the submitted agency", async () => {
+    currentServer = await startMultiAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "sales-agency",
+      recipientAgent: "SharedAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("SharedAgent · gpt-sales-mini", tuiReadyTimeoutMs)
+    currentTui.write("multi agency stable label\r")
+    await currentTui.waitForText("Run · gpt-sales-mini", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => currentServer!.requests.length === 1,
+      "submitted-agency label request",
+      tuiInteractionTimeoutMs,
+    )
+    await selectNextAgencySwarm(currentTui, "SupportAgency")
+    await currentTui.waitForText("SupportAgency · claude-support-sonnet", tuiInteractionTimeoutMs)
+    const screen = currentTui.screen()
+
+    expect(screen).toContain("Run · gpt-sales-mini")
+    expect(screen).not.toContain("Run · claude-support-sonnet")
+    expect(currentServer.requests[0]?.path).toBe("/sales-agency/get_response_stream")
+    expect(currentServer.requests[0]?.body).toMatchObject({
+      recipient_agent: "SharedAgent",
+    })
+  })
+
   test("visible OpenAI model state still routes Run-mode prompts to Agency Swarm", async () => {
     currentServer = await startTuiDemoAgencyServer()
     const runProject = await mkdtemp(path.join(os.tmpdir(), "agentswarm-visible-model-run-project-"))
@@ -441,7 +551,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       baseURL: currentServer.baseURL,
       agency: "tui-demo-agency",
       recipientAgent: "UserSupportAgent",
-      args: ["--model", latestOpenAITestModel],
+      args: ["--model", alternateOpenAITestModel],
       env: {
         AGENTSWARM_RUN_PROJECT: runProject,
         XDG_STATE_HOME: stateHome,
@@ -449,9 +559,10 @@ describe("Agent Swarm terminal TUI e2e", () => {
       config: openAIProviderTestConfig,
     })
 
-    await currentTui.waitForText(latestOpenAITestModelLabel, tuiReadyTimeoutMs)
+    await currentTui.waitForText(alternateOpenAITestModelLabel, tuiReadyTimeoutMs)
     currentTui.write("run through agency despite visible openai model state\r")
     await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
+    const screen = await currentTui.waitForText("Run · GPT-5.2", tuiInteractionTimeoutMs)
     await currentTui.waitFor(
       () => currentServer!.requests.length === 1,
       "agency request with visible openai model state",
@@ -463,6 +574,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(body).toMatchObject({
       recipient_agent: "UserSupportAgent",
     })
+    expect(screen).not.toContain("Run · gpt-5.4-mini")
 
     const runSessionState = JSON.parse(
       await readFile(path.join(stateHome, "agentswarm", "agency-swarm-run-sessions.json"), "utf8"),
@@ -693,6 +805,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await waitForConfiguredDemoRecipient(currentTui)
     currentTui.write("please handoff this calculation\r")
     await currentTui.waitForText("Math agent now has control.", tuiInteractionTimeoutMs)
+    await currentTui.waitForText("Run · claude-sonnet-4-5", tuiInteractionTimeoutMs)
     await currentTui.waitFor(() => currentServer!.requests.length === 1, "handoff request", tuiInteractionTimeoutMs)
 
     currentTui.write("continue after handoff\r")
@@ -778,7 +891,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
       tuiInteractionTimeoutMs,
     )
     await currentTui.waitFor(
-      () => currentTui!.screen().includes("MathAgent · Swarm Default"),
+      () => currentTui!.screen().includes("MathAgent · claude-sonnet-4-5"),
       "live handoff routed prompt",
       tuiInteractionTimeoutMs,
     )
@@ -934,6 +1047,13 @@ async function selectCurrentSwarm(tui: TuiProcess) {
   await tui.waitForText("TuiDemoAgency")
   tui.write("\x1b[A\x1b[A\r")
   await tui.waitForText("Selected swarm TuiDemoAgency", tuiInteractionTimeoutMs)
+}
+
+async function selectNextAgencySwarm(tui: TuiProcess, agency: string) {
+  tui.write("/agents\r")
+  await tui.waitForText(agency)
+  tui.write("\x1b[B\r")
+  await tui.waitForText(`Selected swarm ${agency}`, tuiInteractionTimeoutMs)
 }
 
 async function startAuthFailureAgencyServer(): Promise<AgencyProtocolServer> {

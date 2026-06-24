@@ -3347,6 +3347,8 @@ export class Session2 extends HeyApiClient {
       system?: string
       variant?: string
       agencyRecipientAgent?: string
+      agencyLabelAgency?: string
+      agencyLabelRecipientAgent?: string
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -3368,6 +3370,8 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
             { in: "body", key: "agencyRecipientAgent" },
+            { in: "body", key: "agencyLabelAgency" },
+            { in: "body", key: "agencyLabelRecipientAgent" },
             { in: "body", key: "parts" },
           ],
         },
@@ -3702,6 +3706,8 @@ export class Session2 extends HeyApiClient {
       system?: string
       variant?: string
       agencyRecipientAgent?: string
+      agencyLabelAgency?: string
+      agencyLabelRecipientAgent?: string
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -3723,6 +3729,8 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
             { in: "body", key: "agencyRecipientAgent" },
+            { in: "body", key: "agencyLabelAgency" },
+            { in: "body", key: "agencyLabelRecipientAgent" },
             { in: "body", key: "parts" },
           ],
         },

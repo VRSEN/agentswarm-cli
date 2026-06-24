@@ -5296,6 +5296,12 @@
                   "agencyRecipientAgent": {
                     "type": "string"
                   },
+                  "agencyLabelAgency": {
+                    "type": "string"
+                  },
+                  "agencyLabelRecipientAgent": {
+                    "type": "string"
+                  },
                   "parts": {
                     "type": "array",
                     "items": {
@@ -6100,6 +6106,12 @@
                     "type": "string"
                   },
                   "agencyRecipientAgent": {
+                    "type": "string"
+                  },
+                  "agencyLabelAgency": {
+                    "type": "string"
+                  },
+                  "agencyLabelRecipientAgent": {
                     "type": "string"
                   },
                   "parts": {
@@ -10201,6 +10213,12 @@
             }
           },
           "agencyRecipientAgent": {
+            "type": "string"
+          },
+          "agencyLabelAgency": {
+            "type": "string"
+          },
+          "agencyLabelRecipientAgent": {
             "type": "string"
           }
         },

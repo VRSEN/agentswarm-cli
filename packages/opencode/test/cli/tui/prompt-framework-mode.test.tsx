@@ -4,6 +4,7 @@ import { RGBA } from "@opentui/core"
 import { testRender, useRenderer } from "@opentui/solid"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { type ParentProps } from "solid-js"
+import { createStore } from "solid-js/store"
 import * as AgencySwarmConnectionContext from "../../../src/cli/cmd/tui/context/agency-swarm-connection"
 import * as ArgsContext from "../../../src/cli/cmd/tui/context/args"
 import * as CommandDialogModule from "../../../src/cli/cmd/tui/component/dialog-command"
@@ -52,37 +53,41 @@ describe("prompt framework-mode footer", () => {
     mock.restore()
   })
 
-  test("shows the agency recipient display name instead of the configured id or local Agent Builder label", async () => {
+  test("shows the agency recipient display name without using configured recipient as a prompt override", async () => {
     const eventHandlers: Record<string, (event: any) => void> = {}
     const updateGlobalConfig = mock(async () => ({}))
     const prompt = mock(async () => ({}))
     let promptRef: import("../../../src/cli/cmd/tui/component/prompt").PromptRef | undefined
 
-    spyOn(AgencySwarmAdapter, "discover").mockResolvedValue({
-      agencies: [
-        {
-          id: "demo",
-          name: "Demo Agency",
-          agents: [
-            {
-              id: "orchestrator-slug",
-              name: "Orchestrator",
-              isEntryPoint: true,
-            },
-            {
-              id: "slides_agent",
-              name: "Slides Agent",
-              isEntryPoint: false,
-            },
-            {
-              id: "support_agent",
-              name: "Support Agent",
-              isEntryPoint: false,
-            },
-          ],
-          metadata: {},
-        },
-      ],
+    const agencies: AgencySwarmAdapter.AgencyDescriptor[] = [
+      {
+        id: "demo",
+        name: "Demo Agency",
+        agents: [
+          {
+            id: "orchestrator-slug",
+            name: "Orchestrator",
+            model: "gpt-5.4-mini",
+            isEntryPoint: true,
+          },
+          {
+            id: "slides_agent",
+            name: "Slides Agent",
+            model: "claude-sonnet-4-5",
+            isEntryPoint: false,
+          },
+          {
+            id: "support_agent",
+            name: "Support Agent",
+            model: "gpt-5.4-mini",
+            isEntryPoint: false,
+          },
+        ],
+        metadata: {},
+      },
+    ]
+    const discover = spyOn(AgencySwarmAdapter, "discover").mockResolvedValue({
+      agencies,
       rawOpenAPI: {},
     })
     spyOn(AutocompleteModule, "Autocomplete").mockImplementation((props: any) => {
@@ -184,71 +189,75 @@ describe("prompt framework-mode footer", () => {
         on: () => () => {},
       },
     } as any)
-    spyOn(SyncContext, "useSync").mockReturnValue({
-      data: {
-        command: [],
-        config: {
-          model: "agency-swarm/default",
-          provider: {
-            "agency-swarm": {
-              options: {
-                agency: "demo",
-                recipientAgent: "orchestrator-slug",
-                recipientAgentSelectedAt: 1,
-                baseURL: "http://127.0.0.1:8000",
-              },
+    const [syncData, setSyncData] = createStore({
+      status: "loading",
+      command: [],
+      config: {
+        model: "agency-swarm/default",
+        provider: {
+          "agency-swarm": {
+            options: {
+              agency: "demo",
+              recipientAgent: "orchestrator-slug",
+              baseURL: "http://127.0.0.1:8000",
             },
           },
-          experimental: {},
         },
-        console_state: {
-          activeOrgName: "",
-          consoleManagedProviders: [],
-          switchableOrgCount: 0,
-        },
-        message: {},
-        part: {
-          message_assistant_1: [
-            {
-              type: "tool",
-              tool: "transfer_to_slides_agent",
-              state: {
-                status: "completed",
-              },
+        experimental: {},
+      },
+      console_state: {
+        activeOrgName: "",
+        consoleManagedProviders: [],
+        switchableOrgCount: 0,
+      },
+      message: {},
+      part: {
+        message_assistant_1: [
+          {
+            type: "tool",
+            tool: "transfer_to_slides_agent",
+            state: {
+              status: "completed",
             },
-          ],
-        },
-        provider: [
-          {
-            id: "agency-swarm",
-            name: "Agency Swarm",
-            source: "config",
-            env: [],
-            key: undefined,
-            options: {},
-            models: {},
-          },
-          {
-            id: "openai",
-            name: "OpenAI",
-            source: "api",
-            env: ["OPENAI_API_KEY"],
-            key: "sk-test",
-            options: {},
-            models: {},
           },
         ],
-        provider_auth: {
-          openai: [{ type: "api", label: "API key" }],
+      },
+      provider: [
+        {
+          id: "agency-swarm",
+          name: "Agency Swarm",
+          source: "config",
+          env: [],
+          key: undefined,
+          options: {},
+          models: {},
         },
-        provider_next: {
-          all: [],
-          connected: [],
-          default: {},
+        {
+          id: "openai",
+          name: "OpenAI",
+          source: "api",
+          env: ["OPENAI_API_KEY"],
+          key: "sk-test",
+          options: {},
+          models: {},
         },
-        session_status: {
-          session_1: { type: "busy" },
-        },
+      ],
+      provider_auth: {
+        openai: [{ type: "api", label: "API key" }],
+      },
+      provider_next: {
+        all: [],
+        connected: [],
+        default: {},
+      },
+      session_status: {
+        session_1: { type: "busy" },
+      },
+    } as any)
+    spyOn(SyncContext, "useSync").mockReturnValue({
+      data: syncData,
+      get ready() {
+        return syncData.status !== "loading"
       },
       session: {
         get: () => undefined,
@@ -311,7 +320,12 @@ describe("prompt framework-mode footer", () => {
           <RouteProvider>
             <DialogProvider>
               <CommandPaletteProvider>
-                <Prompt sessionID="session_1" showPlaceholder={false} ref={(ref) => (promptRef = ref)} />
+                <Prompt
+                  sessionID="session_1"
+                  showPlaceholder={false}
+                  agencyDiscovery={() => agencies}
+                  ref={(ref) => (promptRef = ref)}
+                />
               </CommandPaletteProvider>
             </DialogProvider>
           </RouteProvider>
@@ -325,12 +339,20 @@ describe("prompt framework-mode footer", () => {
 
     const frame = rendered.captureCharFrame()
     expect(frame).toContain("Orchestrator")
-    expect(frame).toContain("Swarm Default")
+    expect(frame).toContain("gpt-5.4-mini")
+    expect(frame).not.toContain("gpt-5.4-mini +1")
+    expect(frame).not.toContain("Swarm models")
+    expect(frame).not.toContain("Swarm Default")
     expect(frame).not.toContain("Swarm Default Agency Swarm")
     expect(frame).toContain("agents")
     expect(frame).not.toContain("orchestrator-slug")
     expect(frame).not.toContain("Agent Builder")
     expect(frame).not.toContain("recipients")
+    expect(discover).not.toHaveBeenCalled()
+
+    setSyncData("config", "provider", "agency-swarm", "options", "recipientAgentSelectedAt", 1)
+    setSyncData("status", "partial")
+    await flushEffects()
 
     eventHandlers["message.updated"]?.({
       properties: {
@@ -350,8 +372,28 @@ describe("prompt framework-mode footer", () => {
     await flushEffects()
 
     expect(prompt).toHaveBeenCalledTimes(1)
-    const calls = prompt.mock.calls as unknown as Array<[{ parts: unknown[]; $body_agencyRecipientAgent?: string }]>
+    const calls = prompt.mock.calls as unknown as Array<
+      [
+        {
+          parts: unknown[]
+          $body_agencyRecipientAgent?: string
+          $body_agencyLabelAgency?: string
+          $body_agencyLabelRecipientAgent?: string
+        },
+      ]
+    >
     expect(calls[0][0].$body_agencyRecipientAgent).toBeUndefined()
+    expect(calls[0][0].$body_agencyLabelAgency).toBe("demo")
+    expect(calls[0][0].$body_agencyLabelRecipientAgent).toBe("orchestrator-slug")
+
+    promptRef!.set({ input: "loaded config follow-up", parts: [] })
+    await promptRef!.submit()
+    await flushEffects()
+
+    expect(prompt).toHaveBeenCalledTimes(2)
+    expect(calls[1][0].$body_agencyRecipientAgent).toBeUndefined()
+    expect(calls[1][0].$body_agencyLabelAgency).toBe("demo")
+    expect(calls[1][0].$body_agencyLabelRecipientAgent).toBe("orchestrator-slug")
 
     eventHandlers["message.updated"]?.({
       properties: {
@@ -369,14 +411,17 @@ describe("prompt framework-mode footer", () => {
 
     const handoffFrame = rendered.captureCharFrame()
     expect(handoffFrame).toContain("Slides Agent")
+    expect(handoffFrame).toContain("claude-sonnet-4-5")
+    expect(handoffFrame).not.toContain("gpt-5.4-mini +1")
+    expect(handoffFrame).not.toContain("Swarm models")
     expect(updateGlobalConfig).not.toHaveBeenCalled()
 
     promptRef!.set({ input: "continue", parts: [] })
     await promptRef!.submit()
     await flushEffects()
 
-    expect(prompt).toHaveBeenCalledTimes(2)
-    const payload = calls[1][0]
+    expect(prompt).toHaveBeenCalledTimes(3)
+    const payload = calls[2][0]
     expect(payload.parts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -387,6 +432,8 @@ describe("prompt framework-mode footer", () => {
     )
     expect(payload.parts).not.toContainEqual(expect.objectContaining({ type: "agent" }))
     expect(payload.$body_agencyRecipientAgent).toBe("slides_agent")
+    expect(payload.$body_agencyLabelAgency).toBe("demo")
+    expect(payload.$body_agencyLabelRecipientAgent).toBe("slides_agent")
 
     eventHandlers["message.updated"]?.({
       properties: {
@@ -416,8 +463,10 @@ describe("prompt framework-mode footer", () => {
     await promptRef!.submit()
     await flushEffects()
 
-    expect(prompt).toHaveBeenCalledTimes(3)
-    expect(calls[2][0].$body_agencyRecipientAgent).toBe("slides_agent")
+    expect(prompt).toHaveBeenCalledTimes(4)
+    expect(calls[3][0].$body_agencyRecipientAgent).toBe("slides_agent")
+    expect(calls[3][0].$body_agencyLabelAgency).toBe("demo")
+    expect(calls[3][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
 
     eventHandlers["message.part.updated"]?.({
       properties: {
@@ -440,8 +489,57 @@ describe("prompt framework-mode footer", () => {
     await promptRef!.submit()
     await flushEffects()
 
-    expect(prompt).toHaveBeenCalledTimes(4)
-    expect(calls[3][0].$body_agencyRecipientAgent).toBe("support_agent")
+    expect(prompt).toHaveBeenCalledTimes(5)
+    expect(calls[4][0].$body_agencyRecipientAgent).toBe("support_agent")
+    expect(calls[4][0].$body_agencyLabelAgency).toBe("demo")
+    expect(calls[4][0].$body_agencyLabelRecipientAgent).toBe("support_agent")
+
+    promptRef!.set({
+      input: "mention explicit agent",
+      parts: [
+        {
+          type: "agent",
+          name: "slides_agent",
+          source: {
+            start: 0,
+            end: 0,
+            value: "",
+          },
+        },
+      ],
+    })
+    await promptRef!.submit()
+    await flushEffects()
+
+    expect(prompt).toHaveBeenCalledTimes(6)
+    expect(calls[5][0].$body_agencyRecipientAgent).toBeUndefined()
+    expect(calls[5][0].$body_agencyLabelAgency).toBe("demo")
+    expect(calls[5][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
+
+    setSyncData("config", "provider", "agency-swarm", "options", "recipientAgent", "slides_agent")
+    setSyncData("config", "provider", "agency-swarm", "options", "recipientAgentSelectedAt", 2)
+    await flushEffects()
+
+    promptRef!.set({ input: "after target selection", parts: [] })
+    await promptRef!.submit()
+    await flushEffects()
+
+    expect(prompt).toHaveBeenCalledTimes(7)
+    expect(calls[6][0].$body_agencyRecipientAgent).toBe("slides_agent")
+    expect(calls[6][0].$body_agencyLabelAgency).toBe("demo")
+    expect(calls[6][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
+
+    setSyncData("config", "provider", "agency-swarm", "options", "agency", undefined)
+    await flushEffects()
+
+    promptRef!.set({ input: "after omitted agency config", parts: [] })
+    await promptRef!.submit()
+    await flushEffects()
+
+    expect(prompt).toHaveBeenCalledTimes(8)
+    expect(calls[7][0].$body_agencyRecipientAgent).toBeUndefined()
+    expect(calls[7][0].$body_agencyLabelAgency).toBe("demo")
+    expect(calls[7][0].$body_agencyLabelRecipientAgent).toBe("slides_agent")
   })
 
   test("sends agency handoff recipient through the generated sdk prompt body", async () => {
@@ -465,6 +563,8 @@ describe("prompt framework-mode footer", () => {
       },
       agent: "orchestrator",
       $body_agencyRecipientAgent: "slides_agent",
+      $body_agencyLabelAgency: "demo",
+      $body_agencyLabelRecipientAgent: "slides_agent",
       parts: [
         {
           id: "part",
@@ -472,9 +572,15 @@ describe("prompt framework-mode footer", () => {
           text: "continue",
         },
       ],
-    } as Parameters<typeof client.session.prompt>[0] & { $body_agencyRecipientAgent?: string })
+    } as Parameters<typeof client.session.prompt>[0] & {
+      $body_agencyRecipientAgent?: string
+      $body_agencyLabelAgency?: string
+      $body_agencyLabelRecipientAgent?: string
+    })
 
     expect(body.agencyRecipientAgent).toBe("slides_agent")
+    expect(body.agencyLabelAgency).toBe("demo")
+    expect(body.agencyLabelRecipientAgent).toBe("slides_agent")
     expect(body.parts).not.toContainEqual(expect.objectContaining({ type: "agent" }))
   })
 })

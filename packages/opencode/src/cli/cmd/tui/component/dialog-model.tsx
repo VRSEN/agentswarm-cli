@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "solid-js"
+import { createMemo, createResource, createSignal } from "solid-js"
 import { useLocal } from "@tui/context/local"
 import { useSync } from "@tui/context/sync"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
@@ -17,6 +17,9 @@ import { useConnected } from "./use-connected"
 import { AgencySwarmOllama } from "@/agency-swarm/ollama"
 import { useToast } from "../ui/toast"
 import { downloadOllamaModel } from "./download-ollama-model"
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { readAgencyProviderOptions } from "../util/agency-target"
+import { resolveModelLabel } from "../util/model-label"
 
 export function DialogModel(props: { providerID?: string }) {
   const local = useLocal()
@@ -31,6 +34,36 @@ export function DialogModel(props: { providerID?: string }) {
     configuredModel: sync.data.config.model,
     agentModel: local.agent.current()?.model,
   })
+  const agencyOptions = createMemo(() =>
+    readAgencyProviderOptions({
+      configuredProvider: sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID],
+      connectedProvider: sync.data.provider.find((item) => item.id === AgencySwarmAdapter.PROVIDER_ID),
+    }),
+  )
+  const discoveryInput = createMemo(() => {
+    if (!frameworkMode) return undefined
+    const options = agencyOptions()
+    return {
+      baseURL: options.baseURL,
+      token: options.token,
+      timeoutMs: options.discoveryTimeoutMs,
+    }
+  })
+  const [discovery] = createResource(
+    discoveryInput,
+    async (input): Promise<AgencySwarmAdapter.AgencyDescriptor[]> => {
+      try {
+        const result = await AgencySwarmAdapter.discover(input)
+        return result.agencies
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw error
+        return []
+      }
+    },
+    {
+      initialValue: [],
+    },
+  )
   // In Agent Swarm framework mode, restrict `/models` to the agency-supported set
   // so users cannot pick a provider the send guard (`shouldBlockAgencyPromptSubmit`)
   // would immediately block.
@@ -59,6 +92,21 @@ export function DialogModel(props: { providerID?: string }) {
     const showSections = showExtra() && needle.length === 0
     const favorites = connected() ? local.model.favorite() : []
     const recents = local.model.recent()
+    const label = (providerID: string, modelID: string, fallback: string) => {
+      if (!frameworkMode) return fallback
+      const options = agencyOptions()
+      return resolveModelLabel({
+        providers: sync.data.provider,
+        agencies: discovery(),
+        agencyID: options.agency,
+        allowSingleAgency: !options.agency,
+        agentID: options.recipientAgent,
+        providerID,
+        modelID,
+        fallback,
+        scope: options.recipientAgent ? "agent" : "agency",
+      })
+    }
 
     function toOptions(items: typeof favorites, category: string) {
       if (!showSections) return []
@@ -71,7 +119,7 @@ export function DialogModel(props: { providerID?: string }) {
           {
             key: item,
             value: { providerID: provider.id, modelID: model.id },
-            title: model.name ?? item.modelID,
+            title: label(provider.id, model.id, model.name ?? item.modelID),
             description: provider.name,
             category,
             disabled: provider.id === "opencode" && model.id.includes("-nano"),
@@ -106,7 +154,7 @@ export function DialogModel(props: { providerID?: string }) {
           filter(([_, info]) => (props.providerID ? info.providerID === props.providerID : true)),
           map(([model, info]) => ({
             value: { providerID: provider.id, modelID: model },
-            title: info.name ?? model,
+            title: label(provider.id, model, info.name ?? model),
             description: favorites.some((item) => item.providerID === provider.id && item.modelID === model)
               ? "(Favorite)"
               : undefined,
