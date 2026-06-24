@@ -17,7 +17,3 @@ export function formatAgencyCounts(counts: AgencyCounts) {
   const sub = counts.sub === 1 ? "subagent" : "subagents"
   return `${counts.main} main / ${counts.sub} ${sub}`
 }
-
-export function formatAgencyCategory(agency: AgencySwarmAdapter.AgencyDescriptor) {
-  return `Swarm: ${agency.name} (${formatAgencyCounts(countAgencyAgents(agency.agents))})`
-}
