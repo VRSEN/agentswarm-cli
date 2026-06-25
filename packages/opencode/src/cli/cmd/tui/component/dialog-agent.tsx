@@ -232,6 +232,13 @@ export function DialogAgent() {
       options={options()}
       onSelect={(option) => {
         if (option.value.kind === "local") {
+          if (option.value.agent === "build" || option.value.agent === "plan") {
+            void local.product.set(option.value.agent).then(
+              () => dialog.clear(),
+              () => dialog.clear(),
+            )
+            return
+          }
           local.agent.set(option.value.agent)
           dialog.clear()
           return

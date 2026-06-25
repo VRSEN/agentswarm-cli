@@ -8,14 +8,14 @@ export function DialogMode() {
 
   const options: DialogSelectOption<ProductMode>[] = [
     {
-      value: "build",
-      title: "Build",
-      description: "Build or fix swarms and agents",
-    },
-    {
       value: "plan",
       title: "Plan",
       description: "Plan work before building",
+    },
+    {
+      value: "build",
+      title: "Build",
+      description: "Build or fix swarms and agents",
     },
     {
       value: "run",

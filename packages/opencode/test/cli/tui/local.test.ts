@@ -1,7 +1,228 @@
 import { describe, expect, test } from "bun:test"
-import { isUsableModel, selectCurrentModel, shouldSyncAgentModel } from "../../../src/cli/cmd/tui/context/local"
+import {
+  inferProductMode,
+  isUsableModel,
+  readAgencySwarmBridge,
+  selectCurrentModel,
+  shouldSyncAgentModel,
+} from "../../../src/cli/cmd/tui/context/local"
 
 describe("tui local model selection", () => {
+  test("infers reopened Build and Plan sessions before launcher Run config", () => {
+    const agentModel = {
+      providerID: "openai",
+      modelID: "gpt-5",
+    }
+
+    expect(
+      inferProductMode({
+        agentName: "plan",
+        currentProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+        agentModel,
+      }),
+    ).toBe("plan")
+    expect(
+      inferProductMode({
+        agentName: "build",
+        storedMode: "build",
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+          explicit: true,
+        },
+        currentProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+        hasAgencySwarmProvider: true,
+        agentModel,
+      }),
+    ).toBe("build")
+    expect(
+      inferProductMode({
+        agentName: "build",
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+          explicit: true,
+        },
+        storedBridge: true,
+        currentProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+        hasAgencySwarmProvider: true,
+        agentModel,
+      }),
+    ).toBe("run")
+    expect(
+      inferProductMode({
+        agentName: "build",
+        storedMode: "run",
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+          explicit: true,
+        },
+        storedBridge: false,
+        currentProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+        hasAgencySwarmProvider: true,
+        agentModel,
+      }),
+    ).toBe("run")
+    expect(
+      inferProductMode({
+        agentName: "plan",
+        storedMode: "build",
+        storedBridge: false,
+        currentProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+        hasAgencySwarmProvider: true,
+        agentModel,
+      }),
+    ).toBe("build")
+    expect(
+      inferProductMode({
+        agentName: "plan",
+        storedBridge: true,
+        currentProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+        hasAgencySwarmProvider: true,
+        agentModel,
+      }),
+    ).toBe("run")
+    expect(
+      inferProductMode({
+        agentName: "plan",
+        storedBridge: false,
+        currentProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+        hasAgencySwarmProvider: true,
+        agentModel,
+      }),
+    ).toBe("plan")
+    expect(
+      inferProductMode({
+        agentName: "ExampleAgent",
+        storedMode: "plan",
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+          explicit: true,
+        },
+        currentProviderID: "openai",
+        hasAgencySwarmProvider: true,
+        agentModel,
+      }),
+    ).toBe("build")
+    expect(
+      inferProductMode({
+        agentName: "ExampleAgent",
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+          explicit: true,
+        },
+        currentProviderID: "openai",
+        hasAgencySwarmProvider: true,
+        agentModel,
+      }),
+    ).toBe("run")
+    expect(
+      inferProductMode({
+        agentName: "build",
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+          explicit: true,
+        },
+        currentProviderID: "openai",
+        argModel: "openai/gpt-5",
+        hasAgencySwarmProvider: true,
+        agentModel,
+      }),
+    ).toBe("run")
+    expect(
+      inferProductMode({
+        agentName: "build",
+        argModel: "agency-swarm/default",
+        currentProviderID: "openai",
+        agentModel,
+      }),
+    ).toBe("run")
+    expect(
+      inferProductMode({
+        agentName: "build",
+        currentProviderID: "agency-swarm",
+        hasAgencySwarmProvider: true,
+        agentModel,
+      }),
+    ).toBe("run")
+    expect(
+      inferProductMode({
+        agentName: "build",
+        currentProviderID: "agency-swarm",
+        hasAgencySwarmProvider: true,
+        disabledProviders: ["agency-swarm"],
+        agentModel,
+      }),
+    ).toBe("build")
+    expect(
+      inferProductMode({
+        agentName: "build",
+        currentProviderID: "agency-swarm",
+        hasAgencySwarmProvider: true,
+        enabledProviders: ["openai"],
+        agentModel,
+      }),
+    ).toBe("build")
+  })
+
+  test("reads saved Agency Swarm bridge metadata from text, subtask, and compaction parts", () => {
+    expect(
+      readAgencySwarmBridge([
+        {
+          id: "prt_1",
+          sessionID: "ses_1",
+          messageID: "msg_1",
+          type: "text",
+          text: "hello",
+          metadata: {
+            agencySwarmBridge: true,
+          },
+        },
+      ]),
+    ).toBe(true)
+    expect(
+      readAgencySwarmBridge([
+        {
+          id: "prt_2",
+          sessionID: "ses_1",
+          messageID: "msg_1",
+          type: "subtask",
+          prompt: "hello",
+          description: "hello",
+          agent: "build",
+          metadata: {
+            agencySwarmBridge: false,
+          },
+        },
+      ]),
+    ).toBe(false)
+    expect(
+      readAgencySwarmBridge([
+        {
+          id: "prt_3",
+          sessionID: "ses_1",
+          messageID: "msg_1",
+          type: "compaction",
+          auto: false,
+          metadata: {
+            agencySwarmBridge: true,
+          },
+        },
+      ]),
+    ).toBe(true)
+  })
+
   test("keeps agency-swarm launcher model usable before provider metadata loads", () => {
     expect(
       isUsableModel({
@@ -92,6 +313,33 @@ describe("tui local model selection", () => {
         productMode: "run",
       }),
     ).toBe(true)
+  })
+
+  test("rejects agency-swarm models in Build and Plan even when provider metadata is loaded", () => {
+    const input = {
+      model: {
+        providerID: "agency-swarm",
+        modelID: "default",
+      },
+      providers: [
+        {
+          id: "agency-swarm",
+          models: {
+            default: {},
+          },
+        },
+        {
+          id: "openai",
+          models: {
+            "gpt-5": {},
+          },
+        },
+      ],
+      configModel: "agency-swarm/default",
+    }
+
+    expect(isUsableModel({ ...input, productMode: "build" })).toBe(false)
+    expect(isUsableModel({ ...input, productMode: "plan" })).toBe(false)
   })
 
   test("does not keep agency-swarm usable when disabled_providers filters it out", () => {
@@ -236,6 +484,86 @@ describe("tui local model selection", () => {
     })
   })
 
+  test("keeps Build and Plan agent models ahead of agency-swarm launcher fallback", () => {
+    const input = {
+      agentModel: {
+        providerID: "openai",
+        modelID: "gpt-5",
+      },
+      recentModels: [
+        {
+          providerID: "anthropic",
+          modelID: "claude-sonnet-4",
+        },
+      ],
+      providers: [
+        {
+          id: "openai",
+          models: {
+            "gpt-5": {},
+          },
+        },
+        {
+          id: "anthropic",
+          models: {
+            "claude-sonnet-4": {},
+          },
+        },
+      ],
+      configModel: "agency-swarm/default",
+      configuredProviders: {
+        "agency-swarm": {
+          name: "Agency Swarm",
+          options: {},
+        },
+      },
+    }
+
+    expect(selectCurrentModel({ ...input, productMode: "build" })).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5",
+    })
+    expect(selectCurrentModel({ ...input, productMode: "plan" })).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5",
+    })
+  })
+
+  test("uses inferred Build and Plan modes when selecting the current model", () => {
+    const input = {
+      agentModel: {
+        providerID: "openai",
+        modelID: "gpt-5",
+      },
+      providers: [
+        {
+          id: "openai",
+          models: {
+            "gpt-5": {},
+          },
+        },
+      ],
+      configModel: "agency-swarm/default",
+      configuredProviders: {
+        "agency-swarm": {
+          name: "Agency Swarm",
+          options: {},
+        },
+      },
+      hasAgencySwarmProvider: true,
+      storedBridge: false,
+    }
+
+    expect(selectCurrentModel({ ...input, agentName: "build" })).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5",
+    })
+    expect(selectCurrentModel({ ...input, agentName: "plan" })).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5",
+    })
+  })
+
   test("falls back when configured agency-swarm is filtered out", () => {
     expect(
       selectCurrentModel({
@@ -263,6 +591,47 @@ describe("tui local model selection", () => {
     ).toEqual({
       providerID: "openai",
       modelID: "gpt-5",
+    })
+  })
+
+  test("skips filtered and unusable provider-list fallbacks", () => {
+    expect(
+      selectCurrentModel({
+        providers: [
+          {
+            id: "agency-swarm",
+            models: {
+              default: {},
+            },
+          },
+          {
+            id: "openai",
+            models: {
+              "gpt-disabled": { id: "gpt-disabled" },
+            },
+          },
+          {
+            id: "anthropic",
+            models: {},
+          },
+          {
+            id: "openrouter",
+            models: {
+              "openrouter-default": { id: "openrouter-default" },
+            },
+          },
+        ],
+        providerDefaults: {
+          anthropic: "missing-default",
+          openrouter: "openrouter-default",
+        },
+        productMode: "build",
+        enabledProviders: ["anthropic", "openrouter"],
+        disabledProviders: ["openai"],
+      }),
+    ).toEqual({
+      providerID: "openrouter",
+      modelID: "openrouter-default",
     })
   })
 

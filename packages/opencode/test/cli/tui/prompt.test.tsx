@@ -104,6 +104,7 @@ describe("prompt auth rejection handling", () => {
     frameworkMode?: boolean
     openaiCredential?: boolean
     openrouterEnv?: string[]
+    productMode?: "build" | "plan" | "run"
     selectedModel?: { providerID: string; modelID: string }
     prompt: (input: { messageID: string; sessionID: string }) => Promise<unknown>
     sessionID: string
@@ -132,7 +133,8 @@ describe("prompt auth rejection handling", () => {
       "shell",
     )
 
-    spyOn(AgencySwarmRunSession, "sync").mockResolvedValue(undefined)
+    const syncRunSession = spyOn(AgencySwarmRunSession, "sync").mockResolvedValue(undefined)
+    const clearRunSession = spyOn(AgencySwarmRunSession, "clear").mockResolvedValue(undefined)
     spyOn(AutocompleteModule, "Autocomplete").mockImplementation((props: any) => {
       props.ref?.({
         onInput() {},
@@ -198,6 +200,7 @@ describe("prompt auth rejection handling", () => {
           },
         }),
         list: () => [{ name: "builder" }],
+        sessionID: () => input.sessionID,
         set: () => {},
         color: () => RGBA.fromHex("#38bdf8"),
       },
@@ -217,6 +220,13 @@ describe("prompt auth rejection handling", () => {
           set: () => {},
         },
       },
+      ...(input.productMode
+        ? {
+            product: {
+              current: () => input.productMode,
+            },
+          }
+        : {}),
     } as any)
     spyOn(SDKContext, "useSDK").mockReturnValue({
       client: {
@@ -345,8 +355,53 @@ describe("prompt auth rejection handling", () => {
     ))
 
     expect(promptRef).toBeDefined()
-    return { parts, promptRef: promptRef!, promptSession, shellSession }
+    return { clearRunSession, parts, promptRef: promptRef!, promptSession, shellSession, syncRunSession }
   }
+
+  test("keeps saved Run session state when submitting a Build prompt", async () => {
+    const { clearRunSession, promptRef, promptSession, syncRunSession } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      frameworkMode: false,
+      productMode: "build",
+      prompt: async () => ({ data: {} }),
+      sessionID: "session_build_preserve_run_state",
+      workspaceID: "workspace",
+    })
+
+    promptRef.set({ input: "fix the swarm", parts: [] })
+    promptRef.submit()
+    await flushEffects()
+
+    expect(promptSession).toHaveBeenCalledTimes(1)
+    expect(syncRunSession).not.toHaveBeenCalled()
+    expect(clearRunSession).not.toHaveBeenCalled()
+    const payload = promptSession.mock.calls[0]?.[0] as { $body_agencySwarmBridge?: boolean } | undefined
+    expect(payload?.$body_agencySwarmBridge).toBe(false)
+  })
+
+  test("keeps saved Run session state when submitting a Plan prompt", async () => {
+    const { clearRunSession, promptRef, promptSession, syncRunSession } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      frameworkMode: false,
+      productMode: "plan",
+      prompt: async () => ({ data: {} }),
+      sessionID: "session_plan_preserve_run_state",
+      workspaceID: "workspace",
+    })
+
+    promptRef.set({ input: "plan the swarm fix", parts: [] })
+    promptRef.submit()
+    await flushEffects()
+
+    expect(promptSession).toHaveBeenCalledTimes(1)
+    expect(syncRunSession).not.toHaveBeenCalled()
+    expect(clearRunSession).not.toHaveBeenCalled()
+    const payload = promptSession.mock.calls[0]?.[0] as
+      | { $body_agencySwarmBridge?: boolean; agent?: string }
+      | undefined
+    expect(payload?.$body_agencySwarmBridge).toBe(false)
+    expect(payload?.agent).toBe("plan")
+  })
 
   test("blocks selected OpenRouter prompts when only OpenAI env credentials exist", async () => {
     const { promptRef, promptSession } = await renderTelemetryPrompt({

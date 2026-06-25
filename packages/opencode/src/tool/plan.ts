@@ -69,6 +69,9 @@ export const PlanExitTool = Tool.define(
             type: "text",
             text: `The plan at ${plan} has been approved, you can now edit files. Execute the plan`,
             synthetic: true,
+            metadata: {
+              [MessageV2.AGENCY_SWARM_BRIDGE_METADATA_KEY]: false,
+            },
           } satisfies MessageV2.TextPart)
 
           return {

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { RGBA } from "@opentui/core"
 import { testRender, useRenderer } from "@opentui/solid"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
-import { type ParentProps } from "solid-js"
+import { onCleanup, type ParentProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import * as AgencySwarmConnectionContext from "../../../src/cli/cmd/tui/context/agency-swarm-connection"
 import * as ArgsContext from "../../../src/cli/cmd/tui/context/args"
@@ -29,11 +29,14 @@ import * as AutocompleteModule from "../../../src/cli/cmd/tui/component/prompt/a
 import { DialogProvider } from "../../../src/cli/cmd/tui/ui/dialog"
 import { AgencySwarmAdapter } from "../../../src/agency-swarm/adapter"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
-import { OpencodeKeymapProvider } from "../../../src/cli/cmd/tui/keymap"
+import { createOpencodeModeStack, OpencodeKeymapProvider } from "../../../src/cli/cmd/tui/keymap"
 
 function TestKeymapProvider(props: ParentProps) {
   const renderer = useRenderer()
-  return <OpencodeKeymapProvider keymap={createDefaultOpenTuiKeymap(renderer)}>{props.children}</OpencodeKeymapProvider>
+  const keymap = createDefaultOpenTuiKeymap(renderer)
+  const stack = createOpencodeModeStack(keymap)
+  onCleanup(() => stack.dispose())
+  return <OpencodeKeymapProvider keymap={keymap}>{props.children}</OpencodeKeymapProvider>
 }
 
 const testTuiConfig = {

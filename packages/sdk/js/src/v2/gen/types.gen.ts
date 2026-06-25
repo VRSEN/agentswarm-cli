@@ -488,6 +488,9 @@ export type SubtaskPart = {
     modelID: string
   }
   command?: string
+  metadata?: {
+    [key: string]: unknown
+  }
 }
 
 export type ReasoningPart = {
@@ -705,6 +708,9 @@ export type CompactionPart = {
   auto: boolean
   overflow?: boolean
   tail_start_id?: string
+  metadata?: {
+    [key: string]: unknown
+  }
 }
 
 export type Part =
@@ -1793,6 +1799,9 @@ export type SubtaskPartInput = {
     modelID: string
   }
   command?: string
+  metadata?: {
+    [key: string]: unknown
+  }
 }
 
 export type V2SessionsResponse = {
@@ -6047,6 +6056,7 @@ export type SessionSummarizeData = {
     providerID: string
     modelID: string
     auto?: boolean
+    agencySwarmBridge?: boolean
   }
   path: {
     sessionID: string
@@ -6195,6 +6205,7 @@ export type SessionShellData = {
       modelID: string
     }
     command: string
+    agencySwarmBridge?: boolean
   }
   path: {
     sessionID: string

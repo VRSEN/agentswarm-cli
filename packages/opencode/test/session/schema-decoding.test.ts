@@ -260,15 +260,13 @@ describe("Todo.Info", () => {
 })
 
 describe("SessionPrompt input schemas", () => {
-  test("Build and Plan agents stay native when config still defaults to Run", () => {
+  test("Build and Plan agent names do not override configured Run routing", () => {
     const input = {
       resolvedProviderID: "openai",
       configuredModel: "agency-swarm/default",
     }
 
-    expect(shouldUseAgencySwarmBridge({ ...input, agentName: "build" })).toBe(false)
-    expect(shouldUseAgencySwarmBridge({ ...input, agentName: "plan" })).toBe(false)
-    expect(shouldUseAgencySwarmBridge({ ...input, agentName: "general" })).toBe(true)
+    expect(shouldUseAgencySwarmBridge(input)).toBe(true)
   })
 
   test("explicit Run bridge override wins over visible native model state", () => {
@@ -276,13 +274,22 @@ describe("SessionPrompt input schemas", () => {
       shouldUseAgencySwarmBridge({
         resolvedProviderID: "openai",
         configuredModel: "openai/gpt-5",
-        agentName: "build",
         agencySwarmBridge: true,
       }),
     ).toBe(true)
   })
 
-  test("LoopInput is just sessionID", () => {
+  test("explicit native bridge override wins over configured Run routing", () => {
+    expect(
+      shouldUseAgencySwarmBridge({
+        resolvedProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+        agencySwarmBridge: false,
+      }),
+    ).toBe(false)
+  })
+
+  test("LoopInput accepts minimal sessionID", () => {
     const decode = decodeUnknown(SessionPrompt.LoopInput)
     expect(decode({ sessionID })).toEqual({ sessionID })
   })

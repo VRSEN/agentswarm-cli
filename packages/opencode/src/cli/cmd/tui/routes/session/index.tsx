@@ -88,13 +88,14 @@ import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { SessionRetry } from "@/session/retry"
 import { getRevertDiffFiles } from "../../util/revert-diff"
 import { useCommandPalette } from "../../context/command-palette"
-import { useBindings, useCommandShortcut } from "../../keymap"
+import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut } from "../../keymap"
 import { PathFormatterProvider, usePathFormatter } from "../../context/path-format"
 import { AgencyProduct } from "@/agency-swarm/product"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { describeStreamAuthError, isAgencySwarmFrameworkMode } from "../../session-error"
 import { displayRunOnlyModeLabel, readAgencyProviderOptions } from "../../util/agency-target"
 import { resolveAssistantModelLabel, type ModelLabelScope } from "../../util/model-label"
+import { AGENCY_SWARM_BRIDGE_METADATA_KEY } from "@/session/message-v2"
 
 addDefaultParsers(parsers.parsers)
 
@@ -118,6 +119,15 @@ function readAgencyLabelRecipient(message: UserMessage | undefined) {
   if (!message) return undefined
   return (message as AgencyLabelUserMessage).agencyLabelRecipientAgent ?? message.agencyRecipientAgent
 }
+
+function readAgencySwarmBridge(parts: Part[] | undefined) {
+  for (const part of parts ?? []) {
+    if (part.type !== "text" && part.type !== "subtask" && part.type !== "compaction") continue
+    const value = part.metadata?.[AGENCY_SWARM_BRIDGE_METADATA_KEY]
+    if (typeof value === "boolean") return value
+  }
+}
+
 const GO_UPSELL_PROVIDERS = new Set(["opencode", "opencode-go"])
 
 function goUpsellKeys(action: SessionRetry.Retryable["action"]) {
@@ -192,6 +202,7 @@ const context = createContext<{
     submittedModel?: { providerID: string; modelID: string }
     scope?: ModelLabelScope
     turnStartedAt?: number
+    frameworkMode?: boolean
   }) => string
   providers: () => ReadonlyMap<string, Provider>
   sync: ReturnType<typeof useSync>
@@ -316,6 +327,7 @@ export function Session() {
     submittedModel?: { providerID: string; modelID: string }
     scope?: ModelLabelScope
     turnStartedAt?: number
+    frameworkMode?: boolean
   }) => {
     const options = agencyProviderOptions()
     const configuredTargetChangedAfterTurn =
@@ -332,7 +344,7 @@ export function Session() {
       modelID: input.modelID,
       submittedModel: input.submittedModel,
       recipientAgent: input.recipientAgent ?? (configuredTargetChangedAfterTurn ? undefined : options.recipientAgent),
-      frameworkMode: frameworkMode(),
+      frameworkMode: input.frameworkMode ?? frameworkMode(),
       scope: input.scope,
     })
   }
@@ -659,6 +671,7 @@ export function Session() {
           sessionID: route.sessionID,
           modelID: selectedModel.modelID,
           providerID: selectedModel.providerID,
+          agencySwarmBridge: frameworkMode(),
         })
         dialog.clear()
       },
@@ -1156,10 +1169,12 @@ export function Session() {
   )
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     commands: sessionCommands(),
   }))
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     enabled: command.matcher,
     bindings: tuiConfig.keybinds.gather("session", sessionBindingCommands),
   }))
@@ -1523,6 +1538,16 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       (message): message is UserMessage => message.role === "user" && message.id === props.message.parentID,
     ),
   )
+  const parentParts = createMemo(() => {
+    const msg = parent()
+    return msg ? (sync.data.part[msg.id] ?? []) : []
+  })
+  const turnFrameworkMode = createMemo(() => {
+    const bridge = readAgencySwarmBridge(parentParts())
+    if (typeof bridge === "boolean") return bridge
+    if (props.message.providerID === AgencySwarmAdapter.PROVIDER_ID) return true
+    return false
+  })
   const model = createMemo(() =>
     ctx.modelLabel({
       providerID: props.message.providerID,
@@ -1532,6 +1557,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       recipientAgent: readAgencyLabelRecipient(parent()),
       submittedModel: parent()?.model,
       turnStartedAt: parent()?.time.created,
+      frameworkMode: turnFrameworkMode(),
     }),
   )
 
@@ -1606,7 +1632,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
               </span>{" "}
               <span style={{ fg: theme.text }}>
                 {displayRunOnlyModeLabel({
-                  frameworkMode: ctx.frameworkMode(),
+                  frameworkMode: turnFrameworkMode(),
                   mode: props.message.mode,
                 })}
               </span>

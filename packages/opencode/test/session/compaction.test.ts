@@ -601,6 +601,7 @@ describe("session.compaction.create", () => {
           model: ref,
           auto: true,
           overflow: true,
+          agencySwarmBridge: false,
         })
 
         const msgs = yield* ssn.messages({ sessionID: info.id })
@@ -611,6 +612,7 @@ describe("session.compaction.create", () => {
           type: "compaction",
           auto: true,
           overflow: true,
+          metadata: { agencySwarmBridge: false },
         })
 
         const v2 = yield* SessionV2.Service.use((svc) => svc.messages({ sessionID: info.id })).pipe(
@@ -1066,6 +1068,7 @@ describe("session.compaction.process", () => {
         messages: msgs,
         sessionID: session.id,
         auto: true,
+        agencySwarmBridge: false,
       })
 
       const all = yield* ssn.messages({ sessionID: session.id })
@@ -1076,7 +1079,7 @@ describe("session.compaction.process", () => {
       expect(last?.parts[0]).toMatchObject({
         type: "text",
         synthetic: true,
-        metadata: { compaction_continue: true },
+        metadata: { compaction_continue: true, agencySwarmBridge: false },
       })
       if (last?.parts[0]?.type === "text") {
         expect(last.parts[0].text).toContain("Continue if you have next steps")

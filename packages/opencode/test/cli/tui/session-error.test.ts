@@ -314,6 +314,7 @@ describe("agency session errors", () => {
     expect(shouldOpenStartupAuthDialog(input)).toBe(false)
     expect(
       shouldBlockAgencyPromptSubmit({
+        productMode: undefined,
         currentProviderID: "agency-swarm",
         configuredModel: "agency-swarm/default",
         providers: input.providers,
@@ -455,6 +456,7 @@ describe("agency session errors", () => {
   test("framework mode stays true when config default is agency-swarm even if session uses openai upstream", () => {
     expect(
       isAgencySwarmFrameworkMode({
+        productMode: undefined,
         currentProviderID: "openai",
         configuredModel: "agency-swarm/default",
       }),
@@ -464,6 +466,7 @@ describe("agency session errors", () => {
   test("framework mode is true when agent default is agency-swarm but session model is openai", () => {
     expect(
       isAgencySwarmFrameworkMode({
+        productMode: undefined,
         currentProviderID: "openai",
         configuredModel: undefined,
         agentModel: { providerID: "agency-swarm", modelID: "default" },
@@ -474,6 +477,7 @@ describe("agency session errors", () => {
   test("framework mode falls back to the configured agency-swarm model when no current provider is selected", () => {
     expect(
       isAgencySwarmFrameworkMode({
+        productMode: undefined,
         configuredModel: "agency-swarm/default",
       }),
     ).toBe(true)
@@ -977,6 +981,7 @@ describe("agency session errors", () => {
   test("blocks the first agency prompt when supported auth is missing", () => {
     expect(
       shouldBlockAgencyPromptSend({
+        productMode: undefined,
         currentProviderID: "agency-swarm",
         configuredModel: "agency-swarm/default",
         providers: [
@@ -1004,6 +1009,7 @@ describe("agency session errors", () => {
   test("does not block the first agency prompt when supported auth exists", () => {
     expect(
       shouldBlockAgencyPromptSend({
+        productMode: undefined,
         currentProviderID: "agency-swarm",
         configuredModel: "agency-swarm/default",
         providers: [
@@ -1031,6 +1037,7 @@ describe("agency session errors", () => {
 
   test("does not block shell mode or slash commands during agency auth gating", () => {
     const input = {
+      productMode: undefined,
       currentProviderID: "agency-swarm",
       configuredModel: "agency-swarm/default",
       providers: [

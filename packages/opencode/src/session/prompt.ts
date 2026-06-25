@@ -96,17 +96,10 @@ export function shouldUseAgencySwarmBridge(input: {
   configuredModel?: string
   agentProviderID?: string
   lastAssistantProviderID?: string
-  agentName?: string
   agencySwarmBridge?: boolean
 }) {
   if (input.agencySwarmBridge === true) return true
   if (input.agencySwarmBridge === false) return false
-  if (
-    input.resolvedProviderID !== SessionAgencySwarm.PROVIDER_ID &&
-    (input.agentName === "build" || input.agentName === "plan")
-  ) {
-    return false
-  }
   return isAgencySwarmRunMode({
     currentProviderID:
       input.resolvedProviderID === SessionAgencySwarm.PROVIDER_ID ||
@@ -121,6 +114,48 @@ export function shouldUseAgencySwarmBridge(input: {
         }
       : undefined,
   })
+}
+
+function agencySwarmBridgeFromParts(parts: MessageV2.Part[] | undefined) {
+  for (const part of parts ?? []) {
+    if (part.type !== "text" && part.type !== "subtask" && part.type !== "compaction") continue
+    const value = part.metadata?.[MessageV2.AGENCY_SWARM_BRIDGE_METADATA_KEY]
+    if (typeof value === "boolean") return value
+  }
+}
+
+function markAgencySwarmBridge(
+  parts: MessageV2.Part[],
+  value: boolean | undefined,
+  fallback?: { sessionID: SessionID; messageID: MessageID },
+) {
+  if (value === undefined) return parts
+  const part = parts.find(
+    (item): item is MessageV2.TextPart | MessageV2.SubtaskPart => item.type === "text" || item.type === "subtask",
+  )
+  if (!part) {
+    const anchor = parts[0]
+    const sessionID = anchor?.sessionID ?? fallback?.sessionID
+    const messageID = anchor?.messageID ?? fallback?.messageID
+    if (!sessionID || !messageID) return parts
+    parts.push({
+      id: PartID.ascending(),
+      sessionID,
+      messageID,
+      type: "text",
+      synthetic: true,
+      text: "",
+      metadata: {
+        [MessageV2.AGENCY_SWARM_BRIDGE_METADATA_KEY]: value,
+      },
+    })
+    return parts
+  }
+  part.metadata = {
+    ...part.metadata,
+    [MessageV2.AGENCY_SWARM_BRIDGE_METADATA_KEY]: value,
+  }
+  return parts
 }
 
 type ReferencePromptMetadata = {
@@ -567,6 +602,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
       bypassAgentCheck: boolean
       messages: MessageV2.WithParts[]
+      agencySwarmBridge: boolean
     }) {
       using _ = log.time("resolveTools")
       const tools: Record<string, AITool> = {}
@@ -578,7 +614,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         abort: options.abortSignal!,
         messageID: input.processor.message.id,
         callID: options.toolCallId,
-        extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck, promptOps },
+        extra: {
+          model: input.model,
+          bypassAgentCheck: input.bypassAgentCheck,
+          promptOps,
+          agencySwarmBridge: input.agencySwarmBridge,
+        },
         agent: input.agent.name,
         messages: input.messages,
         metadata: (val) =>
@@ -806,6 +847,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         throw error
       }
 
+      const taskUser = msgs.findLast((item) => item.info.role === "user" && item.info.id === lastUser.id)
+      const taskAgencySwarmBridge = agencySwarmBridgeFromParts([task]) ?? agencySwarmBridgeFromParts(taskUser?.parts)
       let error: Error | undefined
       const taskAbort = new AbortController()
       const result = yield* taskTool
@@ -815,7 +858,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           sessionID,
           abort: taskAbort.signal,
           callID: part.callID,
-          extra: { bypassAgentCheck: true, promptOps },
+          extra: { bypassAgentCheck: true, promptOps, agencySwarmBridge: taskAgencySwarmBridge },
           messages: msgs,
           metadata: (val: { title?: string; metadata?: Record<string, any> }) =>
             Effect.gen(function* () {
@@ -929,6 +972,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         type: "text",
         text: "Summarize the task tool output above and continue with your task.",
         synthetic: true,
+        metadata:
+          taskAgencySwarmBridge === undefined
+            ? undefined
+            : {
+                [MessageV2.AGENCY_SWARM_BRIDGE_METADATA_KEY]: taskAgencySwarmBridge,
+              },
       } satisfies MessageV2.TextPart)
     })
 
@@ -967,6 +1016,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               sessionID: input.sessionID,
               text: "The following tool was executed by the user",
               synthetic: true,
+              metadata:
+                input.agencySwarmBridge === undefined
+                  ? undefined
+                  : {
+                      [MessageV2.AGENCY_SWARM_BRIDGE_METADATA_KEY]: input.agencySwarmBridge,
+                    },
             }
             yield* sessions.updatePart(userPart)
 
@@ -1526,7 +1581,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         { message: info, parts: resolvedParts },
       )
 
-      const parts = yield* Effect.forEach(resolvedParts, (part) =>
+      const routedParts = markAgencySwarmBridge(resolvedParts, input.agencySwarmBridge, {
+        sessionID: input.sessionID,
+        messageID: info.id,
+      })
+      const parts = yield* Effect.forEach(routedParts, (part) =>
         part.type === "file" &&
         part.mime.startsWith("image/") &&
         info.model.providerID !== AgencySwarmAdapter.PROVIDER_ID
@@ -1743,6 +1802,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
           const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
           const task = tasks.pop()
+          const userMsg = msgs.findLast((item) => item.info.role === "user" && item.info.id === lastUser.id)
+          const currentAgencySwarmBridge = agencySwarmBridgeFromParts(userMsg?.parts) ?? input.agencySwarmBridge
 
           if (task?.type === "subtask") {
             yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
@@ -1756,6 +1817,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               sessionID,
               auto: task.auto,
               overflow: task.overflow,
+              agencySwarmBridge: currentAgencySwarmBridge,
             })
             if (result === "stop") break
             continue
@@ -1766,7 +1828,13 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             lastFinished.summary !== true &&
             (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
           ) {
-            yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
+            yield* compaction.create({
+              sessionID,
+              agent: lastUser.agent,
+              model: lastUser.model,
+              auto: true,
+              agencySwarmBridge: currentAgencySwarmBridge,
+            })
             continue
           }
 
@@ -1784,8 +1852,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             configuredModel: cfg.model,
             agentProviderID: agent.model?.providerID,
             lastAssistantProviderID: lastAssistant?.providerID,
-            agentName: agent.name,
-            agencySwarmBridge: input.agencySwarmBridge,
+            agencySwarmBridge: currentAgencySwarmBridge,
           })
           const processorModel = useAgencySwarmBridge
             ? yield* getModel(
@@ -1883,6 +1950,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   model: lastUser.model,
                   auto: true,
                   overflow: !handle.message.finish,
+                  agencySwarmBridge: useAgencySwarmBridge,
                 })
               }
               return "continue" as const
@@ -1896,6 +1964,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               processor: handle,
               bypassAgentCheck,
               messages: msgs,
+              agencySwarmBridge: useAgencySwarmBridge,
             })
 
             if (lastUser.format?.type === "json_schema") {
@@ -1938,7 +2007,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             ])
             const modeInstructions = [
               ...agentBuilderInstructions(agent.name, model.providerID),
-              ...agentPlannerInstructions(agent.name, model.providerID),
+              ...agentPlannerInstructions(agent.name, model.providerID, flags.experimentalPlanMode),
             ]
             const system = [...env, ...instructions, ...modeInstructions, ...(skills ? [skills] : [])]
             const format = lastUser.format ?? { type: "text" as const }
@@ -1983,6 +2052,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 model: lastUser.model,
                 auto: true,
                 overflow: !handle.message.finish,
+                agencySwarmBridge: useAgencySwarmBridge,
               })
             }
             return "continue" as const
@@ -2221,6 +2291,7 @@ export const ShellInput = Schema.Struct({
   agent: Schema.String,
   model: Schema.optional(ModelRef),
   command: Schema.String,
+  agencySwarmBridge: Schema.optional(Schema.Boolean),
 })
 export type ShellInput = Schema.Schema.Type<typeof ShellInput>
 

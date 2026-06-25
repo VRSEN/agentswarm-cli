@@ -182,9 +182,10 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** Missing selected Ollama models offer an Ollama download flow, and a dismissed download cannot later close a newer dialog.
 - **Happy-path proof:** In-flight Agency runs cancel through the bridge.
 - **Happy-path proof:** Codex OAuth is stripped from non-OpenAI LiteLLM agency runs.
-- **Happy-path proof:** Run mode hides Builder, Plan, `/editor`, `/variants`, `/init`, `/review`, and other disabled upstream-native surfaces.
+- **Happy-path proof:** Run mode hides Build, Plan, `/editor`, `/variants`, `/init`, `/review`, and other disabled upstream-native surfaces.
 - **Happy-path proof:** `/modes` remains available in Run so the user can switch to Build or Plan without leaving the project.
 - **Happy-path proof:** `/models` and `/auth` are limited to Agency-supported providers.
+- **Happy-path proof:** Starting with explicit `agency-swarm/...` model args stays in Run mode even before provider metadata is loaded.
 - **Happy-path proof:** Upstream provider/model state used for auth or LLM choice does not pull the user out of Run mode by accident.
 - **Happy-path proof:** `agency-swarm/default` stays active over stale stored model state until the user explicitly chooses another model.
 - **Happy-path proof:** Footer/status labels and completed run rows show actual Agent Swarm model labels when agency metadata exposes them, without changing the internal `agency-swarm/default` route.
@@ -198,16 +199,26 @@ For each failure scenario, capture the visible user result and cite the matching
 
 #### `/modes`, Build, and Plan
 
-- **Trigger:** The user runs `/modes` and chooses Build, Plan, or Run.
+- **Trigger:** The user runs `/modes` and chooses Plan, Build, or Run.
 - **Happy-path proof:** `/modes` is the product mode switch; `/build` and `/plan` slash commands do not exist.
-- **Happy-path proof:** Build uses native OpenCode build behavior with fork-specific Agent Swarm repo instructions and works without an Agency Swarm server.
-- **Happy-path proof:** Plan uses native OpenCode Plan mode with fork-specific Agent Swarm handoff instructions and works without an Agency Swarm server.
+- **Happy-path proof:** `/modes` lists the modes in work order: Plan, Build, Run.
+- **Happy-path proof:** Build uses native OpenCode Build behavior with added Agent Swarm Build instructions and works without an Agency Swarm server.
+- **Happy-path proof:** Plan uses native OpenCode Plan mode with added Agent Swarm Planner instructions and works without an Agency Swarm server.
+- **Happy-path proof:** The Build and Plan instruction payloads still include the native OpenCode system prompt, then add the Agent Swarm-specific guidance.
 - **Happy-path proof:** Build and Plan prompts use native local agent state, not the Agency Swarm backend target state.
+- **Happy-path proof:** Mixed sessions keep each completed turn's own mode label, including older Run turns saved before mode metadata existed.
 - **Happy-path proof:** Native OpenCode commands hidden in Run return in Build and Plan.
 - **Happy-path proof:** `/agents` uses the native OpenCode agent picker in Build and Plan.
 - **Happy-path proof:** Tab cycles native local agents in Build and Plan.
+- **Happy-path proof:** Plan mode submits the native Plan agent while Plan is selected; choosing another local agent moves the turn back to native Build behavior instead of silently ignoring the selected agent.
 - **Happy-path proof:** Switching from Run to Build or Plan stops treating prompts as server-backed Run prompts.
+- **Happy-path proof:** Sending a Build or Plan prompt after leaving Run does not erase the saved Run target for the session.
+- **Happy-path proof:** Shell commands in Build and Plan preserve native mode when the session is reopened.
+- **Happy-path proof:** In Build and Plan, `/compact` and auto-compaction keep prompts native and do not switch the session back to server-backed Run routing.
+- **Happy-path proof:** When Plan finishes and asks whether to switch to Build, pressing Enter on `Yes` switches the TUI to Build and creates the native approved-plan handoff turn.
+- **Happy-path proof:** The Plan approval question owns keyboard input while it is open, so session shortcuts do not fire at the same time.
 - **Happy-path proof:** Switching back to Run in the same project reconnects to or keeps using the Agency Swarm server and returns `/agents` to the swarm/agent picker.
+- **Happy-path proof:** Message actions use the selected turn's saved or legacy-inferred Run/native routing metadata, so Revert is shown or hidden for the selected turn even after switching modes.
 - **Failure scenarios to test:** Server failure in Run still lets the user switch to Build or Plan in the same project, make a plan or build a fix, then return to Run.
 - **Failure scenarios to test:** Run mode stays server-backed even when visible provider/model state is native.
 
@@ -251,9 +262,9 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** `connect` stores normalized backend config and optional bearer token.
 - **Happy-path proof:** `agencies` discovers available agencies.
 - **Happy-path proof:** `use` pins a default agency id.
-- **Happy-path proof:** `agent` provides Agent Builder scaffold helpers.
+- **Happy-path proof:** `agent new` is not promoted in help output because the non-natural-language scaffold helper is not the Build-mode user flow.
 - **Failure scenarios to test:** URL normalization and discovery failures surface in the CLI command.
-- **Failure scenarios to test:** `agentswarm agency agent new` fails visibly when `agency-swarm create-agent-template` fails.
+- **Failure scenarios to test:** Direct `agentswarm agency agent new` use, if invoked anyway, fails visibly when `agency-swarm create-agent-template` fails.
 
 ### Trust-Safe Telemetry
 

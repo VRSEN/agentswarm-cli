@@ -1,4 +1,4 @@
-import { type CliRenderer } from "@opentui/core"
+import { InputRenderable, TextareaRenderable, type CliRenderer } from "@opentui/core"
 import * as addons from "@opentui/keymap/addons/opentui"
 import { stringifyKeyStroke } from "@opentui/keymap"
 import {
@@ -18,6 +18,9 @@ import { useTuiConfig } from "./context/tui-config"
 import { TuiKeybind } from "./config/keybind"
 
 export const LEADER_TOKEN = "leader"
+export const OPENCODE_BASE_MODE = "base"
+
+const OPENCODE_MODE_KEY = "opencode.mode"
 
 export const OpencodeKeymapProvider = KeymapProvider
 export const useOpencodeKeymap = useKeymap
@@ -25,10 +28,74 @@ export const useOpencodeKeymap = useKeymap
 export { reactiveMatcherFromSignal, useBindings, useKeymapSelector }
 
 export type OpenTuiKeymap = ReturnType<typeof useKeymap>
+type OpencodeModeStack = ReturnType<typeof createOpencodeModeStack>
+
+const modeStacks = new WeakMap<OpenTuiKeymap, OpencodeModeStack>()
+
+export function createOpencodeModeStack(keymap: OpenTuiKeymap) {
+  keymap.setData(OPENCODE_MODE_KEY, OPENCODE_BASE_MODE)
+
+  const offFields = keymap.registerLayerFields({
+    mode(value, ctx) {
+      ctx.require(OPENCODE_MODE_KEY, value)
+    },
+  })
+
+  const stack: { id: symbol; mode: string }[] = []
+  let disposed = false
+
+  const update = () => {
+    keymap.setData(OPENCODE_MODE_KEY, stack.at(-1)?.mode ?? OPENCODE_BASE_MODE)
+  }
+
+  const api = {
+    current() {
+      return stack.at(-1)?.mode ?? OPENCODE_BASE_MODE
+    },
+    push(mode: string) {
+      if (disposed) return () => {}
+      const id = Symbol(mode)
+      let active = true
+      stack.push({ id, mode })
+      update()
+
+      return () => {
+        if (!active) return
+        active = false
+        const index = stack.findIndex((item) => item.id === id)
+        if (index !== -1) stack.splice(index, 1)
+        update()
+      }
+    },
+    dispose() {
+      if (disposed) return
+      disposed = true
+      stack.length = 0
+      offFields()
+      keymap.setData(OPENCODE_MODE_KEY, undefined)
+      modeStacks.delete(keymap)
+    },
+  }
+
+  modeStacks.set(keymap, api)
+  return api
+}
+
+export function useOpencodeModeStack() {
+  return getOpencodeModeStack(useOpencodeKeymap())
+}
+
+export function getOpencodeModeStack(keymap: OpenTuiKeymap) {
+  const value = modeStacks.get(keymap)
+  if (!value) throw new Error("OpenCode mode stack is not registered for this keymap")
+  return value
+}
 
 const KEY_ALIASES = {
   enter: "return",
   esc: "escape",
+  pgdown: "pagedown",
+  pgup: "pageup",
 } as const
 
 function expandKeyAliases(input: string) {
@@ -109,6 +176,11 @@ function formatOptions(config: TuiConfig.Resolved) {
   } as const
 }
 
+function hasManagedTextareaFocus(renderer: CliRenderer) {
+  const editor = renderer.currentFocusedEditor
+  return editor instanceof TextareaRenderable && !(editor instanceof InputRenderable)
+}
+
 export function formatKeySequence(parts: Parameters<typeof formatKeySequenceExtra>[0], config: TuiConfig.Resolved) {
   return formatKeySequenceExtra(parts, formatOptions(config))
 }
@@ -125,6 +197,7 @@ export function registerOpencodeKeymap(
   renderer: CliRenderer,
   config: Pick<TuiConfig.Resolved, "keybinds" | "leader_timeout">,
 ) {
+  const modeStack = createOpencodeModeStack(keymap)
   const offCommaBindings = addons.registerCommaBindings(keymap)
   const offAliasExpander = registerKeyAliases(keymap)
   const offBaseLayout = addons.registerBaseLayoutFallback(keymap)
@@ -136,7 +209,7 @@ export function registerOpencodeKeymap(
   const offEscape = addons.registerEscapeClearsPendingSequence(keymap)
   const offBackspace = addons.registerBackspacePopsPendingSequence(keymap)
   const offInputBindings = addons.registerManagedTextareaLayer(keymap, renderer, {
-    enabled: () => renderer.currentFocusedEditor !== null,
+    enabled: () => hasManagedTextareaFocus(renderer),
     bindings: config.keybinds.gather("input", inputCommands),
   })
 
@@ -148,6 +221,7 @@ export function registerOpencodeKeymap(
     offAliasExpander()
     offBaseLayout()
     offCommaBindings()
+    modeStack.dispose()
   }
 }
 

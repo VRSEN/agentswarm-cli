@@ -168,7 +168,7 @@ function hasExplicitAgencyClientConfig(provider: Provider | undefined) {
  * but the configured or agent model still points at `agency-swarm/...`, framework mode stays on so auth and
  * provider UI stay aligned with Agent Swarm.
  */
-export function isAgencySwarmFrameworkMode(input: AgencySwarmRunModeInput & { productMode?: ProductMode }) {
+export function isAgencySwarmFrameworkMode(input: AgencySwarmRunModeInput & { productMode: ProductMode | undefined }) {
   if (input.productMode === "run") return true
   if (input.productMode === "build" || input.productMode === "plan") return false
   return isAgencySwarmRunMode(input)
@@ -204,7 +204,7 @@ export function shouldOpenStartupAuthDialog(input: {
 }
 
 export function shouldBlockAgencyPromptSend(input: {
-  productMode?: ProductMode
+  productMode: ProductMode | undefined
   currentProviderID?: string
   configuredModel?: string
   agentModel?: { providerID: string; modelID: string }
@@ -223,7 +223,7 @@ export function shouldBlockAgencyPromptSend(input: {
 }
 
 export function shouldBlockAgencyPromptSubmit(input: {
-  productMode?: ProductMode
+  productMode: ProductMode | undefined
   currentProviderID?: string
   configuredModel?: string
   agentModel?: { providerID: string; modelID: string }

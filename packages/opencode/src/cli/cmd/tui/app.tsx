@@ -73,7 +73,13 @@ import type { RouteMap } from "@/cli/cmd/tui/plugin/api"
 import { createTuiAttention } from "@/cli/cmd/tui/attention"
 import { FormatError, FormatUnknownError } from "@/cli/error"
 import { CommandPaletteProvider, useCommandPalette } from "./context/command-palette"
-import { OpencodeKeymapProvider, registerOpencodeKeymap, useBindings, useOpencodeKeymap } from "./keymap"
+import {
+  OPENCODE_BASE_MODE,
+  OpencodeKeymapProvider,
+  registerOpencodeKeymap,
+  useBindings,
+  useOpencodeKeymap,
+} from "./keymap"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencySwarmOllama } from "@/agency-swarm/ollama"
 import { AgencyProduct } from "@/agency-swarm/product"
@@ -742,6 +748,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
             return
           }
           local.agent.move(1)
+          const agent = local.agent.current()
+          if (agent?.name === "build" || agent?.name === "plan") void local.product.set(agent.name)
         },
       },
       {
@@ -782,6 +790,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
             return
           }
           local.agent.move(-1)
+          const agent = local.agent.current()
+          if (agent?.name === "build" || agent?.name === "plan") void local.product.set(agent.name)
         },
       },
       {
@@ -993,10 +1003,12 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   )
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     commands: appCommands(),
   }))
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     enabled: command.matcher,
     bindings: tuiConfig.keybinds.gather(
       "app",
@@ -1009,6 +1021,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   }))
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     enabled: () => {
       const ok = command.matcher.get()
       if (!ok) return false

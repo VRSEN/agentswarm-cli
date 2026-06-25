@@ -18,6 +18,7 @@ import { useSDK } from "./sdk"
 import { RGBA } from "@opentui/core"
 import { Provider } from "@/provider/provider"
 import { Filesystem } from "@/util/filesystem"
+import type { Part } from "@opencode-ai/sdk/v2"
 
 export function parseModel(model: string) {
   const [providerID, ...rest] = model.split("/")
@@ -37,6 +38,73 @@ type StoredModelSelection = ModelSelection & {
 }
 
 export type ProductMode = "build" | "plan" | "run"
+const AGENCY_SWARM_BRIDGE_METADATA_KEY = "agencySwarmBridge"
+
+function isProviderEnabled(input: { providerID: string; enabledProviders?: string[]; disabledProviders?: string[] }) {
+  if (input.enabledProviders && !input.enabledProviders.includes(input.providerID)) return false
+  if (input.disabledProviders?.includes(input.providerID)) return false
+  return true
+}
+
+export function inferProductMode(input: {
+  storedMode?: ProductMode
+  storedModel?: StoredModelSelection
+  storedBridge?: boolean
+  agentName?: string
+  currentProviderID?: string
+  configuredModel?: string
+  hasAgencySwarmProvider?: boolean
+  enabledProviders?: string[]
+  disabledProviders?: string[]
+  argModel?: string
+  agentModel?: ModelSelection
+}) {
+  const agencySwarmEnabled = isProviderEnabled({
+    providerID: AgencySwarmAdapter.PROVIDER_ID,
+    enabledProviders: input.enabledProviders,
+    disabledProviders: input.disabledProviders,
+  })
+  if (input.storedMode === "plan" && input.agentName && input.agentName !== "plan") return "build"
+  if (input.storedMode) return input.storedMode
+  if (input.storedBridge === true) return agencySwarmEnabled ? "run" : "build"
+  if (input.agentName === "plan") return "plan"
+  if (input.storedBridge === false) return "build"
+  if (
+    input.agentName === "build" &&
+    !input.argModel &&
+    input.storedModel &&
+    input.currentProviderID &&
+    input.currentProviderID !== AgencySwarmAdapter.PROVIDER_ID
+  ) {
+    return "build"
+  }
+  if (input.hasAgencySwarmProvider && agencySwarmEnabled) return "run"
+  if (
+    agencySwarmEnabled &&
+    isAgencySwarmRunMode({
+      argModel: input.argModel,
+      currentProviderID: input.currentProviderID,
+      configuredModel: input.configuredModel,
+      agentModel: input.agentModel,
+    })
+  ) {
+    return "run"
+  }
+  return "build"
+}
+
+export function readAgencySwarmBridge(parts: Part[] | undefined) {
+  for (const part of parts ?? []) {
+    if (part.type !== "text" && part.type !== "subtask" && part.type !== "compaction") continue
+    const value = part.metadata?.[AGENCY_SWARM_BRIDGE_METADATA_KEY]
+    if (typeof value === "boolean") return value
+  }
+}
+
+function isAllowedProductModel(input: { model: ModelSelection; productMode?: ProductMode }) {
+  if (input.productMode !== "build" && input.productMode !== "plan") return true
+  return input.model.providerID !== AgencySwarmAdapter.PROVIDER_ID
+}
 
 export function isUsableModel(input: {
   model: ModelSelection
@@ -51,12 +119,20 @@ export function isUsableModel(input: {
   disabledProviders?: string[]
   productMode?: ProductMode
 }) {
+  if (!isAllowedProductModel(input)) return false
+  if (
+    !isProviderEnabled({
+      providerID: input.model.providerID,
+      enabledProviders: input.enabledProviders,
+      disabledProviders: input.disabledProviders,
+    })
+  ) {
+    return false
+  }
   const provider = input.providers.find((x) => x.id === input.model.providerID)
   if (provider?.models[input.model.modelID]) return true
   if (input.model.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
   if (input.model.modelID !== AgencySwarmAdapter.DEFAULT_MODEL_ID) return false
-  if (input.enabledProviders && !input.enabledProviders.includes(AgencySwarmAdapter.PROVIDER_ID)) return false
-  if (input.disabledProviders?.includes(AgencySwarmAdapter.PROVIDER_ID)) return false
   if (input.productMode === "run") return true
   const selectedAgencySwarmModel = [input.argModel, input.configModel].some(
     (value) => value === `${AgencySwarmAdapter.PROVIDER_ID}/${AgencySwarmAdapter.DEFAULT_MODEL_ID}`,
@@ -80,7 +156,36 @@ export function selectCurrentModel(input: {
   enabledProviders?: string[]
   disabledProviders?: string[]
   productMode?: ProductMode
+  storedMode?: ProductMode
+  storedBridge?: boolean
+  agentName?: string
+  currentProviderID?: string
+  hasAgencySwarmProvider?: boolean
 }) {
+  const hasProductModeContext =
+    input.storedMode !== undefined ||
+    input.storedBridge !== undefined ||
+    input.agentName !== undefined ||
+    input.currentProviderID !== undefined ||
+    input.hasAgencySwarmProvider !== undefined
+  const productMode =
+    input.productMode ??
+    (hasProductModeContext
+      ? inferProductMode({
+          storedMode: input.storedMode,
+          storedModel: input.storedModel,
+          storedBridge: input.storedBridge,
+          agentName: input.agentName,
+          currentProviderID: input.currentProviderID ?? input.storedModel?.providerID ?? input.agentModel?.providerID,
+          configuredModel: input.configModel,
+          hasAgencySwarmProvider: input.hasAgencySwarmProvider,
+          enabledProviders: input.enabledProviders,
+          disabledProviders: input.disabledProviders,
+          argModel: input.argModel,
+          agentModel: input.agentModel,
+        })
+      : undefined)
+
   function isModelValid(model: ModelSelection) {
     return isUsableModel({
       model,
@@ -90,20 +195,15 @@ export function selectCurrentModel(input: {
       configuredProviders: input.configuredProviders,
       enabledProviders: input.enabledProviders,
       disabledProviders: input.disabledProviders,
-      productMode: input.productMode,
+      productMode,
     })
-  }
-
-  function isAllowedProductModel(model: ModelSelection) {
-    if (input.productMode !== "build" && input.productMode !== "plan") return true
-    return model.providerID !== AgencySwarmAdapter.PROVIDER_ID
   }
 
   function getFirstValidModel(...modelFns: (() => ModelSelection | undefined)[]) {
     for (const modelFn of modelFns) {
       const model = modelFn()
       if (!model) continue
-      if (!isAllowedProductModel(model)) continue
+      if (!isAllowedProductModel({ model, productMode })) continue
       if (isModelValid(model)) return { providerID: model.providerID, modelID: model.modelID }
     }
   }
@@ -111,7 +211,10 @@ export function selectCurrentModel(input: {
   const fallbackModel = () => {
     if (input.argModel) {
       const { providerID, modelID } = Provider.parseModel(input.argModel)
-      if (isAllowedProductModel({ providerID, modelID }) && isModelValid({ providerID, modelID })) {
+      if (
+        isAllowedProductModel({ model: { providerID, modelID }, productMode }) &&
+        isModelValid({ providerID, modelID })
+      ) {
         return {
           providerID,
           modelID,
@@ -121,7 +224,10 @@ export function selectCurrentModel(input: {
 
     if (input.configModel) {
       const { providerID, modelID } = Provider.parseModel(input.configModel)
-      if (isAllowedProductModel({ providerID, modelID }) && isModelValid({ providerID, modelID })) {
+      if (
+        isAllowedProductModel({ model: { providerID, modelID }, productMode }) &&
+        isModelValid({ providerID, modelID })
+      ) {
         return {
           providerID,
           modelID,
@@ -130,23 +236,21 @@ export function selectCurrentModel(input: {
     }
 
     for (const item of input.recentModels ?? []) {
-      if (isAllowedProductModel(item) && isModelValid(item)) {
+      if (isAllowedProductModel({ model: item, productMode }) && isModelValid(item)) {
         return item
       }
     }
 
-    const provider = input.providers.find((item) => {
-      if (input.productMode !== "build" && input.productMode !== "plan") return true
-      return item.id !== AgencySwarmAdapter.PROVIDER_ID
-    })
-    if (!provider) return undefined
-    const defaultModel = input.providerDefaults?.[provider.id]
-    const firstModel = Object.values(provider.models)[0] as { id?: string } | undefined
-    const model = defaultModel ?? firstModel?.id
-    if (!model) return undefined
-    return {
-      providerID: provider.id,
-      modelID: model,
+    for (const provider of input.providers) {
+      const firstModel = Object.values(provider.models)[0] as { id?: string } | undefined
+      for (const model of [input.providerDefaults?.[provider.id], firstModel?.id]) {
+        if (!model) continue
+        const item = {
+          providerID: provider.id,
+          modelID: model,
+        }
+        if (isModelValid(item)) return item
+      }
     }
   }
 
@@ -159,7 +263,12 @@ export function selectCurrentModel(input: {
     return explicitArgModel
   }
 
-  if (shouldPreferConfiguredAgencySwarmModel(input) && !input.storedModel?.explicit) {
+  if (
+    productMode !== "build" &&
+    productMode !== "plan" &&
+    shouldPreferConfiguredAgencySwarmModel(input) &&
+    !input.storedModel?.explicit
+  ) {
     return getFirstValidModel(fallbackModel, () => input.agentModel)
   }
 
@@ -187,10 +296,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const sdk = useSDK()
     const toast = useToast()
     const args = useArgs()
+    const route = useRoute()
     const [productStore, setProductStore] = createStore<{
       mode: ProductMode | undefined
+      sessionID: string | undefined
     }>({
       mode: undefined,
+      sessionID: undefined,
     })
 
     function isModelValid(model: ModelSelection) {
@@ -205,7 +317,31 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         configuredProviders: sync.data.config.provider,
         enabledProviders: sync.data.config.enabled_providers,
         disabledProviders: sync.data.config.disabled_providers,
-        productMode: productStore.mode,
+        productMode: currentStoredMode(),
+      })
+    }
+
+    function isModelValidForMode(model: ModelSelection, mode: ProductMode) {
+      return isUsableModel({
+        model,
+        providers: sync.data.provider.map((item) => ({
+          id: item.id,
+          models: item.models,
+        })),
+        argModel: args.model,
+        configModel: sync.data.config.model,
+        configuredProviders: sync.data.config.provider,
+        enabledProviders: sync.data.config.enabled_providers,
+        disabledProviders: sync.data.config.disabled_providers,
+        productMode: mode,
+      })
+    }
+
+    function showInvalidModelToast(model: ModelSelection) {
+      toast.show({
+        message: `Model ${model.providerID}/${model.modelID} is not valid`,
+        variant: "warning",
+        duration: 3000,
       })
     }
 
@@ -214,6 +350,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       const visibleAgents = createMemo(() => sync.data.agent.filter((x) => !x.hidden))
       const [agentStore, setAgentStore] = createStore({
         current: undefined as string | undefined,
+        sessionID: undefined as string | undefined,
       })
       const { theme } = useTheme()
       const colors = createMemo(() => [
@@ -240,6 +377,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               duration: 3000,
             })
           setAgentStore("current", name)
+          setAgentStore("sessionID", currentSessionID())
+        },
+        sessionID() {
+          return agentStore.sessionID
         },
         move(direction: 1 | -1) {
           batch(() => {
@@ -250,6 +391,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             if (next >= agents().length) next = 0
             const value = agents()[next]
             setAgentStore("current", value.name)
+            setAgentStore("sessionID", currentSessionID())
           })
         },
         color(name: string) {
@@ -316,9 +458,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       const currentModel = createMemo(() => {
         const a = agent.current()
         if (!a) return
+        const agentName = currentModelAgentName(a)
+        const selectedAgent = agent.list().find((item) => item.name === agentName) ?? a
         return selectCurrentModel({
-          storedModel: modelStore.model[a.name],
-          agentModel: a.model,
+          storedModel: modelStore.model[agentName],
+          agentModel: selectedAgent.model,
           recentModels: modelStore.recent,
           providers: sync.data.provider.map((item) => ({
             id: item.id,
@@ -330,9 +474,29 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           configuredProviders: sync.data.config.provider,
           enabledProviders: sync.data.config.enabled_providers,
           disabledProviders: sync.data.config.disabled_providers,
-          productMode: productStore.mode,
+          storedMode: currentStoredMode(),
+          storedBridge: currentSessionAgencySwarmBridge(),
+          agentName,
+          hasAgencySwarmProvider: !!sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID],
         })
       })
+
+      function preserveRunMode(a: { name: string; model?: ModelSelection }, current?: ModelSelection) {
+        const mode = inferProductMode({
+          storedMode: currentStoredMode(),
+          storedModel: modelStore.model[a.name],
+          storedBridge: currentSessionAgencySwarmBridge(),
+          agentName: a.name,
+          currentProviderID: current?.providerID,
+          configuredModel: sync.data.config.model,
+          hasAgencySwarmProvider: !!sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID],
+          enabledProviders: sync.data.config.enabled_providers,
+          disabledProviders: sync.data.config.disabled_providers,
+          argModel: args.model,
+          agentModel: a.model,
+        })
+        if (mode === "run") setProductMode("run")
+      }
 
       return {
         current: currentModel,
@@ -368,7 +532,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         cycle(direction: 1 | -1) {
           const current = currentModel()
           if (!current) return
-          const recent = modelStore.recent
+          const recent = modelStore.recent.filter((item) => isModelValidForMode(item, product.current()))
           const index = recent.findIndex((x) => x.providerID === current.providerID && x.modelID === current.modelID)
           if (index === -1) return
           let next = index + direction
@@ -378,10 +542,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (!val) return
           const a = agent.current()
           if (!a) return
-          setModelStore("model", a.name, { ...val, explicit: true })
+          preserveRunMode(a, current)
+          setModelStore("model", modelStoreKey(a), { ...val, explicit: true })
         },
         cycleFavorite(direction: 1 | -1) {
-          const favorites = modelStore.favorite.filter((item) => isModelValid(item))
+          const favorites = modelStore.favorite.filter((item) => isModelValidForMode(item, product.current()))
           if (!favorites.length) {
             toast.show({
               variant: "info",
@@ -406,7 +571,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (!next) return
           const a = agent.current()
           if (!a) return
-          setModelStore("model", a.name, { ...next, explicit: true })
+          preserveRunMode(a, current)
+          setModelStore("model", modelStoreKey(a), { ...next, explicit: true })
           const uniq = uniqueBy([next, ...modelStore.recent], (x) => `${x.providerID}/${x.modelID}`)
           if (uniq.length > 10) uniq.pop()
           setModelStore(
@@ -415,19 +581,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           )
           save()
         },
-        set(model: ModelSelection, options?: { recent?: boolean; explicit?: boolean }) {
+        set(model: ModelSelection, options?: { recent?: boolean; explicit?: boolean; preserveRun?: boolean }) {
           batch(() => {
             if (!isModelValid(model)) {
-              toast.show({
-                message: `Model ${model.providerID}/${model.modelID} is not valid`,
-                variant: "warning",
-                duration: 3000,
-              })
+              showInvalidModelToast(model)
               return
             }
             const a = agent.current()
             if (!a) return
-            setModelStore("model", a.name, { ...model, explicit: options?.explicit })
+            if (options?.preserveRun) {
+              setProductMode("run")
+              agent.set("build")
+            }
+            setModelStore("model", modelStoreKey(a), { ...model, explicit: options?.explicit })
             if (options?.recent) {
               const uniq = uniqueBy([model, ...modelStore.recent], (x) => `${x.providerID}/${x.modelID}`)
               if (uniq.length > 10) uniq.pop()
@@ -442,11 +608,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         toggleFavorite(model: ModelSelection) {
           batch(() => {
             if (!isModelValid(model)) {
-              toast.show({
-                message: `Model ${model.providerID}/${model.modelID} is not valid`,
-                variant: "warning",
-                duration: 3000,
-              })
+              showInvalidModelToast(model)
               return
             }
             const exists = modelStore.favorite.some(
@@ -552,7 +714,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (state.pending) save()
         })
 
-      const route = useRoute()
       const event = useEvent()
       let cycling = false
 
@@ -735,36 +896,100 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       }
     })
 
+    function currentSessionUserMessage() {
+      if (route.data.type !== "session") return undefined
+      return sync.data.message[route.data.sessionID]?.findLast((item) => item.role === "user")
+    }
+
+    function currentSessionAgencySwarmBridge() {
+      if (route.data.type !== "session") return undefined
+      const messages = sync.data.message[route.data.sessionID] ?? []
+      for (let index = messages.length - 1; index >= 0; index--) {
+        const message = messages[index]
+        if (!message || message.role !== "user") continue
+        const bridge = readAgencySwarmBridge(sync.data.part[message.id])
+        if (bridge !== undefined) return bridge
+      }
+    }
+
+    function currentSessionID() {
+      return route.data.type === "session" ? route.data.sessionID : undefined
+    }
+
+    function currentStoredMode() {
+      const sessionID = currentSessionID()
+      if (!sessionID) return productStore.mode
+      if (productStore.sessionID !== sessionID) return undefined
+      return productStore.mode
+    }
+
+    function setProductMode(mode: ProductMode) {
+      batch(() => {
+        setProductStore("mode", mode)
+        setProductStore("sessionID", currentSessionID())
+      })
+    }
+
+    function currentModelAgentName(current: { name: string }) {
+      const mode = currentStoredMode()
+      if (mode === "run") return "build"
+      if (mode === "build" || mode === "plan") return current.name
+      if (agent.sessionID() === currentSessionID()) return current.name
+      return currentSessionUserMessage()?.agent ?? current.name
+    }
+
+    function modelStoreKey(current: { name: string }) {
+      return currentModelAgentName(current)
+    }
+
     const product = {
       current(): ProductMode {
-        if (productStore.mode) return productStore.mode
-        if (
-          isAgencySwarmRunMode({
-            currentProviderID: model.current()?.providerID,
-            configuredModel: sync.data.config.model,
-            agentModel: agent.current()?.model,
-          })
-        ) {
-          return "run"
-        }
-        return agent.current()?.name === "plan" ? "plan" : "build"
+        const value = model.current()
+        const current = agent.current()
+        const agentName = current ? currentModelAgentName(current) : currentSessionUserMessage()?.agent
+        const selectedAgent = agent.list().find((item) => item.name === agentName) ?? current
+        return inferProductMode({
+          storedMode: currentStoredMode(),
+          storedModel: agentName ? model.override(agentName) : undefined,
+          storedBridge: currentSessionAgencySwarmBridge(),
+          agentName,
+          currentProviderID: value?.providerID,
+          configuredModel: sync.data.config.model,
+          hasAgencySwarmProvider: !!sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID],
+          enabledProviders: sync.data.config.enabled_providers,
+          disabledProviders: sync.data.config.disabled_providers,
+          argModel: args.model,
+          agentModel: selectedAgent?.model,
+        })
       },
       async set(mode: ProductMode) {
-        setProductStore("mode", mode)
         if (mode === "build" || mode === "plan") {
+          const currentAgent = agent.current()
+          const currentOverride = currentAgent ? model.override(currentAgent.name) : undefined
+          const currentModel = model.current()
+          setProductMode(mode)
           agent.set(mode)
-          const value = model.current()
-          if (!value || value.providerID === AgencySwarmAdapter.PROVIDER_ID) return
-          model.set(value, { explicit: true })
+          if (!currentOverride?.explicit) return
+          if (!currentModel || currentModel.providerID === AgencySwarmAdapter.PROVIDER_ID) return
+          model.set(currentModel, { explicit: true })
           return
         }
-        model.set(
-          {
-            providerID: AgencySwarmAdapter.PROVIDER_ID,
-            modelID: AgencySwarmAdapter.DEFAULT_MODEL_ID,
-          },
-          { explicit: true },
-        )
+        const bridge = {
+          providerID: AgencySwarmAdapter.PROVIDER_ID,
+          modelID: AgencySwarmAdapter.DEFAULT_MODEL_ID,
+        }
+        if (!isModelValidForMode(bridge, "run")) {
+          showInvalidModelToast(bridge)
+          return
+        }
+        const current = model.override("build")
+        const value =
+          current?.explicit && isModelValidForMode(current, "run")
+            ? { providerID: current.providerID, modelID: current.modelID }
+            : bridge
+        setProductMode(mode)
+        agent.set("build")
+        model.set(value, { explicit: true })
       },
     }
 

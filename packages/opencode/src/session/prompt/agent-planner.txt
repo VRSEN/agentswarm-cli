@@ -4,7 +4,7 @@ https://github.com/agency-ai-solutions/agency-starter-template
 
 # Agent Swarm Planner Instructions
 
-The native session plan file for this conversation is the implementation brief for the next Agent Builder turn. Write and refine that file so Agent Builder can execute directly from it after approval.
+The native session plan file for this conversation is the implementation brief for the next Build turn. A system reminder supplies the exact file path for the current turn; use that path. Write and refine that file so Build can execute directly from it after approval.
 
 ## Workflow
 
@@ -27,12 +27,12 @@ Write the session plan file as a concise implementation brief with these section
 - Dependencies and required env keys
 - File-by-file implementation order
 - Verification plan
-- Agent Builder handoff notes
+- Build handoff notes
 
 ## Planning Rules
 
-- Treat the session plan file as the source of truth for the next Agent Builder turn.
+- Treat the session plan file as the source of truth for the next Build turn.
 - Stay on the native session plan file. Do not create separate planning artifacts unless the user explicitly asks.
 - Reuse existing project files and starter-template patterns when they help.
-- Make the plan concrete enough that Agent Builder can edit files immediately after approval.
+- Make the plan concrete enough that Build can edit files immediately after approval.
 - If the repo still contains example agents or placeholder wiring, call out the cleanup explicitly in the plan.

@@ -1,16 +1,16 @@
-Apply these additional instructions when working as the local Agent Builder for an Agency Swarm project.
+Apply these additional instructions when working in local Build mode for an Agency Swarm project.
 Use the Agency Swarm starter template as the reference for project structure and the agent-creation workflow:
 https://github.com/agency-ai-solutions/agency-starter-template
 
-# Agent Swarm Agent Builder Instructions
+# Agent Swarm Build Instructions
 
-Agency Swarm is built on the OpenAI Agents SDK. Your job in Agent Builder mode is to create or improve an Agency Swarm project in the actual file system, not to describe hypothetical steps.
+Agency Swarm is built on the OpenAI Agents SDK. Your job in Build mode is to create or improve an Agency Swarm project in the actual file system, not to describe hypothetical steps.
 
 ## Workflow
 
 0. Create a todo list for the work before you start coding.
 1. If the latest system reminder or handoff mentions an approved session plan file, read it before you change code and treat it as the source of truth.
-2. Activate a virtual environment if one exists. If it does not exist, create one and install the project requirements.
+2. Reuse the existing `.venv` or `venv` for testing. It should already be present in Agency Swarm projects. If the environment is missing or broken, repair it before installing project requirements or running tests.
 3. Explore the project before changing it.
 4. Create or update agent folders and templates in the expected structure.
 5. Build robust tools in the correct agent tool folders.
@@ -66,7 +66,7 @@ Agency Swarm is built on the OpenAI Agents SDK. Your job in Agent Builder mode i
 
 ## Testing and Delivery
 
-- Install dependencies before testing.
+- Reuse the existing `.venv` or `venv` for testing. Repair it if activation, Python, uv, imports, or dependency installation fails.
 - Run the tool files you create or modify.
 - Test the agency end to end.
 - Do not hand off until the agency behaves consistently and the files are actually updated.

@@ -549,6 +549,51 @@ describe("tool.task", () => {
     }),
   )
 
+  background.instance("background task resume preserves explicit native bridge routing", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const prompts: SessionPrompt.PromptInput[] = []
+
+      const result = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into the cache key path",
+          subagent_type: "general",
+          background: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: {
+            agencySwarmBridge: false,
+            promptOps: stubOps({
+              text: "background done",
+              onPrompt: (input) => {
+                prompts.push(input)
+              },
+            }),
+          },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
+      expect(waited.timedOut).toBe(false)
+      expect(waited.info?.status).toBe("completed")
+      expect(prompts.map((input) => ({ noReply: input.noReply, agencySwarmBridge: input.agencySwarmBridge }))).toEqual([
+        { noReply: undefined, agencySwarmBridge: false },
+        { noReply: true, agencySwarmBridge: false },
+      ])
+    }),
+  )
+
   background.instance("background task completion does not wait for the parent resume loop", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service

@@ -20,8 +20,8 @@ export const agencyClientConfigModel = "gpt-4o-mini"
 const tuiDemoEntryAgentModel = "gpt-5.4-mini"
 const tuiDemoMathAgentModel = "claude-sonnet-4-5"
 
-type TuiManagedConfig = Pick<Config.Info, "$schema" | "enabled_providers" | "model" | "provider">
-export type TuiConfigOverride = Pick<Config.Info, "enabled_providers" | "model" | "provider">
+type TuiManagedConfig = Pick<Config.Info, "$schema" | "enabled_providers" | "model" | "provider" | "agent">
+export type TuiConfigOverride = Pick<Config.Info, "enabled_providers" | "model" | "provider" | "agent">
 type ProviderConfigMap = NonNullable<TuiManagedConfig["provider"]>
 type ProviderConfig = ProviderConfigMap[string]
 
@@ -62,6 +62,7 @@ export type NativeLLMServer = {
     body: Record<string, unknown>
   }>
   planExitNext(): void
+  taskNext(prompt: string): void
   stop(): void
 }
 
@@ -69,6 +70,7 @@ export async function startNativeLLMServer(): Promise<NativeLLMServer> {
   const requests: NativeLLMServer["requests"] = []
   let planExitUsed = false
   let planExitNext = false
+  let taskPrompt: string | undefined
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -82,9 +84,86 @@ export async function startNativeLLMServer(): Promise<NativeLLMServer> {
       const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
       requests.push({ path: url.pathname, body })
       const bodyText = JSON.stringify(body)
-      const shouldPlanExit = !planExitUsed && planExitNext && !bodyText.includes("title generator")
+      const title = bodyText.includes("title generator") || bodyText.includes("Generate a title for this conversation")
+      const shouldPlanExit = !planExitUsed && planExitNext && !title
+      const shouldTask = taskPrompt !== undefined && !title
+      const taskArguments = taskPrompt
+        ? JSON.stringify({
+            description: "native task bridge routing",
+            prompt: taskPrompt,
+            subagent_type: "general",
+          })
+        : ""
 
       if (url.pathname === "/v1/responses") {
+        if (shouldTask) {
+          taskPrompt = undefined
+          return new Response(
+            eventStream([
+              {
+                type: "response.created",
+                sequence_number: 1,
+                response: {
+                  id: `resp_native_${requests.length}`,
+                  created_at: Math.floor(Date.now() / 1000),
+                  model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+                  service_tier: null,
+                },
+              },
+              {
+                type: "response.output_item.added",
+                sequence_number: 2,
+                output_index: 0,
+                item: {
+                  type: "function_call",
+                  id: "fc_task",
+                  call_id: "call_task",
+                  name: "task",
+                  arguments: "",
+                  status: "in_progress",
+                },
+              },
+              {
+                type: "response.function_call_arguments.done",
+                sequence_number: 3,
+                output_index: 0,
+                item_id: "fc_task",
+                arguments: taskArguments,
+              },
+              {
+                type: "response.output_item.done",
+                sequence_number: 4,
+                output_index: 0,
+                item: {
+                  type: "function_call",
+                  id: "fc_task",
+                  call_id: "call_task",
+                  name: "task",
+                  arguments: taskArguments,
+                  status: "completed",
+                },
+              },
+              {
+                type: "response.completed",
+                sequence_number: 5,
+                response: {
+                  incomplete_details: null,
+                  service_tier: null,
+                  usage: {
+                    input_tokens: 1,
+                    input_tokens_details: { cached_tokens: null },
+                    output_tokens: 1,
+                    output_tokens_details: { reasoning_tokens: null },
+                  },
+                },
+              },
+            ]),
+            {
+              headers: { "Content-Type": "text/event-stream" },
+            },
+          )
+        }
+
         if (shouldPlanExit) {
           planExitUsed = true
           planExitNext = false
@@ -192,6 +271,79 @@ export async function startNativeLLMServer(): Promise<NativeLLMServer> {
                   output_tokens_details: { reasoning_tokens: null },
                 },
               },
+            },
+          ]),
+          {
+            headers: { "Content-Type": "text/event-stream" },
+          },
+        )
+      }
+
+      if (shouldTask) {
+        taskPrompt = undefined
+        return new Response(
+          eventStream([
+            {
+              id: `chatcmpl_native_${requests.length}`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+              choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }],
+            },
+            {
+              id: `chatcmpl_native_${requests.length}`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: "call_task",
+                        type: "function",
+                        function: {
+                          name: "task",
+                          arguments: "",
+                        },
+                      },
+                    ],
+                  },
+                  finish_reason: null,
+                },
+              ],
+            },
+            {
+              id: `chatcmpl_native_${requests.length}`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        function: {
+                          arguments: taskArguments,
+                        },
+                      },
+                    ],
+                  },
+                  finish_reason: null,
+                },
+              ],
+            },
+            {
+              id: `chatcmpl_native_${requests.length}`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+              choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+              usage: { prompt_tokens: 1, completion_tokens: 1 },
             },
           ]),
           {
@@ -311,6 +463,9 @@ export async function startNativeLLMServer(): Promise<NativeLLMServer> {
     requests,
     planExitNext() {
       planExitNext = true
+    },
+    taskNext(prompt: string) {
+      taskPrompt = prompt
     },
     stop() {
       server.stop(true)

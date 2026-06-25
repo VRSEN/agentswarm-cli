@@ -13,7 +13,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 - `/auth` is the credentials flow, not a product mode switch.
 - `/models` chooses the LLM config passed to Agency Swarm, not a product mode switch.
 - Upstream OpenCode provider/model state may still exist internally for auth and LLM choice, but it must not pull the user out of Run mode by accident.
-- `/modes` is the product mode switch. It exposes Build, Plan, and Run without adding `/build` or `/plan` commands.
+- `/modes` is the product mode switch. It exposes Plan, Build, and Run without adding `/build` or `/plan` commands.
 - Build and Plan rely on native OpenCode behavior plus fork-specific Agent Swarm instructions. Run is the Agency Swarm server-backed mode.
 - Bug-like changes are not product features. Compare them against upstream, find the root cause, reduce divergence, and avoid fork-only workarounds.
 - Install, launcher, and package behavior count as user experience and belong in this file when they are intentional fork behavior.
@@ -31,8 +31,8 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 - Connection, auth, mode, and provider dialogs: `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-mode.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx`, `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`, `packages/opencode/src/cli/cmd/tui/session-error.ts`.
 - Run-mode routing, add-ons, models, and attachments: `packages/opencode/src/agency-swarm/adapter.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/cli/cmd/tui/component/prompt/autocomplete.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx`, `packages/opencode/src/cli/cmd/tui/context/local.tsx`, `packages/opencode/src/cli/cmd/tui/util/agency-target.ts`.
 - Run-mode local models: `packages/opencode/src/agency-swarm/ollama.ts`, `packages/opencode/src/agency-swarm/litellm-provider.ts`, `packages/opencode/src/agency-swarm/client-config.ts`, `packages/opencode/src/provider/provider.ts`, `packages/opencode/src/cli/cmd/tui/component/download-ollama-model.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-model.tsx`, `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`, `packages/opencode/src/cli/cmd/tui/session-error.ts`.
-- Builder and Plan preservation: `packages/opencode/src/session/agent-builder.ts`, `packages/opencode/src/session/agent-planner.ts`, `packages/opencode/src/session/prompt/agent-builder.txt`, `packages/opencode/src/session/prompt/agent-planner.txt`.
-- History, handoff, compaction, and message metadata: `packages/opencode/src/session/agency-swarm-utils.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/session/message-v2.ts`, `packages/opencode/src/session/compaction.ts`, `packages/opencode/src/agency-swarm/history.ts`.
+- Build and Plan instruction preservation: `packages/opencode/src/session/agent-builder.ts`, `packages/opencode/src/session/agent-planner.ts`, `packages/opencode/src/session/prompt/agent-builder.txt`, `packages/opencode/src/session/prompt/agent-planner.txt`.
+- History, handoff, compaction, and message metadata: `packages/opencode/src/session/agency-swarm-utils.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/session/message-v2.ts`, `packages/opencode/src/session/compaction.ts`, `packages/opencode/src/session/prompt.ts`, `packages/opencode/src/agency-swarm/history.ts`.
 - Sharing, PR reopen, and backend management: `packages/opencode/src/share/share-next.ts`, `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`, `packages/opencode/src/cli/cmd/pr.ts`, `packages/opencode/src/cli/cmd/agency.ts`, `README.md`.
 - Telemetry: `packages/opencode/src/telemetry/telemetry.ts`, docs-click telemetry hooks, integration request hooks, telemetry tests, README telemetry copy, and event-list docs.
 - Branding, config, upgrade, and visual surfaces: `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/cli/logo.ts`, `packages/opencode/src/cli/ui.ts`, `packages/opencode/src/cli/network.ts`, `packages/opencode/src/server/mdns.ts`, `packages/opencode/src/cli/cmd/uninstall.ts`, `packages/opencode/src/cli/cmd/tui/component/logo.tsx`, `packages/opencode/src/cli/cmd/tui/context/theme.tsx`, `packages/opencode/src/config/paths.ts`, `packages/opencode/src/config/config.ts`, `packages/opencode/src/cli/cmd/tui/config/tui.ts`, `packages/opencode/src/installation/index.ts`, `packages/opencode/src/cli/cmd/upgrade.ts`.
@@ -217,23 +217,30 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Implementation: `AgencyCommand` in `packages/opencode/src/cli/cmd/agency.ts`.
   - Added by: `14abd070`
 
-- **Agent Builder instructions are retuned for Agency Swarm repos**
-  - Intent: keep Builder behavior aligned with the fork when those flows are used again.
-  - Behavior: the Builder prompt uses fork-specific Agency Swarm instructions rather than upstream OpenCode defaults.
+- **Build instructions are retuned for Agency Swarm repos**
+  - Intent: keep Build behavior aligned with the fork while preserving native OpenCode Build behavior.
+  - Behavior: the Build prompt keeps the native OpenCode system prompt and adds fork-specific Agency Swarm instructions, including reuse and repair of an existing `.venv` or `venv` for testing.
   - Implementation: `agentBuilderInstructions` in `packages/opencode/src/session/agent-builder.ts` with `packages/opencode/src/session/prompt/agent-builder.txt`.
   - Added by: `d93fd0f4`
 
 - **Plan instructions are retuned for Agency Swarm handoffs**
-  - Intent: keep Plan behavior aligned with the fork when those flows are used again.
-  - Behavior: the Plan prompt writes Agency Swarm handoff plans instead of upstream OpenCode plans.
+  - Intent: keep Plan behavior aligned with the fork while preserving native OpenCode Plan behavior.
+  - Behavior: the Plan prompt keeps the native OpenCode system prompt and adds fork-specific Agency Swarm handoff instructions.
   - Implementation: `agentPlannerInstructions` in `packages/opencode/src/session/agent-planner.ts` with `packages/opencode/src/session/prompt/agent-planner.txt`.
   - Added by: `7643fcde`
 
-- **`/modes` exposes Build, Plan, and Run**
+- **`/modes` exposes Plan, Build, and Run**
   - Intent: let users move between native Build, native Plan, and server-backed Run inside one project without adding parallel Build or Plan behavior.
-  - Behavior: `/modes` switches product mode. Build selects the native `build` agent, Plan selects the native `plan` agent, and Run keeps prompts server-backed through Agency Swarm. `/build` and `/plan` are not slash commands.
-  - Behavior: leaving Run stops prompt routing through the Agency Swarm backend; returning to Run reconnects to or keeps using the configured Agency Swarm server.
-  - Implementation: product mode state in `packages/opencode/src/cli/cmd/tui/context/local.tsx`, `DialogMode` in `packages/opencode/src/cli/cmd/tui/component/dialog-mode.tsx`, and framework-mode gates in `packages/opencode/src/cli/cmd/tui/session-error.ts`.
+  - Behavior: `/modes` switches product mode and lists choices in work order: Plan, Build, Run. Build selects the native `build` agent, Plan selects the native `plan` agent, and Run keeps prompts server-backed through Agency Swarm. `/build` and `/plan` are not slash commands.
+  - Behavior: leaving Run stops prompt routing through the Agency Swarm backend but preserves the saved Run target for the session; returning to Run reconnects to or keeps using the configured Agency Swarm server.
+  - Behavior: Build and Plan prompts, commands, shell turns, and compaction turns persist native routing metadata so reopened sessions do not silently fall back to Run.
+  - Behavior: compaction created in Build or Plan keeps native routing metadata so `/compact`, auto-compaction, and direct continuation do not switch the session back to server-backed Run.
+  - Behavior: Plan mode submits through the native `plan` agent while Plan is selected; choosing another local agent moves the turn back to native Build behavior instead of silently submitting to a different agent than the UI shows.
+  - Behavior: when Plan finishes and the user approves the native handoff question, the TUI switches to Build using the upstream Plan approval path.
+  - Behavior: the Plan approval question owns keyboard input while visible, so base session shortcuts do not fire during the question.
+  - Behavior: mixed-mode histories keep completed turn labels tied to the mode that handled each turn, including older Run turns without stored mode metadata.
+  - Behavior: message actions use the selected turn's stored or legacy-inferred Run/native routing metadata, so mode switching does not hide or expose Revert for the wrong turn.
+  - Implementation: product mode state in `packages/opencode/src/cli/cmd/tui/context/local.tsx`, `DialogMode` in `packages/opencode/src/cli/cmd/tui/component/dialog-mode.tsx`, framework-mode gates in `packages/opencode/src/cli/cmd/tui/session-error.ts`, native routing metadata in `packages/opencode/src/session/prompt.ts` and `packages/opencode/src/session/compaction.ts`, selected-turn message actions in `packages/opencode/src/cli/cmd/tui/routes/session/dialog-message.tsx`, and upstream-aligned question keymap isolation in `packages/opencode/src/cli/cmd/tui/keymap.tsx` and `packages/opencode/src/cli/cmd/tui/routes/session/question.tsx`.
   - Added by: `d6b9ed38`
 
 - **Tab switches native agents outside Run and swarm agents in Run**
@@ -250,7 +257,7 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 
 - **Configured `agency-swarm/default` beats stale stored model state in Run mode**
   - Intent: stop stale remembered provider/model state from pulling a Run mode session out of Agent Swarm behavior by accident.
-  - Behavior: `agency-swarm/default` stays active in Run mode until the user explicitly chooses another LLM model.
+  - Behavior: `agency-swarm/default` stays active in Run mode until the user explicitly chooses another LLM model, and explicit `agency-swarm/...` launch arguments infer Run mode before provider metadata is loaded.
   - Implementation: model selection logic in `packages/opencode/src/cli/cmd/tui/context/local.tsx`.
   - Added by: `PR #51`
 

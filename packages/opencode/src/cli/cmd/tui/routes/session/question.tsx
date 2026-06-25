@@ -1,5 +1,5 @@
 import { createStore } from "solid-js/store"
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { useRenderer } from "@opentui/solid"
 import type { TextareaRenderable } from "@opentui/core"
 import { selectedForeground, tint, useTheme } from "../../context/theme"
@@ -8,13 +8,17 @@ import { useSDK } from "../../context/sdk"
 import { SplitBorder } from "../../component/border"
 import { useDialog } from "../../ui/dialog"
 import { useTuiConfig } from "../../context/tui-config"
-import { useBindings } from "../../keymap"
+import { useBindings, useOpencodeModeStack } from "../../keymap"
+
+const QUESTION_MODE = "question"
 
 export function QuestionPrompt(props: { request: QuestionRequest }) {
   const sdk = useSDK()
   const { theme } = useTheme()
   const renderer = useRenderer()
   const tuiConfig = useTuiConfig()
+  const modeStack = useOpencodeModeStack()
+  const dialog = useDialog()
 
   const questions = createMemo(() => props.request.questions)
   const single = createMemo(() => questions().length === 1 && questions()[0]?.multiple !== true)
@@ -124,10 +128,14 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     pick(opt.label)
   }
 
-  const dialog = useDialog()
+  onMount(() => {
+    const popMode = modeStack.push(QUESTION_MODE)
+    onCleanup(popMode)
+  })
 
   useBindings(() => ({
-    enabled: store.editing && !confirm(),
+    mode: QUESTION_MODE,
+    enabled: dialog.stack.length === 0 && store.editing && !confirm(),
     commands: [
       {
         name: "prompt.clear",
@@ -207,6 +215,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     const max = Math.min(total, 9)
 
     return {
+      mode: QUESTION_MODE,
       enabled: dialog.stack.length === 0 && !store.editing,
       commands: [
         {
