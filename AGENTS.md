@@ -212,7 +212,6 @@ Why: hosted CI (Windows e2e, 30 min) is a final gate, not a per-commit gate; bro
 - If a pre-commit hook changes files, stage the hook changes and rerun the commit with the same message.
 - Build commit messages from the staged diff and use a title plus bullet body.
 - After each commit, check what you committed with `git show --name-only -1`.
-- In user-facing AgentSwarm CLI workstream updates, mention commits with their GitHub commit URLs when they exist; for local-only commits, say they are local-only and include the short SHA. Mention local files with absolute Markdown file links, not bare local paths; keep private paths out of public artifacts.
 
 ### GitHub `@`-Mention Discipline
 
