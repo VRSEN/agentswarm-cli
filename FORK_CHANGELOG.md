@@ -234,6 +234,7 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Behavior: `/modes` switches product mode and lists choices in work order: Plan, Build, Run. Build selects the native `build` agent, Plan selects the native `plan` agent, and Run keeps prompts server-backed through Agency Swarm. `/build` and `/plan` are not slash commands.
   - Behavior: leaving Run stops prompt routing through the Agency Swarm backend but preserves the saved Run target for the session; returning to Run reconnects to or keeps using the configured Agency Swarm server.
   - Behavior: Build and Plan prompts, commands, shell turns, and compaction turns persist native routing metadata so reopened sessions do not silently fall back to Run.
+  - Behavior: reopened Plan sessions keep Plan selected in `/agents` instead of using a stale Build default.
   - Behavior: compaction created in Build or Plan keeps native routing metadata so `/compact`, auto-compaction, and direct continuation do not switch the session back to server-backed Run.
   - Behavior: Plan mode submits through the native `plan` agent while Plan is selected; choosing another local agent moves the turn back to native Build behavior instead of silently submitting to a different agent than the UI shows.
   - Behavior: when Plan finishes and the user approves the native handoff question, the TUI switches to Build using the upstream Plan approval path.

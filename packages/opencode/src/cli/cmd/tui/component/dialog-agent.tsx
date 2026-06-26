@@ -190,9 +190,13 @@ export function DialogAgent() {
 
   const current = createMemo<AgentOptionValue | undefined>(() => {
     if (!agencySwarmEnabled()) {
+      const product = local.product?.current()
+      const agent = local.agent.current()?.name
       return {
         kind: "local",
-        agent: local.agent.current()?.name ?? "build",
+        agent: (product === "build" || product === "plan") && (!agent || agent === "build" || agent === "plan")
+          ? product
+          : (agent ?? "build"),
       }
     }
 

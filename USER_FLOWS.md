@@ -209,6 +209,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** Mixed sessions keep each completed turn's own mode label, including older Run turns saved before mode metadata existed.
 - **Happy-path proof:** Native OpenCode commands hidden in Run return in Build and Plan.
 - **Happy-path proof:** `/agents` uses the native OpenCode agent picker in Build and Plan.
+- **Happy-path proof:** Reopened Plan sessions keep Plan selected in `/agents` instead of defaulting back to Build.
 - **Happy-path proof:** Tab cycles native local agents in Build and Plan.
 - **Happy-path proof:** Plan mode submits the native Plan agent while Plan is selected; choosing another local agent moves the turn back to native Build behavior instead of silently ignoring the selected agent.
 - **Happy-path proof:** Switching from Run to Build or Plan stops treating prompts as server-backed Run prompts.

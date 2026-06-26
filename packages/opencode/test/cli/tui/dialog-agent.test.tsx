@@ -19,6 +19,65 @@ describe("DialogAgent agency selection", () => {
     mock.restore()
   })
 
+  test("reopened Plan sessions select Plan instead of stale Build default", async () => {
+    let selectProps: DialogSelectModule.DialogSelectProps<any> | undefined
+
+    spyOn(DialogSelectModule, "DialogSelect").mockImplementation((props: any) => {
+      selectProps = props
+      return <box />
+    })
+    spyOn(DialogContext, "useDialog").mockReturnValue({
+      clear: mock(() => undefined),
+      replace: mock(() => undefined),
+      stack: [],
+      size: "medium",
+      setSize: mock(() => undefined),
+    } as any)
+    spyOn(ToastModule, "useToast").mockReturnValue({
+      show: mock(() => undefined),
+      error: mock(() => undefined),
+      currentToast: null,
+    } as any)
+    spyOn(LocalContext, "useLocal").mockReturnValue({
+      product: {
+        current: () => "plan",
+      },
+      agent: {
+        current: () => ({ name: "build" }),
+        list: () => [{ name: "build" }, { name: "plan" }],
+        set: mock(() => undefined),
+        color: () => RGBA.fromHex("#38bdf8"),
+      },
+      model: {
+        current: () => ({
+          providerID: "openai",
+          modelID: "gpt-5.2",
+        }),
+        variant: {
+          current: () => undefined,
+          list: () => [],
+          set: mock(() => undefined),
+        },
+      },
+    } as any)
+    spyOn(SDKContext, "useSDK").mockReturnValue({ client: {} } as any)
+    spyOn(SyncContext, "useSync").mockReturnValue({
+      bootstrap: mock(async () => undefined),
+      data: {
+        config: {
+          model: "openai/gpt-5.2",
+        },
+        provider: [],
+      },
+    } as any)
+
+    const { DialogAgent } = await import("../../../src/cli/cmd/tui/component/dialog-agent")
+    await testRender(() => <DialogAgent />)
+    await flushEffects()
+
+    expect(selectProps?.current).toEqual({ kind: "local", agent: "plan" })
+  })
+
   test("selecting a swarm row uses live labels without forcing an agent", async () => {
     let selectProps: DialogSelectModule.DialogSelectProps<any> | undefined
     const configUpdate = mock(async (_input: unknown, _options?: unknown) => ({ data: undefined }))
