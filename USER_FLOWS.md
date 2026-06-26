@@ -216,7 +216,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** Sending a Build or Plan prompt after leaving Run does not erase the saved Run target for the session.
 - **Happy-path proof:** Shell commands in Build and Plan preserve native mode when the session is reopened.
 - **Happy-path proof:** In Build and Plan, `/compact` and auto-compaction keep prompts native and do not switch the session back to server-backed Run routing.
-- **Happy-path proof:** When Plan finishes and asks whether to switch to Build, pressing Enter on `Yes` switches the TUI to Build and creates the native approved-plan handoff turn.
+- **Happy-path proof:** When Plan finishes and asks whether to switch to Build, pressing Enter on `Yes` follows the upstream OpenCode Plan approval flow, switches the TUI to Build, and creates the native approved-plan handoff turn.
 - **Happy-path proof:** The Plan approval question owns keyboard input while it is open, so session shortcuts do not fire at the same time.
 - **Happy-path proof:** Switching back to Run in the same project reconnects to or keeps using the Agency Swarm server and returns `/agents` to the swarm/agent picker.
 - **Happy-path proof:** Message actions use the selected turn's saved or legacy-inferred Run/native routing metadata, so Revert is shown or hidden for the selected turn even after switching modes.

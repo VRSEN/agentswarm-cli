@@ -554,6 +554,32 @@ export function Session() {
     }
   }
 
+  const undoTarget = createMemo(() => {
+    const revert = session()?.revert?.messageID
+    return messages().findLast(
+      (message): message is UserMessage => (!revert || message.id < revert) && message.role === "user",
+    )
+  })
+
+  const redoTarget = createMemo(() => {
+    const messageID = session()?.revert?.messageID
+    if (!messageID) return undefined
+    return messages().find((message): message is UserMessage => message.role === "user" && message.id >= messageID)
+  })
+
+  const targetAgencySwarmBridge = (message: UserMessage | undefined) => {
+    if (!message) return frameworkMode()
+    const bridge = readAgencySwarmBridge(sync.data.part[message.id])
+    if (typeof bridge === "boolean") return bridge
+    return messages().some(
+      (item) =>
+        item.role === "assistant" && item.parentID === message.id && item.providerID === AgencySwarmAdapter.PROVIDER_ID,
+    )
+  }
+
+  const undoAgencySwarmBridge = createMemo(() => targetAgencySwarmBridge(undoTarget()))
+  const redoAgencySwarmBridge = createMemo(() => targetAgencySwarmBridge(redoTarget()))
+
   const sessionCommandList = createMemo(() => [
     {
       title: session()?.share?.url ? "Copy share link" : "Share session",
@@ -703,16 +729,15 @@ export function Session() {
       title: "Undo previous message",
       value: "session.undo",
       category: "Session",
-      enabled: !frameworkMode(),
-      hidden: frameworkMode(),
+      enabled: !undoAgencySwarmBridge(),
+      hidden: undoAgencySwarmBridge(),
       slash: {
         name: "undo",
       },
       run: async () => {
         const status = sync.data.session_status?.[route.sessionID]
         if (status?.type !== "idle") await sdk.client.session.abort({ sessionID: route.sessionID }).catch(() => {})
-        const revert = session()?.revert?.messageID
-        const message = messages().findLast((x) => (!revert || x.id < revert) && x.role === "user")
+        const message = undoTarget()
         if (!message) return
         void sdk.client.session
           .revert({
@@ -742,8 +767,8 @@ export function Session() {
       title: "Redo",
       value: "session.redo",
       category: "Session",
-      enabled: !!session()?.revert?.messageID && !frameworkMode(),
-      hidden: frameworkMode(),
+      enabled: !!session()?.revert?.messageID && !redoAgencySwarmBridge(),
+      hidden: redoAgencySwarmBridge(),
       slash: {
         name: "redo",
       },

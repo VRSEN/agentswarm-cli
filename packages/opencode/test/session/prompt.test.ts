@@ -1006,7 +1006,8 @@ planMode.instance(
       const plan = Session.plan(chat, ctx)
       const [input] = yield* llm.inputs
       const payload = JSON.stringify(input)
-      expect(payload).toContain(plan)
+      const serializedPlan = JSON.stringify(plan).slice(1, -1)
+      expect(payload).toContain(serializedPlan)
       expect(payload).toContain("Agent Swarm Planner Instructions")
       expect(payload).toContain("plan_exit")
     }),

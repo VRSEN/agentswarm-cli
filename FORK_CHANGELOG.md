@@ -237,7 +237,7 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Behavior: reopened Plan sessions keep Plan selected in `/agents` instead of using a stale Build default.
   - Behavior: compaction created in Build or Plan keeps native routing metadata so `/compact`, auto-compaction, and direct continuation do not switch the session back to server-backed Run.
   - Behavior: Plan mode submits through the native `plan` agent while Plan is selected; choosing another local agent moves the turn back to native Build behavior instead of silently submitting to a different agent than the UI shows.
-  - Behavior: when Plan finishes and the user approves the native handoff question, the TUI switches to Build using the upstream Plan approval path.
+  - Behavior: when Plan finishes and the user approves the native handoff question, the TUI switches to Build using the upstream OpenCode Plan approval path.
   - Behavior: the Plan approval question owns keyboard input while visible, so base session shortcuts do not fire during the question.
   - Behavior: mixed-mode histories keep completed turn labels tied to the mode that handled each turn, including older Run turns without stored mode metadata.
   - Behavior: message actions use the selected turn's stored or legacy-inferred Run/native routing metadata, so mode switching does not hide or expose Revert for the wrong turn.

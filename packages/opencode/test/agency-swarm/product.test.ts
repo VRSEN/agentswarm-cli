@@ -148,8 +148,6 @@ describe("AgencyProduct profile", () => {
       const proc = Bun.spawn([process.execPath, path.join(outdir, "entry.js")], {
         cwd: root,
         env: {
-          ...process.env,
-          HOME: process.env.HOME ?? os.homedir(),
           AGENTSWARM_PRODUCT_ADDONS: "",
         },
         stdout: "pipe",

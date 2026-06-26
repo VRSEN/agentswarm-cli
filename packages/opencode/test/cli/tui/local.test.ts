@@ -3,6 +3,7 @@ import {
   inferProductMode,
   isUsableModel,
   readAgencySwarmBridge,
+  readSessionAgencySwarmBridge,
   selectCurrentModel,
   shouldSyncAgentModel,
 } from "../../../src/cli/cmd/tui/context/local"
@@ -223,6 +224,102 @@ describe("tui local model selection", () => {
     ).toBe(true)
   })
 
+  test("infers legacy bridge mode from assistant children", () => {
+    const messages: Parameters<typeof readSessionAgencySwarmBridge>[0]["messages"] = [
+      {
+        id: "msg_1",
+        role: "user",
+      },
+      {
+        id: "msg_2",
+        role: "assistant",
+        parentID: "msg_1",
+        providerID: "agency-swarm",
+      },
+    ]
+
+    expect(
+      readSessionAgencySwarmBridge({
+        messages,
+        parts: {},
+      }),
+    ).toBe(true)
+    expect(
+      readSessionAgencySwarmBridge({
+        messages,
+        parts: {
+          msg_1: [
+            {
+              id: "prt_1",
+              sessionID: "ses_1",
+              messageID: "msg_1",
+              type: "text",
+              text: "hello",
+              metadata: {
+                agencySwarmBridge: false,
+              },
+            },
+          ],
+        },
+      }),
+    ).toBe(false)
+    expect(
+      readSessionAgencySwarmBridge({
+        messages: [
+          {
+            id: "msg_3",
+            role: "user",
+          },
+          {
+            id: "msg_4",
+            role: "assistant",
+            parentID: "msg_3",
+            providerID: "openai",
+          },
+        ],
+        parts: {},
+      }),
+    ).toBe(false)
+    expect(
+      readSessionAgencySwarmBridge({
+        messages: [
+          {
+            id: "msg_5",
+            role: "user",
+          },
+          {
+            id: "msg_6",
+            role: "assistant",
+            parentID: "msg_5",
+            providerID: "agency-swarm",
+          },
+          {
+            id: "msg_7",
+            role: "user",
+          },
+          {
+            id: "msg_8",
+            role: "assistant",
+            parentID: "msg_7",
+            providerID: "openai",
+          },
+        ],
+        parts: {},
+      }),
+    ).toBe(false)
+    expect(
+      readSessionAgencySwarmBridge({
+        messages: [
+          {
+            id: "msg_9",
+            role: "user",
+          },
+        ],
+        parts: {},
+      }),
+    ).toBeUndefined()
+  })
+
   test("keeps agency-swarm launcher model usable before provider metadata loads", () => {
     expect(
       isUsableModel({
@@ -313,6 +410,46 @@ describe("tui local model selection", () => {
         productMode: "run",
       }),
     ).toBe(true)
+  })
+
+  test("keeps Agency-supported provider models usable in Run mode", () => {
+    expect(
+      isUsableModel({
+        model: {
+          providerID: "openai",
+          modelID: "gpt-5",
+        },
+        providers: [
+          {
+            id: "openai",
+            models: {
+              "gpt-5": {},
+            },
+          },
+        ],
+        productMode: "run",
+      }),
+    ).toBe(true)
+  })
+
+  test("rejects Build-only provider models in Run mode", () => {
+    const input = {
+      model: {
+        providerID: "github-copilot",
+        modelID: "gpt-5",
+      },
+      providers: [
+        {
+          id: "github-copilot",
+          models: {
+            "gpt-5": {},
+          },
+        },
+      ],
+    }
+
+    expect(isUsableModel({ ...input, productMode: "build" })).toBe(true)
+    expect(isUsableModel({ ...input, productMode: "run" })).toBe(false)
   })
 
   test("rejects agency-swarm models in Build and Plan even when provider metadata is loaded", () => {

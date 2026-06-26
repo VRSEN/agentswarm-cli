@@ -20,8 +20,8 @@ export const agencyClientConfigModel = "gpt-4o-mini"
 const tuiDemoEntryAgentModel = "gpt-5.4-mini"
 const tuiDemoMathAgentModel = "claude-sonnet-4-5"
 
-type TuiManagedConfig = Pick<Config.Info, "$schema" | "enabled_providers" | "model" | "provider" | "agent">
-export type TuiConfigOverride = Pick<Config.Info, "enabled_providers" | "model" | "provider" | "agent">
+type TuiManagedConfig = Pick<Config.Info, "$schema" | "enabled_providers" | "model" | "provider">
+export type TuiConfigOverride = Pick<Config.Info, "enabled_providers" | "model" | "provider">
 type ProviderConfigMap = NonNullable<TuiManagedConfig["provider"]>
 type ProviderConfig = ProviderConfigMap[string]
 

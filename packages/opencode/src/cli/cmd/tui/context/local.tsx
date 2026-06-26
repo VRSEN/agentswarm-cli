@@ -19,6 +19,7 @@ import { RGBA } from "@opentui/core"
 import { Provider } from "@/provider/provider"
 import { Filesystem } from "@/util/filesystem"
 import type { Part } from "@opencode-ai/sdk/v2"
+import { isAgencySupportedProvider } from "../session-error"
 
 export function parseModel(model: string) {
   const [providerID, ...rest] = model.split("/")
@@ -101,7 +102,34 @@ export function readAgencySwarmBridge(parts: Part[] | undefined) {
   }
 }
 
+type SessionBridgeMessage = {
+  id: string
+  role: "user" | "assistant"
+  parentID?: string
+  providerID?: string
+}
+
+export function readSessionAgencySwarmBridge(input: {
+  messages: SessionBridgeMessage[]
+  parts: Record<string, Part[] | undefined>
+}) {
+  const children = new Map<string, boolean>()
+  for (const item of input.messages) {
+    if (item.role !== "assistant" || !item.parentID) continue
+    children.set(item.parentID, item.providerID === AgencySwarmAdapter.PROVIDER_ID)
+  }
+  for (let index = input.messages.length - 1; index >= 0; index--) {
+    const message = input.messages[index]
+    if (!message || message.role !== "user") continue
+    const bridge = readAgencySwarmBridge(input.parts[message.id])
+    if (bridge !== undefined) return bridge
+    const child = children.get(message.id)
+    if (child !== undefined) return child
+  }
+}
+
 function isAllowedProductModel(input: { model: ModelSelection; productMode?: ProductMode }) {
+  if (input.productMode === "run") return isAgencySupportedProvider(input.model.providerID)
   if (input.productMode !== "build" && input.productMode !== "plan") return true
   return input.model.providerID !== AgencySwarmAdapter.PROVIDER_ID
 }
@@ -903,13 +931,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     function currentSessionAgencySwarmBridge() {
       if (route.data.type !== "session") return undefined
-      const messages = sync.data.message[route.data.sessionID] ?? []
-      for (let index = messages.length - 1; index >= 0; index--) {
-        const message = messages[index]
-        if (!message || message.role !== "user") continue
-        const bridge = readAgencySwarmBridge(sync.data.part[message.id])
-        if (bridge !== undefined) return bridge
-      }
+      return readSessionAgencySwarmBridge({
+        messages: sync.data.message[route.data.sessionID] ?? [],
+        parts: sync.data.part,
+      })
     }
 
     function currentSessionID() {

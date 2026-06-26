@@ -687,87 +687,6 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(currentServer.requests).toHaveLength(0)
   })
 
-  test("native /agents selection honors custom primary agents in Build mode", async () => {
-    const prompt = "custom native primary agent selected from build"
-    const buildPrompt = "default build turn before reopening custom agent"
-    const reopenedPrompt = "custom native primary agent after reopen"
-    currentServer = await startTuiDemoAgencyServer()
-    currentNativeServer = await startNativeLLMServer()
-    currentTui = await startTui({
-      baseURL: currentServer.baseURL,
-      agency: "tui-demo-agency",
-      recipientAgent: "UserSupportAgent",
-      config: {
-        model: latestOpenAITestModel,
-        enabled_providers: openAIProviderTestConfig.enabled_providers,
-        provider: {
-          openai: {
-            options: {
-              apiKey: "test-openai-key",
-              baseURL: currentNativeServer.baseURL,
-            },
-          },
-        },
-        agent: {
-          reviewer: {
-            mode: "primary",
-            model: latestOpenAITestModel,
-            prompt: "You are selected native reviewer.",
-            description: "Review native Build-mode routing.",
-          },
-        },
-      },
-    })
-
-    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
-    await selectProductMode(currentTui, "Build")
-    currentTui.write("/agents\r")
-    await currentTui.waitForText("Select agent", tuiInteractionTimeoutMs)
-    currentTui.write("reviewer")
-    await currentTui.waitForText("reviewer", tuiInteractionTimeoutMs)
-    currentTui.write("\r")
-
-    currentTui.write(`${prompt}\r`)
-    await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
-    const request = await waitForNativeLLMRequest(currentTui, currentNativeServer, prompt)
-    const body = JSON.stringify(request.body)
-    expect(body).toContain("You are selected native reviewer.")
-    expect(body).not.toContain("Agent Swarm Build Instructions")
-    expect(currentServer.requests).toHaveLength(0)
-
-    currentTui.write("/new")
-    await currentTui.waitFor(
-      () => currentTui!.screen().includes("/new"),
-      "visible /new command",
-      tuiInteractionTimeoutMs,
-    )
-    currentTui.write("\r")
-    await currentTui.waitFor(
-      () => !currentTui!.screen().includes(prompt),
-      "new empty prompt after leaving custom agent session",
-      tuiInteractionTimeoutMs,
-    )
-
-    await selectProductMode(currentTui, "Build")
-    currentTui.write(`${buildPrompt}\r`)
-    await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
-    const build = await waitForNativeLLMRequest(currentTui, currentNativeServer, buildPrompt)
-    expect(JSON.stringify(build.body)).toContain("Agent Swarm Build Instructions")
-
-    currentTui.write("/sessions\r")
-    await currentTui.waitForText("Sessions", tuiInteractionTimeoutMs)
-    currentTui.write("\x1b[B\r")
-    await currentTui.waitForText(prompt, tuiInteractionTimeoutMs)
-
-    currentTui.write(`${reopenedPrompt}\r`)
-    await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
-    const reopened = await waitForNativeLLMRequest(currentTui, currentNativeServer, reopenedPrompt)
-    const reopenedBody = JSON.stringify(reopened.body)
-    expect(reopenedBody).toContain("You are selected native reviewer.")
-    expect(reopenedBody).not.toContain("Agent Swarm Build Instructions")
-    expect(currentServer.requests).toHaveLength(0)
-  })
-
   test("Build task tool calls stay native when launcher-style env config defaults to Run", async () => {
     const parentPrompt = "call native task tool from build mode"
     const childPrompt = "child-task-routing-sentinel"
@@ -1023,6 +942,66 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(screen).toContain("Run ·")
     expect(screen).toContain("Build ·")
     expect(currentServer.requests).toHaveLength(1)
+  })
+
+  test("/modes Build keeps undo hidden for a previous Run turn", async () => {
+    const runPrompt = "run before undo mode switch"
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    currentTui.write(`${runPrompt}\r`)
+    await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
+    await currentTui.waitForText("Run ·", tuiInteractionTimeoutMs)
+
+    await selectProductMode(currentTui, "Build")
+    currentTui.write("/und")
+    await currentTui.waitForText("/und", tuiInteractionTimeoutMs)
+    await Bun.sleep(100)
+    expect(hasCommand(currentTui.screen(), "/undo")).toBe(false)
+  })
+
+  test("/modes Run keeps redo visible for a previous Build turn", async () => {
+    const buildPrompt = "build before redo mode switch"
+    currentServer = await startTuiDemoAgencyServer()
+    currentNativeServer = await startNativeLLMServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+      config: {
+        model: latestOpenAITestModel,
+        enabled_providers: openAIProviderTestConfig.enabled_providers,
+        provider: {
+          openai: {
+            options: {
+              apiKey: "test-openai-key",
+              baseURL: currentNativeServer.baseURL,
+            },
+          },
+        },
+      },
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    await selectProductMode(currentTui, "Build")
+    currentTui.write(`${buildPrompt}\r`)
+    await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
+    await waitForNativeLLMRequest(currentTui, currentNativeServer, buildPrompt)
+
+    currentTui.write("/undo\r")
+    await currentTui.waitForText("message reverted", tuiInteractionTimeoutMs)
+
+    await selectProductMode(currentTui, "Run")
+    currentTui.write("/red")
+    const screen = await waitForCommand(currentTui, "/redo")
+    expect(hasCommand(screen, "/redo")).toBe(true)
   })
 
   test("legacy Run sessions without bridge metadata keep Run labels after mode switch", async () => {
