@@ -1,3 +1,4 @@
+import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { MessageV2 } from "@/session/message-v2"
 import {
   asRawString,
@@ -1525,7 +1526,7 @@ export function createAgencySwarmStreamEvents(input: StreamEventsInput) {
 
     if (responseType === "error") {
       const message = asString(nested["message"]) || asString(nested["error"]) || "Unknown stream error"
-      return { parts: [], error: new Error(message) }
+      return { parts: [], error: new Error(AgencySwarmAdapter.normalizeErrorMessage(message)) }
     }
 
     return { parts: [] }

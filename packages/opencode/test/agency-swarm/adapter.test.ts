@@ -28,6 +28,26 @@ describe("agency-swarm.adapter", () => {
     expect(result).toEqual(["builder", "research"])
   })
 
+  test("normalizeErrorMessage compacts wrapped HTML provider errors", () => {
+    expect(
+      AgencySwarmAdapter.normalizeErrorMessage(
+        "Error code: 403 - <!DOCTYPE html><html><body>Enable JavaScript and cookies</body></html>",
+      ),
+    ).toBe(
+      "Forbidden: request was blocked by a gateway or proxy and returned an HTML error page. Check authentication and routing.",
+    )
+    expect(
+      AgencySwarmAdapter.normalizeErrorMessage(
+        "OpenAIException - Error code: 401 - <!DOCTYPE html><html><body>Enable JavaScript and cookies</body></html>",
+      ),
+    ).toBe(
+      "Unauthorized: request was blocked by a gateway or proxy and returned an HTML error page. Check authentication and routing.",
+    )
+    expect(AgencySwarmAdapter.normalizeErrorMessage("Error code: 403 - Invalid API key")).toBe(
+      "Error code: 403 - Invalid API key",
+    )
+  })
+
   test("discover reads openapi and validates metadata endpoints", async () => {
     const calls: string[] = []
 
@@ -265,6 +285,72 @@ describe("agency-swarm.adapter", () => {
 
     expect(frames.map((frame) => frame.type)).toEqual(["error", "end"])
     expect(frames[0]).toEqual({ type: "error", error: "boom" })
+  })
+
+  test("streamRun compacts HTML error-only stream payloads", async () => {
+    globalThis.fetch = asFetch(async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const encoder = new TextEncoder()
+          controller.enqueue(
+            encoder.encode('data: {"error":"<html><body>Enable JavaScript and cookies</body></html>"}\n\n'),
+          )
+          controller.enqueue(encoder.encode("event: end\ndata: [DONE]\n\n"))
+          controller.close()
+        },
+      })
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+        },
+      })
+    })
+
+    const frames: AgencySwarmAdapter.StreamFrame[] = []
+    for await (const frame of AgencySwarmAdapter.streamRun({
+      baseURL: "http://127.0.0.1:8000",
+      agency: "builder",
+      message: "hello",
+      chatHistory: [],
+    })) {
+      frames.push(frame)
+    }
+
+    expect(frames.map((frame) => frame.type)).toEqual(["error", "end"])
+    const first = frames[0]
+    expect(first?.type).toBe("error")
+    if (first?.type === "error") {
+      expect(first.error).toContain("HTML error page")
+      expect(first.error).not.toContain("<html")
+    }
+  })
+
+  test("streamRun compacts HTML HTTP error bodies", async () => {
+    globalThis.fetch = asFetch(async () => {
+      return new Response("<html><body>Enable JavaScript and cookies to continue</body></html>", {
+        status: 403,
+      })
+    })
+
+    const frames: AgencySwarmAdapter.StreamFrame[] = []
+    for await (const frame of AgencySwarmAdapter.streamRun({
+      baseURL: "http://127.0.0.1:8000",
+      agency: "builder",
+      message: "hello",
+      chatHistory: [],
+    })) {
+      frames.push(frame)
+    }
+
+    expect(frames.map((frame) => frame.type)).toEqual(["error", "end"])
+    const first = frames[0]
+    expect(first?.type).toBe("error")
+    if (first?.type === "error") {
+      expect(first.error).toContain("Streaming request failed (403): Forbidden")
+      expect(first.error).toContain("gateway or proxy")
+      expect(first.error).not.toContain("<html")
+    }
   })
 
   test("streamRun surfaces connection failures as stream error frames", async () => {

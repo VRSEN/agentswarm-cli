@@ -1380,10 +1380,16 @@ describe("session.agency-swarm", () => {
     })
   })
 
-  test("stream prefers stored OpenRouter key over stale env for direct client config", async () => {
+  test("stream isolates direct OpenRouter client config from stored OpenAI OAuth", async () => {
     mockHistory()
     spyOn(Auth, "all").mockImplementation(async () => ({
-      openai: { type: "api", key: "stored-openai" } as any,
+      openai: {
+        type: "oauth",
+        access: "oauth-access",
+        refresh: "oauth-refresh",
+        expires: Date.now() + 60_000,
+        accountId: "acct_123",
+      } as any,
       openrouter: { type: "api", key: "stored-openrouter" } as any,
     })) as typeof Auth.all
     spyOn(Env, "all").mockImplementation(() => ({
@@ -1432,6 +1438,8 @@ describe("session.agency-swarm", () => {
       api_key: "stored-openrouter",
       model: "openrouter/anthropic/claude-sonnet-4.5",
     })
+    expect(captured?.["base_url"]).toBeUndefined()
+    expect(captured?.["default_headers"]).toBeUndefined()
   })
 
   test("stream caps OpenRouter Claude max tokens for free tier keys", async () => {
@@ -11248,6 +11256,41 @@ describe("session.agency-swarm", () => {
       "text-end",
       "error",
     ])
+    expect(events.some((event) => event.type === "finish-step")).toBeFalse()
+    expect(events.some((event) => event.type === "finish")).toBeFalse()
+  })
+
+  test("stream compacts raw_response_event HTML errors", async () => {
+    mockHistory()
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "raw_response_event",
+          data: {
+            type: "error",
+            message:
+              "Error code: 403 - <!DOCTYPE html><html><body>Enable JavaScript and cookies to continue</body></html>",
+          },
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const { input } = helper()
+    const stream = await SessionAgencySwarm.stream(input)
+    const events: any[] = []
+    for await (const event of stream.fullStream) {
+      events.push(event)
+    }
+
+    const errorEvent = events.find((event) => event.type === "error")
+    expect(errorEvent).toBeDefined()
+    const message = String(errorEvent.error?.message ?? errorEvent.error ?? "")
+    expect(message).toContain("Forbidden")
+    expect(message).toContain("HTML error page")
+    expect(message).not.toContain("<html")
+    expect(message).not.toContain("<!DOCTYPE")
     expect(events.some((event) => event.type === "finish-step")).toBeFalse()
     expect(events.some((event) => event.type === "finish")).toBeFalse()
   })

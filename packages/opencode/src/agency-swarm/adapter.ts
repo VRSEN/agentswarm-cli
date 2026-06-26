@@ -114,6 +114,22 @@ export namespace AgencySwarmAdapter {
     return new URL(cleanRelativePath, cleanBase).toString()
   }
 
+  export function normalizeErrorMessage(message: string, status?: number): string {
+    const text = message.trim()
+    if (!text) return "No response body"
+    if (!containsHTMLBody(text)) return text
+
+    const code = status ?? readStatusCode(text)
+    const detail =
+      code === 401
+        ? "Unauthorized: request was blocked by a gateway or proxy and returned an HTML error page. Check authentication and routing."
+        : code === 403
+          ? "Forbidden: request was blocked by a gateway or proxy and returned an HTML error page. Check authentication and routing."
+          : "Agency Swarm backend returned an HTML error page instead of JSON/SSE."
+    const prefix = status === undefined && code === undefined ? readErrorPrefix(text) : undefined
+    return prefix ? `${prefix}: ${detail}` : detail
+  }
+
   export function parseAgencyIDsFromOpenAPI(openapi: Record<string, unknown>): string[] {
     const paths = openapi["paths"]
     if (!paths || typeof paths !== "object") return []
@@ -255,14 +271,15 @@ export namespace AgencySwarmAdapter {
 
     if (!response.ok) {
       const body = await response.text().catch(() => "")
+      const error = normalizeErrorMessage(body || "No response body", response.status)
       log.error("agency-swarm stream request failed", {
         url,
         status: response.status,
-        body: body || "No response body",
+        body: error,
       })
       yield {
         type: "error",
-        error: `Streaming request failed (${response.status}): ${body || "No response body"}`,
+        error: `Streaming request failed (${response.status}): ${error}`,
       }
       yield { type: "end" }
       return
@@ -319,7 +336,7 @@ export namespace AgencySwarmAdapter {
         if (typeof payload["error"] === "string") {
           yield {
             type: "error",
-            error: payload["error"],
+            error: normalizeErrorMessage(payload["error"]),
           }
           continue
         }
@@ -557,6 +574,23 @@ export namespace AgencySwarmAdapter {
     } catch {
       return undefined
     }
+  }
+
+  function containsHTMLBody(value: string) {
+    return /(^|:\s*|\s+-\s+)(?:<!doctype\s+html\b|<html(?:\s|>))/i.test(value)
+  }
+
+  function readStatusCode(value: string): number | undefined {
+    const match =
+      value.match(/\((\d{3})\)/) ?? value.match(/\b(?:error code|status(?: code)?|http)\s*[:=]?\s*(\d{3})\b/i)
+    if (!match?.[1]) return undefined
+    const status = Number(match[1])
+    return Number.isFinite(status) ? status : undefined
+  }
+
+  function readErrorPrefix(value: string): string | undefined {
+    const match = value.match(/^(.+?)\s*(?::|-)\s*(?:<!doctype\s+html\b|<html(?:\s|>))/i)
+    return match?.[1]?.trim() || undefined
   }
 
   async function* parseSSE(response: Response): AsyncGenerator<{ event: string; data: string }> {
