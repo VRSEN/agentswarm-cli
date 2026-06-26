@@ -18,7 +18,7 @@ The manual QA owner prepares the final user-testable proof package. Other worker
 1. Record the exact branch plus commit or dirty working-tree state being tested.
 2. Record logical/static proof separately: types, contracts, invariants, diff reasoning, or relevant static checks.
 3. Run the smallest automated checks that match the touched surface, then broaden only when the risk requires it.
-4. Build the exact local AgentSwarm CLI binary from that state, or install the local build so the user's normal `agentswarm` command points to it.
+4. Build the exact local AgentSwarm CLI binary from that state. Prefer a direct binary path, local tarball, or isolated temporary install; do not mutate the user's normal `agentswarm` command without exact approval.
 5. Write a manual QA script with prerequisites, setup, reset or cleanup, exact user steps, expected results, and evidence to capture.
 6. Record empirical proof separately: automated checks, build and install commands, the binary path or command the user will run, minimal smoke output such as `agentswarm --version`, and the manual QA script.
 7. Stop before approval if either proof section, the binary, checks, or manual QA script cannot be produced.
