@@ -139,8 +139,9 @@ export async function resolveClientConfig(
   const rawGenerated = forwardGenerated
     ? await buildAuthClientConfig(await Auth.all(), await listProvidersForEnvCheck(), await getEnvForClientConfig(), {
         skipOpenAIApiKeyInjection: skipOpenAIApiKey,
-        skipOpenAIOAuthFromStored: hasExplicitOpenAIClientConfig(config),
-        allowStoredOpenAIOAuth: !explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL),
+        skipOpenAIOAuthFromStored: hasExplicitOpenAIClientConfig(config) || targetOpenRouter,
+        allowStoredOpenAIOAuth:
+          !targetOpenRouter && (!explicitUpstreamBaseURL || isCodexAPIBaseURL(explicitUpstreamBaseURL)),
         targetOpenRouter,
       })
     : undefined

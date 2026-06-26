@@ -549,7 +549,7 @@ export namespace SessionAgencySwarm {
           }
 
           if (frame.type === "error") {
-            streamError = new Error(frame.error)
+            streamError = new Error(AgencySwarmAdapter.normalizeErrorMessage(frame.error))
             break
           }
 
@@ -567,7 +567,11 @@ export namespace SessionAgencySwarm {
           const kind = asString(frame.payload["type"])
           if (kind === "error") {
             const content = asString(frame.payload["content"]) ?? ""
-            streamError = new Error(content || "Agency Swarm backend returned an error without a message")
+            streamError = new Error(
+              content
+                ? AgencySwarmAdapter.normalizeErrorMessage(content)
+                : "Agency Swarm backend returned an error without a message",
+            )
             break
           }
           if (kind === "agent_updated_stream_event") {

@@ -516,6 +516,31 @@ describe("session.agency-swarm runtime history", () => {
     expect(appended).toEqual([])
   }, 6000)
 
+  test("stream compacts backend HTML error events", async () => {
+    const { input } = makeInput("current", "html error")
+
+    stubSessionMessages([userMessage("current", "html error", 1)] as any)
+    mockHistory([])
+    AgencySwarmAdapter.streamRun = async function* () {
+      yield {
+        type: "data",
+        payload: {
+          type: "error",
+          content: "<html><body>Enable JavaScript and cookies to continue</body></html>",
+        },
+      }
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const events = await consumeStream(input)
+    const event = events.find((event) => event.type === "error")
+    expect(event?.type).toBe("error")
+    if (event?.type === "error") {
+      expect(event.error.message).toContain("HTML error page")
+      expect(event.error.message).not.toContain("<html")
+    }
+  })
+
   function makeInput(currentID: string, text: string) {
     const abort = new AbortController()
     const input = {
