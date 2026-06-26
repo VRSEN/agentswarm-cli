@@ -3498,6 +3498,21 @@ describe("agency-swarm npx onboarding", () => {
     expect(project?.moduleName).toBe("src.main")
   })
 
+  test("detectAgencyProject keeps checking configured entry files after read errors", async () => {
+    await using dir = await tmpdir()
+    await mkdir(path.join(dir.path, "main.py"))
+    await writeAgency(dir.path)
+
+    const project = await detectAgencyProject(dir.path, {
+      ...downstreamProfile,
+      agencyEntryFiles: ["main.py", "agency.py"],
+    })
+
+    expect(project?.directory).toBe(dir.path)
+    expect(project?.agencyFile).toBe(path.join(dir.path, "agency.py"))
+    expect(project?.moduleName).toBe("agency")
+  })
+
   test("detectAgencyProject does not detect swarm.py in the default Agent Swarm profile", async () => {
     await using dir = await tmpdir()
     await Bun.write(

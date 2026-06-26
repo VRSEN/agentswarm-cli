@@ -522,10 +522,16 @@ export async function detectAgencyProject(
   profile: Pick<ProductProfile, "agencyEntryFiles"> = AgencyProduct,
 ) {
   const dir = path.resolve(directory)
+  let readError: ProjectEntryReadError | undefined
   for (const entryFile of profile.agencyEntryFiles) {
     const agencyFile = path.join(dir, entryFile)
     if (!(await Filesystem.exists(agencyFile))) continue
-    const source = await readProjectEntryFile(agencyFile)
+    const source = await readProjectEntryFile(agencyFile).catch((error) => {
+      if (!(error instanceof ProjectEntryReadError)) throw error
+      readError ??= error
+      return
+    })
+    if (!source) continue
     if (!source.includes("def create_agency")) continue
     if (!source.includes("agency_swarm")) continue
     return {
@@ -534,6 +540,7 @@ export async function detectAgencyProject(
       moduleName: agencyEntryModuleName(entryFile),
     } satisfies AgencyProject
   }
+  if (readError) throw readError
 }
 
 async function readProjectEntryFile(file: string) {
