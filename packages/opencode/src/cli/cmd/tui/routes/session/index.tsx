@@ -88,13 +88,14 @@ import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { SessionRetry } from "@/session/retry"
 import { getRevertDiffFiles } from "../../util/revert-diff"
 import { useCommandPalette } from "../../context/command-palette"
-import { useBindings, useCommandShortcut } from "../../keymap"
+import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut } from "../../keymap"
 import { PathFormatterProvider, usePathFormatter } from "../../context/path-format"
 import { AgencyProduct } from "@/agency-swarm/product"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { describeStreamAuthError, isAgencySwarmFrameworkMode } from "../../session-error"
 import { displayRunOnlyModeLabel, readAgencyProviderOptions } from "../../util/agency-target"
 import { resolveAssistantModelLabel, type ModelLabelScope } from "../../util/model-label"
+import { AGENCY_SWARM_BRIDGE_METADATA_KEY } from "@/session/message-v2"
 
 addDefaultParsers(parsers.parsers)
 
@@ -118,6 +119,15 @@ function readAgencyLabelRecipient(message: UserMessage | undefined) {
   if (!message) return undefined
   return (message as AgencyLabelUserMessage).agencyLabelRecipientAgent ?? message.agencyRecipientAgent
 }
+
+function readAgencySwarmBridge(parts: Part[] | undefined) {
+  for (const part of parts ?? []) {
+    if (part.type !== "text" && part.type !== "subtask" && part.type !== "compaction") continue
+    const value = part.metadata?.[AGENCY_SWARM_BRIDGE_METADATA_KEY]
+    if (typeof value === "boolean") return value
+  }
+}
+
 const GO_UPSELL_PROVIDERS = new Set(["opencode", "opencode-go"])
 
 function goUpsellKeys(action: SessionRetry.Retryable["action"]) {
@@ -192,6 +202,7 @@ const context = createContext<{
     submittedModel?: { providerID: string; modelID: string }
     scope?: ModelLabelScope
     turnStartedAt?: number
+    frameworkMode?: boolean
   }) => string
   providers: () => ReadonlyMap<string, Provider>
   sync: ReturnType<typeof useSync>
@@ -270,6 +281,7 @@ export function Session() {
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
+      productMode: local.product?.current(),
     }),
   )
   const agencyProviderOptions = createMemo(() =>
@@ -315,6 +327,7 @@ export function Session() {
     submittedModel?: { providerID: string; modelID: string }
     scope?: ModelLabelScope
     turnStartedAt?: number
+    frameworkMode?: boolean
   }) => {
     const options = agencyProviderOptions()
     const configuredTargetChangedAfterTurn =
@@ -331,7 +344,7 @@ export function Session() {
       modelID: input.modelID,
       submittedModel: input.submittedModel,
       recipientAgent: input.recipientAgent ?? (configuredTargetChangedAfterTurn ? undefined : options.recipientAgent),
-      frameworkMode: frameworkMode(),
+      frameworkMode: input.frameworkMode ?? frameworkMode(),
       scope: input.scope,
     })
   }
@@ -390,10 +403,11 @@ export function Session() {
     if (part.id === lastSwitch) return
 
     if (part.tool === "plan_exit") {
-      local.agent.set("build")
+      void local.product.set("build")
       lastSwitch = part.id
     } else if (part.tool === "plan_enter") {
-      local.agent.set(frameworkMode() ? "build" : "plan")
+      if (frameworkMode()) local.agent.set("build")
+      else void local.product.set("plan")
       lastSwitch = part.id
     }
   })
@@ -540,6 +554,32 @@ export function Session() {
     }
   }
 
+  const undoTarget = createMemo(() => {
+    const revert = session()?.revert?.messageID
+    return messages().findLast(
+      (message): message is UserMessage => (!revert || message.id < revert) && message.role === "user",
+    )
+  })
+
+  const redoTarget = createMemo(() => {
+    const messageID = session()?.revert?.messageID
+    if (!messageID) return undefined
+    return messages().find((message): message is UserMessage => message.role === "user" && message.id >= messageID)
+  })
+
+  const targetAgencySwarmBridge = (message: UserMessage | undefined) => {
+    if (!message) return frameworkMode()
+    const bridge = readAgencySwarmBridge(sync.data.part[message.id])
+    if (typeof bridge === "boolean") return bridge
+    return messages().some(
+      (item) =>
+        item.role === "assistant" && item.parentID === message.id && item.providerID === AgencySwarmAdapter.PROVIDER_ID,
+    )
+  }
+
+  const undoAgencySwarmBridge = createMemo(() => targetAgencySwarmBridge(undoTarget()))
+  const redoAgencySwarmBridge = createMemo(() => targetAgencySwarmBridge(redoTarget()))
+
   const sessionCommandList = createMemo(() => [
     {
       title: session()?.share?.url ? "Copy share link" : "Share session",
@@ -657,6 +697,7 @@ export function Session() {
           sessionID: route.sessionID,
           modelID: selectedModel.modelID,
           providerID: selectedModel.providerID,
+          agencySwarmBridge: frameworkMode(),
         })
         dialog.clear()
       },
@@ -688,16 +729,15 @@ export function Session() {
       title: "Undo previous message",
       value: "session.undo",
       category: "Session",
-      enabled: !frameworkMode(),
-      hidden: frameworkMode(),
+      enabled: !undoAgencySwarmBridge(),
+      hidden: undoAgencySwarmBridge(),
       slash: {
         name: "undo",
       },
       run: async () => {
         const status = sync.data.session_status?.[route.sessionID]
         if (status?.type !== "idle") await sdk.client.session.abort({ sessionID: route.sessionID }).catch(() => {})
-        const revert = session()?.revert?.messageID
-        const message = messages().findLast((x) => (!revert || x.id < revert) && x.role === "user")
+        const message = undoTarget()
         if (!message) return
         void sdk.client.session
           .revert({
@@ -727,8 +767,8 @@ export function Session() {
       title: "Redo",
       value: "session.redo",
       category: "Session",
-      enabled: !!session()?.revert?.messageID && !frameworkMode(),
-      hidden: frameworkMode(),
+      enabled: !!session()?.revert?.messageID && !redoAgencySwarmBridge(),
+      hidden: redoAgencySwarmBridge(),
       slash: {
         name: "redo",
       },
@@ -1154,10 +1194,12 @@ export function Session() {
   )
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     commands: sessionCommands(),
   }))
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     enabled: command.matcher,
     bindings: tuiConfig.keybinds.gather("session", sessionBindingCommands),
   }))
@@ -1521,6 +1563,16 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       (message): message is UserMessage => message.role === "user" && message.id === props.message.parentID,
     ),
   )
+  const parentParts = createMemo(() => {
+    const msg = parent()
+    return msg ? (sync.data.part[msg.id] ?? []) : []
+  })
+  const turnFrameworkMode = createMemo(() => {
+    const bridge = readAgencySwarmBridge(parentParts())
+    if (typeof bridge === "boolean") return bridge
+    if (props.message.providerID === AgencySwarmAdapter.PROVIDER_ID) return true
+    return false
+  })
   const model = createMemo(() =>
     ctx.modelLabel({
       providerID: props.message.providerID,
@@ -1530,6 +1582,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       recipientAgent: readAgencyLabelRecipient(parent()),
       submittedModel: parent()?.model,
       turnStartedAt: parent()?.time.created,
+      frameworkMode: turnFrameworkMode(),
     }),
   )
 
@@ -1604,7 +1657,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
               </span>{" "}
               <span style={{ fg: theme.text }}>
                 {displayRunOnlyModeLabel({
-                  frameworkMode: ctx.frameworkMode(),
+                  frameworkMode: turnFrameworkMode(),
                   mode: props.message.mode,
                 })}
               </span>

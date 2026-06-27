@@ -55,6 +55,7 @@ import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { reply, TestLLMServer } from "../lib/llm-server"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { InstanceState } from "@/effect/instance-state"
 
 void Log.init({ print: false })
 
@@ -192,6 +193,217 @@ function queuedAgencyRecipientScenario(input: {
   })
 }
 
+function queuedBridgeScenario(
+  secondParts:
+    | { type: "text"; text: string }[]
+    | { type: "file"; mime: string; filename: string; url: string }[] = [{ type: "text", text: "second" }],
+  expectedNativeHits = 1,
+) {
+  return Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...agencyCfg,
+      provider: {
+        ...agencyCfg.provider,
+        test: {
+          ...cfg.provider.test,
+          options: {
+            ...cfg.provider.test.options,
+            baseURL: url,
+          },
+        },
+      },
+    }))
+    const originalMetadata = AgencySwarmAdapter.getMetadata
+    const originalStream = AgencySwarmAdapter.streamRun
+    const firstStarted = defer<void>()
+    const finishFirst = defer<void>()
+    const streams: (string | undefined)[] = []
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        finishFirst.resolve()
+        AgencySwarmAdapter.getMetadata = originalMetadata
+        AgencySwarmAdapter.streamRun = originalStream
+      }),
+    )
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      metadata: {
+        agents: ["MathAgent"],
+      },
+    })) as typeof AgencySwarmAdapter.getMetadata
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      streams.push(typeof args.message === "string" ? args.message : undefined)
+      firstStarted.resolve()
+      await finishFirst.promise
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({
+      title: "Queued bridge routing",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+
+    const first = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: {
+          providerID: ProviderID.make("agency-swarm"),
+          modelID: ModelID.make("default"),
+        },
+        agencySwarmBridge: true,
+        parts: [{ type: "text", text: "first" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* awaitWithTimeout(
+      Effect.race(
+        Effect.promise(() => firstStarted.promise),
+        Fiber.await(first).pipe(
+          Effect.flatMap((exit) =>
+            Effect.fail(
+              new Error(
+                `first agency prompt exited before the stream started: ${
+                  Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "success"
+                }`,
+              ),
+            ),
+          ),
+        ),
+      ),
+      "timed out waiting for first agency stream to start",
+      "5 seconds",
+    )
+
+    const second = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        agencySwarmBridge: false,
+        parts: secondParts,
+      })
+      .pipe(Effect.forkChild)
+    yield* awaitWithTimeout(waitForQueuedUser(), "timed out waiting for queued native user to persist", "3 seconds")
+    yield* llm.text("native second")
+    finishFirst.resolve()
+
+    const [firstExit, secondExit] = yield* awaitWithTimeout(
+      Effect.all([Fiber.await(first), Fiber.await(second)]),
+      "timed out waiting for mixed queued prompts to finish",
+      "5 seconds",
+    )
+    expect(Exit.isSuccess(firstExit)).toBe(true)
+    expect(Exit.isSuccess(secondExit)).toBe(true)
+    expect(streams).toEqual(["first"])
+    expect(yield* llm.hits).toHaveLength(expectedNativeHits)
+
+    function waitForQueuedUser() {
+      return Effect.gen(function* () {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const messages = yield* sessions.messages({ sessionID: chat.id })
+          if (messages.filter((item) => item.info.role === "user").length === 2) return
+          yield* Effect.sleep("10 millis")
+        }
+        throw new Error("Queued native prompt was not persisted before the active run completed")
+      })
+    }
+  })
+}
+
+function queuedBridgeReverseScenario() {
+  return Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...agencyCfg,
+      provider: {
+        ...agencyCfg.provider,
+        test: {
+          ...cfg.provider.test,
+          options: {
+            ...cfg.provider.test.options,
+            baseURL: url,
+          },
+        },
+      },
+    }))
+    const originalMetadata = AgencySwarmAdapter.getMetadata
+    const originalStream = AgencySwarmAdapter.streamRun
+    const finishFirst = yield* Deferred.make<void>()
+    const streams: (string | undefined)[] = []
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        succeedVoid(finishFirst)
+        AgencySwarmAdapter.getMetadata = originalMetadata
+        AgencySwarmAdapter.streamRun = originalStream
+      }),
+    )
+    AgencySwarmAdapter.getMetadata = (async () => ({
+      metadata: {
+        agents: ["MathAgent"],
+      },
+    })) as typeof AgencySwarmAdapter.getMetadata
+    AgencySwarmAdapter.streamRun = async function* (args) {
+      streams.push(typeof args.message === "string" ? args.message : undefined)
+      yield { type: "end" }
+    } as typeof AgencySwarmAdapter.streamRun
+
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({
+      title: "Queued bridge reverse routing",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+
+    yield* llm.hold("native first", deferredAsPromise(finishFirst))
+    const first = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        agencySwarmBridge: false,
+        parts: [{ type: "text", text: "first" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* awaitWithTimeout(llm.wait(1), "timed out waiting for native prompt to start", "5 seconds")
+
+    const second = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: {
+          providerID: ProviderID.make("agency-swarm"),
+          modelID: ModelID.make("default"),
+        },
+        agencySwarmBridge: true,
+        parts: [{ type: "text", text: "second" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* awaitWithTimeout(waitForQueuedUser(), "timed out waiting for queued agency user to persist", "3 seconds")
+    yield* Deferred.succeed(finishFirst, void 0).pipe(Effect.ignore)
+
+    const [firstExit, secondExit] = yield* awaitWithTimeout(
+      Effect.all([Fiber.await(first), Fiber.await(second)]),
+      "timed out waiting for reversed mixed queued prompts to finish",
+      "5 seconds",
+    )
+    expect(Exit.isSuccess(firstExit)).toBe(true)
+    expect(Exit.isSuccess(secondExit)).toBe(true)
+    expect(streams).toEqual(["second"])
+    expect(yield* llm.hits).toHaveLength(1)
+
+    function waitForQueuedUser() {
+      return Effect.gen(function* () {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const messages = yield* sessions.messages({ sessionID: chat.id })
+          if (messages.filter((item) => item.info.role === "user").length === 2) return
+          yield* Effect.sleep("10 millis")
+        }
+        throw new Error("Queued agency prompt was not persisted before the active run completed")
+      })
+    }
+  })
+}
+
 function withSh<A, E, R>(fx: () => Effect.Effect<A, E, R>) {
   return Effect.acquireUseRelease(
     Effect.sync(() => {
@@ -284,7 +496,11 @@ const blockingProcessor = Layer.succeed(
   }),
 )
 
-function makeHttp(input?: { processor?: "blocking" }) {
+function makeHttp(input?: { processor?: "blocking"; experimentalPlanMode?: boolean }) {
+  const runtime = RuntimeFlags.layer({
+    experimentalEventSystem: true,
+    experimentalPlanMode: input?.experimentalPlanMode ?? false,
+  })
   const deps = Layer.mergeAll(
     Session.defaultLayer,
     Snapshot.defaultLayer,
@@ -313,7 +529,7 @@ function makeHttp(input?: { processor?: "blocking" }) {
     Layer.provide(Reference.defaultLayer),
     Layer.provide(Ripgrep.defaultLayer),
     Layer.provide(Format.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(runtime),
     Layer.provideMerge(todo),
     Layer.provideMerge(question),
     Layer.provideMerge(deps),
@@ -325,11 +541,11 @@ function makeHttp(input?: { processor?: "blocking" }) {
       : SessionProcessor.layer.pipe(
           Layer.provide(summary),
           Layer.provide(Image.defaultLayer),
-          Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+          Layer.provide(runtime),
           Layer.provideMerge(deps),
         )
   const compact = SessionCompaction.layer.pipe(
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(runtime),
     Layer.provideMerge(proc),
     Layer.provideMerge(deps),
   )
@@ -347,7 +563,7 @@ function makeHttp(input?: { processor?: "blocking" }) {
       Layer.provideMerge(trunc),
       Layer.provide(Instruction.defaultLayer),
       Layer.provide(SystemPrompt.defaultLayer),
-      Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+      Layer.provide(runtime),
       Layer.provideMerge(deps),
     ),
   ).pipe(Layer.provide(summary))
@@ -355,6 +571,7 @@ function makeHttp(input?: { processor?: "blocking" }) {
 
 const it = testEffect(makeHttp())
 const race = testEffect(makeHttp({ processor: "blocking" }))
+const planMode = testEffect(makeHttp({ experimentalPlanMode: true }))
 const unix = process.platform !== "win32" ? it.instance : it.instance.skip
 
 it.effect(
@@ -762,6 +979,72 @@ it.instance(
   { git: true },
 )
 
+planMode.instance(
+  "Plan prompt keeps the dynamic plan file path with Agent Swarm planner instructions",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Plan path",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "plan",
+        noReply: true,
+        parts: [{ type: "text", text: "make a plan" }],
+      })
+
+      yield* llm.text("planned")
+      const result = yield* prompt.loop({ sessionID: chat.id })
+      expect(result.info.role).toBe("assistant")
+
+      const ctx = yield* InstanceState.context
+      const plan = Session.plan(chat, ctx)
+      const [input] = yield* llm.inputs
+      const payload = JSON.stringify(input)
+      const serializedPlan = JSON.stringify(plan).slice(1, -1)
+      expect(payload).toContain(serializedPlan)
+      expect(payload).toContain("Agent Swarm Planner Instructions")
+      expect(payload).toContain("plan_exit")
+    }),
+  { git: true },
+)
+
+it.instance(
+  "legacy Plan prompt skips Agent Swarm planner instructions without native plan mode",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Legacy plan",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "plan",
+        noReply: true,
+        parts: [{ type: "text", text: "make a legacy plan" }],
+      })
+
+      yield* llm.text("planned")
+      const result = yield* prompt.loop({ sessionID: chat.id })
+      expect(result.info.role).toBe("assistant")
+
+      const [input] = yield* llm.inputs
+      const payload = JSON.stringify(input)
+      expect(payload).not.toContain("Agent Swarm Planner Instructions")
+      expect(payload).not.toContain("plan_exit")
+    }),
+  { git: true },
+)
+
 it.instance(
   "static loop consumes queued replies across turns",
   () =>
@@ -832,11 +1115,168 @@ it.instance(
 )
 
 it.instance(
+  "auto compaction keeps native bridge routing across direct loop",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...agencyCfg,
+        provider: {
+          ...agencyCfg.provider,
+          test: {
+            ...cfg.provider.test,
+            options: {
+              ...cfg.provider.test.options,
+              baseURL: url,
+            },
+          },
+        },
+      }))
+      const originalStream = AgencySwarmAdapter.streamRun
+      const streams: (string | undefined)[] = []
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          AgencySwarmAdapter.streamRun = originalStream
+        }),
+      )
+      AgencySwarmAdapter.streamRun = async function* (args) {
+        streams.push(typeof args.message === "string" ? args.message : undefined)
+        yield { type: "end" }
+      } as typeof AgencySwarmAdapter.streamRun
+
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const compact = yield* SessionCompaction.Service
+      const chat = yield* sessions.create({
+        title: "Compaction bridge routing",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        agencySwarmBridge: false,
+        noReply: true,
+        parts: [{ type: "text", text: "native work before compact" }],
+      })
+      yield* compact.create({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        auto: true,
+        agencySwarmBridge: false,
+      })
+      yield* llm.text("compacted summary")
+      yield* llm.text("native continuation")
+
+      const result = yield* prompt.loop({ sessionID: chat.id })
+
+      expect(result.info.role).toBe("assistant")
+      expect(result.parts.some((part) => part.type === "text" && part.text === "native continuation")).toBe(true)
+      expect(streams).toEqual([])
+      expect(yield* llm.hits).toHaveLength(2)
+    }),
+  { git: true, config: agencyCfg },
+  10_000,
+)
+
+it.instance(
   "queued agency prompt without a recipient does not inherit the active recipient",
   () =>
     queuedAgencyRecipientScenario({
       expectedRecipients: ["MathAgent", undefined],
     }),
+  { git: true, config: agencyCfg },
+  8_000,
+)
+
+it.instance(
+  "slash command subtask follow-up keeps explicit native bridge routing",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...agencyCfg,
+        provider: {
+          ...agencyCfg.provider,
+          test: {
+            ...cfg.provider.test,
+            options: {
+              ...cfg.provider.test.options,
+              baseURL: url,
+            },
+          },
+        },
+      }))
+      const originalMetadata = AgencySwarmAdapter.getMetadata
+      const originalStream = AgencySwarmAdapter.streamRun
+      const streams: (string | undefined)[] = []
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          AgencySwarmAdapter.getMetadata = originalMetadata
+          AgencySwarmAdapter.streamRun = originalStream
+        }),
+      )
+      AgencySwarmAdapter.getMetadata = (async () => ({
+        metadata: {
+          agents: ["UserSupportAgent"],
+        },
+      })) as typeof AgencySwarmAdapter.getMetadata
+      AgencySwarmAdapter.streamRun = async function* (args) {
+        streams.push(typeof args.message === "string" ? args.message : undefined)
+        yield { type: "end" }
+      } as typeof AgencySwarmAdapter.streamRun
+
+      const { prompt, chat } = yield* boot({ title: "Command subtask bridge routing" })
+      yield* llm.text("native child")
+      yield* llm.text("native summary")
+
+      yield* prompt.command({
+        sessionID: chat.id,
+        command: "review",
+        arguments: "agent-builder-command-route-build",
+        agent: "build",
+        model: "test/test-model",
+        agencySwarmBridge: false,
+      })
+
+      expect(streams).toEqual([])
+      expect(yield* llm.pending).toBe(0)
+      const native = JSON.stringify(yield* llm.inputs)
+      expect(native).toContain("agent-builder-command-route-build")
+      expect(native).toContain("Summarize the task tool output above")
+    }),
+  { git: true, config: agencyCfg },
+  30_000,
+)
+
+it.instance(
+  "queued native prompts keep their bridge override after an active agency run",
+  () => queuedBridgeScenario(),
+  { git: true, config: agencyCfg },
+  8_000,
+)
+
+it.instance(
+  "queued file-only native prompts keep their bridge override after an active agency run",
+  () =>
+    queuedBridgeScenario(
+      [
+        {
+          type: "file",
+          mime: "application/octet-stream",
+          filename: "payload.bin",
+          url: "data:application/octet-stream;base64,AAAA",
+        },
+      ],
+      0,
+    ),
+  { git: true, config: agencyCfg },
+  8_000,
+)
+
+it.instance(
+  "queued agency prompts keep their bridge override after an active native run",
+  () => queuedBridgeReverseScenario(),
   { git: true, config: agencyCfg },
   8_000,
 )
@@ -1560,6 +2000,26 @@ unix(
       expect(tool.state.metadata.output).toContain("out")
       expect(tool.state.metadata.output).toContain("err")
       yield* run.assertNotBusy(chat.id)
+    }),
+  { git: true, config: cfg },
+)
+
+unix(
+  "shell persists explicit native bridge routing metadata",
+  () =>
+    Effect.gen(function* () {
+      const { prompt, chat } = yield* boot()
+      yield* prompt.shell({
+        sessionID: chat.id,
+        agent: "build",
+        command: "printf shell-native",
+        agencySwarmBridge: false,
+      })
+
+      const messages = yield* Session.Service.use((session) => session.messages({ sessionID: chat.id }))
+      const user = messages.find((message) => message.info.role === "user")
+      const text = user?.parts.find((part) => part.type === "text")
+      expect(text?.metadata?.agencySwarmBridge).toBe(false)
     }),
   { git: true, config: cfg },
 )

@@ -192,6 +192,7 @@ export const TuiThreadCommand = cmd({
       const env = sanitizedProcessEnv({
         [OPENCODE_PROCESS_ROLE]: "worker",
         [OPENCODE_RUN_ID]: ensureRunID(),
+        OPENCODE_EXPERIMENTAL_PLAN_MODE: "1",
       })
 
       const worker = new Worker(file, {

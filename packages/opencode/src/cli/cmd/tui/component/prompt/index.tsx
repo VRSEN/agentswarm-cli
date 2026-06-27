@@ -99,7 +99,7 @@ import { useArgs } from "@tui/context/args"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { type WorkspaceStatus } from "../workspace-label"
 import { useCommandPalette } from "../../context/command-palette"
-import { useBindings, useCommandShortcut, useLeaderActive, useOpencodeKeymap } from "../../keymap"
+import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, useOpencodeKeymap } from "../../keymap"
 import { useTuiConfig } from "../../context/tui-config"
 import { Telemetry } from "@/telemetry/telemetry"
 import { captureCommand } from "@/telemetry/command"
@@ -248,12 +248,62 @@ export function Prompt(props: PromptProps) {
   const canSwitchOrgs = createMemo(() => sync.data.console_state.switchableOrgCount > 1)
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
+      productMode: local.product?.current(),
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
     }),
   )
-  const effectiveAgentName = createMemo(() => (frameworkMode() ? "build" : (local.agent.current()?.name ?? "build")))
+  function firstNativeModel() {
+    const hasModel = (model: { providerID: string; modelID: string }) =>
+      Boolean(sync.data.provider.find((provider) => provider.id === model.providerID)?.models[model.modelID])
+
+    const recent = local.model
+      .recent()
+      .find((item) => item.providerID !== AgencySwarmAdapter.PROVIDER_ID && hasModel(item))
+    if (recent) return recent
+
+    for (const provider of sync.data.provider) {
+      if (provider.id === AgencySwarmAdapter.PROVIDER_ID) continue
+      const defaultModel = sync.data.provider_default[provider.id]
+      const firstModel = Object.values(provider.models)[0] as { id?: string } | undefined
+      const modelID = defaultModel ?? firstModel?.id
+      if (modelID) return { providerID: provider.id, modelID }
+    }
+  }
+  function promptModel() {
+    const model = local.model.current()
+    const mode = local.product?.current()
+    if ((mode === "build" || mode === "plan") && model?.providerID === AgencySwarmAdapter.PROVIDER_ID) {
+      return firstNativeModel() ?? model
+    }
+    return model
+  }
+  function currentSessionUserMessage() {
+    if (!props.sessionID) return undefined
+    const messages = sync.data.message[props.sessionID]
+    if (!messages) return undefined
+    return messages.findLast((m): m is UserMessage => m.role === "user")
+  }
+  function currentSessionPrimaryAgentName() {
+    const name = currentSessionUserMessage()?.agent
+    if (!name) return undefined
+    if (!local.agent.list().some((agent) => agent.name === name)) return undefined
+    return name
+  }
+  const effectiveAgentName = createMemo(() => {
+    const mode = local.product?.current()
+    const current = local.agent.current()?.name
+    if (mode === "plan") return "plan"
+    if (mode === "build") {
+      if (props.sessionID && local.agent.sessionID() !== props.sessionID)
+        return currentSessionPrimaryAgentName() ?? mode
+      if (current === "build" || current === "plan") return "build"
+      return current ?? mode
+    }
+    if (frameworkMode()) return "build"
+    return current ?? "build"
+  })
   const agencyProviderOptions = createMemo(() =>
     readAgencyProviderOptions({
       configuredProvider: sync.data.config.provider?.[AgencySwarmAdapter.PROVIDER_ID],
@@ -707,12 +757,7 @@ export function Prompt(props: PromptProps) {
     if (!props.disabled) input.cursorColor = theme.text
   })
 
-  const lastUserMessage = createMemo(() => {
-    if (!props.sessionID) return undefined
-    const messages = sync.data.message[props.sessionID]
-    if (!messages) return undefined
-    return messages.findLast((m): m is UserMessage => m.role === "user")
-  })
+  const lastUserMessage = createMemo(currentSessionUserMessage)
 
   const usage = createMemo(() => {
     if (!props.sessionID) return
@@ -1026,10 +1071,12 @@ export function Prompt(props: PromptProps) {
   )
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     commands: promptCommands(),
   }))
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     enabled: command.matcher,
     bindings: tuiConfig.keybinds.gather("prompt.palette", [
       "prompt.submit",
@@ -1267,11 +1314,13 @@ export function Prompt(props: PromptProps) {
   )
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     commands: stashCommands(),
   }))
 
   useBindings(() => {
     return {
+      mode: OPENCODE_BASE_MODE,
       target: inputTarget,
       enabled: inputTarget() !== undefined && !props.disabled,
       bindings: tuiConfig.keybinds.get("prompt.paste"),
@@ -1280,6 +1329,7 @@ export function Prompt(props: PromptProps) {
 
   useBindings(() => {
     return {
+      mode: OPENCODE_BASE_MODE,
       target: inputTarget,
       enabled: inputTarget() !== undefined && !props.disabled && store.prompt.input !== "",
       bindings: tuiConfig.keybinds.get("prompt.clear"),
@@ -1288,6 +1338,7 @@ export function Prompt(props: PromptProps) {
 
   useBindings(() => {
     return {
+      mode: OPENCODE_BASE_MODE,
       target: inputTarget,
       enabled: (() => {
         cursorVersion()
@@ -1315,6 +1366,7 @@ export function Prompt(props: PromptProps) {
 
   useBindings(() => {
     return {
+      mode: OPENCODE_BASE_MODE,
       target: inputTarget,
       enabled: inputTarget() !== undefined && store.mode === "shell",
       bindings: [{ key: "escape", desc: "Exit shell mode", group: "Prompt", cmd: () => setStore("mode", "normal") }],
@@ -1323,6 +1375,7 @@ export function Prompt(props: PromptProps) {
 
   useBindings(() => {
     return {
+      mode: OPENCODE_BASE_MODE,
       target: inputTarget,
       enabled: (() => {
         cursorVersion()
@@ -1334,6 +1387,7 @@ export function Prompt(props: PromptProps) {
 
   useBindings(() => {
     return {
+      mode: OPENCODE_BASE_MODE,
       target: inputTarget,
       enabled: (() => {
         cursorVersion()
@@ -1366,6 +1420,7 @@ export function Prompt(props: PromptProps) {
 
   useBindings(() => {
     return {
+      mode: OPENCODE_BASE_MODE,
       target: inputTarget,
       enabled: (() => {
         cursorVersion()
@@ -1494,7 +1549,7 @@ export function Prompt(props: PromptProps) {
     }
 
     const currentMode = store.mode
-    const selectedModel = local.model.current()
+    const selectedModel = promptModel()
     if (!selectedModel) {
       void promptModelWarning()
       return false
@@ -1567,7 +1622,7 @@ export function Prompt(props: PromptProps) {
     ) {
       toast.show({
         variant: "warning",
-        message: `/${serverSlashCommand.name} is available in Agent Builder or Plan mode.`,
+        message: `/${serverSlashCommand.name} is available in Build or Plan mode.`,
         duration: 4000,
       })
       return false
@@ -1577,6 +1632,7 @@ export function Prompt(props: PromptProps) {
 
     if (
       shouldBlockAgencyPromptSubmit({
+        productMode: local.product?.current(),
         currentProviderID: selectedModel.providerID,
         configuredModel: sync.data.config.model,
         agentModel: local.agent.current()?.model,
@@ -1596,7 +1652,7 @@ export function Prompt(props: PromptProps) {
       return false
     }
 
-    if (currentMode !== "shell" && agencyConnection.requiresReconnect()) {
+    if (currentMode !== "shell" && frameworkMode() && agencyConnection.requiresReconnect()) {
       toast.show({
         variant: "warning",
         message: "Reconnect to a local agency-swarm server before sending a message",
@@ -1663,11 +1719,14 @@ export function Prompt(props: PromptProps) {
     }
 
     const messageID = MessageID.ascending()
-    void AgencySwarmRunSession.sync({
-      sessionID,
-      providerID: productProviderID,
-      directory: process.env[AgencySwarmRunSession.LOCAL_PROJECT_ENV],
-    })
+    const productMode = local.product?.current()
+    if (productMode === "run") {
+      void AgencySwarmRunSession.sync({
+        sessionID,
+        providerID: productProviderID,
+        directory: process.env[AgencySwarmRunSession.LOCAL_PROJECT_ENV],
+      })
+    }
 
     const editorSelection = editorContext()
     const editorParts =
@@ -1709,6 +1768,7 @@ export function Prompt(props: PromptProps) {
           modelID: selectedModel.modelID,
         },
         command: inputText,
+        agencySwarmBridge: frameworkMode(),
       })
       setStore("mode", "normal")
     } else if (isServerSlashCommand) {
@@ -1723,6 +1783,7 @@ export function Prompt(props: PromptProps) {
         sessionID,
         command: command.slice(1),
         arguments: args,
+        agencySwarmBridge: frameworkMode(),
         agent: effectiveAgentName(),
         model: `${selectedModel.providerID}/${selectedModel.modelID}`,
         messageID,
@@ -1768,6 +1829,7 @@ export function Prompt(props: PromptProps) {
         $body_agencyRecipientAgent?: string
         $body_agencyLabelAgency?: string
         $body_agencyLabelRecipientAgent?: string
+        $body_agencySwarmBridge?: boolean
       } = {
         sessionID,
         ...selectedModel,
@@ -1778,6 +1840,7 @@ export function Prompt(props: PromptProps) {
         $body_agencyRecipientAgent: agencyRecipientAgent,
         $body_agencyLabelAgency: agencyLabelAgency,
         $body_agencyLabelRecipientAgent: agencyLabelRecipientAgent,
+        $body_agencySwarmBridge: frameworkMode(),
         parts: [
           ...editorParts,
           {

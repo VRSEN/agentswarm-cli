@@ -488,6 +488,9 @@ export type SubtaskPart = {
     modelID: string
   }
   command?: string
+  metadata?: {
+    [key: string]: unknown
+  }
 }
 
 export type ReasoningPart = {
@@ -705,6 +708,9 @@ export type CompactionPart = {
   auto: boolean
   overflow?: boolean
   tail_start_id?: string
+  metadata?: {
+    [key: string]: unknown
+  }
 }
 
 export type Part =
@@ -1793,6 +1799,9 @@ export type SubtaskPartInput = {
     modelID: string
   }
   command?: string
+  metadata?: {
+    [key: string]: unknown
+  }
 }
 
 export type V2SessionsResponse = {
@@ -5759,6 +5768,7 @@ export type SessionPromptData = {
     agencyRecipientAgent?: string
     agencyLabelAgency?: string
     agencyLabelRecipientAgent?: string
+    agencySwarmBridge?: boolean
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -6046,6 +6056,7 @@ export type SessionSummarizeData = {
     providerID: string
     modelID: string
     auto?: boolean
+    agencySwarmBridge?: boolean
   }
   path: {
     sessionID: string
@@ -6097,6 +6108,7 @@ export type SessionPromptAsyncData = {
     agencyRecipientAgent?: string
     agencyLabelAgency?: string
     agencyLabelRecipientAgent?: string
+    agencySwarmBridge?: boolean
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -6139,6 +6151,7 @@ export type SessionCommandData = {
     arguments: string
     command: string
     variant?: string
+    agencySwarmBridge?: boolean
     parts?: Array<{
       id?: string
       type: "file"
@@ -6192,6 +6205,7 @@ export type SessionShellData = {
       modelID: string
     }
     command: string
+    agencySwarmBridge?: boolean
   }
   path: {
     sessionID: string

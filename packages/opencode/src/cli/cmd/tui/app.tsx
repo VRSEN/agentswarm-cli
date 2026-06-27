@@ -39,6 +39,7 @@ import { SyncProvider, useSync } from "@tui/context/sync"
 import { SyncProviderV2 } from "@tui/context/sync-v2"
 import { LocalProvider, useLocal } from "@tui/context/local"
 import { DialogModel } from "@tui/component/dialog-model"
+import { DialogMode } from "@tui/component/dialog-mode"
 import { useConnected } from "@tui/component/use-connected"
 import { DialogMcp } from "@tui/component/dialog-mcp"
 import { DialogStatus } from "@tui/component/dialog-status"
@@ -72,7 +73,13 @@ import type { RouteMap } from "@/cli/cmd/tui/plugin/api"
 import { createTuiAttention } from "@/cli/cmd/tui/attention"
 import { FormatError, FormatUnknownError } from "@/cli/error"
 import { CommandPaletteProvider, useCommandPalette } from "./context/command-palette"
-import { OpencodeKeymapProvider, registerOpencodeKeymap, useBindings, useOpencodeKeymap } from "./keymap"
+import {
+  OPENCODE_BASE_MODE,
+  OpencodeKeymapProvider,
+  registerOpencodeKeymap,
+  useBindings,
+  useOpencodeKeymap,
+} from "./keymap"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { AgencySwarmOllama } from "@/agency-swarm/ollama"
 import { AgencyProduct } from "@/agency-swarm/product"
@@ -109,6 +116,7 @@ const appBindingCommands = [
   "model.cycle_recent_reverse",
   "model.cycle_favorite",
   "model.cycle_favorite_reverse",
+  "product.mode",
   "agent.list",
   "mcp.list",
   "agent.cycle",
@@ -457,6 +465,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const connected = useConnected()
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
+      productMode: local.product?.current(),
       currentProviderID: local.model.current()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
@@ -645,6 +654,15 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
           ]
         : []),
       {
+        name: "product.mode",
+        title: "Switch mode",
+        category: "Agent",
+        slashName: "modes",
+        run: () => {
+          dialog.replace(() => <DialogMode />)
+        },
+      },
+      {
         name: "model.list",
         title: "Switch model",
         suggested: true,
@@ -730,6 +748,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
             return
           }
           local.agent.move(1)
+          const agent = local.agent.current()
+          if (agent?.name === "build" || agent?.name === "plan") void local.product.set(agent.name)
         },
       },
       {
@@ -770,6 +790,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
             return
           }
           local.agent.move(-1)
+          const agent = local.agent.current()
+          if (agent?.name === "build" || agent?.name === "plan") void local.product.set(agent.name)
         },
       },
       {
@@ -981,10 +1003,12 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   )
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     commands: appCommands(),
   }))
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     enabled: command.matcher,
     bindings: tuiConfig.keybinds.gather(
       "app",
@@ -997,6 +1021,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   }))
 
   useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
     enabled: () => {
       const ok = command.matcher.get()
       if (!ok) return false

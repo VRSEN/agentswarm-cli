@@ -47,6 +47,7 @@ export function DialogAgent() {
       currentProviderID: currentModel()?.providerID,
       configuredModel: sync.data.config.model,
       agentModel: local.agent.current()?.model,
+      productMode: local.product?.current(),
     }),
   )
 
@@ -189,9 +190,13 @@ export function DialogAgent() {
 
   const current = createMemo<AgentOptionValue | undefined>(() => {
     if (!agencySwarmEnabled()) {
+      const product = local.product?.current()
+      const agent = local.agent.current()?.name
       return {
         kind: "local",
-        agent: local.agent.current()?.name ?? "build",
+        agent: (product === "build" || product === "plan") && (!agent || agent === "build" || agent === "plan")
+          ? product
+          : (agent ?? "build"),
       }
     }
 
@@ -231,6 +236,13 @@ export function DialogAgent() {
       options={options()}
       onSelect={(option) => {
         if (option.value.kind === "local") {
+          if (option.value.agent === "build" || option.value.agent === "plan") {
+            void local.product.set(option.value.agent).then(
+              () => dialog.clear(),
+              () => dialog.clear(),
+            )
+            return
+          }
           local.agent.set(option.value.agent)
           dialog.clear()
           return

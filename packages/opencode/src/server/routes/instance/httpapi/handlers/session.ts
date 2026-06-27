@@ -270,9 +270,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           modelID: ctx.payload.modelID,
         },
         auto: ctx.payload.auto ?? false,
+        agencySwarmBridge: ctx.payload.agencySwarmBridge,
       })
       yield* promptSvc
-        .loop({ sessionID: ctx.params.sessionID })
+        .loop({ sessionID: ctx.params.sessionID, agencySwarmBridge: ctx.payload.agencySwarmBridge })
         .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
       return true
     })

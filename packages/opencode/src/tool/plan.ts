@@ -31,12 +31,15 @@ export const PlanExitTool = Tool.define(
             sessionID: ctx.sessionID,
             questions: [
               {
-                question: `Plan at ${plan} is complete. Would you like to switch to the build agent and start implementing?`,
+                question: `Plan at ${plan} is complete. Would you like to switch to Build and start implementing?`,
                 header: displayAgentName("build"),
                 custom: false,
                 options: [
-                  { label: "Yes", description: `Switch to ${displayAgentName("build")} and start implementing the plan` },
-                  { label: "No", description: "Stay with plan agent to continue refining the plan" },
+                  {
+                    label: "Yes",
+                    description: `Switch to ${displayAgentName("build")} and start implementing the plan`,
+                  },
+                  { label: "No", description: "Stay with Plan to continue refining the plan" },
                 ],
               },
             ],
@@ -66,6 +69,9 @@ export const PlanExitTool = Tool.define(
             type: "text",
             text: `The plan at ${plan} has been approved, you can now edit files. Execute the plan`,
             synthetic: true,
+            metadata: {
+              [MessageV2.AGENCY_SWARM_BRIDGE_METADATA_KEY]: false,
+            },
           } satisfies MessageV2.TextPart)
 
           return {

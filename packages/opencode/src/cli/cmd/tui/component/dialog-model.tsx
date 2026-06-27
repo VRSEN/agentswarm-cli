@@ -29,10 +29,12 @@ export function DialogModel(props: { providerID?: string }) {
   const [query, setQuery] = createSignal("")
 
   const rawConnected = useConnected()
+  const productMode = createMemo(() => local.product?.current())
   const frameworkMode = isAgencySwarmFrameworkMode({
     currentProviderID: local.model.current()?.providerID,
     configuredModel: sync.data.config.model,
     agentModel: local.agent.current()?.model,
+    productMode: productMode(),
   })
   const agencyOptions = createMemo(() =>
     readAgencyProviderOptions({
@@ -78,7 +80,9 @@ export function DialogModel(props: { providerID?: string }) {
   const enabledProviders = createMemo(() =>
     frameworkMode
       ? sync.data.provider.filter((provider) => isAgencySupportedProvider(provider.id))
-      : sync.data.provider,
+      : productMode() === "build" || productMode() === "plan"
+        ? sync.data.provider.filter((provider) => provider.id !== AgencySwarmAdapter.PROVIDER_ID)
+        : sync.data.provider,
   )
   // Treat framework mode as "not connected" when no agency-supported provider is usable,
   // so the disconnected fallback (filtered popular providers) keeps `/models` actionable
@@ -256,7 +260,7 @@ export function DialogModel(props: { providerID?: string }) {
         return
       }
     }
-    local.model.set({ providerID, modelID }, { recent: true, explicit: true })
+    local.model.set({ providerID, modelID }, { recent: true, explicit: true, preserveRun: productMode() === "run" })
     const list = local.model.variant.list()
     const cur = local.model.variant.selected()
     if (cur === "default" || (cur && list.includes(cur))) {

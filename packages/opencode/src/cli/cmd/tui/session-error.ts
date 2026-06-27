@@ -7,6 +7,7 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { Log } from "@opencode-ai/core/util/log"
 import { hasStoredProviderCredential } from "@tui/util/provider-auth"
 import type { Provider, ProviderAuthMethod } from "@opencode-ai/sdk/v2"
+import type { ProductMode } from "./context/local"
 
 export const AGENCY_SWARM_PRIMARY_AUTH_PROVIDER_IDS = [
   "openai",
@@ -167,7 +168,9 @@ function hasExplicitAgencyClientConfig(provider: Provider | undefined) {
  * but the configured or agent model still points at `agency-swarm/...`, framework mode stays on so auth and
  * provider UI stay aligned with Agent Swarm.
  */
-export function isAgencySwarmFrameworkMode(input: AgencySwarmRunModeInput) {
+export function isAgencySwarmFrameworkMode(input: AgencySwarmRunModeInput & { productMode: ProductMode | undefined }) {
+  if (input.productMode === "run") return true
+  if (input.productMode === "build" || input.productMode === "plan") return false
   return isAgencySwarmRunMode(input)
 }
 
@@ -201,6 +204,7 @@ export function shouldOpenStartupAuthDialog(input: {
 }
 
 export function shouldBlockAgencyPromptSend(input: {
+  productMode: ProductMode | undefined
   currentProviderID?: string
   configuredModel?: string
   agentModel?: { providerID: string; modelID: string }
@@ -219,6 +223,7 @@ export function shouldBlockAgencyPromptSend(input: {
 }
 
 export function shouldBlockAgencyPromptSubmit(input: {
+  productMode: ProductMode | undefined
   currentProviderID?: string
   configuredModel?: string
   agentModel?: { providerID: string; modelID: string }

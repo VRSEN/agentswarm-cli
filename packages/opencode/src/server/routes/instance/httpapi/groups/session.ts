@@ -62,6 +62,7 @@ export const SummarizePayload = Schema.Struct({
   providerID: ProviderID,
   modelID: ModelID,
   auto: Schema.optional(Schema.Boolean),
+  agencySwarmBridge: Schema.optional(Schema.Boolean),
 })
 export const PromptPayload = Schema.Struct(Struct.omit(SessionPrompt.PromptInput.fields, ["sessionID"]))
 export const CommandPayload = Schema.Struct(Struct.omit(SessionPrompt.CommandInput.fields, ["sessionID"]))

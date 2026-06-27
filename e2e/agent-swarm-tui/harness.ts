@@ -55,6 +55,424 @@ function fixturesForScenario(scenario: AgencyServerScenario) {
   return [qaAgencyFixture]
 }
 
+export type NativeLLMServer = {
+  baseURL: string
+  requests: Array<{
+    path: string
+    body: Record<string, unknown>
+  }>
+  planExitNext(): void
+  taskNext(prompt: string): void
+  stop(): void
+}
+
+export async function startNativeLLMServer(): Promise<NativeLLMServer> {
+  const requests: NativeLLMServer["requests"] = []
+  let planExitUsed = false
+  let planExitNext = false
+  let taskPrompt: string | undefined
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url)
+      if (request.method !== "POST") return new Response("not found", { status: 404 })
+      if (url.pathname !== "/v1/responses" && url.pathname !== "/v1/chat/completions") {
+        return new Response("not found", { status: 404 })
+      }
+
+      const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+      requests.push({ path: url.pathname, body })
+      const bodyText = JSON.stringify(body)
+      const title = bodyText.includes("title generator") || bodyText.includes("Generate a title for this conversation")
+      const shouldPlanExit = !planExitUsed && planExitNext && !title
+      const shouldTask = taskPrompt !== undefined && !title
+      const taskArguments = taskPrompt
+        ? JSON.stringify({
+            description: "native task bridge routing",
+            prompt: taskPrompt,
+            subagent_type: "general",
+          })
+        : ""
+
+      if (url.pathname === "/v1/responses") {
+        if (shouldTask) {
+          taskPrompt = undefined
+          return new Response(
+            eventStream([
+              {
+                type: "response.created",
+                sequence_number: 1,
+                response: {
+                  id: `resp_native_${requests.length}`,
+                  created_at: Math.floor(Date.now() / 1000),
+                  model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+                  service_tier: null,
+                },
+              },
+              {
+                type: "response.output_item.added",
+                sequence_number: 2,
+                output_index: 0,
+                item: {
+                  type: "function_call",
+                  id: "fc_task",
+                  call_id: "call_task",
+                  name: "task",
+                  arguments: "",
+                  status: "in_progress",
+                },
+              },
+              {
+                type: "response.function_call_arguments.done",
+                sequence_number: 3,
+                output_index: 0,
+                item_id: "fc_task",
+                arguments: taskArguments,
+              },
+              {
+                type: "response.output_item.done",
+                sequence_number: 4,
+                output_index: 0,
+                item: {
+                  type: "function_call",
+                  id: "fc_task",
+                  call_id: "call_task",
+                  name: "task",
+                  arguments: taskArguments,
+                  status: "completed",
+                },
+              },
+              {
+                type: "response.completed",
+                sequence_number: 5,
+                response: {
+                  incomplete_details: null,
+                  service_tier: null,
+                  usage: {
+                    input_tokens: 1,
+                    input_tokens_details: { cached_tokens: null },
+                    output_tokens: 1,
+                    output_tokens_details: { reasoning_tokens: null },
+                  },
+                },
+              },
+            ]),
+            {
+              headers: { "Content-Type": "text/event-stream" },
+            },
+          )
+        }
+
+        if (shouldPlanExit) {
+          planExitUsed = true
+          planExitNext = false
+          return new Response(
+            eventStream([
+              {
+                type: "response.created",
+                sequence_number: 1,
+                response: {
+                  id: `resp_native_${requests.length}`,
+                  created_at: Math.floor(Date.now() / 1000),
+                  model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+                  service_tier: null,
+                },
+              },
+              {
+                type: "response.output_item.added",
+                sequence_number: 2,
+                output_index: 0,
+                item: {
+                  type: "function_call",
+                  id: "fc_plan_exit",
+                  call_id: "call_plan_exit",
+                  name: "plan_exit",
+                  arguments: "",
+                  status: "in_progress",
+                },
+              },
+              {
+                type: "response.function_call_arguments.done",
+                sequence_number: 3,
+                output_index: 0,
+                item_id: "fc_plan_exit",
+                arguments: "{}",
+              },
+              {
+                type: "response.output_item.done",
+                sequence_number: 4,
+                output_index: 0,
+                item: {
+                  type: "function_call",
+                  id: "fc_plan_exit",
+                  call_id: "call_plan_exit",
+                  name: "plan_exit",
+                  arguments: "{}",
+                  status: "completed",
+                },
+              },
+              {
+                type: "response.completed",
+                sequence_number: 5,
+                response: {
+                  incomplete_details: null,
+                  service_tier: null,
+                  usage: {
+                    input_tokens: 1,
+                    input_tokens_details: { cached_tokens: null },
+                    output_tokens: 1,
+                    output_tokens_details: { reasoning_tokens: null },
+                  },
+                },
+              },
+            ]),
+            {
+              headers: { "Content-Type": "text/event-stream" },
+            },
+          )
+        }
+
+        return new Response(
+          eventStream([
+            {
+              type: "response.created",
+              sequence_number: 1,
+              response: {
+                id: `resp_native_${requests.length}`,
+                created_at: Math.floor(Date.now() / 1000),
+                model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+                service_tier: null,
+              },
+            },
+            {
+              type: "response.output_item.added",
+              sequence_number: 2,
+              output_index: 0,
+              item: { type: "message", id: "msg_native" },
+            },
+            {
+              type: "response.output_text.delta",
+              sequence_number: 3,
+              item_id: "msg_native",
+              delta: "native-mode-ok",
+              logprobs: null,
+            },
+            {
+              type: "response.completed",
+              sequence_number: 4,
+              response: {
+                incomplete_details: null,
+                service_tier: null,
+                usage: {
+                  input_tokens: 1,
+                  input_tokens_details: { cached_tokens: null },
+                  output_tokens: 1,
+                  output_tokens_details: { reasoning_tokens: null },
+                },
+              },
+            },
+          ]),
+          {
+            headers: { "Content-Type": "text/event-stream" },
+          },
+        )
+      }
+
+      if (shouldTask) {
+        taskPrompt = undefined
+        return new Response(
+          eventStream([
+            {
+              id: `chatcmpl_native_${requests.length}`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+              choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }],
+            },
+            {
+              id: `chatcmpl_native_${requests.length}`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: "call_task",
+                        type: "function",
+                        function: {
+                          name: "task",
+                          arguments: "",
+                        },
+                      },
+                    ],
+                  },
+                  finish_reason: null,
+                },
+              ],
+            },
+            {
+              id: `chatcmpl_native_${requests.length}`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        function: {
+                          arguments: taskArguments,
+                        },
+                      },
+                    ],
+                  },
+                  finish_reason: null,
+                },
+              ],
+            },
+            {
+              id: `chatcmpl_native_${requests.length}`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+              choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+              usage: { prompt_tokens: 1, completion_tokens: 1 },
+            },
+          ]),
+          {
+            headers: { "Content-Type": "text/event-stream" },
+          },
+        )
+      }
+
+      if (shouldPlanExit) {
+        planExitUsed = true
+        planExitNext = false
+        return new Response(
+          eventStream([
+            {
+              id: `chatcmpl_native_${requests.length}`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+              choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }],
+            },
+            {
+              id: `chatcmpl_native_${requests.length}`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: "call_plan_exit",
+                        type: "function",
+                        function: {
+                          name: "plan_exit",
+                          arguments: "",
+                        },
+                      },
+                    ],
+                  },
+                  finish_reason: null,
+                },
+              ],
+            },
+            {
+              id: `chatcmpl_native_${requests.length}`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        function: {
+                          arguments: "{}",
+                        },
+                      },
+                    ],
+                  },
+                  finish_reason: null,
+                },
+              ],
+            },
+            {
+              id: `chatcmpl_native_${requests.length}`,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+              choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+              usage: { prompt_tokens: 1, completion_tokens: 1 },
+            },
+          ]),
+          {
+            headers: { "Content-Type": "text/event-stream" },
+          },
+        )
+      }
+
+      return new Response(
+        eventStream([
+          {
+            id: `chatcmpl_native_${requests.length}`,
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+            choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }],
+          },
+          {
+            id: `chatcmpl_native_${requests.length}`,
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+            choices: [{ index: 0, delta: { content: "native-mode-ok" }, finish_reason: null }],
+          },
+          {
+            id: `chatcmpl_native_${requests.length}`,
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model: typeof body.model === "string" ? body.model : "gpt-5.4-mini",
+            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+            usage: { prompt_tokens: 1, completion_tokens: 1 },
+          },
+        ]),
+        {
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      )
+    },
+  })
+
+  return {
+    baseURL: `http://${server.hostname}:${server.port}/v1`,
+    requests,
+    planExitNext() {
+      planExitNext = true
+    },
+    taskNext(prompt: string) {
+      taskPrompt = prompt
+    },
+    stop() {
+      server.stop(true)
+    },
+  }
+}
+
 export async function startAgencyProtocolServer(
   input: { scenario?: AgencyServerScenario } = {},
 ): Promise<AgencyProtocolServer> {
@@ -210,6 +628,7 @@ function mergeSingleProviderConfig(base: ProviderConfig | undefined, override: P
 
 export async function startTui(input: {
   args?: string[]
+  binaryPath?: string
   cwd?: string
   env?: Record<string, string | undefined>
   cols?: number
@@ -260,7 +679,7 @@ export async function startTui(input: {
     ...(configContent && input.configSource !== "file" ? { OPENCODE_CONFIG_CONTENT: configContent } : {}),
     ...(input.env ?? {}),
   })
-  let proc = spawnTuiProcess({ args, cwd: input.cwd, env, cols, rows })
+  let proc = spawnTuiProcess({ args, binaryPath: input.binaryPath, cwd: input.cwd, env, cols, rows })
 
   let dataReceived = false
   let activeProc = proc
@@ -290,7 +709,7 @@ export async function startTui(input: {
       onRetry: async () => {
         await closeProcess(proc)
         await Bun.sleep(initialOutputRetryDelayMs)
-        proc = spawnTuiProcess({ args, cwd: input.cwd, env, cols, rows })
+        proc = spawnTuiProcess({ args, binaryPath: input.binaryPath, cwd: input.cwd, env, cols, rows })
         dataReceived = false
         exitCode = undefined
         attachProcess(proc)
@@ -349,12 +768,15 @@ export async function startTui(input: {
 
 function spawnTuiProcess(input: {
   args: string[]
+  binaryPath?: string
   cwd?: string
   env: Record<string, string | undefined>
   cols: number
   rows: number
 }) {
-  return spawn(process.execPath, ["--conditions=browser", "./src/index.ts", ...input.args], {
+  const command = input.binaryPath ?? process.execPath
+  const args = input.binaryPath ? input.args : ["--conditions=browser", "./src/index.ts", ...input.args]
+  return spawn(command, args, {
     cwd: input.cwd ?? packageRoot,
     cols: input.cols,
     rows: input.rows,
@@ -916,6 +1338,10 @@ const multiAgencyFixtures: AgencyFixture[] = [
 
 function sse(events: Array<[event: string, data: Record<string, unknown>]>) {
   return events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("")
+}
+
+function eventStream(chunks: unknown[]) {
+  return chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n"
 }
 
 function controlledSse(

@@ -3349,6 +3349,7 @@ export class Session2 extends HeyApiClient {
       agencyRecipientAgent?: string
       agencyLabelAgency?: string
       agencyLabelRecipientAgent?: string
+      agencySwarmBridge?: boolean
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -3372,6 +3373,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "agencyRecipientAgent" },
             { in: "body", key: "agencyLabelAgency" },
             { in: "body", key: "agencyLabelRecipientAgent" },
+            { in: "body", key: "agencySwarmBridge" },
             { in: "body", key: "parts" },
           ],
         },
@@ -3652,6 +3654,7 @@ export class Session2 extends HeyApiClient {
       providerID?: string
       modelID?: string
       auto?: boolean
+      agencySwarmBridge?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3666,6 +3669,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "providerID" },
             { in: "body", key: "modelID" },
             { in: "body", key: "auto" },
+            { in: "body", key: "agencySwarmBridge" },
           ],
         },
       ],
@@ -3708,6 +3712,7 @@ export class Session2 extends HeyApiClient {
       agencyRecipientAgent?: string
       agencyLabelAgency?: string
       agencyLabelRecipientAgent?: string
+      agencySwarmBridge?: boolean
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -3731,6 +3736,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "agencyRecipientAgent" },
             { in: "body", key: "agencyLabelAgency" },
             { in: "body", key: "agencyLabelRecipientAgent" },
+            { in: "body", key: "agencySwarmBridge" },
             { in: "body", key: "parts" },
           ],
         },
@@ -3764,6 +3770,7 @@ export class Session2 extends HeyApiClient {
       arguments?: string
       command?: string
       variant?: string
+      agencySwarmBridge?: boolean
       parts?: Array<{
         id?: string
         type: "file"
@@ -3789,6 +3796,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "arguments" },
             { in: "body", key: "command" },
             { in: "body", key: "variant" },
+            { in: "body", key: "agencySwarmBridge" },
             { in: "body", key: "parts" },
           ],
         },
@@ -3823,6 +3831,7 @@ export class Session2 extends HeyApiClient {
         modelID: string
       }
       command?: string
+      agencySwarmBridge?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3838,6 +3847,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "agent" },
             { in: "body", key: "model" },
             { in: "body", key: "command" },
+            { in: "body", key: "agencySwarmBridge" },
           ],
         },
       ],

@@ -199,6 +199,7 @@ export interface Interface {
     sessionID: SessionID
     auto: boolean
     overflow?: boolean
+    agencySwarmBridge?: boolean
   }) => Effect.Effect<"continue" | "stop">
   readonly create: (input: {
     sessionID: SessionID
@@ -206,6 +207,7 @@ export interface Interface {
     model: { providerID: ProviderID; modelID: ModelID }
     auto: boolean
     overflow?: boolean
+    agencySwarmBridge?: boolean
   }) => Effect.Effect<void>
 }
 
@@ -384,6 +386,7 @@ export const layer: Layer.Layer<
       sessionID: SessionID
       auto: boolean
       overflow?: boolean
+      agencySwarmBridge?: boolean
     }) {
       const parent = input.messages.findLast((m) => m.info.id === input.parentID)
       if (!parent || parent.info.role !== "user") {
@@ -616,7 +619,12 @@ export const layer: Layer.Layer<
               // Internal marker for auto-compaction followups so provider plugins
               // can distinguish them from manual post-compaction user prompts.
               // This is not a stable plugin contract and may change or disappear.
-              metadata: { compaction_continue: true },
+              metadata: {
+                compaction_continue: true,
+                ...(input.agencySwarmBridge === undefined
+                  ? {}
+                  : { [MessageV2.AGENCY_SWARM_BRIDGE_METADATA_KEY]: input.agencySwarmBridge }),
+              },
               synthetic: true,
               text,
               time: {
@@ -657,6 +665,7 @@ export const layer: Layer.Layer<
       model: { providerID: ProviderID; modelID: ModelID }
       auto: boolean
       overflow?: boolean
+      agencySwarmBridge?: boolean
     }) {
       const msg = yield* session.updateMessage({
         id: MessageID.ascending(),
@@ -673,6 +682,10 @@ export const layer: Layer.Layer<
         type: "compaction",
         auto: input.auto,
         overflow: input.overflow,
+        metadata:
+          input.agencySwarmBridge === undefined
+            ? undefined
+            : { [MessageV2.AGENCY_SWARM_BRIDGE_METADATA_KEY]: input.agencySwarmBridge },
       })
       if (flags.experimentalEventSystem) {
         yield* sync.run(SessionEvent.Compaction.Started.Sync, {

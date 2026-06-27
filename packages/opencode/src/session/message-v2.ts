@@ -36,6 +36,7 @@ interface FetchDecompressionError extends Error {
 }
 
 export const SYNTHETIC_ATTACHMENT_PROMPT = "Attached media from tool result:"
+export const AGENCY_SWARM_BRIDGE_METADATA_KEY = "agencySwarmBridge"
 export { isMedia }
 
 export const AbortedError = NamedError.create("MessageAbortedError", { message: Schema.String })
@@ -187,6 +188,7 @@ export const CompactionPart = Schema.Struct({
   auto: Schema.Boolean,
   overflow: Schema.optional(Schema.Boolean),
   tail_start_id: Schema.optional(MessageID),
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
 }).annotate({ identifier: "CompactionPart" })
 export type CompactionPart = Types.DeepMutable<Schema.Schema.Type<typeof CompactionPart>>
 
@@ -203,6 +205,7 @@ export const SubtaskPart = Schema.Struct({
     }),
   ),
   command: Schema.optional(Schema.String),
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
 }).annotate({ identifier: "SubtaskPart" })
 export type SubtaskPart = Types.DeepMutable<Schema.Schema.Type<typeof SubtaskPart>>
 
@@ -449,6 +452,7 @@ export const SubtaskPartInput = Schema.Struct({
     }),
   ),
   command: Schema.optional(Schema.String),
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
 }).annotate({ identifier: "SubtaskPartInput" })
 export type SubtaskPartInput = Types.DeepMutable<Schema.Schema.Type<typeof SubtaskPartInput>>
 

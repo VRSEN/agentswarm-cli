@@ -173,6 +173,8 @@ export const TaskTool = Tool.define(
         model,
         ...(runInBackground ? { background: true } : {}),
       }
+      const agencySwarmBridge =
+        typeof ctx.extra?.agencySwarmBridge === "boolean" ? ctx.extra.agencySwarmBridge : undefined
 
       yield* ctx.metadata({
         title: params.description,
@@ -193,6 +195,7 @@ export const TaskTool = Tool.define(
             providerID: model.providerID,
           },
           agent: next.name,
+          agencySwarmBridge,
           tools: {
             ...(next.permission.some((rule) => rule.permission === "todowrite") ? {} : { todowrite: false }),
             ...(next.permission.some((rule) => rule.permission === id) ? {} : { task: false }),
@@ -244,6 +247,7 @@ export const TaskTool = Tool.define(
           sessionID: ctx.sessionID,
           noReply: true,
           agent: currentParent.agent ?? ctx.agent,
+          agencySwarmBridge,
           parts: [
             {
               type: "text",

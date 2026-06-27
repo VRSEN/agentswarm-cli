@@ -26,6 +26,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       currentProviderID: local.model.current()?.providerID,
       configuredModel: props.api.state.config.model,
       agentModel: local.agent.current()?.model,
+      productMode: local.product?.current(),
     })
     if (!framework) return undefined
     const configuredProvider = props.api.state.config.provider?.[AgencySwarmAdapter.PROVIDER_ID]
