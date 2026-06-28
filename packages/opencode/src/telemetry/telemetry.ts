@@ -107,6 +107,7 @@ const errorBuckets = new Set(["auth_rejected", "network", "server", "timeout", "
 const platforms = new Set(["aix", "darwin", "freebsd", "linux", "openbsd", "sunos", "win32"])
 const promptModes = new Set(["normal", "shell"])
 const promptTypes = new Set(["prompt", "server_command", "shell"])
+const swarmOrigins = new Set(["original", "fork", "unknown"])
 const terminalClients = new Set(["app", "cli", "desktop"])
 
 function stringField(values?: ReadonlySet<string>): PropertySpec {
@@ -120,7 +121,10 @@ const baseProperties: Record<string, PropertySpec> = {
   app: stringField(),
   arch: stringField(),
   channel: stringField(),
+  parent_swarm_id: stringField(),
   platform: stringField(platforms),
+  swarm_id: stringField(),
+  swarm_origin: stringField(swarmOrigins),
   terminal: stringField(terminalClients),
   version: stringField(),
 }
@@ -216,9 +220,21 @@ function clean(value: string | undefined) {
   return trimmed ? trimmed : undefined
 }
 
+function allowsRuntimeTelemetryConfig() {
+  return (
+    process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST === "1" &&
+    !!(process.env.BUN_TEST || process.env.NODE_ENV === "test" || process.env.OPENCODE_TEST_HOME)
+  )
+}
+
 function config() {
-  const apiKey = clean(process.env.AGENTSWARM_POSTHOG_API_KEY ?? definedValue("AGENTSWARM_POSTHOG_API_KEY"))
-  const host = clean(process.env.AGENTSWARM_POSTHOG_HOST ?? definedValue("AGENTSWARM_POSTHOG_HOST"))
+  const allowRuntime = allowsRuntimeTelemetryConfig()
+  const apiKey =
+    clean(definedValue("AGENTSWARM_POSTHOG_API_KEY")) ??
+    (allowRuntime ? clean(process.env.AGENTSWARM_POSTHOG_API_KEY) : undefined)
+  const host =
+    clean(definedValue("AGENTSWARM_POSTHOG_HOST")) ??
+    (allowRuntime ? clean(process.env.AGENTSWARM_POSTHOG_HOST) : undefined)
   return {
     apiKey,
     host: host ?? DEFAULT_POSTHOG_HOST,
@@ -253,11 +269,14 @@ async function anonymousInstallID() {
 }
 
 function isDisabledByEnvironment() {
-  const explicit = [process.env.OPEN_SWARM_TELEMETRY, process.env.AGENTSWARM_TELEMETRY, process.env.OPENCODE_TELEMETRY]
+  const explicit = [
+    process.env.ENABLE_TELEMETRY,
+    process.env.OPEN_SWARM_TELEMETRY,
+    process.env.AGENTSWARM_TELEMETRY,
+    process.env.OPENCODE_TELEMETRY,
+  ]
   if (explicit.some((value) => value && FALSE_VALUES.has(value.trim().toLowerCase()))) return true
-  const allowTest =
-    process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST === "1" &&
-    !!(process.env.BUN_TEST || process.env.NODE_ENV === "test" || process.env.OPENCODE_TEST_HOME)
+  const allowTest = allowsRuntimeTelemetryConfig()
   if (Flag.OPENCODE_PURE && !allowTest) return true
   if (allowTest) return false
   if (process.env.CI) return true
@@ -303,7 +322,10 @@ function sanitize(event: TelemetryEvent, input: Record<string, unknown> | undefi
   assignSafe(output, baseProperties, "app", AgencyProduct.name)
   assignSafe(output, baseProperties, "arch", os.arch())
   assignSafe(output, baseProperties, "channel", InstallationChannel)
+  assignSafe(output, baseProperties, "parent_swarm_id", AgencyProduct.marketplaceParentSwarmID)
   assignSafe(output, baseProperties, "platform", os.platform())
+  assignSafe(output, baseProperties, "swarm_id", AgencyProduct.marketplaceSwarmID)
+  assignSafe(output, baseProperties, "swarm_origin", AgencyProduct.marketplaceSwarmOrigin)
   assignSafe(output, baseProperties, "version", InstallationVersion)
   assignSafe(output, baseProperties, "terminal", Flag.OPENCODE_CLIENT)
 

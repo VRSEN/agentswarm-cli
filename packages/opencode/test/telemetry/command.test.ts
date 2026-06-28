@@ -4,6 +4,7 @@ import { captureCommand } from "../../src/telemetry/command"
 import { Telemetry } from "../../src/telemetry/telemetry"
 
 const originalFetch = globalThis.fetch
+const originalEnableTelemetry = process.env.ENABLE_TELEMETRY
 
 type Captured = {
   body: {
@@ -16,6 +17,7 @@ function enableTelemetry(stateDir: string) {
   process.env.AGENTSWARM_POSTHOG_API_KEY = "ph_test"
   process.env.AGENTSWARM_POSTHOG_HOST = "https://posthog.example"
   process.env.AGENTSWARM_TELEMETRY_STATE_DIR = stateDir
+  delete process.env.ENABLE_TELEMETRY
 }
 
 function resetEnv() {
@@ -23,6 +25,8 @@ function resetEnv() {
   delete process.env.AGENTSWARM_POSTHOG_HOST
   delete process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST
   delete process.env.AGENTSWARM_TELEMETRY_STATE_DIR
+  if (originalEnableTelemetry === undefined) delete process.env.ENABLE_TELEMETRY
+  else process.env.ENABLE_TELEMETRY = originalEnableTelemetry
 }
 
 describe("command telemetry", () => {

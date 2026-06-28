@@ -5,6 +5,7 @@ import { Telemetry } from "../../src/telemetry/telemetry"
 import { captureCommand } from "../../src/telemetry/command"
 
 const originalClient = process.env.OPENCODE_CLIENT
+const originalEnableTelemetry = process.env.ENABLE_TELEMETRY
 const originalTelemetry = process.env.OPENCODE_TELEMETRY
 const originalFetch = globalThis.fetch
 
@@ -21,6 +22,7 @@ function enableTelemetry(input: { key?: string; host?: string; stateDir: string 
   process.env.AGENTSWARM_POSTHOG_HOST = input.host ?? "https://posthog.example"
   process.env.AGENTSWARM_TELEMETRY_STATE_DIR = input.stateDir
   delete process.env.AGENTSWARM_TELEMETRY
+  delete process.env.ENABLE_TELEMETRY
   delete process.env.OPEN_SWARM_TELEMETRY
   delete process.env.OPENCODE_TELEMETRY
 }
@@ -31,6 +33,8 @@ function resetEnv() {
   delete process.env.AGENTSWARM_TELEMETRY
   delete process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST
   delete process.env.AGENTSWARM_TELEMETRY_STATE_DIR
+  if (originalEnableTelemetry === undefined) delete process.env.ENABLE_TELEMETRY
+  else process.env.ENABLE_TELEMETRY = originalEnableTelemetry
   delete process.env.OPEN_SWARM_TELEMETRY
   if (originalTelemetry === undefined) delete process.env.OPENCODE_TELEMETRY
   else process.env.OPENCODE_TELEMETRY = originalTelemetry
@@ -114,6 +118,69 @@ describe("Telemetry", () => {
     expect(JSON.stringify(requests[0].body)).not.toContain("secret prompt")
   })
 
+  test("keeps compiled telemetry key when runtime key env is set", async () => {
+    await using tmp = await tmpdir()
+    const root = path.resolve(import.meta.dir, "../..")
+    const entry = path.join(tmp.path, "compiled-telemetry.ts")
+    const outdir = path.join(tmp.path, "out")
+    await Bun.write(
+      entry,
+      [
+        `import { Telemetry } from ${JSON.stringify(path.join(root, "src/telemetry/telemetry.ts"))}`,
+        "const requests = []",
+        "globalThis.fetch = async (url, init) => {",
+        "  requests.push({ url: String(url), body: JSON.parse(String(init?.body)) })",
+        "  return new Response(null, { status: 200 })",
+        "}",
+        "const captured = await Telemetry.capture('app_started', { entrypoint: 'tui' })",
+        "await Telemetry.flush()",
+        "console.log(JSON.stringify({ captured, requests }))",
+      ].join("\n"),
+    )
+
+    const result = await Bun.build({
+      entrypoints: [entry],
+      outdir,
+      format: "esm",
+      target: "bun",
+      tsconfig: path.join(root, "tsconfig.json"),
+      define: {
+        AGENTSWARM_POSTHOG_API_KEY: JSON.stringify("ph_compiled"),
+        AGENTSWARM_POSTHOG_HOST: JSON.stringify("https://compiled.example"),
+      },
+    })
+    if (!result.success) throw new Error(result.logs.map((log) => log.message).join("\n"))
+
+    const proc = Bun.spawn([process.execPath, path.join(outdir, "compiled-telemetry.js")], {
+      cwd: root,
+      env: {
+        ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+        AGENTSWARM_TELEMETRY_ALLOW_TEST: "1",
+        BUN_TEST: "1",
+        AGENTSWARM_POSTHOG_API_KEY: "ph_runtime",
+        AGENTSWARM_POSTHOG_HOST: "https://runtime.example",
+        AGENTSWARM_TELEMETRY_STATE_DIR: tmp.path,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+
+    expect(stderr).toBe("")
+    expect(code).toBe(0)
+    const output = JSON.parse(stdout) as {
+      captured: boolean
+      requests: Array<{ url: string; body: { api_key?: unknown } }>
+    }
+    expect(output.captured).toBe(true)
+    expect(output.requests[0].url).toBe("https://compiled.example/i/v0/e/")
+    expect(output.requests[0].body.api_key).toBe("ph_compiled")
+  })
+
   test("does not send when opted out", async () => {
     await using tmp = await tmpdir()
     const requests: unknown[] = []
@@ -137,6 +204,24 @@ describe("Telemetry", () => {
     const requests: unknown[] = []
     enableTelemetry({ stateDir: tmp.path })
     process.env.OPEN_SWARM_TELEMETRY = "0"
+    useFetch(
+      asFetch(async () => {
+        requests.push({})
+        return new Response(null, { status: 200 })
+      }),
+    )
+
+    await expect(Telemetry.capture("app_started", { entrypoint: "tui" })).resolves.toBe(false)
+    await Telemetry.flush()
+
+    expect(requests).toHaveLength(0)
+  })
+
+  test("does not send when generic telemetry opt-out is set", async () => {
+    await using tmp = await tmpdir()
+    const requests: unknown[] = []
+    enableTelemetry({ stateDir: tmp.path })
+    process.env.ENABLE_TELEMETRY = "0"
     useFetch(
       asFetch(async () => {
         requests.push({})

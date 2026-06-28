@@ -54,11 +54,13 @@ Do not share sessions that contain secrets, private code, private customer data,
 
 ## Telemetry
 
-Release builds may send privacy-safe product analytics to PostHog so maintainers can understand which Agent Swarm TUI features are used. Events cover app start, `/auth` provider setup, supported slash command usage, docs clicks, prompt submission shape, task success or failure, and selected add-ons. They do not include prompt text, slash command arguments, credentials, file paths, tool payloads, message content, raw model IDs, project IDs, session IDs, message IDs, source content, environment variables, raw error text, tool inputs, or tool outputs.
+Release builds may send privacy-safe product analytics to the official Agent Swarm PostHog project so maintainers can understand which Agent Swarm TUI features are used. Events cover app start, `/auth` provider setup, supported slash command usage, docs clicks, prompt submission shape, task success or failure, and selected add-ons. They do not include prompt text, slash command arguments, credentials, file paths, tool payloads, message content, raw model IDs, project IDs, session IDs, message IDs, source content, environment variables, raw error text, tool inputs, or tool outputs.
 
-Set `OPEN_SWARM_TELEMETRY=0`, `AGENTSWARM_TELEMETRY=0`, or pass `--no-telemetry` to disable this telemetry.
+Set `ENABLE_TELEMETRY=0`, `OPEN_SWARM_TELEMETRY=0`, `AGENTSWARM_TELEMETRY=0`, or pass `--no-telemetry` to disable this telemetry.
 
 Every sent PostHog event sets `$process_person_profile: false`.
+
+Product launchers may attach allowlisted marketplace metadata to each event: `swarm_id`, `parent_swarm_id`, and `swarm_origin` (`original`, `fork`, or `unknown`). Official release binaries use the embedded capture key; runtime PostHog key environment variables do not redirect production telemetry.
 
 Supported events and properties:
 

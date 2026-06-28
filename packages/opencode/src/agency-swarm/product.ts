@@ -19,9 +19,13 @@ declare const AGENTSWARM_PRODUCT_WORDMARK_LINES: string | undefined
 declare const AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT: string | undefined
 declare const AGENTSWARM_PRODUCT_ADDONS: string | undefined
 declare const AGENTSWARM_PRODUCT_STATE_ROOT: string | undefined
+declare const AGENTSWARM_MARKETPLACE_SWARM_ID: string | undefined
+declare const AGENTSWARM_MARKETPLACE_PARENT_SWARM_ID: string | undefined
+declare const AGENTSWARM_MARKETPLACE_SWARM_ORIGIN: string | undefined
 
 export namespace AgencyProduct {
   export type PythonEnvironment = "any" | "standalone"
+  export type MarketplaceSwarmOrigin = "original" | "fork" | "unknown"
 
   export interface Addon {
     id: string
@@ -53,6 +57,9 @@ export namespace AgencyProduct {
     wordmarkLines?: string[]
     pythonEnvironment: PythonEnvironment
     stateRoot?: string
+    marketplaceSwarmID?: string
+    marketplaceParentSwarmID?: string
+    marketplaceSwarmOrigin?: MarketplaceSwarmOrigin
   }
 
   const defaults: Profile = {
@@ -120,6 +127,14 @@ export namespace AgencyProduct {
     AGENTSWARM_PRODUCT_ADDONS: typeof AGENTSWARM_PRODUCT_ADDONS === "undefined" ? undefined : AGENTSWARM_PRODUCT_ADDONS,
     AGENTSWARM_PRODUCT_STATE_ROOT:
       typeof AGENTSWARM_PRODUCT_STATE_ROOT === "undefined" ? undefined : AGENTSWARM_PRODUCT_STATE_ROOT,
+    AGENTSWARM_MARKETPLACE_SWARM_ID:
+      typeof AGENTSWARM_MARKETPLACE_SWARM_ID === "undefined" ? undefined : AGENTSWARM_MARKETPLACE_SWARM_ID,
+    AGENTSWARM_MARKETPLACE_PARENT_SWARM_ID:
+      typeof AGENTSWARM_MARKETPLACE_PARENT_SWARM_ID === "undefined"
+        ? undefined
+        : AGENTSWARM_MARKETPLACE_PARENT_SWARM_ID,
+    AGENTSWARM_MARKETPLACE_SWARM_ORIGIN:
+      typeof AGENTSWARM_MARKETPLACE_SWARM_ORIGIN === "undefined" ? undefined : AGENTSWARM_MARKETPLACE_SWARM_ORIGIN,
   } satisfies Record<string, string | undefined>
 
   function clean(value: string | undefined) {
@@ -177,6 +192,13 @@ export namespace AgencyProduct {
     const normalized = clean(value)?.toLowerCase()
     if (!normalized) return undefined
     if (normalized === "any" || normalized === "standalone") return normalized
+    return undefined
+  }
+
+  function readMarketplaceSwarmOrigin(value: string | undefined): MarketplaceSwarmOrigin | undefined {
+    const normalized = clean(value)?.toLowerCase()
+    if (!normalized) return undefined
+    if (normalized === "original" || normalized === "fork" || normalized === "unknown") return normalized
     return undefined
   }
 
@@ -249,6 +271,9 @@ export namespace AgencyProduct {
       pythonEnvironment: readPythonEnvironment(readValue(env, "AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT")),
       addons: readAddons(readValue(env, "AGENTSWARM_PRODUCT_ADDONS")),
       stateRoot: readStateRoot(env),
+      marketplaceSwarmID: readValue(env, "AGENTSWARM_MARKETPLACE_SWARM_ID"),
+      marketplaceParentSwarmID: readValue(env, "AGENTSWARM_MARKETPLACE_PARENT_SWARM_ID"),
+      marketplaceSwarmOrigin: readMarketplaceSwarmOrigin(readValue(env, "AGENTSWARM_MARKETPLACE_SWARM_ORIGIN")),
     }
     const custom = Object.values(overrides).some((value) => value !== undefined)
     const customBranding =
@@ -281,6 +306,9 @@ export namespace AgencyProduct {
       wordmarkLines: overrides.wordmarkLines,
       pythonEnvironment: overrides.pythonEnvironment ?? defaults.pythonEnvironment,
       stateRoot: overrides.stateRoot,
+      marketplaceSwarmID: overrides.marketplaceSwarmID,
+      marketplaceParentSwarmID: overrides.marketplaceParentSwarmID,
+      marketplaceSwarmOrigin: overrides.marketplaceSwarmOrigin,
     }
   }
 
@@ -308,6 +336,9 @@ export namespace AgencyProduct {
   export const wordmarkLines = current.wordmarkLines
   export const pythonEnvironment = current.pythonEnvironment
   export const stateRoot = current.stateRoot
+  export const marketplaceSwarmID = current.marketplaceSwarmID
+  export const marketplaceParentSwarmID = current.marketplaceParentSwarmID
+  export const marketplaceSwarmOrigin = current.marketplaceSwarmOrigin
   export const auth = "Manage provider auth"
   export const connect = "Connect to local agency-swarm server"
   export const start = [

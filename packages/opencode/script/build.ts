@@ -46,6 +46,9 @@ const productEnvNames = [
   "AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT",
   "AGENTSWARM_PRODUCT_ADDONS",
   "AGENTSWARM_PRODUCT_STATE_ROOT",
+  "AGENTSWARM_MARKETPLACE_SWARM_ID",
+  "AGENTSWARM_MARKETPLACE_PARENT_SWARM_ID",
+  "AGENTSWARM_MARKETPLACE_SWARM_ORIGIN",
 ] as const
 const productDefines = Object.fromEntries(
   productEnvNames.map((name) => [name, process.env[name] ? JSON.stringify(process.env[name]) : "undefined"]),
