@@ -106,6 +106,12 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Implementation: `resolveClientConfig` and `buildAuthClientConfig` in `packages/opencode/src/session/agency-swarm.ts`.
   - Added by: `79b55ab8`
 
+- **Direct OpenRouter client config isolation**
+  - Intent: keep direct OpenRouter Agency Swarm runs from accidentally inheriting stored OpenAI OAuth routing state.
+  - Behavior: direct OpenRouter client config uses the OpenRouter API key and model without forwarding stored OpenAI OAuth base URLs or default headers.
+  - Implementation: `resolveClientConfig` in `packages/opencode/src/session/agency-swarm-client-config.ts`.
+  - Added by: PR #288
+
 - **Respect explicit Agency Swarm base URL**
   - Intent: let users target a chosen Agency Swarm server instead of always using the default loopback address.
   - Behavior: when a base URL is configured, agency session and run traffic use that URL.
@@ -141,6 +147,12 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Behavior: when the bridge emits an error frame, the session fails with visible error state the UI can surface.
   - Implementation: the `kind === "error"` branches inside `fullStream` in `packages/opencode/src/session/agency-swarm.ts`.
   - Added by: `ad0cc2c1`
+
+- **Compact HTML backend error pages**
+  - Intent: keep gateway or proxy failures readable when an upstream provider returns an HTML page through the Agency Swarm bridge.
+  - Behavior: HTTP failures, SSE error frames, raw response error events, and bridge error payloads that contain HTML are shown as concise Unauthorized, Forbidden, or backend HTML error messages instead of raw HTML documents.
+  - Implementation: `AgencySwarmAdapter.normalizeErrorMessage` in `packages/opencode/src/agency-swarm/adapter.ts`, plus stream-event and session error handling in `packages/opencode/src/session/agency-swarm-stream-events.ts` and `packages/opencode/src/session/agency-swarm.ts`.
+  - Added by: PR #288
 
 - **Filter Codex OAuth to OpenAI-based LiteLLM runs**
   - Intent: avoid sending Codex OAuth credentials to non-OpenAI agency backends that cannot use them.
@@ -241,8 +253,9 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Behavior: the Plan approval question owns keyboard input while visible, so base session shortcuts do not fire during the question.
   - Behavior: mixed-mode histories keep completed turn labels tied to the mode that handled each turn, including older Run turns without stored mode metadata.
   - Behavior: message actions use the selected turn's stored or legacy-inferred Run/native routing metadata, so mode switching does not hide or expose Revert for the wrong turn.
-  - Implementation: product mode state in `packages/opencode/src/cli/cmd/tui/context/local.tsx`, `DialogMode` in `packages/opencode/src/cli/cmd/tui/component/dialog-mode.tsx`, framework-mode gates in `packages/opencode/src/cli/cmd/tui/session-error.ts`, native routing metadata in `packages/opencode/src/session/prompt.ts` and `packages/opencode/src/session/compaction.ts`, selected-turn message actions in `packages/opencode/src/cli/cmd/tui/routes/session/dialog-message.tsx`, and upstream-aligned question keymap isolation in `packages/opencode/src/cli/cmd/tui/keymap.tsx` and `packages/opencode/src/cli/cmd/tui/routes/session/question.tsx`.
-  - Added by: `d6b9ed38`
+  - Behavior: Redo restore affordances are hidden when the reverted turn or next redo target belongs to Run, while native Build redo stays available for native Build history.
+  - Implementation: product mode state in `packages/opencode/src/cli/cmd/tui/context/local.tsx`, `DialogMode` in `packages/opencode/src/cli/cmd/tui/component/dialog-mode.tsx`, framework-mode gates in `packages/opencode/src/cli/cmd/tui/session-error.ts`, native routing metadata in `packages/opencode/src/session/prompt.ts` and `packages/opencode/src/session/compaction.ts`, selected-turn message actions in `packages/opencode/src/cli/cmd/tui/routes/session/dialog-message.tsx`, redo gating in `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`, and upstream-aligned question keymap isolation in `packages/opencode/src/cli/cmd/tui/keymap.tsx` and `packages/opencode/src/cli/cmd/tui/routes/session/question.tsx`.
+  - Added by: `d6b9ed38`, PR #300
 
 - **Tab switches native agents outside Run and swarm agents in Run**
   - Intent: preserve upstream native agent cycling while keeping fast target switching during run sessions.
@@ -311,6 +324,26 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Behavior: non-Agency explicit models do not trigger fork auto-project setup.
   - Implementation: `shouldRunNpxOnboarding` and `resolveNpxAutoProject` in `packages/opencode/src/agency-swarm/npx.ts`.
   - Added by: `772db106`
+
+- **Unreadable project entry recovery**
+  - Intent: keep users out of the wrong starter-project path when a directory already looks like an Agent Swarm project but its entry file cannot be read.
+  - Behavior: an unreadable default `agency.py` shows a clear read-recovery message and offers only Try again, Connect to a running Agent Swarm, or Cancel.
+  - Implementation: `detectLaunchProject`, `chooseProjectReadRecovery`, and `readProjectEntryFile` in `packages/opencode/src/agency-swarm/npx.ts`.
+  - Added by: PR #281
+
+- **Configured entry-file fallback after read errors**
+  - Intent: let downstream profiles with multiple entry-file names still detect a later valid project entry when an earlier candidate cannot be read.
+  - Behavior: project detection keeps checking configured entry files after a read error and throws the original read error only when no later valid entry file is found.
+  - Implementation: `detectAgencyProject` in `packages/opencode/src/agency-swarm/npx.ts`.
+  - Added by: PR #290
+
+- **Compact launcher setup and starter prompts**
+  - Intent: keep the first-run launcher path focused on user choices and product-level progress instead of low-level Python, dependency, and server details.
+  - Behavior: launcher setup shows compact phases such as project-file checking, project creation, preparing, environment check or refresh, setup, start, and ready while raw Python, uv, pip, dependency, and FastAPI output stays in launcher logs.
+  - Behavior: starter creation asks for `Project name` with the configured starter name as the initial value and, when GitHub creation is available, asks `Where should this project be created?` with `On GitHub` and `On this computer` choices.
+  - Behavior: first-use database setup uses Agent Swarm readiness copy instead of generic database migration copy.
+  - Implementation: launcher output and spinner handling in `packages/opencode/src/agency-swarm/npx.ts`, plus first-use readiness copy in `packages/opencode/src/index.ts`.
+  - Added by: PR #283
 
 - **Launcher bootstraps or repairs the project Python env**
   - Intent: make the launcher fix missing or broken project Python setup instead of failing early.
