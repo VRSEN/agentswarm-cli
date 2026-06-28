@@ -1854,7 +1854,8 @@ describe("agency-swarm npx onboarding", () => {
     await writeAgency(dir.path)
 
     const realSetTimeout = globalThis.setTimeout
-    const timers: Array<{ fn: TimerHandler; cleared: boolean }> = []
+    const timers: Array<{ fn: TimerHandler; cleared: boolean; install: boolean }> = []
+    let installTimerPending = false
 
     spyOn(prompts, "confirm").mockResolvedValue(true as never)
     spyOn(prompts, "spinner").mockReturnValue({
@@ -1863,7 +1864,8 @@ describe("agency-swarm npx onboarding", () => {
     } as never)
     spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     const setTimeoutSpy = spyOn(globalThis, "setTimeout").mockImplementation(((fn: TimerHandler) => {
-      const timer = { fn, cleared: false }
+      const timer = { fn, cleared: false, install: installTimerPending }
+      installTimerPending = false
       timers.push(timer)
       return timer as never
     }) as unknown as typeof setTimeout)
@@ -1907,6 +1909,7 @@ describe("agency-swarm npx onboarding", () => {
         } as never
       }
       if (isUvPipInstallCommand(cmd)) {
+        installTimerPending = true
         return {
           exited: Promise.resolve(0),
           stdout: "",
@@ -1949,15 +1952,18 @@ describe("agency-swarm npx onboarding", () => {
     let launch: Awaited<ReturnType<typeof prepareProjectLaunch>>
     try {
       const deadline = Date.now() + 1000
-      while (timers.length === 0 && !launchSettled && Date.now() < deadline) {
+      const installTimeout = () => timers.find((timer) => timer.install)
+      while (installTimeout()?.cleared !== true && !launchSettled && Date.now() < deadline) {
         await new Promise((resolve) => realSetTimeout(resolve, 5))
       }
 
       expect(timers).not.toHaveLength(0)
-      expect(timers[0]?.cleared).toBe(true)
-      const installTimeout = timers[0]
-      if (typeof installTimeout?.fn !== "function") throw new Error("Expected install timeout callback")
-      await installTimeout.fn()
+      const timeout = installTimeout()
+      expect(timeout).toBeDefined()
+      if (!timeout) throw new Error("Expected install timeout")
+      expect(timeout.cleared).toBe(true)
+      if (typeof timeout.fn !== "function") throw new Error("Expected install timeout callback")
+      await timeout.fn()
       restoreTimers()
       installStderr.close()
 

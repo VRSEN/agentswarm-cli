@@ -5,11 +5,13 @@ export type ClientOptions = {
 }
 
 export type Event =
-  | EventServerInstanceDisposed
   | EventTuiPromptAppend
   | EventTuiCommandExecute
   | EventTuiToastShow1
   | EventTuiSessionSelect
+  | EventServerConnected
+  | EventGlobalDisposed
+  | EventServerInstanceDisposed
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
   | EventPermissionAsked
@@ -42,8 +44,6 @@ export type Event =
   | EventPtyDeleted
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
-  | EventServerConnected
-  | EventGlobalDisposed
   | EventMessageUpdated
   | EventMessageRemoved
   | EventMessagePartUpdated
@@ -799,11 +799,13 @@ export type GlobalEvent = {
   project?: string
   workspace?: string
   payload:
-    | EventServerInstanceDisposed
     | EventTuiPromptAppend
     | EventTuiCommandExecute
     | EventTuiToastShow
     | EventTuiSessionSelect
+    | EventServerConnected
+    | EventGlobalDisposed
+    | EventServerInstanceDisposed
     | EventMcpToolsChanged
     | EventMcpBrowserOpenFailed
     | EventPermissionAsked
@@ -836,8 +838,6 @@ export type GlobalEvent = {
     | EventPtyDeleted
     | EventInstallationUpdated
     | EventInstallationUpdateAvailable
-    | EventServerConnected
-    | EventGlobalDisposed
     | EventMessageUpdated
     | EventMessageRemoved
     | EventMessagePartUpdated
@@ -2433,6 +2433,22 @@ export type SyncEventSessionNextCompactionEnded = {
   }
 }
 
+export type EventServerConnected = {
+  id: string
+  type: "server.connected"
+  properties: {
+    [key: string]: unknown
+  }
+}
+
+export type EventGlobalDisposed = {
+  id: string
+  type: "global.disposed"
+  properties: {
+    [key: string]: unknown
+  }
+}
+
 export type EventServerInstanceDisposed = {
   id: string
   type: "server.instance.disposed"
@@ -2710,22 +2726,6 @@ export type EventInstallationUpdateAvailable = {
   type: "installation.update-available"
   properties: {
     version: string
-  }
-}
-
-export type EventServerConnected = {
-  id: string
-  type: "server.connected"
-  properties: {
-    [key: string]: unknown
-  }
-}
-
-export type EventGlobalDisposed = {
-  id: string
-  type: "global.disposed"
-  properties: {
-    [key: string]: unknown
   }
 }
 
