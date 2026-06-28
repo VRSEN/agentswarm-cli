@@ -13,7 +13,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 - `/auth` is the credentials flow, not a product mode switch.
 - `/models` chooses the LLM config passed to Agency Swarm, not a product mode switch.
 - Upstream OpenCode provider/model state may still exist internally for auth and LLM choice, but it must not pull the user out of Run mode by accident.
-- `/modes` is the product mode switch. It exposes Plan, Build, and Run without adding `/build` or `/plan` commands.
+- `/modes` is the product mode switch. It exposes Plan, Build, and Run without making Tab switch product modes.
 - Build and Plan rely on native OpenCode behavior plus fork-specific Agent Swarm instructions. Run is the Agency Swarm server-backed mode.
 - Bug-like changes are not product features. Compare them against upstream, find the root cause, reduce divergence, and avoid fork-only workarounds.
 - Install, launcher, and package behavior count as user experience and belong in this file when they are intentional fork behavior.
@@ -243,12 +243,12 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 
 - **`/modes` exposes Plan, Build, and Run**
   - Intent: let users move between native Build, native Plan, and server-backed Run inside one project without adding parallel Build or Plan behavior.
-  - Behavior: `/modes` switches product mode and lists choices in work order: Plan, Build, Run. Build selects the native `build` agent, Plan selects the native `plan` agent, and Run keeps prompts server-backed through Agency Swarm. `/build` and `/plan` are not slash commands.
+  - Behavior: `/modes` switches product mode and lists choices in work order: Plan, Build, Run. Build selects the native `build` agent, Plan selects the native `plan` agent, and Run keeps prompts server-backed through Agency Swarm.
   - Behavior: leaving Run stops prompt routing through the Agency Swarm backend but preserves the saved Run target for the session; returning to Run reconnects to or keeps using the configured Agency Swarm server.
   - Behavior: Build and Plan prompts, commands, shell turns, and compaction turns persist native routing metadata so reopened sessions do not silently fall back to Run.
   - Behavior: reopened Plan sessions keep Plan selected in `/agents` instead of using a stale Build default.
   - Behavior: compaction created in Build or Plan keeps native routing metadata so `/compact`, auto-compaction, and direct continuation do not switch the session back to server-backed Run.
-  - Behavior: Plan mode submits through the native `plan` agent while Plan is selected; choosing another local agent moves the turn back to native Build behavior instead of silently submitting to a different agent than the UI shows.
+  - Behavior: Plan mode submits through the native `plan` agent while Plan is selected; choosing another OpenCode agent moves the turn back to native Build behavior instead of silently submitting to a different agent than the UI shows.
   - Behavior: when Plan finishes and the user approves the native handoff question, the TUI switches to Build using the upstream OpenCode Plan approval path.
   - Behavior: the Plan approval question owns keyboard input while visible, so base session shortcuts do not fire during the question.
   - Behavior: mixed-mode histories keep completed turn labels tied to the mode that handled each turn, including older Run turns without stored mode metadata.
@@ -257,9 +257,9 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Implementation: product mode state in `packages/opencode/src/cli/cmd/tui/context/local.tsx`, `DialogMode` in `packages/opencode/src/cli/cmd/tui/component/dialog-mode.tsx`, framework-mode gates in `packages/opencode/src/cli/cmd/tui/session-error.ts`, native routing metadata in `packages/opencode/src/session/prompt.ts` and `packages/opencode/src/session/compaction.ts`, selected-turn message actions in `packages/opencode/src/cli/cmd/tui/routes/session/dialog-message.tsx`, redo gating in `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`, and upstream-aligned question keymap isolation in `packages/opencode/src/cli/cmd/tui/keymap.tsx` and `packages/opencode/src/cli/cmd/tui/routes/session/question.tsx`.
   - Added by: `d6b9ed38`, PR #300
 
-- **Tab switches native agents outside Run and swarm agents in Run**
-  - Intent: preserve upstream native agent cycling while keeping fast target switching during run sessions.
-  - Behavior: pressing Tab in Run mode cycles through available Agency Swarm targets. In Build and Plan, Tab keeps the native OpenCode local-agent cycle behavior.
+- **Tab switches agents inside the current mode**
+  - Intent: keep Tab from switching product modes while preserving fast agent switching in each mode.
+  - Behavior: pressing Tab in Run mode cycles through available Agency Swarm targets. In Build and Plan, Tab keeps the OpenCode agent-cycle behavior.
   - Implementation: `cycleAgencyRunTarget` in `packages/opencode/src/cli/cmd/tui/app.tsx` and `cycleAgencyTargetSelection` in `packages/opencode/src/cli/cmd/tui/util/agency-target.ts`.
   - Added by: `d6b9ed38`
 
