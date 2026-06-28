@@ -854,9 +854,9 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(currentServer.requests).toHaveLength(0)
   })
 
-  test("/modes can return to server-backed Run after Build", async () => {
-    const buildPrompt = "native build before run return"
-    const runPrompt = "run after native build return"
+  test("Build repair can be verified by returning to Run", async () => {
+    const buildPrompt = "repair changed swarm before run verification"
+    const runPrompt = "verify repaired swarm after build"
     currentServer = await startTuiDemoAgencyServer()
     currentNativeServer = await startNativeLLMServer()
     currentTui = await startTui({
@@ -882,7 +882,9 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await selectProductMode(currentTui, "Build")
     currentTui.write(`${buildPrompt}\r`)
     await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
-    await waitForNativeLLMRequest(currentTui, currentNativeServer, buildPrompt)
+
+    const request = await waitForNativeLLMRequest(currentTui, currentNativeServer, buildPrompt)
+    expect(JSON.stringify(request.body)).toContain("Agent Swarm Build Instructions")
     expect(currentServer.requests).toHaveLength(0)
 
     await selectProductMode(currentTui, "Run")
@@ -894,11 +896,68 @@ describe("Agent Swarm terminal TUI e2e", () => {
       "Run request after native Build prompt",
       tuiInteractionTimeoutMs,
     )
+    expect(currentServer.requests[0]?.body).toMatchObject({
+      message: runPrompt,
+      recipient_agent: "UserSupportAgent",
+    })
 
     currentTui.write("/")
     const screen = await waitForCommand(currentTui, "/agents")
     expect(hasCommand(screen, "/agents")).toBe(true)
     expect(hasCommand(screen, "/review")).toBe(false)
+  })
+
+  test("Run failure can be fixed in Build and verified back in Run", async () => {
+    const failedPrompt = "run broken swarm before build repair"
+    const buildPrompt = "fix run failure in build mode"
+    const runPrompt = "run fixed swarm after build repair"
+    const repair = { done: false }
+    currentServer = await startTuiDemoAgencyServer({ repair })
+    currentNativeServer = await startNativeLLMServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+      config: {
+        model: latestOpenAITestModel,
+        enabled_providers: openAIProviderTestConfig.enabled_providers,
+        provider: {
+          openai: {
+            options: {
+              apiKey: "test-openai-key",
+              baseURL: currentNativeServer.baseURL,
+            },
+          },
+        },
+      },
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    currentTui.write(`${failedPrompt}\r`)
+    await currentTui.waitForText("Swarm code crashed before repair", tuiInteractionTimeoutMs)
+    expect(currentServer.requests[0]?.body).toMatchObject({
+      message: failedPrompt,
+      recipient_agent: "UserSupportAgent",
+    })
+
+    await selectProductMode(currentTui, "Build")
+    currentTui.write(`${buildPrompt}\r`)
+    await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
+    const request = await waitForNativeLLMRequest(currentTui, currentNativeServer, buildPrompt)
+    expect(JSON.stringify(request.body)).toContain("Agent Swarm Build Instructions")
+    expect(currentServer.requests).toHaveLength(1)
+    repair.done = true
+
+    await selectProductMode(currentTui, "Run")
+    currentTui.write(`${runPrompt}\r`)
+    await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
+
+    expect(currentServer.requests).toHaveLength(2)
+    expect(currentServer.requests[1]?.body).toMatchObject({
+      message: runPrompt,
+      recipient_agent: "UserSupportAgent",
+    })
   })
 
   test("mixed Run and Build sessions keep per-turn labels stable", async () => {

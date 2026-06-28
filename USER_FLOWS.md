@@ -220,6 +220,10 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** The Plan approval question owns keyboard input while it is open, so session shortcuts do not fire at the same time.
 - **Happy-path proof:** Switching back to Run in the same project reconnects to or keeps using the Agency Swarm server and returns `/agents` to the swarm/agent picker.
 - **Happy-path proof:** Message actions use the selected turn's saved or legacy-inferred Run/native routing metadata, so Revert is shown or hidden for the selected turn even after switching modes.
+- **User story:** After changing or repairing a swarm in Build, the user can return to Run in the same project and confirm the fixed swarm works.
+- **Success looks like:** Run uses the repaired swarm and gives a good response instead of staying on the earlier broken behavior.
+- **User story:** When a Run attempt shows the swarm needs work, the user can switch to Build, make the fix, return to Run, and try again.
+- **Success looks like:** The failed Run attempt does not trap the user; the next Run uses the fixed swarm and succeeds.
 - **Failure scenarios to test:** Server failure in Run still lets the user switch to Build or Plan in the same project, make a plan or build a fix, then return to Run.
 - **Failure scenarios to test:** Run mode stays server-backed even when visible provider/model state is native.
 
