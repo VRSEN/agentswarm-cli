@@ -5302,6 +5302,9 @@
                   "agencyLabelRecipientAgent": {
                     "type": "string"
                   },
+                  "agencySwarmBridge": {
+                    "type": "boolean"
+                  },
                   "parts": {
                     "type": "array",
                     "items": {
@@ -5987,6 +5990,9 @@
                   },
                   "auto": {
                     "type": "boolean"
+                  },
+                  "agencySwarmBridge": {
+                    "type": "boolean"
                   }
                 },
                 "required": ["providerID", "modelID"],
@@ -6113,6 +6119,9 @@
                   },
                   "agencyLabelRecipientAgent": {
                     "type": "string"
+                  },
+                  "agencySwarmBridge": {
+                    "type": "boolean"
                   },
                   "parts": {
                     "type": "array",
@@ -6249,6 +6258,9 @@
                   },
                   "variant": {
                     "type": "string"
+                  },
+                  "agencySwarmBridge": {
+                    "type": "boolean"
                   },
                   "parts": {
                     "type": "array",
@@ -6402,6 +6414,9 @@
                   },
                   "command": {
                     "type": "string"
+                  },
+                  "agencySwarmBridge": {
+                    "type": "boolean"
                   }
                 },
                 "required": ["agent", "command"],
