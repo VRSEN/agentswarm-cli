@@ -474,7 +474,7 @@ export async function startNativeLLMServer(): Promise<NativeLLMServer> {
 }
 
 export async function startAgencyProtocolServer(
-  input: { scenario?: AgencyServerScenario } = {},
+  input: { scenario?: AgencyServerScenario; repair?: { done: boolean } } = {},
 ): Promise<AgencyProtocolServer> {
   const scenario = input.scenario ?? "qa"
   const fixtures = fixturesForScenario(scenario)
@@ -522,7 +522,7 @@ export async function startAgencyProtocolServer(
           resolveStreamClosed()
         }
         requests.push({ path: url.pathname, body, releaseStream, streamClosed })
-        const responseBody = await fixture.stream(body, requests.length, streamReleased, closeStream)
+        const responseBody = await fixture.stream(body, requests.length, streamReleased, closeStream, input.repair)
         if (!(responseBody instanceof ReadableStream)) closeStream()
         return new Response(responseBody, {
           headers: {
@@ -549,8 +549,10 @@ export async function startAgencyProtocolServer(
   }
 }
 
-export async function startTuiDemoAgencyServer(): Promise<AgencyProtocolServer> {
-  return startAgencyProtocolServer({ scenario: "tui-demo" })
+export async function startTuiDemoAgencyServer(
+  input: { repair?: { done: boolean } } = {},
+): Promise<AgencyProtocolServer> {
+  return startAgencyProtocolServer({ scenario: "tui-demo", repair: input.repair })
 }
 
 export async function startMultiAgencyServer(): Promise<AgencyProtocolServer> {
@@ -800,6 +802,7 @@ type AgencyFixture = {
     requestCount: number,
     streamReleased: Promise<void>,
     closeStream: () => void,
+    repair?: { done: boolean },
   ): BodyInit | Promise<BodyInit>
 }
 
@@ -900,8 +903,15 @@ const tuiDemoAgencyFixture: AgencyFixture = {
       },
     ],
   },
-  stream(body, requestCount, streamReleased, closeStream) {
+  stream(body, requestCount, streamReleased, closeStream, repair) {
     const message = typeof body.message === "string" ? body.message.toLowerCase() : ""
+    if (message.includes("build repair") && repair?.done === false) {
+      return sse([
+        ["meta", { run_id: `run_tui_demo_${requestCount}` }],
+        ["data", { error: "Swarm code crashed before repair" }],
+        ["end", {}],
+      ])
+    }
     if (message.includes("fresh sidebar hold")) {
       return controlledSse(
         [
