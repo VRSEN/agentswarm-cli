@@ -564,7 +564,13 @@ export function Session() {
   const redoTarget = createMemo(() => {
     const messageID = session()?.revert?.messageID
     if (!messageID) return undefined
-    return messages().find((message): message is UserMessage => message.role === "user" && message.id >= messageID)
+    return messages().find((message): message is UserMessage => message.role === "user" && message.id > messageID)
+  })
+
+  const revertedTarget = createMemo(() => {
+    const messageID = session()?.revert?.messageID
+    if (!messageID) return undefined
+    return messages().find((message): message is UserMessage => message.role === "user" && message.id === messageID)
   })
 
   const targetAgencySwarmBridge = (message: UserMessage | undefined) => {
@@ -578,7 +584,12 @@ export function Session() {
   }
 
   const undoAgencySwarmBridge = createMemo(() => targetAgencySwarmBridge(undoTarget()))
-  const redoAgencySwarmBridge = createMemo(() => targetAgencySwarmBridge(redoTarget()))
+  const redoAgencySwarmBridge = createMemo(() => {
+    const reverted = revertedTarget()
+    const target = redoTarget()
+    return (reverted ? targetAgencySwarmBridge(reverted) : false) || (target ? targetAgencySwarmBridge(target) : false)
+  })
+  const redoable = createMemo(() => !!session()?.revert?.messageID && !redoAgencySwarmBridge())
 
   const sessionCommandList = createMemo(() => [
     {
@@ -767,7 +778,7 @@ export function Session() {
       title: "Redo",
       value: "session.redo",
       category: "Session",
-      enabled: !!session()?.revert?.messageID && !redoAgencySwarmBridge(),
+      enabled: redoable(),
       hidden: redoAgencySwarmBridge(),
       slash: {
         name: "redo",
@@ -1284,6 +1295,7 @@ export function Session() {
                           const dialog = useDialog()
 
                           const handleUnrevert = async () => {
+                            if (!redoable()) return
                             const confirmed = await DialogConfirm.show(
                               dialog,
                               "Confirm Redo",
@@ -1296,7 +1308,9 @@ export function Session() {
 
                           return (
                             <box
-                              onMouseOver={() => setHover(true)}
+                              onMouseOver={() => {
+                                if (redoable()) setHover(true)
+                              }}
                               onMouseOut={() => setHover(false)}
                               onMouseUp={handleUnrevert}
                               marginTop={1}
@@ -1309,12 +1323,16 @@ export function Session() {
                                 paddingTop={1}
                                 paddingBottom={1}
                                 paddingLeft={2}
-                                backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
+                                backgroundColor={
+                                  redoable() && hover() ? theme.backgroundElement : theme.backgroundPanel
+                                }
                               >
                                 <text fg={theme.textMuted}>{revert()!.reverted.length} message reverted</text>
-                                <text fg={theme.textMuted}>
-                                  <span style={{ fg: theme.text }}>{redoShortcut()}</span> or /redo to restore
-                                </text>
+                                <Show when={redoable()}>
+                                  <text fg={theme.textMuted}>
+                                    <span style={{ fg: theme.text }}>{redoShortcut()}</span> or /redo to restore
+                                  </text>
+                                </Show>
                                 <Show when={revert()!.diffFiles?.length}>
                                   <box marginTop={1}>
                                     <For each={revert()!.diffFiles}>

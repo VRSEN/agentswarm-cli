@@ -10,6 +10,7 @@
 - `USER_FLOWS.md` `/modes`, Build, and Plan: `/modes` appears as the product switch, `/build` and `/plan` do not exist, Build and Plan restore native `/review` and `/init`, native `/review` execution stays server-free, and switching back to Run hides native commands again.
 - `USER_FLOWS.md` `/modes`, Build, and Plan: users can repair or change a swarm in Build, return to Run, and verify the fixed swarm; users can also recover from a failed Run attempt by switching to Build, then back to Run for a successful response.
 - `USER_FLOWS.md` `/modes`, Build, and Plan: Tab cycles native local agents outside Run and Agency Swarm targets in Run.
+- `USER_FLOWS.md` `/modes`, Build, and Plan: mixed-mode message actions keep Run undo/redo surfaces hidden while preserving native Build redo.
 - `USER_FLOWS.md` Run Mode: the sidebar shows the selected swarm and main/subagent counts; `/agents` uses Swarm and agent wording, live agency labels, swarm-row routing, and specific-agent routing against an Agency Swarm TUI-demo-shaped swarm.
 - `USER_FLOWS.md` Run Mode: prompt submit reaches a local Agency Swarm protocol server with the configured agent.
 - `USER_FLOWS.md` Run Mode: simulated visible OpenAI model state does not pull prompts, slash-command `/new`, run-session local-project marking, `/connect`, or runtime auth recovery out of Agency Swarm routing.
