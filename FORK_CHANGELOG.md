@@ -223,6 +223,12 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Implementation: `createAgencySwarmConnectionMonitor` in `packages/opencode/src/cli/cmd/tui/context/agency-swarm-connection.tsx`.
   - Added by: `92ef7ee2`
 
+- **Prompt submit failures keep retryable drafts**
+  - Intent: prevent users from losing a prompt when a submit request fails after the TUI has already cleared or navigated away from the prompt input.
+  - Behavior: failed prompt submissions restore the submitted draft only when the user turn was not already persisted, preserve newer edits, and keep retry routing for Agent Swarm Run targets.
+  - Implementation: prompt draft recovery in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`, route prompt handoff in `packages/opencode/src/cli/cmd/tui/context/route.tsx` and `packages/opencode/src/cli/cmd/tui/routes/home.tsx`, and prompt refs in `packages/opencode/src/cli/cmd/tui/context/prompt.tsx`.
+  - Added by: issue #305
+
 - **Agency backend management commands are debugging and development tools**
   - Intent: keep backend lifecycle commands available for debugging and development without treating them as the main end-user path.
   - Behavior: the fork exposes backend install and maintenance commands, but they are debugging and development tools rather than core product surface.

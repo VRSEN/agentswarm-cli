@@ -40,6 +40,20 @@ export const { use: useRoute, provider: RouteProvider } = createSimpleContext({
       navigate(route: Route) {
         setStore(reconcile(route))
       },
+      clearPrompt() {
+        if (store.type === "home") {
+          setStore(reconcile({ type: "home" }))
+          return
+        }
+        if (store.type === "session") {
+          setStore(
+            reconcile({
+              type: "session",
+              sessionID: store.sessionID,
+            }),
+          )
+        }
+      },
     }
   },
 })

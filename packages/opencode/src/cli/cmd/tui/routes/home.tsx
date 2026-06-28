@@ -4,7 +4,7 @@ import { Logo } from "../component/logo"
 import { useProject } from "../context/project"
 import { useSync } from "../context/sync"
 import { useArgs } from "../context/args"
-import { useRouteData } from "@tui/context/route"
+import { useRoute, useRouteData } from "@tui/context/route"
 import { usePromptRef } from "../context/prompt"
 import { useLocal } from "../context/local"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
@@ -19,6 +19,7 @@ const placeholder = {
 export function Home() {
   const sync = useSync()
   const project = useProject()
+  const routeContext = useRoute()
   const route = useRouteData("home")
   const promptRef = usePromptRef()
   const [ref, setRef] = createSignal<PromptRef | undefined>()
@@ -26,20 +27,26 @@ export function Home() {
   const local = useLocal()
   const editor = useEditorContext()
   let sent = false
+  let routePromptApplied = false
 
   onMount(() => {
+    if (route.prompt || routePromptApplied) return
     editor.clearSelection()
   })
 
   const bind = (r: PromptRef | undefined) => {
     setRef(r)
     promptRef.set(r)
-    if (once || !r) return
+    if (!r) return
     if (route.prompt) {
-      r.set(route.prompt)
+      const prompt = route.prompt
+      r.set(prompt)
+      routeContext.clearPrompt()
+      routePromptApplied = true
       once = true
       return
     }
+    if (once) return
     if (!args.prompt) return
     r.set({ input: args.prompt, parts: [] })
     once = true
@@ -50,6 +57,7 @@ export function Home() {
     const r = ref()
     if (sent) return
     if (!r) return
+    if (routePromptApplied) return
     if (!sync.ready || !local.model.ready) return
     if (!args.prompt) return
     if (r.current.input !== args.prompt) return

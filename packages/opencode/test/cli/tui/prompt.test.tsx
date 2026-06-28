@@ -1,9 +1,9 @@
 /** @jsxImportSource @opentui/solid */
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { RGBA } from "@opentui/core"
+import { RGBA, TextareaRenderable, type Renderable } from "@opentui/core"
 import { testRender, useRenderer } from "@opentui/solid"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
-import { createEffect, type ParentProps } from "solid-js"
+import { createEffect, createSignal, Match, Switch, type ParentProps } from "solid-js"
 import * as AutocompleteModule from "../../../src/cli/cmd/tui/component/prompt/autocomplete"
 import * as CommandDialogModule from "../../../src/cli/cmd/tui/component/dialog-command"
 import { CommandPaletteProvider } from "../../../src/cli/cmd/tui/context/command-palette"
@@ -17,6 +17,7 @@ import * as KeybindContext from "@tui/context/keybind"
 import * as KVContext from "../../../src/cli/cmd/tui/context/kv"
 import * as LocalContext from "../../../src/cli/cmd/tui/context/local"
 import * as ProjectContext from "../../../src/cli/cmd/tui/context/project"
+import * as PromptRefContext from "../../../src/cli/cmd/tui/context/prompt"
 import { RouteProvider, useRoute } from "../../../src/cli/cmd/tui/context/route"
 import * as SDKContext from "../../../src/cli/cmd/tui/context/sdk"
 import * as SyncContext from "../../../src/cli/cmd/tui/context/sync"
@@ -31,10 +32,15 @@ import { AgencySwarmOllama } from "../../../src/agency-swarm/ollama"
 import { AgencySwarmRunSession } from "../../../src/agency-swarm/run-session"
 import { Telemetry } from "../../../src/telemetry/telemetry"
 import { OpencodeKeymapProvider } from "../../../src/cli/cmd/tui/keymap"
+import { TuiPluginRuntime } from "../../../src/cli/cmd/tui/plugin/runtime"
+
+let lastKeymap: ReturnType<typeof createDefaultOpenTuiKeymap> | undefined
 
 function TestKeymapProvider(props: ParentProps) {
   const renderer = useRenderer()
-  return <OpencodeKeymapProvider keymap={createDefaultOpenTuiKeymap(renderer)}>{props.children}</OpencodeKeymapProvider>
+  const keymap = createDefaultOpenTuiKeymap(renderer)
+  lastKeymap = keymap
+  return <OpencodeKeymapProvider keymap={keymap}>{props.children}</OpencodeKeymapProvider>
 }
 
 const testTuiConfig = {
@@ -91,9 +97,18 @@ function createEditorSelection(input: { filePath?: string; text?: string } = {})
   }
 }
 
+function findTextarea(node: Renderable): TextareaRenderable | undefined {
+  if (node instanceof TextareaRenderable) return node
+  for (const child of node.getChildren()) {
+    const found = findTextarea(child)
+    if (found) return found
+  }
+}
+
 describe("prompt auth rejection handling", () => {
   afterEach(() => {
     mock.restore()
+    lastKeymap = undefined
     delete process.env.OPENAI_API_KEY
     delete process.env.OPENROUTER_API_KEY
     delete process.env.OPENROUTER_TOKEN
@@ -106,7 +121,10 @@ describe("prompt auth rejection handling", () => {
     openrouterEnv?: string[]
     productMode?: "build" | "plan" | "run"
     selectedModel?: { providerID: string; modelID: string }
+    localModelReady?: boolean | (() => boolean)
+    syncReady?: boolean | (() => boolean)
     prompt: (input: { messageID: string; sessionID: string }) => Promise<unknown>
+    message?: (input: { messageID: string; sessionID: string }) => Promise<unknown> | unknown
     sessionID: string
     workspaceID: string
   }) {
@@ -118,6 +136,10 @@ describe("prompt auth rejection handling", () => {
     const modelID = agency ? "default" : "gpt-4.1"
     const selectedModel = input.selectedModel ?? { providerID, modelID }
     const openrouterEnv = input.openrouterEnv ?? ["OPENROUTER_API_KEY"]
+    const localModelReady = () =>
+      typeof input.localModelReady === "function" ? input.localModelReady() : (input.localModelReady ?? false)
+    const syncReady = () => (typeof input.syncReady === "function" ? input.syncReady() : (input.syncReady ?? false))
+    const messages: Record<string, unknown[]> = {}
     const parts: Record<string, unknown[]> = {}
 
     const promptSession = spyOn(
@@ -126,11 +148,36 @@ describe("prompt auth rejection handling", () => {
       },
       "prompt",
     )
+    const messageSession = spyOn(
+      {
+        message:
+          input.message ??
+          (async () => ({
+            error: {
+              name: "NotFoundError",
+              data: {
+                message: "Message not found",
+              },
+            },
+          })),
+      },
+      "message",
+    )
     const shellSession = spyOn(
       {
         shell: async () => ({}),
       },
       "shell",
+    )
+    const createSession = spyOn(
+      {
+        create: async () => ({
+          data: {
+            id: input.sessionID,
+          },
+        }),
+      },
+      "create",
     )
 
     const syncRunSession = spyOn(AgencySwarmRunSession, "sync").mockResolvedValue(undefined)
@@ -205,6 +252,9 @@ describe("prompt auth rejection handling", () => {
         color: () => RGBA.fromHex("#38bdf8"),
       },
       model: {
+        get ready() {
+          return localModelReady()
+        },
         current: () => ({
           providerID: selectedModel.providerID,
           modelID: selectedModel.modelID,
@@ -231,6 +281,8 @@ describe("prompt auth rejection handling", () => {
     spyOn(SDKContext, "useSDK").mockReturnValue({
       client: {
         session: {
+          create: createSession,
+          message: messageSession,
           prompt: promptSession,
           shell: shellSession,
         },
@@ -238,6 +290,9 @@ describe("prompt auth rejection handling", () => {
       event: input.events,
     } as any)
     spyOn(SyncContext, "useSync").mockReturnValue({
+      get ready() {
+        return syncReady()
+      },
       data: {
         command: [],
         config: {
@@ -249,7 +304,7 @@ describe("prompt auth rejection handling", () => {
           consoleManagedProviders: [],
           switchableOrgCount: 0,
         },
-        message: {},
+        message: messages,
         part: parts,
         provider: [
           {
@@ -337,25 +392,40 @@ describe("prompt auth rejection handling", () => {
 
     let promptRef: PromptRef | undefined
 
-    await testRender(() => (
+    const rendered = await testRender(() => (
       <TestKeymapProvider>
         <RouteProvider>
-          <DialogProvider>
-            <CommandPaletteProvider>
-              <Prompt
-                ref={(value) => (promptRef = value)}
-                sessionID={input.sessionID}
-                workspaceID={input.workspaceID}
-                placeholders={{ normal: [] }}
-              />
-            </CommandPaletteProvider>
-          </DialogProvider>
+          <PromptRefContext.PromptRefProvider>
+            <DialogProvider>
+              <CommandPaletteProvider>
+                <Prompt
+                  ref={(value) => (promptRef = value)}
+                  sessionID={input.sessionID}
+                  workspaceID={input.workspaceID}
+                  placeholders={{ normal: [] }}
+                />
+              </CommandPaletteProvider>
+            </DialogProvider>
+          </PromptRefContext.PromptRefProvider>
         </RouteProvider>
       </TestKeymapProvider>
     ))
 
     expect(promptRef).toBeDefined()
-    return { clearRunSession, parts, promptRef: promptRef!, promptSession, shellSession, syncRunSession }
+    const textarea = findTextarea(rendered.renderer.root)
+    expect(textarea).toBeDefined()
+    return {
+      clearRunSession,
+      createSession,
+      parts,
+      messages,
+      messageSession,
+      promptRef: promptRef!,
+      promptSession,
+      shellSession,
+      syncRunSession,
+      textarea: textarea!,
+    }
   }
 
   test("keeps saved Run session state when submitting a Build prompt", async () => {
@@ -397,8 +467,7 @@ describe("prompt auth rejection handling", () => {
     expect(syncRunSession).not.toHaveBeenCalled()
     expect(clearRunSession).not.toHaveBeenCalled()
     const payload = promptSession.mock.calls[0]?.[0] as
-      | { $body_agencySwarmBridge?: boolean; agent?: string }
-      | undefined
+      { $body_agencySwarmBridge?: boolean; agent?: string } | undefined
     expect(payload?.$body_agencySwarmBridge).toBe(false)
     expect(payload?.agent).toBe("plan")
   })
@@ -752,16 +821,18 @@ describe("prompt auth rejection handling", () => {
     await testRender(() => (
       <TestKeymapProvider>
         <RouteProvider>
-          <DialogProvider>
-            <CommandPaletteProvider>
-              <Prompt
-                ref={(value) => (promptRef = value)}
-                sessionID="session_immediate_clear"
-                workspaceID="workspace_immediate_clear"
-                placeholders={{ normal: [] }}
-              />
-            </CommandPaletteProvider>
-          </DialogProvider>
+          <PromptRefContext.PromptRefProvider>
+            <DialogProvider>
+              <CommandPaletteProvider>
+                <Prompt
+                  ref={(value) => (promptRef = value)}
+                  sessionID="session_immediate_clear"
+                  workspaceID="workspace_immediate_clear"
+                  placeholders={{ normal: [] }}
+                />
+              </CommandPaletteProvider>
+            </DialogProvider>
+          </PromptRefContext.PromptRefProvider>
         </RouteProvider>
       </TestKeymapProvider>
     ))
@@ -779,8 +850,7 @@ describe("prompt auth rejection handling", () => {
 
     expect(promptSession).toHaveBeenCalledTimes(1)
     const payload = promptSession.mock.calls[0]?.[0] as
-      | { parts: Array<{ synthetic?: boolean; text?: string }> }
-      | undefined
+      { parts: Array<{ synthetic?: boolean; text?: string }> } | undefined
     const editorText = payload?.parts[0]?.text
     if (editorText === undefined) throw new Error("missing editor context payload")
     expect(payload?.parts[0]?.synthetic).toBe(true)
@@ -862,6 +932,364 @@ describe("prompt auth rejection handling", () => {
     expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("clear right away")
     expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("session_immediate_clear")
     expect(markSelectionSent).toHaveBeenCalledTimes(1)
+  })
+
+  test("restores the draft when the prompt request fails after clearing", async () => {
+    const events = createEventBus()
+    const telemetryCapture = spyOn(Telemetry, "capture").mockResolvedValue(false)
+    let rejectPrompt!: (error: Error) => void
+    const failedPrompt = new Promise<never>((_, reject) => {
+      rejectPrompt = reject
+    })
+    const { promptRef, promptSession, shellSession, textarea } = await renderTelemetryPrompt({
+      events,
+      sessionID: "session_restore_failed_prompt",
+      workspaceID: "workspace_restore_failed_prompt",
+      prompt: async () => failedPrompt,
+    })
+
+    promptRef.set({
+      input: "do not lose this prompt",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    expect(promptSession).toHaveBeenCalledTimes(1)
+    expect(promptRef.current).toEqual({
+      input: "",
+      parts: [],
+    })
+    const shellMode = lastKeymap?.getActiveKeys({ includeBindings: true }).find((key) => key.display === "!")
+    const switchMode = shellMode?.command
+    expect(typeof switchMode).toBe("function")
+    if (typeof switchMode !== "function") throw new Error("Shell mode key binding was not active")
+    switchMode({
+      keymap: lastKeymap!,
+      event: undefined as never,
+      focused: null,
+      target: null,
+      data: {},
+      input: "!",
+      payload: undefined,
+    })
+    await flushEffects()
+
+    rejectPrompt(new Error("connection dropped"))
+    await failedPrompt.catch(() => undefined)
+    await flushEffects()
+
+    expect(promptRef.current).toEqual({
+      input: "do not lose this prompt",
+      parts: [],
+    })
+    expect(textarea.cursorOffset).toBe(Bun.stringWidth("do not lose this prompt"))
+    const failed = telemetryCapture.mock.calls.find(([event]) => event === "task_failed")
+    expect(failed?.[1]).toMatchObject({
+      error_bucket: "unknown",
+      framework_mode: true,
+      has_agent_parts: false,
+      has_file_parts: false,
+      mode: "normal",
+      provider_id: "agency-swarm",
+    })
+
+    promptRef.submit()
+    await flushEffects()
+
+    expect(promptSession).toHaveBeenCalledTimes(2)
+    expect(shellSession).not.toHaveBeenCalled()
+  })
+
+  test("does not restore the draft when the submitted user turn is already in session state", async () => {
+    const events = createEventBus()
+    let rejectPrompt!: (error: Error) => void
+    const failedPrompt = new Promise<never>((_, reject) => {
+      rejectPrompt = reject
+    })
+    const { messages, promptRef, promptSession } = await renderTelemetryPrompt({
+      events,
+      sessionID: "session_accepted_rejected_prompt",
+      workspaceID: "workspace_accepted_rejected_prompt",
+      prompt: async () => failedPrompt,
+    })
+
+    promptRef.set({
+      input: "already accepted prompt",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    const payload = promptSession.mock.calls[0]?.[0] as
+      | {
+          messageID: string
+          sessionID: string
+        }
+      | undefined
+    expect(payload).toBeDefined()
+    messages[payload!.sessionID] = [
+      {
+        agent: "builder",
+        id: payload!.messageID,
+        model: {
+          providerID: "agency-swarm",
+          modelID: "default",
+        },
+        role: "user",
+        sessionID: payload!.sessionID,
+        time: { created: 1 },
+      },
+    ]
+
+    rejectPrompt(new Error("model removed after persistence"))
+    await failedPrompt.catch(() => undefined)
+    await flushEffects()
+
+    expect(promptRef.current).toEqual({
+      input: "",
+      parts: [],
+    })
+  })
+
+  test("does not restore the draft when the submitted user turn is only stored on the server", async () => {
+    const events = createEventBus()
+    let rejectPrompt!: (error: Error) => void
+    const failedPrompt = new Promise<never>((_, reject) => {
+      rejectPrompt = reject
+    })
+    const { messageSession, promptRef, promptSession } = await renderTelemetryPrompt({
+      events,
+      sessionID: "session_server_stored_prompt",
+      workspaceID: "workspace_server_stored_prompt",
+      prompt: async () => failedPrompt,
+      message: async (input) => ({
+        data: {
+          info: {
+            agent: "builder",
+            id: input.messageID,
+            model: {
+              providerID: "agency-swarm",
+              modelID: "default",
+            },
+            role: "user",
+            sessionID: input.sessionID,
+            time: { created: 1 },
+          },
+          parts: [],
+        },
+      }),
+    })
+
+    promptRef.set({
+      input: "already persisted on server",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    const payload = promptSession.mock.calls[0]?.[0] as
+      | {
+          messageID: string
+          sessionID: string
+        }
+      | undefined
+    expect(payload).toBeDefined()
+
+    rejectPrompt(new Error("provider failed after user message"))
+    await failedPrompt.catch(() => undefined)
+    await flushEffects()
+
+    expect(messageSession).toHaveBeenCalledWith({
+      sessionID: payload!.sessionID,
+      messageID: payload!.messageID,
+    })
+    expect(promptRef.current).toEqual({
+      input: "",
+      parts: [],
+    })
+  })
+
+  test("restores the draft when submitted user turn persistence cannot be checked", async () => {
+    const events = createEventBus()
+    let rejectPrompt!: (error: Error) => void
+    const failedPrompt = new Promise<never>((_, reject) => {
+      rejectPrompt = reject
+    })
+    const { messageSession, promptRef, promptSession } = await renderTelemetryPrompt({
+      events,
+      sessionID: "session_unknown_persistence_prompt",
+      workspaceID: "workspace_unknown_persistence_prompt",
+      prompt: async () => failedPrompt,
+      message: () => {
+        throw new Error("message lookup failed")
+      },
+    })
+
+    promptRef.set({
+      input: "unknown persistence draft",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    expect(promptSession).toHaveBeenCalledTimes(1)
+
+    rejectPrompt(new Error("provider failed before lookup finished"))
+    await failedPrompt.catch(() => undefined)
+    await flushEffects()
+
+    expect(messageSession).toHaveBeenCalledTimes(1)
+    expect(promptRef.current).toEqual({
+      input: "unknown persistence draft",
+      parts: [],
+    })
+  })
+
+  test("keeps a newer draft when the cleared prompt request fails", async () => {
+    const events = createEventBus()
+    let rejectPrompt!: (error: Error) => void
+    const failedPrompt = new Promise<never>((_, reject) => {
+      rejectPrompt = reject
+    })
+    const { promptRef, promptSession } = await renderTelemetryPrompt({
+      events,
+      sessionID: "session_keep_newer_prompt",
+      workspaceID: "workspace_keep_newer_prompt",
+      prompt: async () => failedPrompt,
+    })
+
+    promptRef.set({
+      input: "old request",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    expect(promptSession).toHaveBeenCalledTimes(1)
+    expect(promptRef.current).toEqual({
+      input: "",
+      parts: [],
+    })
+
+    promptRef.set({
+      input: "new draft",
+      parts: [],
+    })
+    await flushEffects()
+
+    rejectPrompt(new Error("connection dropped"))
+    await failedPrompt.catch(() => undefined)
+    await flushEffects()
+
+    expect(promptRef.current).toEqual({
+      input: "new draft",
+      parts: [],
+    })
+  })
+
+  test("keeps live textarea text when failure lands before content change flushes", async () => {
+    const events = createEventBus()
+    let rejectPrompt!: (error: Error) => void
+    const failedPrompt = new Promise<never>((_, reject) => {
+      rejectPrompt = reject
+    })
+    const { promptRef, promptSession, textarea } = await renderTelemetryPrompt({
+      events,
+      sessionID: "session_keep_live_textarea_prompt",
+      workspaceID: "workspace_keep_live_textarea_prompt",
+      prompt: async () => failedPrompt,
+    })
+
+    promptRef.set({
+      input: "old request",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    expect(promptSession).toHaveBeenCalledTimes(1)
+    expect(promptRef.current).toEqual({
+      input: "",
+      parts: [],
+    })
+
+    const onContentChange = textarea.onContentChange
+    textarea.onContentChange = undefined
+    textarea.insertText("new draft")
+    textarea.onContentChange = onContentChange
+
+    expect(textarea.plainText).toBe("new draft")
+    expect(promptRef.current).toEqual({
+      input: "",
+      parts: [],
+    })
+
+    rejectPrompt(new Error("connection dropped"))
+    await failedPrompt.catch(() => undefined)
+    await flushEffects()
+
+    expect(textarea.plainText).toBe("new draft")
+    textarea.onContentChange?.({})
+    await flushEffects()
+
+    expect(promptRef.current).toEqual({
+      input: "new draft",
+      parts: [],
+    })
+  })
+
+  test("does not restore a stale draft after a later edit clears the prompt", async () => {
+    const events = createEventBus()
+    let rejectPrompt!: (error: Error) => void
+    const failedPrompt = new Promise<never>((_, reject) => {
+      rejectPrompt = reject
+    })
+    const { promptRef, promptSession } = await renderTelemetryPrompt({
+      events,
+      sessionID: "session_keep_later_empty_prompt",
+      workspaceID: "workspace_keep_later_empty_prompt",
+      prompt: async () => failedPrompt,
+    })
+
+    promptRef.set({
+      input: "old request",
+      parts: [],
+    })
+    await flushEffects()
+
+    promptRef.submit()
+    await flushEffects()
+
+    expect(promptSession).toHaveBeenCalledTimes(1)
+
+    promptRef.set({
+      input: "new draft",
+      parts: [],
+    })
+    promptRef.reset()
+    await flushEffects()
+
+    rejectPrompt(new Error("connection dropped"))
+    await failedPrompt.catch(() => undefined)
+    await flushEffects()
+
+    expect(promptRef.current).toEqual({
+      input: "",
+      parts: [],
+    })
   })
 
   test("drops task telemetry when the assistant run is cancelled", async () => {
@@ -1330,16 +1758,18 @@ describe("prompt auth rejection handling", () => {
     await testRender(() => (
       <TestKeymapProvider>
         <RouteProvider>
-          <DialogProvider>
-            <CommandPaletteProvider>
-              <Prompt
-                ref={(value) => (promptRef = value)}
-                sessionID="session_server_command"
-                workspaceID="workspace_server_command"
-                placeholders={{ normal: [] }}
-              />
-            </CommandPaletteProvider>
-          </DialogProvider>
+          <PromptRefContext.PromptRefProvider>
+            <DialogProvider>
+              <CommandPaletteProvider>
+                <Prompt
+                  ref={(value) => (promptRef = value)}
+                  sessionID="session_server_command"
+                  workspaceID="workspace_server_command"
+                  placeholders={{ normal: [] }}
+                />
+              </CommandPaletteProvider>
+            </DialogProvider>
+          </PromptRefContext.PromptRefProvider>
         </RouteProvider>
       </TestKeymapProvider>
     ))
@@ -1384,7 +1814,22 @@ describe("prompt auth rejection handling", () => {
     })
   })
 
-  test("routes first-prompt SDK auth error through auth after upstream-style prompt clearing", async () => {
+  async function runFirstPromptNavigationFailure(input: {
+    deferRunSessionSync?: boolean
+    existingSessionID?: string
+    explicitRecipientRetry?: boolean
+    failBeforeNavigation?: boolean
+    homeSlotRebindDraft?: string
+    legacyActivePromptRef?: boolean
+    laterSessionUserMessage?: boolean
+    newerDraft?: string
+    newerLiveDraft?: string
+    newerSubmit?: string
+    runMode?: boolean
+    serverPersistenceError?: boolean
+    serverPersisted?: boolean
+    returnHome?: boolean
+  }) {
     process.env.OPENAI_API_KEY = "sk-test"
 
     const routeStates: string[] = []
@@ -1396,12 +1841,20 @@ describe("prompt auth rejection handling", () => {
         message: "Streaming request failed (403): Invalid API key for OpenAI",
       },
     }
+    const targetSessionID = input.existingSessionID ?? "session_auth_race"
+    const cleanupOrder: string[] = []
+    let resolveRunSessionSync: (() => void) | undefined
+    const runSessionSync = input.deferRunSessionSync
+      ? new Promise<void>((resolve) => {
+          resolveRunSessionSync = resolve
+        })
+      : undefined
     const telemetryCapture = spyOn(Telemetry, "capture").mockResolvedValue(false)
     const createSession = spyOn(
       {
         create: async () => ({
           data: {
-            id: "session_auth_race",
+            id: targetSessionID,
           },
         }),
       },
@@ -1409,26 +1862,121 @@ describe("prompt auth rejection handling", () => {
     )
     const deleteSession = spyOn(
       {
-        delete: async () => ({}),
+        delete: async () => {
+          cleanupOrder.push("delete")
+          return {}
+        },
       },
       "delete",
     )
+    const rejects: Array<(error: unknown) => void> = []
+    const failures: Promise<never>[] = []
+    const nextFailure = () => {
+      const failed = new Promise<never>((_, reject) => {
+        rejects.push(reject)
+      })
+      failures.push(failed)
+      return failed
+    }
     const promptSession = spyOn(
       {
-        prompt: async () => {
-          await Bun.sleep(75)
-          throw promptError
-        },
+        prompt: (_request: { $body_agencyRecipientAgent?: string }) => nextFailure(),
       },
       "prompt",
     )
+    const messageSession = spyOn(
+      {
+        message: (request: { messageID: string; sessionID: string }) => {
+          if (input.serverPersistenceError) throw new Error("message lookup failed")
+          return input.serverPersisted
+            ? {
+                data: {
+                  info: {
+                    agent: "builder",
+                    id: request.messageID,
+                    model: {
+                      providerID: "agency-swarm",
+                      modelID: "default",
+                    },
+                    role: "user",
+                    sessionID: request.sessionID,
+                    time: { created: 1 },
+                  },
+                  parts: [],
+                },
+              }
+            : {
+                error: {
+                  name: "NotFoundError",
+                  data: {
+                    message: "Message not found",
+                  },
+                },
+              }
+        },
+      },
+      "message",
+    )
+    let selectionSent = false
     const editor = {
-      markSelectionSent() {},
+      markSelectionSent() {
+        selectionSent = true
+      },
       preserveSelectionFromNewSession() {},
+      restoreSelectionPending(_selection: ReturnType<typeof createEditorSelection>) {
+        selectionSent = false
+      },
     }
     const markSelectionSent = spyOn(editor, "markSelectionSent")
+    const restoreSelectionPending = spyOn(editor, "restoreSelectionPending")
+    const selection = createEditorSelection()
 
-    spyOn(AgencySwarmRunSession, "sync").mockResolvedValue(undefined)
+    const syncRunSession = spyOn(AgencySwarmRunSession, "sync").mockImplementation(async () => {
+      cleanupOrder.push("sync:start")
+      await runSessionSync
+      cleanupOrder.push("sync:end")
+    })
+    const [syncData, setSyncData] = createSignal({
+      command: [],
+      config: {
+        model: "agency-swarm/default",
+        experimental: {},
+        provider: {} as Record<string, { name: string; options: Record<string, unknown> }>,
+      },
+      console_state: {
+        activeOrgName: "",
+        consoleManagedProviders: [],
+        switchableOrgCount: 0,
+      },
+      message: {} as Record<string, Array<{ id: string; role: "user"; sessionID: string; time: { created: number } }>>,
+      provider: [
+        {
+          id: "agency-swarm",
+          name: "Agency Swarm",
+          source: "config",
+          env: [],
+          options: {},
+          models: {},
+        },
+        {
+          id: "openai",
+          name: "OpenAI",
+          source: "config",
+          env: ["OPENAI_API_KEY"],
+          options: {},
+          models: {},
+        },
+      ],
+      provider_auth: {
+        openai: [{ type: "api", label: "API key" }],
+      },
+      provider_next: {
+        all: [{ id: "openai", name: "OpenAI" }],
+        connected: [],
+        default: {},
+      },
+      session_status: {},
+    })
     spyOn(AutocompleteModule, "Autocomplete").mockImplementation((props: any) => {
       props.ref?.({
         onInput() {},
@@ -1463,10 +2011,13 @@ describe("prompt auth rejection handling", () => {
     spyOn(EditorContext, "useEditorContext").mockReturnValue({
       enabled: () => false,
       connected: () => false,
-      selection: () => createEditorSelection(),
-      labelState: () => "pending",
-      markSelectionSent: editor.markSelectionSent,
-      preserveSelectionFromNewSession: editor.preserveSelectionFromNewSession,
+      selection: () => selection,
+      labelState: () => (selectionSent ? "sent" : "pending"),
+      clearSelection: () => undefined,
+      markSelectionSent: () => editor.markSelectionSent(),
+      preserveSelectionFromNewSession: () => editor.preserveSelectionFromNewSession(),
+      restoreSelectionPending: (value: ReturnType<typeof createEditorSelection>) =>
+        editor.restoreSelectionPending(value),
       onMention: () => () => {},
       server: () => undefined,
     } as any)
@@ -1515,59 +2066,31 @@ describe("prompt auth rejection handling", () => {
           set: () => {},
         },
       },
+      ...(input.runMode
+        ? {
+            product: {
+              current: () => "run" as const,
+            },
+          }
+        : {}),
     } as any)
     spyOn(SDKContext, "useSDK").mockReturnValue({
       client: {
         session: {
           create: createSession,
-          prompt: promptSession,
           delete: deleteSession,
+          message: messageSession,
+          prompt: promptSession,
         },
       },
       event: events,
     } as any)
     spyOn(SyncContext, "useSync").mockReturnValue({
       path: { directory: "/tmp", worktree: "/tmp" },
-      data: {
-        command: [],
-        config: {
-          model: "agency-swarm/default",
-          experimental: {},
-        },
-        console_state: {
-          activeOrgName: "",
-          consoleManagedProviders: [],
-          switchableOrgCount: 0,
-        },
-        message: {},
-        provider: [
-          {
-            id: "agency-swarm",
-            name: "Agency Swarm",
-            source: "config",
-            env: [],
-            options: {},
-            models: {},
-          },
-          {
-            id: "openai",
-            name: "OpenAI",
-            source: "config",
-            env: ["OPENAI_API_KEY"],
-            options: {},
-            models: {},
-          },
-        ],
-        provider_auth: {
-          openai: [{ type: "api", label: "API key" }],
-        },
-        provider_next: {
-          all: [{ id: "openai", name: "OpenAI" }],
-          connected: [],
-          default: {},
-        },
-        session_status: {},
+      get data() {
+        return syncData()
       },
+      ready: true,
       session: { get: () => undefined },
     } as any)
     spyOn(ThemeContext, "useTheme").mockReturnValue({
@@ -1618,10 +2141,32 @@ describe("prompt auth rejection handling", () => {
     const { Prompt } = await import("../../../src/cli/cmd/tui/component/prompt")
 
     let promptRef: PromptRef | undefined
+    let routeContext: ReturnType<typeof useRoute> | undefined
+    let dialogContext: ReturnType<typeof useDialog> | undefined
+    let textarea: TextareaRenderable | undefined
+    let activeContext: ReturnType<typeof PromptRefContext.usePromptRef> | undefined
+    let homeSlotRef: ((ref: PromptRef | undefined) => void) | undefined
+    let legacyPrompt: PromptRef["current"] | undefined
+    let legacySetCount = 0
+    if (input.failBeforeNavigation) {
+      type SlotProps = Parameters<typeof TuiPluginRuntime.Slot>[0]
+      const isPromptSlotRef = (value: unknown): value is (ref: PromptRef | undefined) => void =>
+        typeof value === "function"
+      spyOn(TuiPluginRuntime, "Slot").mockImplementation((props: SlotProps) => {
+        if (props.name === "home_prompt" && isPromptSlotRef(props.ref)) homeSlotRef = props.ref
+        return props.children ?? null
+      })
+    }
+    const HomeRoute = input.failBeforeNavigation
+      ? (await import("../../../src/cli/cmd/tui/routes/home")).Home
+      : undefined
 
     const Capture = () => {
       const route = useRoute()
       const dialog = useDialog()
+      activeContext = PromptRefContext.usePromptRef()
+      routeContext = route
+      dialogContext = dialog
 
       createEffect(() => {
         const current = route.data
@@ -1635,23 +2180,60 @@ describe("prompt auth rejection handling", () => {
       return <box />
     }
 
-    await testRender(() => (
+    const PromptRoute = () => {
+      const route = useRoute()
+      const active = PromptRefContext.usePromptRef()
+      const bind = (value: PromptRef | undefined) => {
+        active.set(value)
+        if (value) promptRef = value
+      }
+
+      return (
+        <Switch>
+          <Match when={route.data.type === "home"}>
+            {HomeRoute ? (
+              <HomeRoute />
+            ) : (
+              <Prompt ref={bind} workspaceID="workspace_auth_race" placeholders={{ normal: [] }} />
+            )}
+          </Match>
+          <Match when={route.data.type === "session"}>
+            <Prompt
+              ref={bind}
+              sessionID={route.data.type === "session" ? route.data.sessionID : undefined}
+              workspaceID="workspace_auth_race"
+              placeholders={{ normal: [] }}
+            />
+          </Match>
+        </Switch>
+      )
+    }
+
+    const rendered = await testRender(() => (
       <TestKeymapProvider>
-        <RouteProvider>
-          <DialogProvider>
-            <CommandPaletteProvider>
-              <Capture />
-              <Prompt
-                ref={(value) => (promptRef = value)}
-                workspaceID="workspace_auth_race"
-                placeholders={{ normal: [] }}
-              />
-            </CommandPaletteProvider>
-          </DialogProvider>
+        <RouteProvider
+          initialRoute={
+            input.existingSessionID
+              ? {
+                  type: "session",
+                  sessionID: input.existingSessionID,
+                }
+              : undefined
+          }
+        >
+          <PromptRefContext.PromptRefProvider>
+            <DialogProvider>
+              <CommandPaletteProvider>
+                <Capture />
+                <PromptRoute />
+              </CommandPaletteProvider>
+            </DialogProvider>
+          </PromptRefContext.PromptRefProvider>
         </RouteProvider>
       </TestKeymapProvider>
     ))
 
+    promptRef ??= activeContext?.current
     expect(promptRef).toBeDefined()
 
     promptRef!.set({
@@ -1663,31 +2245,293 @@ describe("prompt auth rejection handling", () => {
 
     expect(promptRef!.focused).toBe(true)
 
+    if (input.explicitRecipientRetry) {
+      setSyncData((data) => ({
+        ...data,
+        config: {
+          ...data.config,
+          provider: {
+            ...data.config.provider,
+            "agency-swarm": {
+              name: "agency-swarm",
+              options: {
+                agency: "test_agency",
+                recipientAgent: "support_agent",
+                recipientAgentSelectedAt: 123,
+              },
+            },
+          },
+        },
+      }))
+      await flushEffects()
+    }
+
     promptRef!.submit()
     await flushEffects()
-    await Bun.sleep(90)
-    await flushEffects()
+    if (input.failBeforeNavigation) {
+      expect(routeStates.at(-1)).toBe("home")
+    } else {
+      await Bun.sleep(60)
+      await flushEffects()
+      expect(routeStates.at(-1)).toBe(`session:${targetSessionID}`)
+    }
 
-    expect(createSession).toHaveBeenCalledWith({
-      workspace: "workspace_auth_race",
-      agent: "build",
-      model: {
+    if (input.newerDraft) {
+      promptRef!.set({
+        input: input.newerDraft,
+        parts: [],
+      })
+      await flushEffects()
+    }
+    if (input.newerLiveDraft) {
+      textarea = findTextarea(rendered.renderer.root)
+      expect(textarea).toBeDefined()
+      Object.defineProperty(textarea!, "plainText", {
+        configurable: true,
+        get: () => input.newerLiveDraft,
+      })
+      expect(textarea!.plainText).toBe(input.newerLiveDraft)
+      expect(promptRef!.current).toEqual({
+        input: "",
+        parts: [],
+      })
+    }
+    if (input.newerSubmit) {
+      promptRef!.set({
+        input: input.newerSubmit,
+        parts: [],
+      })
+      await flushEffects()
+      promptRef!.submit()
+      await flushEffects()
+      expect(promptSession).toHaveBeenCalledTimes(2)
+      expect(promptRef!.current).toEqual({
+        input: "",
+        parts: [],
+      })
+    }
+    if (input.laterSessionUserMessage) {
+      setSyncData((data) => ({
+        ...data,
+        message: {
+          ...data.message,
+          [targetSessionID]: [
+            ...(data.message[targetSessionID] ?? []),
+            {
+              id: "message_later_user",
+              role: "user",
+              sessionID: targetSessionID,
+              time: { created: 2 },
+            },
+          ],
+        },
+      }))
+      await flushEffects()
+    }
+    if (input.returnHome) {
+      routeContext!.navigate({
+        type: "home",
+      })
+      await flushEffects()
+      expect(routeStates.at(-1)).toBe("home")
+      expect(promptRef!.current).toEqual({
+        input: "",
+        parts: [],
+      })
+    }
+    if (input.legacyActivePromptRef) {
+      let current: PromptRef["current"] = {
+        input: "",
+        parts: [],
+      }
+      const legacyRef: PromptRef = {
+        focused: false,
+        get current() {
+          return current
+        },
+        blur() {},
+        focus() {},
+        reset() {},
+        set(prompt) {
+          current = prompt
+          legacyPrompt = prompt
+          legacySetCount += 1
+        },
+        submit() {},
+      }
+      activeContext!.set(legacyRef)
+      await flushEffects()
+    }
+
+    rejects[0]?.(promptError)
+    await failures[0]?.catch(() => undefined)
+    await flushEffects()
+    if (input.deferRunSessionSync) {
+      expect(syncRunSession).toHaveBeenCalledWith({
+        sessionID: targetSessionID,
         providerID: "agency-swarm",
-        id: "default",
-        variant: undefined,
-      },
-    })
-    expect(promptSession).toHaveBeenCalledTimes(1)
-    expect(markSelectionSent).toHaveBeenCalledTimes(1)
-    expect(deleteSession).not.toHaveBeenCalled()
-    expect(routeStates.some((state) => state.startsWith("session:"))).toBe(true)
-    expect(routeStates.at(-1)).toBe("session:session_auth_race")
-    expect(promptRef!.current).toEqual({
-      input: "",
-      parts: [],
-    })
-    expect(promptRef!.focused).toBe(false)
-    expect(dialogDepth.at(-1)).toBe(1)
+        directory: undefined,
+      })
+      expect(deleteSession).not.toHaveBeenCalled()
+      expect(cleanupOrder).toEqual(["sync:start"])
+      resolveRunSessionSync?.()
+      await flushEffects()
+    }
+    if (input.failBeforeNavigation) {
+      await Bun.sleep(60)
+      await flushEffects()
+      expect(routeStates.at(-1)).toBe("home")
+      expect(homeSlotRef).toBeDefined()
+    }
+    if (input.homeSlotRebindDraft) {
+      promptRef!.set({
+        input: input.homeSlotRebindDraft,
+        parts: [],
+      })
+      await flushEffects()
+      const rebindSet = mock((_prompt: PromptRef["current"]) => undefined)
+      homeSlotRef?.({
+        focused: false,
+        current: {
+          input: input.homeSlotRebindDraft,
+          parts: [],
+        },
+        blur() {},
+        focus() {},
+        reset() {},
+        set: rebindSet,
+        submit() {},
+      })
+      expect(rebindSet).not.toHaveBeenCalled()
+      expect(routeContext!.data).toEqual({
+        type: "home",
+      })
+    }
+    if (input.newerSubmit) {
+      expect(promptRef!.current).toEqual({
+        input: "",
+        parts: [],
+      })
+      rejects[1]?.(promptError)
+      await failures[1]?.catch(() => undefined)
+      await flushEffects()
+    }
+    if (input.explicitRecipientRetry) {
+      expect(promptRef!.current).toEqual({
+        input: "recover this draft",
+        mode: "normal",
+        parts: [],
+      })
+      dialogContext!.clear()
+      await flushEffects()
+      promptRef!.submit()
+      await flushEffects()
+    }
+
+    if (input.existingSessionID) {
+      expect(createSession).not.toHaveBeenCalled()
+    } else {
+      expect(createSession).toHaveBeenCalledWith({
+        workspace: input.failBeforeNavigation ? undefined : "workspace_auth_race",
+        agent: "build",
+        model: {
+          providerID: "agency-swarm",
+          id: "default",
+          variant: undefined,
+        },
+      })
+    }
+    expect(promptSession).toHaveBeenCalledTimes(input.newerSubmit || input.explicitRecipientRetry ? 2 : 1)
+    if (input.explicitRecipientRetry) {
+      expect(promptSession.mock.calls[0]?.[0]).toMatchObject({
+        $body_agencyRecipientAgent: "support_agent",
+      })
+      expect(promptSession.mock.calls[1]?.[0]).toMatchObject({
+        $body_agencyRecipientAgent: "support_agent",
+      })
+    }
+    expect(markSelectionSent).toHaveBeenCalledTimes(input.explicitRecipientRetry ? 2 : 1)
+    const skippedRestore = input.existingSessionID && input.returnHome
+    if (skippedRestore || input.serverPersisted || input.newerDraft || input.newerLiveDraft || input.newerSubmit)
+      expect(restoreSelectionPending).not.toHaveBeenCalled()
+    else expect(restoreSelectionPending).toHaveBeenCalledWith(selection)
+    if (
+      input.returnHome &&
+      !input.existingSessionID &&
+      !input.serverPersistenceError &&
+      !input.serverPersisted &&
+      !input.laterSessionUserMessage
+    )
+      expect(deleteSession).toHaveBeenCalledWith({
+        sessionID: targetSessionID,
+      })
+    else if (input.failBeforeNavigation && !input.serverPersistenceError && !input.serverPersisted)
+      expect(deleteSession).toHaveBeenCalledWith({
+        sessionID: targetSessionID,
+      })
+    else expect(deleteSession).not.toHaveBeenCalled()
+    if (input.deferRunSessionSync) expect(cleanupOrder).toEqual(["sync:start", "sync:end", "delete"])
+    expect(routeStates.some((state) => state.startsWith("session:"))).toBe(!input.failBeforeNavigation)
+    expect(routeStates.at(-1)).toBe(
+      input.returnHome || input.failBeforeNavigation ? "home" : `session:${targetSessionID}`,
+    )
+    if ((input.existingSessionID && input.returnHome) || input.serverPersisted) {
+      expect(promptRef!.current).toEqual({
+        input: "",
+        parts: [],
+      })
+    } else if (input.homeSlotRebindDraft) {
+      expect(promptRef!.current).toEqual({
+        input: input.homeSlotRebindDraft,
+        parts: [],
+      })
+    } else if (input.newerSubmit) {
+      expect(promptRef!.current).toEqual({
+        input: input.newerSubmit,
+        parts: [],
+      })
+    } else if (input.newerLiveDraft) {
+      expect(textarea!.plainText).toBe(input.newerLiveDraft)
+      expect(promptRef!.current).toEqual({
+        input: "",
+        parts: [],
+      })
+      textarea!.onContentChange?.({})
+      await flushEffects()
+      expect(promptRef!.current).toEqual({
+        input: input.newerLiveDraft,
+        parts: [],
+      })
+    } else if (input.newerDraft) {
+      expect(promptRef!.current).toEqual({
+        input: input.newerDraft,
+        parts: [],
+      })
+    } else if (input.explicitRecipientRetry) {
+      expect(promptRef!.current).toEqual({
+        input: "",
+        mode: "normal",
+        parts: [],
+      })
+    } else if (input.legacyActivePromptRef) {
+      expect(legacySetCount).toBe(1)
+      expect(legacyPrompt).toEqual({
+        input: "recover this draft",
+        mode: "normal",
+        parts: [],
+      })
+      expect(promptRef!.current).toEqual({
+        input: "",
+        parts: [],
+      })
+    } else {
+      expect(promptRef!.current).toEqual({
+        input: "recover this draft",
+        ...(input.failBeforeNavigation ? {} : { mode: "normal" as const }),
+        parts: [],
+      })
+    }
+    expect(dialogDepth.at(-1)).toBe(input.explicitRecipientRetry ? 0 : 1)
     expect(toasts.at(-1)).toEqual({
       variant: "error",
       message: "The current provider credential was rejected. Run /auth to update it.",
@@ -1704,6 +2548,264 @@ describe("prompt auth rejection handling", () => {
     })
     expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("Invalid API key for OpenAI")
     expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("recover this draft")
-    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("session_auth_race")
+    expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain(targetSessionID)
+  }
+
+  test("restores first-prompt draft when failure arrives after navigation and session prompt is empty", async () => {
+    await runFirstPromptNavigationFailure({})
+  })
+
+  test("restores first-prompt draft into legacy active prompt refs without version", async () => {
+    await runFirstPromptNavigationFailure({
+      legacyActivePromptRef: true,
+    })
+  })
+
+  test("keeps explicit recipient when retrying a restored active prompt", async () => {
+    await runFirstPromptNavigationFailure({
+      explicitRecipientRetry: true,
+    })
+  })
+
+  test("keeps newer session draft when first-prompt failure arrives after navigation", async () => {
+    await runFirstPromptNavigationFailure({
+      newerDraft: "newer session draft",
+    })
+  })
+
+  test("restores later cleared session submission instead of stale first-prompt draft", async () => {
+    await runFirstPromptNavigationFailure({
+      newerSubmit: "newer submitted session draft",
+    })
+  })
+
+  test("keeps newer live session text when first-prompt failure arrives after navigation", async () => {
+    await runFirstPromptNavigationFailure({
+      newerLiveDraft: "newer live session draft",
+    })
+  })
+
+  test("restores first-prompt draft into active home prompt after returning home before failure", async () => {
+    await runFirstPromptNavigationFailure({
+      returnHome: true,
+    })
+  })
+
+  test("keeps created sessions with later user activity after returning home", async () => {
+    await runFirstPromptNavigationFailure({
+      laterSessionUserMessage: true,
+      returnHome: true,
+    })
+  })
+
+  test("does not leave restored active home prompts on route state for later remounts", async () => {
+    await runFirstPromptNavigationFailure({
+      failBeforeNavigation: true,
+      homeSlotRebindDraft: "newer home draft",
+    })
+  })
+
+  test("waits for Run-session sync before deleting recovered first-prompt sessions", async () => {
+    await runFirstPromptNavigationFailure({
+      deferRunSessionSync: true,
+      failBeforeNavigation: true,
+      runMode: true,
+    })
+  })
+
+  test("does not restore or delete first-prompt session when server already stored the user turn", async () => {
+    await runFirstPromptNavigationFailure({
+      returnHome: true,
+      serverPersisted: true,
+    })
+  })
+
+  test("restores first-prompt draft without deleting when submitted user turn persistence cannot be checked", async () => {
+    await runFirstPromptNavigationFailure({
+      returnHome: true,
+      serverPersistenceError: true,
+    })
+  })
+
+  test("does not restore existing-session draft into active home prompt after returning home before failure", async () => {
+    await runFirstPromptNavigationFailure({
+      existingSessionID: "session_existing_home_retry",
+      returnHome: true,
+    })
+  })
+
+  test("applies recovered home route prompts after startup bind without clearing editor context", async () => {
+    let ready = false
+    const { promptSession } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      sessionID: "session_home_recovery_context",
+      workspaceID: "workspace_home_recovery_context",
+      localModelReady: () => ready,
+      syncReady: () => ready,
+      prompt: async () => ({ data: {} }),
+    })
+
+    let argsPrompt: string | undefined = "startup draft"
+    spyOn(ArgsContext, "useArgs").mockImplementation(() => ({ prompt: argsPrompt }) as any)
+
+    const clearSelection = mock(() => undefined)
+    spyOn(EditorContext, "useEditorContext").mockReturnValue({
+      enabled: () => false,
+      connected: () => false,
+      selection: () => createEditorSelection(),
+      labelState: () => "pending",
+      clearSelection,
+      markSelectionSent: () => undefined,
+      preserveSelectionFromNewSession: () => undefined,
+      restoreSelectionPending: () => undefined,
+      onMention: () => () => {},
+      server: () => undefined,
+    } as any)
+
+    const refs: PromptRef[] = []
+    spyOn(PromptRefContext, "usePromptRef").mockReturnValue({
+      set(ref: PromptRef | undefined) {
+        if (ref) refs.push(ref)
+      },
+    } as any)
+    let homeSlotRef: ((ref: PromptRef | undefined) => void) | undefined
+    spyOn(TuiPluginRuntime, "Slot").mockImplementation(
+      (props: { children?: unknown; name?: string; ref?: (ref: PromptRef | undefined) => void }) => {
+        if (props.name === "home_prompt") homeSlotRef = props.ref
+        return (props.children ?? null) as any
+      },
+    )
+
+    const { Home } = await import("../../../src/cli/cmd/tui/routes/home")
+
+    await testRender(() => (
+      <TestKeymapProvider>
+        <RouteProvider>
+          <DialogProvider>
+            <CommandPaletteProvider>
+              <Home />
+            </CommandPaletteProvider>
+          </DialogProvider>
+        </RouteProvider>
+      </TestKeymapProvider>
+    ))
+
+    expect(refs.at(-1)?.current).toEqual({
+      input: "startup draft",
+      parts: [],
+    })
+    expect(clearSelection).toHaveBeenCalledTimes(1)
+
+    argsPrompt = undefined
+    clearSelection.mockClear()
+    const routes: Array<{ prompt?: unknown; type: string }> = []
+    const CaptureRoute = () => {
+      const route = useRoute()
+
+      createEffect(() => {
+        routes.push({
+          type: route.data.type,
+          prompt: route.data.type === "plugin" ? undefined : route.data.prompt,
+        })
+      })
+
+      return <box />
+    }
+
+    await testRender(() => (
+      <TestKeymapProvider>
+        <RouteProvider
+          initialRoute={{
+            type: "home",
+            prompt: {
+              input: "recovered draft",
+              parts: [],
+            },
+          }}
+        >
+          <DialogProvider>
+            <CommandPaletteProvider>
+              <CaptureRoute />
+              <Home />
+            </CommandPaletteProvider>
+          </DialogProvider>
+        </RouteProvider>
+      </TestKeymapProvider>
+    ))
+
+    expect(refs.at(-1)?.current).toEqual({
+      input: "recovered draft",
+      parts: [],
+    })
+    expect(routes.at(-1)).toEqual({
+      type: "home",
+      prompt: undefined,
+    })
+    const rebindSet = mock((_prompt: PromptRef["current"]) => undefined)
+    homeSlotRef?.({
+      focused: false,
+      current: {
+        input: "edited recovered draft",
+        parts: [],
+      },
+      blur() {},
+      focus() {},
+      reset() {},
+      set: rebindSet,
+      submit() {},
+    })
+    expect(rebindSet).not.toHaveBeenCalled()
+    expect(clearSelection).not.toHaveBeenCalled()
+
+    promptSession.mockClear()
+    clearSelection.mockClear()
+    const recovered = "startup draft"
+    argsPrompt = recovered
+    ready = true
+    const routePrompts: Array<{ prompt?: unknown; type: string }> = []
+    const CaptureRecoveredRoute = () => {
+      const route = useRoute()
+
+      createEffect(() => {
+        routePrompts.push({
+          type: route.data.type,
+          prompt: route.data.type === "plugin" ? undefined : route.data.prompt,
+        })
+      })
+
+      return <box />
+    }
+
+    await testRender(() => (
+      <TestKeymapProvider>
+        <RouteProvider
+          initialRoute={{
+            type: "home",
+            prompt: {
+              input: recovered,
+              parts: [],
+            },
+          }}
+        >
+          <DialogProvider>
+            <CommandPaletteProvider>
+              <CaptureRecoveredRoute />
+              <Home />
+            </CommandPaletteProvider>
+          </DialogProvider>
+        </RouteProvider>
+      </TestKeymapProvider>
+    ))
+
+    expect(refs.at(-1)?.current).toEqual({
+      input: recovered,
+      parts: [],
+    })
+    expect(routePrompts.at(-1)).toEqual({
+      type: "home",
+      prompt: undefined,
+    })
+    expect(promptSession).not.toHaveBeenCalled()
+    expect(clearSelection).not.toHaveBeenCalled()
   })
 })

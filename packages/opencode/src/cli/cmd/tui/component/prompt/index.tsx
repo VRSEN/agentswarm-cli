@@ -103,6 +103,7 @@ import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, u
 import { useTuiConfig } from "../../context/tui-config"
 import { Telemetry } from "@/telemetry/telemetry"
 import { captureCommand } from "@/telemetry/command"
+import { useOptionalPromptRef } from "../../context/prompt"
 
 export type PromptProps = {
   sessionID?: string
@@ -124,6 +125,9 @@ export type PromptProps = {
 export type PromptRef = {
   focused: boolean
   current: PromptInfo
+  empty?(): boolean
+  version?(): number
+  restoreRecipientSelection?(selectedAt: number | undefined): void
   set(prompt: PromptInfo): void
   reset(): void
   blur(): void
@@ -191,7 +195,6 @@ function formatEditorContext(selection: EditorSelection) {
 }
 
 let stashed: { prompt: PromptInfo; cursor: number } | undefined
-
 type AgencyAssistantMessageInfo = {
   id: string
   sessionID: string
@@ -218,6 +221,7 @@ export function Prompt(props: PromptProps) {
   const tuiConfig = useTuiConfig()
   const dialog = useDialog()
   const toast = useToast()
+  const activePrompt = useOptionalPromptRef()
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
   const history = usePromptHistory()
   const stash = usePromptStash()
@@ -246,6 +250,12 @@ export function Prompt(props: PromptProps) {
   const taskTelemetryByMessageID = new Map<string, TaskTelemetryState>()
   const activeOrgName = createMemo(() => sync.data.console_state.activeOrgName)
   const canSwitchOrgs = createMemo(() => sync.data.console_state.switchableOrgCount > 1)
+  let promptVersion = 0
+  let ignoreSubmittedClearChange = false
+  const markPromptChanged = () => {
+    promptVersion += 1
+    return promptVersion
+  }
   const frameworkMode = createMemo(() =>
     isAgencySwarmFrameworkMode({
       productMode: local.product?.current(),
@@ -1022,6 +1032,7 @@ export function Prompt(props: PromptProps) {
           })
           restoreExtmarksFromParts(updatedNonTextParts)
           input.cursorOffset = Bun.stringWidth(content)
+          markPromptChanged()
         },
       },
       {
@@ -1039,6 +1050,7 @@ export function Prompt(props: PromptProps) {
                   parts: [],
                 })
                 input.gotoBufferEnd()
+                markPromptChanged()
               }}
             />
           ))
@@ -1097,6 +1109,18 @@ export function Prompt(props: PromptProps) {
     get current() {
       return store.prompt
     },
+    empty() {
+      if (store.prompt.input !== "" || store.prompt.parts.length > 0) return false
+      if (input.isDestroyed) return true
+      if (input.plainText !== "") return false
+      return input.extmarks.getAllForTypeId(promptPartTypeId).length === 0
+    },
+    version() {
+      return promptVersion
+    },
+    restoreRecipientSelection(selectedAt) {
+      setExplicitRecipientSelectedAt(selectedAt)
+    },
     focus() {
       input.focus()
     },
@@ -1109,6 +1133,7 @@ export function Prompt(props: PromptProps) {
       if (prompt.mode) setStore("mode", prompt.mode)
       restoreExtmarksFromParts(prompt.parts)
       input.gotoBufferEnd()
+      markPromptChanged()
     },
     reset() {
       input.clear()
@@ -1118,6 +1143,7 @@ export function Prompt(props: PromptProps) {
         parts: [],
       })
       setStore("extmarkToPartIndex", new Map())
+      markPromptChanged()
     },
     submit() {
       void submit()
@@ -1133,6 +1159,7 @@ export function Prompt(props: PromptProps) {
       setStore("prompt", saved.prompt)
       restoreExtmarksFromParts(saved.prompt.parts)
       input.cursorOffset = saved.cursor
+      markPromptChanged()
     }
   })
 
@@ -1270,6 +1297,7 @@ export function Prompt(props: PromptProps) {
           input.clear()
           setStore("prompt", { input: "", parts: [] })
           setStore("extmarkToPartIndex", new Map())
+          markPromptChanged()
           dialog.clear()
         },
       },
@@ -1285,6 +1313,7 @@ export function Prompt(props: PromptProps) {
             setStore("prompt", { input: entry.input, parts: entry.parts })
             restoreExtmarksFromParts(entry.parts)
             input.gotoBufferEnd()
+            markPromptChanged()
           }
           dialog.clear()
         },
@@ -1302,6 +1331,7 @@ export function Prompt(props: PromptProps) {
                 setStore("prompt", { input: entry.input, parts: entry.parts })
                 restoreExtmarksFromParts(entry.parts)
                 input.gotoBufferEnd()
+                markPromptChanged()
               }}
             />
           ))
@@ -1411,6 +1441,7 @@ export function Prompt(props: PromptProps) {
             setStore("mode", item.mode ?? "normal")
             restoreExtmarksFromParts(item.parts)
             input.cursorOffset = 0
+            markPromptChanged()
           },
         },
       ],
@@ -1448,6 +1479,7 @@ export function Prompt(props: PromptProps) {
             setStore("mode", item.mode ?? "normal")
             restoreExtmarksFromParts(item.parts)
             input.cursorOffset = input.plainText.length
+            markPromptChanged()
           },
         },
       ],
@@ -1481,6 +1513,7 @@ export function Prompt(props: PromptProps) {
     if (input && !input.isDestroyed && input.plainText !== store.prompt.input) {
       setStore("prompt", "input", input.plainText)
       syncExtmarksWithPromptParts()
+      markPromptChanged()
     }
     if (props.disabled) return false
     if (isDialogBlockingPrompt()) return false
@@ -1527,6 +1560,7 @@ export function Prompt(props: PromptProps) {
       ? command.slashes().find((item) => [item.display, ...(item.aliases ?? [])].includes(firstWord))
       : undefined
 
+    let clearedPromptVersion: number | undefined
     const clearSubmittedPrompt = (submittedMode: typeof store.mode) => {
       history.append({
         ...store.prompt,
@@ -1539,7 +1573,24 @@ export function Prompt(props: PromptProps) {
       })
       setStore("extmarkToPartIndex", new Map())
       props.onSubmit?.()
+      ignoreSubmittedClearChange = true
       input.clear()
+      clearedPromptVersion = markPromptChanged()
+    }
+    const promptStillCleared = () => {
+      if (clearedPromptVersion !== promptVersion) return false
+      if (store.prompt.input !== "" || store.prompt.parts.length > 0) return false
+      if (!input.isDestroyed) {
+        if (input.plainText !== "") return false
+        if (input.extmarks.getAllForTypeId(promptPartTypeId).length > 0) return false
+      }
+      return true
+    }
+    const emptyPrompt = (prompt: PromptInfo) => prompt.input === "" && prompt.parts.length === 0
+    const emptyRef = (prompt: PromptRef) => prompt.empty?.() ?? emptyPrompt(prompt.current)
+    const untouchedEmptyRef = (prompt: PromptRef) => {
+      if (prompt.version !== undefined && prompt.version() !== 0) return false
+      return emptyRef(prompt)
     }
 
     if (localSlash) {
@@ -1686,7 +1737,10 @@ export function Prompt(props: PromptProps) {
       return false
     }
 
+    const savedPrompt = structuredClone(unwrap(store.prompt))
     let sessionID = props.sessionID
+    let createdSessionID: string | undefined
+    let navigateTimer: ReturnType<typeof setTimeout> | undefined
     if (sessionID == null) {
       const workspace = workspaceSelection()
       const workspaceID = iife(() => {
@@ -1716,17 +1770,41 @@ export function Prompt(props: PromptProps) {
       }
 
       sessionID = res.data.id
+      createdSessionID = sessionID
     }
 
     const messageID = MessageID.ascending()
-    const productMode = local.product?.current()
-    if (productMode === "run") {
-      void AgencySwarmRunSession.sync({
-        sessionID,
-        providerID: productProviderID,
-        directory: process.env[AgencySwarmRunSession.LOCAL_PROJECT_ENV],
-      })
+    const submittedMessageStored = () =>
+      (sync.data.message[sessionID] ?? []).some((message) => message.id === messageID && message.role === "user")
+    const sessionHasOtherMessages = (id: string) =>
+      (sync.data.message[id] ?? []).some((message) => message.id !== messageID)
+    const submittedMessagePersistence = async () => {
+      if (submittedMessageStored()) return "stored"
+      const read = () => {
+        try {
+          return sdk.client.session.message({
+            sessionID,
+            messageID,
+          })
+        } catch {
+          return undefined
+        }
+      }
+      const result = await Promise.resolve(read()).catch(() => undefined)
+      if (!result) return "unknown"
+      if (result.data) return "stored"
+      if (result.error?.name === "NotFoundError") return "missing"
+      return "unknown"
     }
+    const productMode = local.product?.current()
+    const runSessionSync =
+      productMode === "run"
+        ? AgencySwarmRunSession.sync({
+            sessionID,
+            providerID: productProviderID,
+            directory: process.env[AgencySwarmRunSession.LOCAL_PROJECT_ENV],
+          })
+        : undefined
 
     const editorSelection = editorContext()
     const editorParts =
@@ -1868,8 +1946,89 @@ export function Prompt(props: PromptProps) {
         .then((result) => {
           captureTaskCompleted(messageID, result)
         })
-        .catch((error) => {
+        .catch(async (error) => {
           captureTaskFailed(messageID, error)
+          const persistence = promptStillCleared() ? await submittedMessagePersistence() : "unknown"
+          if (promptStillCleared() && persistence !== "stored") {
+            const restoredPrompt = {
+              ...savedPrompt,
+              mode: currentMode,
+            }
+            const active = activePrompt?.current
+            const currentRoute = route.data
+            const routeSessionID =
+              currentRoute.type === "session" && currentRoute.sessionID === sessionID ? sessionID : undefined
+            const routeSession = routeSessionID !== undefined
+            const restoreHome = createdSessionID !== undefined && currentRoute.type === "home"
+            const activeSessionPrompt = routeSession && active && active !== ref
+            const activeHomePrompt = restoreHome && active && active !== ref
+            const samePrompt = !active || active === ref
+            const sessionStillCleared = routeSession && (samePrompt || untouchedEmptyRef(active))
+            const homeStillCleared = restoreHome && (samePrompt || untouchedEmptyRef(active))
+            let restored = false
+            let restoredRef: PromptRef | undefined
+            if (samePrompt || restoreHome || sessionStillCleared) {
+              if (activeSessionPrompt && sessionStillCleared) {
+                active.set(restoredPrompt)
+                restoredRef = active
+                restored = true
+              } else if (activeHomePrompt && homeStillCleared) {
+                active.set(restoredPrompt)
+                restoredRef = active
+                restored = true
+              } else if (!active && routeSessionID) {
+                route.navigate({
+                  type: "session",
+                  sessionID: routeSessionID,
+                  prompt: restoredPrompt,
+                })
+                restored = true
+              } else if (samePrompt) {
+                setStore("prompt", savedPrompt)
+                setStore("mode", currentMode)
+                if (!input.isDestroyed) {
+                  input.setText(savedPrompt.input)
+                  restoreExtmarksFromParts(savedPrompt.parts)
+                  input.gotoBufferEnd()
+                }
+                restored = true
+                restoredRef = ref
+              }
+              if (restored) {
+                if (editorSelection && editorParts.length > 0) editor.restoreSelectionPending(editorSelection)
+                if (usedExplicitRecipient) {
+                  if (restoredRef?.restoreRecipientSelection) restoredRef.restoreRecipientSelection(explicitSelectedAt)
+                  else setExplicitRecipientSelectedAt(explicitSelectedAt)
+                }
+              }
+            }
+            if (restoreHome && createdSessionID) {
+              if (navigateTimer) {
+                clearTimeout(navigateTimer)
+                navigateTimer = undefined
+              }
+              if (activeHomePrompt || active === ref) {
+                route.navigate({
+                  type: "home",
+                })
+              } else {
+                route.navigate({
+                  type: "home",
+                  prompt: restoredPrompt,
+                })
+              }
+              if (persistence === "missing") {
+                if (sessionHasOtherMessages(createdSessionID)) {
+                  void runSessionSync?.catch(() => undefined)
+                } else {
+                  await runSessionSync?.catch(() => undefined)
+                  void sdk.client.session.delete({
+                    sessionID: createdSessionID,
+                  })
+                }
+              }
+            }
+          }
           const message = toErrorMessage(error)
           const shouldReopenAuth = shouldOpenAgencyAuthDialog({
             providerID: productProviderID,
@@ -1898,7 +2057,8 @@ export function Prompt(props: PromptProps) {
     // temporary hack to make sure the message is sent
     if (!props.sessionID) {
       if (editorParts.length > 0) editor.preserveSelectionFromNewSession()
-      setTimeout(() => {
+      navigateTimer = setTimeout(() => {
+        navigateTimer = undefined
         route.navigate({
           type: "session",
           sessionID,
@@ -1941,6 +2101,7 @@ export function Prompt(props: PromptProps) {
         draft.extmarkToPartIndex.set(extmarkId, partIndex)
       }),
     )
+    markPromptChanged()
   }
 
   async function pasteInputText(text: string) {
@@ -1996,6 +2157,7 @@ export function Prompt(props: PromptProps) {
     }
 
     input.insertText(normalizedText)
+    markPromptChanged()
 
     setTimeout(() => {
       if (!input || input.isDestroyed) return
@@ -2049,6 +2211,7 @@ export function Prompt(props: PromptProps) {
         draft.extmarkToPartIndex.set(extmarkId, partIndex)
       }),
     )
+    markPromptChanged()
     return
   }
 
@@ -2066,6 +2229,7 @@ export function Prompt(props: PromptProps) {
       parts: [],
     })
     setStore("extmarkToPartIndex", new Map())
+    markPromptChanged()
   }
 
   const highlight = createMemo(() => {
@@ -2185,6 +2349,8 @@ export function Prompt(props: PromptProps) {
               onContentChange={() => {
                 const value = input.plainText
                 setStore("prompt", "input", value)
+                if (ignoreSubmittedClearChange && value === "") ignoreSubmittedClearChange = false
+                else markPromptChanged()
                 auto()?.onInput(value)
                 syncExtmarksWithPromptParts()
                 setCursorVersion((value) => value + 1)
@@ -2495,6 +2661,7 @@ export function Prompt(props: PromptProps) {
         input={() => input}
         setPrompt={(cb) => {
           setStore("prompt", produce(cb))
+          markPromptChanged()
         }}
         setExtmark={(partIndex, extmarkId) => {
           setStore("extmarkToPartIndex", (map: Map<number, number>) => {

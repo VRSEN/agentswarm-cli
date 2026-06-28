@@ -78,6 +78,8 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** One-shot `--prompt` submits after sync and model state are ready.
 - **Failure scenarios to test:** Non-Agency explicit models do not trigger fork auto-project setup.
 - **Failure scenarios to test:** Missing or broken detected projects fail through the local project setup failure path before prompt launch.
+- **Failure scenarios to test:** If the first prompt fails after the TUI has cleared or left the prompt input, the submitted draft reappears for retry when the user turn was not persisted.
+- **Failure scenarios to test:** Failed first prompts do not overwrite newer user edits or restore/delete sessions when the user turn was already persisted.
 
 #### Starter project
 
