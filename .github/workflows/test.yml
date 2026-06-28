@@ -70,7 +70,15 @@ jobs:
             turbo-${{ runner.os }}-
 
       - name: Run unit tests
+        if: runner.os != 'Windows'
         run: bun turbo test:ci
+        env:
+          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
+
+      - name: Run unit tests
+        if: runner.os == 'Windows'
+        run: bun turbo test:ci
+        timeout-minutes: 35
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
 
