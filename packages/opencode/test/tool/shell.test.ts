@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import type * as Scope from "effect/Scope"
 import os from "os"
 import path from "path"
@@ -210,6 +210,62 @@ describe("tool.shell", () => {
       )
     }),
   )
+
+  if (process.platform !== "win32") {
+    it.live("waits for output stream drain before final result", () =>
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        const done = path.join(tmp, "done")
+        const seen = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        yield* Effect.gen(function* () {
+          let gated = false
+          const code = [
+            'process.stdout.write("first\\n")',
+            'setTimeout(async () => { process.stdout.write("second\\n"); await Bun.write(Bun.argv[1], "done") }, 25)',
+          ].join(";")
+
+          const fiber = yield* runIn(
+            tmp,
+            run(
+              {
+                command: `${bin} -e ${evalarg(code)} ${quote(done)}`,
+                description: "Drain output stream",
+              },
+              {
+                ...ctx,
+                metadata: (input) =>
+                  Effect.gen(function* () {
+                    const output = (input.metadata as { output?: string })?.output
+                    if (!output?.includes("first") || gated) return
+                    gated = true
+                    yield* Deferred.succeed(seen, undefined)
+                    yield* Deferred.await(release)
+                  }),
+              },
+            ),
+          ).pipe(Effect.forkScoped)
+
+          yield* Deferred.await(seen).pipe(Effect.timeout("2 seconds"))
+          yield* Effect.promise(async () => {
+            for (let i = 0; i < 200; i++) {
+              if (await Bun.file(done).exists()) return
+              await Bun.sleep(10)
+            }
+            throw new Error("command did not finish writing output")
+          })
+
+          const early = yield* Fiber.await(fiber).pipe(Effect.timeoutOption("100 millis"))
+          expect(early._tag).toBe("None")
+
+          yield* Deferred.succeed(release, undefined)
+          const result = yield* Fiber.join(fiber).pipe(Effect.timeout("2 seconds"))
+          expect(result.output).toContain("first")
+          expect(result.output).toContain("second")
+        }).pipe(Effect.ensuring(Deferred.succeed(release, undefined).pipe(Effect.ignore)))
+      }),
+    )
+  }
 })
 
 describe("tool.shell permissions", () => {
