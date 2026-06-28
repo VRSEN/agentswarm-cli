@@ -43,6 +43,14 @@ function hasCommand(screen: string, command: string) {
   return screen.split("\n").some((line) => new RegExp(`┃\\s+${command}\\b`).test(line))
 }
 
+function hasCompletedRunTurn(screen: string) {
+  return /▣\s+Run · .+ · \d+(?:\.\d+)?(?:ms|s)\b/.test(screen)
+}
+
+function hasTimelineRow(screen: string, prompt: string) {
+  return screen.split("\n").some((line) => line.includes(prompt) && /\d{1,2}:\d{2}/.test(line))
+}
+
 async function waitForCommand(tui: TuiProcess, command: string) {
   await tui.waitFor(() => hasCommand(tui.screen(), command), `${command} command`, tuiInteractionTimeoutMs)
   return tui.screen()
@@ -129,6 +137,30 @@ function stripAgencySwarmBridgeMetadata(dbPath: string) {
       count++
     }
     return count
+  } finally {
+    db.close()
+  }
+}
+
+function seedSessionRevertForPrompt(dbPath: string, prompt: string) {
+  const db = new Database(dbPath)
+  try {
+    const rows = db
+      .query<
+        { session_id: string; message_id: string; data: string },
+        []
+      >("select session_id, message_id, data from part order by id")
+      .all()
+    const row = rows.find((item) => {
+      const data = JSON.parse(item.data) as { type?: string; text?: string; synthetic?: boolean; ignored?: boolean }
+      return data.type === "text" && data.text === prompt && !data.synthetic && !data.ignored
+    })
+    if (!row) throw new Error(`No user text part found for ${prompt}`)
+    db.query("update session set revert = ? where id = ?").run(
+      JSON.stringify({ messageID: row.message_id }),
+      row.session_id,
+    )
+    return row.message_id
   } finally {
     db.close()
   }
@@ -997,11 +1029,233 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     currentTui.write("/undo\r")
     await currentTui.waitForText("message reverted", tuiInteractionTimeoutMs)
+    await currentTui.waitForText("/redo to restore", tuiInteractionTimeoutMs)
 
     await selectProductMode(currentTui, "Run")
+    await currentTui.waitForText("/redo to restore", tuiInteractionTimeoutMs)
     currentTui.write("/red")
     const screen = await waitForCommand(currentTui, "/redo")
     expect(hasCommand(screen, "/redo")).toBe(true)
+  })
+
+  test("/modes Run hides redo when the next reverted turn is Run", async () => {
+    const buildPrompt = "build before hidden redo target"
+    const runPrompt = "run after hidden redo target"
+    currentServer = await startTuiDemoAgencyServer()
+    currentNativeServer = await startNativeLLMServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+      config: {
+        model: latestOpenAITestModel,
+        enabled_providers: openAIProviderTestConfig.enabled_providers,
+        provider: {
+          openai: {
+            options: {
+              apiKey: "test-openai-key",
+              baseURL: currentNativeServer.baseURL,
+            },
+          },
+        },
+      },
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    await selectProductMode(currentTui, "Build")
+    currentTui.write(`${buildPrompt}\r`)
+    await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
+    await waitForNativeLLMRequest(currentTui, currentNativeServer, buildPrompt)
+
+    await selectProductMode(currentTui, "Run")
+    currentTui.write(`${runPrompt}\r`)
+    await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => hasCompletedRunTurn(currentTui?.screen() ?? ""),
+      "completed Run turn",
+      tuiInteractionTimeoutMs,
+    )
+
+    currentTui.write("/timeline\r")
+    await currentTui.waitForText("Timeline", tuiInteractionTimeoutMs)
+    currentTui.write(buildPrompt)
+    await currentTui.waitFor(
+      () => hasTimelineRow(currentTui?.screen() ?? "", buildPrompt),
+      "filtered Build timeline row",
+      tuiInteractionTimeoutMs,
+    )
+    currentTui.write("\r")
+    await currentTui.waitForText("Message Actions", tuiInteractionTimeoutMs)
+    currentTui.write("\r")
+    await currentTui.waitForText("message reverted", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => {
+        const screen = currentTui?.screen() ?? ""
+        return screen.includes("message reverted") && !screen.includes("/redo to restore")
+      },
+      "hidden Run redo banner",
+      tuiInteractionTimeoutMs,
+    )
+
+    clearPrompt(currentTui)
+    currentTui.write("/red")
+    await currentTui.waitForText("/red", tuiInteractionTimeoutMs)
+    await Bun.sleep(100)
+    expect(hasCommand(currentTui.screen(), "/redo")).toBe(false)
+  })
+
+  test("/modes Run hides redo for a reverted final Run turn", async () => {
+    const runPrompt = "final run hidden redo target"
+    const dataHome = await mkdtemp(path.join(os.tmpdir(), "agentswarm-final-run-redo-data-"))
+    tempDirs.push(dataHome)
+    currentServer = await startTuiDemoAgencyServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+      env: {
+        XDG_DATA_HOME: dataHome,
+      },
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    currentTui.write(`${runPrompt}\r`)
+    await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => hasCompletedRunTurn(currentTui?.screen() ?? ""),
+      "completed Run turn",
+      tuiInteractionTimeoutMs,
+    )
+    await currentTui.close()
+    currentTui = undefined
+
+    const messageID = seedSessionRevertForPrompt(await findOpenCodeDatabase(dataHome), runPrompt)
+    expect(messageID.length).toBeGreaterThan(0)
+
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+      env: {
+        XDG_DATA_HOME: dataHome,
+      },
+    })
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    if (!currentTui.screen().includes("message reverted")) {
+      currentTui.write("/sessions\r")
+      await currentTui.waitForText("Sessions", tuiInteractionTimeoutMs)
+      currentTui.write("\r")
+    }
+    await currentTui.waitForText("message reverted", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => {
+        const screen = currentTui?.screen() ?? ""
+        return screen.includes("message reverted") && !screen.includes("/redo to restore")
+      },
+      "hidden final Run redo banner",
+      tuiInteractionTimeoutMs,
+    )
+
+    clearPrompt(currentTui)
+    currentTui.write("/red")
+    await currentTui.waitForText("/red", tuiInteractionTimeoutMs)
+    await Bun.sleep(100)
+    expect(hasCommand(currentTui.screen(), "/redo")).toBe(false)
+  })
+
+  test("/modes Run hides redo when the reverted turn is Run before later Build history", async () => {
+    const runPrompt = "run before later build hidden redo"
+    const buildPrompt = "build after reverted run hidden redo"
+    const dataHome = await mkdtemp(path.join(os.tmpdir(), "agentswarm-run-before-build-redo-data-"))
+    tempDirs.push(dataHome)
+    currentServer = await startTuiDemoAgencyServer()
+    currentNativeServer = await startNativeLLMServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+      env: {
+        XDG_DATA_HOME: dataHome,
+      },
+      config: {
+        model: latestOpenAITestModel,
+        enabled_providers: openAIProviderTestConfig.enabled_providers,
+        provider: {
+          openai: {
+            options: {
+              apiKey: "test-openai-key",
+              baseURL: currentNativeServer.baseURL,
+            },
+          },
+        },
+      },
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    currentTui.write(`${runPrompt}\r`)
+    await currentTui.waitForText("TUI demo response complete.", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => hasCompletedRunTurn(currentTui?.screen() ?? ""),
+      "completed Run turn",
+      tuiInteractionTimeoutMs,
+    )
+
+    await selectProductMode(currentTui, "Build")
+    currentTui.write(`${buildPrompt}\r`)
+    await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
+    await waitForNativeLLMRequest(currentTui, currentNativeServer, buildPrompt)
+    await currentTui.close()
+    currentTui = undefined
+
+    const messageID = seedSessionRevertForPrompt(await findOpenCodeDatabase(dataHome), runPrompt)
+    expect(messageID.length).toBeGreaterThan(0)
+
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      configSource: "file",
+      env: {
+        XDG_DATA_HOME: dataHome,
+      },
+      config: {
+        model: latestOpenAITestModel,
+        enabled_providers: openAIProviderTestConfig.enabled_providers,
+        provider: {
+          openai: {
+            options: {
+              apiKey: "test-openai-key",
+              baseURL: currentNativeServer.baseURL,
+            },
+          },
+        },
+      },
+    })
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    if (!currentTui.screen().includes("message reverted")) {
+      currentTui.write("/sessions\r")
+      await currentTui.waitForText("Sessions", tuiInteractionTimeoutMs)
+      currentTui.write("\r")
+    }
+    await currentTui.waitForText("message reverted", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => {
+        const screen = currentTui?.screen() ?? ""
+        return screen.includes("message reverted") && !screen.includes("/redo to restore")
+      },
+      "hidden reverted Run redo banner before later Build history",
+      tuiInteractionTimeoutMs,
+    )
+
+    clearPrompt(currentTui)
+    currentTui.write("/red")
+    await currentTui.waitForText("/red", tuiInteractionTimeoutMs)
+    await Bun.sleep(100)
+    expect(hasCommand(currentTui.screen(), "/redo")).toBe(false)
   })
 
   test("legacy Run sessions without bridge metadata keep Run labels after mode switch", async () => {
