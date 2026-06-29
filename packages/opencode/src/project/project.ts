@@ -20,7 +20,6 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { NonNegativeInt, optionalOmitUndefined } from "@opencode-ai/core/schema"
 import { serviceUse } from "@/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { Telemetry } from "@/telemetry/telemetry"
 
 const log = Log.create({ service: "project" })
 
@@ -428,17 +427,7 @@ export const layer: Layer.Layer<
       Effect.fn("Project.initState")(function* (ctx) {
         yield* bus.subscribe(Command.Event.Executed).pipe(
           Stream.runForEach((payload) =>
-            payload.properties.name === Command.Default.INIT
-              ? Effect.gen(function* () {
-                  yield* setInitialized(ctx.project.id)
-                  yield* Effect.promise(() =>
-                    Telemetry.capture("project_initialized", {
-                      source: "init_command",
-                      vcs: ctx.project.vcs ?? "none",
-                    }),
-                  )
-                })
-              : Effect.void,
+            payload.properties.name === Command.Default.INIT ? setInitialized(ctx.project.id) : Effect.void,
           ),
           Effect.forkScoped,
         )

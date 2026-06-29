@@ -1,6 +1,6 @@
 import { NodeFileSystem } from "@effect/platform-node"
 import { FetchHttpClient } from "effect/unstable/http"
-import { expect } from "bun:test"
+import { expect, spyOn } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
@@ -56,6 +56,7 @@ import { reply, TestLLMServer } from "../lib/llm-server"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceState } from "@/effect/instance-state"
+import { Telemetry } from "@/telemetry/telemetry"
 
 void Log.init({ print: false })
 
@@ -1254,6 +1255,45 @@ it.instance(
   () => queuedBridgeScenario(),
   { git: true, config: agencyCfg },
   8_000,
+)
+
+it.instance(
+  "tracks project initialization telemetry after init command completes",
+  () =>
+    Effect.gen(function* () {
+      const telemetryCapture = spyOn(Telemetry, "capture").mockResolvedValue(true)
+      const telemetryFlush = spyOn(Telemetry, "flush").mockResolvedValue(undefined)
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          telemetryCapture.mockRestore()
+          telemetryFlush.mockRestore()
+        }),
+      )
+
+      const { llm } = yield* useServerConfig(providerCfg)
+      const { prompt, chat } = yield* boot({ title: "Init telemetry" })
+      const ctx = yield* InstanceState.context
+
+      yield* llm.text("Init title")
+      yield* llm.text("Initialized project")
+      yield* prompt.command({
+        sessionID: chat.id,
+        command: Command.Default.INIT,
+        arguments: "telemetry command proof",
+        agent: "build",
+        model: "test/test-model",
+      })
+
+      expect(telemetryCapture).toHaveBeenCalledWith("project_initialized", {
+        source: "init_command",
+        vcs: ctx.project.vcs ?? "none",
+      })
+      expect(telemetryFlush).toHaveBeenCalledWith({ timeoutMs: 500 })
+      expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain(ctx.project.id)
+      expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain(ctx.worktree)
+    }),
+  { git: true, config: cfg },
+  30_000,
 )
 
 it.instance(

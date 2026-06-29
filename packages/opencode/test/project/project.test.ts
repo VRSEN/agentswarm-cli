@@ -4,7 +4,6 @@ import { Command } from "@/command"
 import { InstanceRef } from "@/effect/instance-ref"
 import { Project } from "@/project/project"
 import { MessageID, SessionID } from "@/session/schema"
-import { Telemetry } from "@/telemetry/telemetry"
 import * as Log from "@opencode-ai/core/util/log"
 import { $ } from "bun"
 import path from "path"
@@ -167,18 +166,16 @@ describe("Project.fromDirectory", () => {
 
 describe("Project.init", () => {
   telemetryIt.instance(
-    "tracks project initialization telemetry from init command events",
+    "sets project initialized time from init command events",
     () =>
       Effect.gen(function* () {
-        const telemetryCapture = spyOn(Telemetry, "capture").mockResolvedValue(false)
-        yield* Effect.addFinalizer(() => Effect.sync(() => telemetryCapture.mockRestore()))
-
         const svc = yield* Project.Service
         const bus = yield* Bus.Service
         const ctx = yield* InstanceRef
         if (!ctx) throw new Error("InstanceRef not provided")
 
         yield* svc.init()
+        let project: Project.Info | undefined
         for (let attempt = 0; attempt < 50; attempt++) {
           yield* bus.publish(Command.Event.Executed, {
             arguments: "",
@@ -186,20 +183,12 @@ describe("Project.init", () => {
             name: Command.Default.INIT,
             sessionID: SessionID.make("session-project-init-telemetry"),
           })
-          if (telemetryCapture.mock.calls.some(([event]) => event === "project_initialized")) break
+          project = yield* svc.get(ctx.project.id)
+          if (project?.time.initialized) break
           yield* Effect.sleep("10 millis")
         }
 
-        const call = telemetryCapture.mock.calls.find(([event]) => event === "project_initialized")
-        expect(call).toEqual([
-          "project_initialized",
-          {
-            source: "init_command",
-            vcs: ctx.project.vcs ?? "none",
-          },
-        ])
-        expect(JSON.stringify(call)).not.toContain(ctx.project.id)
-        expect(JSON.stringify(call)).not.toContain(ctx.worktree)
+        expect(project?.time.initialized).toBeNumber()
       }),
     { git: true },
   )
