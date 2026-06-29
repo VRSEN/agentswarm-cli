@@ -9,6 +9,7 @@ import { commandCategories, commandSources, isTrackedCommandValue } from "./comm
 
 declare const AGENTSWARM_POSTHOG_API_KEY: string | undefined
 declare const AGENTSWARM_POSTHOG_HOST: string | undefined
+declare const AGENTSWARM_TELEMETRY_TEST: boolean | undefined
 
 const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com"
 const STATE_FILE = "telemetry.json"
@@ -238,21 +239,17 @@ function clean(value: string | undefined) {
   return trimmed ? trimmed : undefined
 }
 
-function allowsRuntimeTelemetryConfig() {
-  return (
-    process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST === "1" &&
-    !!(process.env.BUN_TEST || process.env.NODE_ENV === "test" || process.env.OPENCODE_TEST_HOME)
-  )
+function isTelemetryTestBuild() {
+  try {
+    return AGENTSWARM_TELEMETRY_TEST === true
+  } catch {
+    return false
+  }
 }
 
 function config() {
-  const allowRuntime = allowsRuntimeTelemetryConfig()
-  const apiKey =
-    clean(definedValue("AGENTSWARM_POSTHOG_API_KEY")) ??
-    (allowRuntime ? clean(process.env.AGENTSWARM_POSTHOG_API_KEY) : undefined)
-  const host =
-    clean(definedValue("AGENTSWARM_POSTHOG_HOST")) ??
-    (allowRuntime ? clean(process.env.AGENTSWARM_POSTHOG_HOST) : undefined)
+  const apiKey = clean(definedValue("AGENTSWARM_POSTHOG_API_KEY"))
+  const host = clean(definedValue("AGENTSWARM_POSTHOG_HOST"))
   return {
     apiKey,
     host: host ?? DEFAULT_POSTHOG_HOST,
@@ -294,9 +291,8 @@ function isDisabledByEnvironment() {
     process.env.OPENCODE_TELEMETRY,
   ]
   if (explicit.some((value) => value && FALSE_VALUES.has(value.trim().toLowerCase()))) return true
-  const allowTest = allowsRuntimeTelemetryConfig()
-  if (Flag.OPENCODE_PURE && !allowTest) return true
-  if (allowTest) return false
+  if (isTelemetryTestBuild()) return false
+  if (Flag.OPENCODE_PURE) return true
   if (process.env.CI) return true
   if (process.env.NODE_ENV === "test" || process.env.BUN_TEST) return true
   return false

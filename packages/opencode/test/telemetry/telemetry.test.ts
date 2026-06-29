@@ -1,13 +1,15 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import fs from "fs/promises"
+import os from "os"
 import path from "path"
 import { tmpdir } from "../fixture/fixture"
 import { Telemetry } from "../../src/telemetry/telemetry"
-import { captureCommand } from "../../src/telemetry/command"
 
 const originalClient = process.env.OPENCODE_CLIENT
 const originalEnableTelemetry = process.env.ENABLE_TELEMETRY
 const originalTelemetry = process.env.OPENCODE_TELEMETRY
-const originalFetch = globalThis.fetch
+const runnerDirs: string[] = []
+let buildQueue = Promise.resolve()
 
 type Captured = {
   api_key?: unknown
@@ -16,15 +18,205 @@ type Captured = {
   properties?: Record<string, unknown>
 }
 
-function enableTelemetry(input: { key?: string; host?: string; stateDir: string }) {
-  process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST = "1"
-  process.env.AGENTSWARM_POSTHOG_API_KEY = input.key ?? "ph_test"
-  process.env.AGENTSWARM_POSTHOG_HOST = input.host ?? "https://posthog.example"
-  process.env.AGENTSWARM_TELEMETRY_STATE_DIR = input.stateDir
-  delete process.env.AGENTSWARM_TELEMETRY
-  delete process.env.ENABLE_TELEMETRY
-  delete process.env.OPEN_SWARM_TELEMETRY
-  delete process.env.OPENCODE_TELEMETRY
+type RunnerMode = "capture" | "flush-before-capture" | "bounded-flush" | "abort" | "command"
+
+type RunnerInput = {
+  command?: {
+    category?: string
+    keybind?: string
+    source: "keybind" | "palette" | "programmatic" | "slash" | "suggested"
+    value: string
+  }
+  env?: Record<string, string | undefined>
+  event?: Parameters<typeof Telemetry.capture>[0]
+  host?: string | null
+  key?: string | null
+  mode?: RunnerMode
+  properties?: Record<string, unknown>
+  readState?: boolean
+  stateDir: string
+  testMode?: boolean
+}
+
+type RunnerOutput = {
+  aborted: boolean
+  captured: boolean
+  elapsed: number
+  requests: Array<{ url: string; body: Captured }>
+  state?: unknown
+}
+
+function defineString(value: string | null | undefined, fallback: string) {
+  if (value === null) return "undefined"
+  return JSON.stringify(value ?? fallback)
+}
+
+async function buildRunner(input: RunnerInput) {
+  const previous = buildQueue
+  let release!: () => void
+  buildQueue = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await previous
+  try {
+    return await buildRunnerUnlocked(input)
+  } finally {
+    release()
+  }
+}
+
+async function buildRunnerUnlocked(input: RunnerInput) {
+  const root = path.resolve(import.meta.dir, "../..")
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-telemetry-runner-"))
+  runnerDirs.push(dir)
+  const entry = path.join(dir, "telemetry-runner.ts")
+  const outdir = path.join(dir, "out")
+  await Bun.write(
+    entry,
+    [
+      `import fs from "fs/promises"`,
+      `import path from "path"`,
+      `import { Telemetry } from ${JSON.stringify(path.join(root, "src/telemetry/telemetry.ts"))}`,
+      `import { captureCommand } from ${JSON.stringify(path.join(root, "src/telemetry/command.ts"))}`,
+      `type Input = { command?: Parameters<typeof captureCommand>[0]; event?: Parameters<typeof Telemetry.capture>[0]; mode?: "capture" | "flush-before-capture" | "bounded-flush" | "abort" | "command"; properties?: Record<string, unknown>; readState?: boolean; stateDir: string }`,
+      `const input = await Bun.file(process.argv[2]).json() as Input`,
+      `process.env.AGENTSWARM_TELEMETRY_STATE_DIR = input.stateDir`,
+      `const requests: Array<{ url: string; body: unknown }> = []`,
+      `let aborted = false`,
+      `let captured = false`,
+      `let elapsed = 0`,
+      `globalThis.fetch = (async (url, init) => {`,
+      `  if (init?.signal?.aborted) {`,
+      `    aborted = true`,
+      `    return new Response(null, { status: 499 })`,
+      `  }`,
+      `  if (input.mode === "bounded-flush") {`,
+      `    return new Promise<Response>((resolve) => {`,
+      `      const timeout = setTimeout(() => resolve(new Response(null, { status: 200 })), 50)`,
+      `      init?.signal?.addEventListener("abort", () => {`,
+      `        clearTimeout(timeout)`,
+      `        aborted = true`,
+      `        resolve(new Response(null, { status: 499 }))`,
+      `      }, { once: true })`,
+      `    })`,
+      `  }`,
+      `  if (input.mode === "abort") {`,
+      `    return new Promise<Response>((resolve) => {`,
+      `      init?.signal?.addEventListener("abort", () => {`,
+      `        aborted = true`,
+      `        resolve(new Response(null, { status: 499 }))`,
+      `      }, { once: true })`,
+      `    })`,
+      `  }`,
+      `  requests.push({ url: String(url), body: JSON.parse(String(init?.body)) })`,
+      `  return new Response(null, { status: 200 })`,
+      `}) as typeof fetch`,
+      `if (input.mode === "command") {`,
+      `  if (!input.command) throw new Error("missing command input")`,
+      `  captureCommand(input.command)`,
+      `  await Telemetry.flush()`,
+      `  captured = requests.length > 0`,
+      `} else if (input.mode === "flush-before-capture") {`,
+      `  if (!input.event) throw new Error("missing event input")`,
+      `  const capture = Telemetry.capture(input.event, input.properties)`,
+      `  await Telemetry.flush()`,
+      `  captured = await capture`,
+      `} else {`,
+      `  if (!input.event) throw new Error("missing event input")`,
+      `  captured = await Telemetry.capture(input.event, input.properties)`,
+      `  if (input.mode === "bounded-flush" || input.mode === "abort") {`,
+      `    const started = Date.now()`,
+      `    await Telemetry.flush({ timeoutMs: 1 })`,
+      `    elapsed = Date.now() - started`,
+      `  } else {`,
+      `    await Telemetry.flush()`,
+      `  }`,
+      `}`,
+      `let state: unknown`,
+      `if (input.readState) {`,
+      `  try { state = JSON.parse(await fs.readFile(path.join(input.stateDir, "telemetry.json"), "utf8")) } catch {}`,
+      `}`,
+      `console.log(JSON.stringify({ aborted, captured, elapsed, requests, state }))`,
+    ].join("\n"),
+  )
+  const config = {
+    entrypoints: [entry],
+    outdir,
+    format: "esm",
+    target: "bun",
+    tsconfig: path.join(root, "tsconfig.json"),
+    define: {
+      AGENTSWARM_POSTHOG_API_KEY: defineString(input.key, "ph_test"),
+      AGENTSWARM_POSTHOG_HOST: defineString(input.host, "https://posthog.example"),
+      AGENTSWARM_TELEMETRY_TEST: input.testMode === false ? "undefined" : "true",
+    },
+  }
+  const builder = path.join(dir, "build-runner.js")
+  await Bun.write(
+    builder,
+    [
+      `const result = await Bun.build(${JSON.stringify(config)})`,
+      `if (!result.success) {`,
+      `  console.error(result.logs.map((log) => log.message).join("\\n"))`,
+      `  process.exit(1)`,
+      `}`,
+    ].join("\n"),
+  )
+  const proc = Bun.spawn([process.execPath, builder], {
+    cwd: root,
+    env: Object.fromEntries(
+      Object.entries({ PATH: process.env.PATH }).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    ),
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ])
+  if (code !== 0) throw new Error(stderr || stdout)
+  return path.join(outdir, "telemetry-runner.js")
+}
+
+async function runCompiledTelemetry(input: RunnerInput) {
+  const runner = await buildRunner(input)
+  const payload = path.join(path.dirname(path.dirname(runner)), "input.json")
+  await Bun.write(
+    payload,
+    JSON.stringify({
+      command: input.command,
+      event: input.event,
+      mode: input.mode ?? "capture",
+      properties: input.properties,
+      readState: input.readState,
+      stateDir: input.stateDir,
+    }),
+  )
+  const baseEnv = {
+    HOME: process.env.HOME,
+    PATH: process.env.PATH,
+    TMPDIR: process.env.TMPDIR,
+    ...input.env,
+  }
+  const env = Object.fromEntries(
+    Object.entries(baseEnv).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  )
+  const proc = Bun.spawn([process.execPath, runner, payload], {
+    cwd: path.resolve(import.meta.dir, "../.."),
+    env,
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ])
+
+  expect(stderr).toBe("")
+  expect(code).toBe(0)
+  return JSON.parse(stdout) as RunnerOutput
 }
 
 function resetEnv() {
@@ -42,54 +234,32 @@ function resetEnv() {
   else process.env.OPENCODE_CLIENT = originalClient
 }
 
-function asFetch(fn: (url: string | URL | Request, init?: RequestInit) => Promise<Response>) {
-  return fn as unknown as typeof fetch
-}
-
-function useFetch(next: typeof fetch) {
-  globalThis.fetch = next
-}
-
 async function captureBody(event: Parameters<typeof Telemetry.capture>[0], properties: Record<string, unknown>) {
   await using tmp = await tmpdir()
-  const requests: { body: Captured }[] = []
-  enableTelemetry({ stateDir: tmp.path })
-  useFetch(
-    asFetch(async (_url, init) => {
-      requests.push({ body: JSON.parse(String(init?.body)) as Captured })
-      return new Response(null, { status: 200 })
-    }),
-  )
+  const output = await runCompiledTelemetry({
+    event,
+    properties,
+    stateDir: tmp.path,
+  })
 
-  await Telemetry.capture(event, properties)
-  await Telemetry.flush()
-
-  expect(requests).toHaveLength(1)
-  return requests[0].body
+  expect(output.requests).toHaveLength(1)
+  return output.requests[0].body
 }
 
 describe("Telemetry", () => {
+  afterAll(async () => {
+    await Promise.all(runnerDirs.map((dir) => fs.rm(dir, { recursive: true, force: true })))
+  })
+
   afterEach(() => {
-    globalThis.fetch = originalFetch
     resetEnv()
   })
 
   test("sends allowlisted product analytics without prompt content", async () => {
     await using tmp = await tmpdir()
-    const requests: { url: string; body: Captured }[] = []
-    enableTelemetry({ stateDir: tmp.path })
-    useFetch(
-      asFetch(async (url, init) => {
-        requests.push({
-          url: String(url),
-          body: JSON.parse(String(init?.body)) as Captured,
-        })
-        return new Response(null, { status: 200 })
-      }),
-    )
-
-    await expect(
-      Telemetry.capture("ui_prompt_submitted", {
+    const output = await runCompiledTelemetry({
+      event: "ui_prompt_submitted",
+      properties: {
         command: "run",
         framework_mode: true,
         has_file_parts: true,
@@ -97,16 +267,17 @@ describe("Telemetry", () => {
         mode: "normal",
         provider_id: "agency-swarm",
         type: "prompt",
-      }),
-    ).resolves.toBe(true)
-    await Telemetry.flush()
+      },
+      stateDir: tmp.path,
+    })
 
-    expect(requests).toHaveLength(1)
-    expect(requests[0].url).toBe("https://posthog.example/i/v0/e/")
-    expect(requests[0].body.event).toBe("ui_prompt_submitted")
-    expect(requests[0].body.api_key).toBe("ph_test")
-    expect(requests[0].body.distinct_id).toBeTruthy()
-    expect(requests[0].body.properties).toMatchObject({
+    expect(output.captured).toBe(true)
+    expect(output.requests).toHaveLength(1)
+    expect(output.requests[0].url).toBe("https://posthog.example/i/v0/e/")
+    expect(output.requests[0].body.event).toBe("ui_prompt_submitted")
+    expect(output.requests[0].body.api_key).toBe("ph_test")
+    expect(output.requests[0].body.distinct_id).toBeTruthy()
+    expect(output.requests[0].body.properties).toMatchObject({
       $process_person_profile: false,
       framework_mode: true,
       has_file_parts: true,
@@ -114,254 +285,187 @@ describe("Telemetry", () => {
       provider_id: "agency-swarm",
       type: "prompt",
     })
-    expect(requests[0].body.properties?.command).toBeUndefined()
-    expect(JSON.stringify(requests[0].body)).not.toContain("secret prompt")
+    expect(output.requests[0].body.properties?.command).toBeUndefined()
+    expect(JSON.stringify(output.requests[0].body)).not.toContain("secret prompt")
   })
 
   test("keeps compiled telemetry key when runtime key env is set", async () => {
     await using tmp = await tmpdir()
-    const root = path.resolve(import.meta.dir, "../..")
-    const entry = path.join(tmp.path, "compiled-telemetry.ts")
-    const outdir = path.join(tmp.path, "out")
-    await Bun.write(
-      entry,
-      [
-        `import { Telemetry } from ${JSON.stringify(path.join(root, "src/telemetry/telemetry.ts"))}`,
-        "const requests = []",
-        "globalThis.fetch = async (url, init) => {",
-        "  requests.push({ url: String(url), body: JSON.parse(String(init?.body)) })",
-        "  return new Response(null, { status: 200 })",
-        "}",
-        "const captured = await Telemetry.capture('app_started', { entrypoint: 'tui' })",
-        "await Telemetry.flush()",
-        "console.log(JSON.stringify({ captured, requests }))",
-      ].join("\n"),
-    )
-
-    const result = await Bun.build({
-      entrypoints: [entry],
-      outdir,
-      format: "esm",
-      target: "bun",
-      tsconfig: path.join(root, "tsconfig.json"),
-      define: {
-        AGENTSWARM_POSTHOG_API_KEY: JSON.stringify("ph_compiled"),
-        AGENTSWARM_POSTHOG_HOST: JSON.stringify("https://compiled.example"),
-      },
-    })
-    if (!result.success) throw new Error(result.logs.map((log) => log.message).join("\n"))
-
-    const proc = Bun.spawn([process.execPath, path.join(outdir, "compiled-telemetry.js")], {
-      cwd: root,
+    const output = await runCompiledTelemetry({
       env: {
-        ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-        AGENTSWARM_TELEMETRY_ALLOW_TEST: "1",
-        BUN_TEST: "1",
         AGENTSWARM_POSTHOG_API_KEY: "ph_runtime",
         AGENTSWARM_POSTHOG_HOST: "https://runtime.example",
-        AGENTSWARM_TELEMETRY_STATE_DIR: tmp.path,
+        AGENTSWARM_TELEMETRY_ALLOW_TEST: "1",
+        BUN_TEST: "1",
       },
-      stdout: "pipe",
-      stderr: "pipe",
+      event: "app_started",
+      host: "https://compiled.example",
+      key: "ph_compiled",
+      properties: { entrypoint: "tui" },
+      stateDir: tmp.path,
     })
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ])
 
-    expect(stderr).toBe("")
-    expect(code).toBe(0)
-    const output = JSON.parse(stdout) as {
-      captured: boolean
-      requests: Array<{ url: string; body: { api_key?: unknown } }>
-    }
     expect(output.captured).toBe(true)
     expect(output.requests[0].url).toBe("https://compiled.example/i/v0/e/")
     expect(output.requests[0].body.api_key).toBe("ph_compiled")
   })
 
+  test("uses the default host when no host is compiled", async () => {
+    await using tmp = await tmpdir()
+    const output = await runCompiledTelemetry({
+      env: {
+        AGENTSWARM_POSTHOG_HOST: "https://runtime.example",
+      },
+      event: "app_started",
+      host: null,
+      key: "ph_compiled",
+      properties: { entrypoint: "tui" },
+      stateDir: tmp.path,
+    })
+
+    expect(output.captured).toBe(true)
+    expect(output.requests[0].url).toBe("https://us.i.posthog.com/i/v0/e/")
+    expect(output.requests[0].body.api_key).toBe("ph_compiled")
+  })
+
+  test("ignores runtime telemetry key and host env when no key is compiled", async () => {
+    await using tmp = await tmpdir()
+    const output = await runCompiledTelemetry({
+      env: {
+        AGENTSWARM_POSTHOG_API_KEY: "ph_runtime",
+        AGENTSWARM_POSTHOG_HOST: "https://runtime.example",
+        AGENTSWARM_TELEMETRY_ALLOW_TEST: "1",
+        BUN_TEST: "1",
+        NODE_ENV: "test",
+        OPENCODE_TEST_HOME: tmp.path,
+      },
+      event: "app_started",
+      host: null,
+      key: null,
+      properties: { entrypoint: "tui" },
+      stateDir: tmp.path,
+    })
+
+    expect(output.captured).toBe(false)
+    expect(output.requests).toHaveLength(0)
+  })
+
   test("does not send when opted out", async () => {
     await using tmp = await tmpdir()
-    const requests: unknown[] = []
-    enableTelemetry({ stateDir: tmp.path })
-    process.env.AGENTSWARM_TELEMETRY = "false"
-    useFetch(
-      asFetch(async () => {
-        requests.push({})
-        return new Response(null, { status: 200 })
-      }),
-    )
+    const output = await runCompiledTelemetry({
+      env: { AGENTSWARM_TELEMETRY: "false" },
+      event: "app_started",
+      properties: { entrypoint: "tui" },
+      stateDir: tmp.path,
+    })
 
-    await expect(Telemetry.capture("app_started", { entrypoint: "tui" })).resolves.toBe(false)
-    await Telemetry.flush()
-
-    expect(requests).toHaveLength(0)
+    expect(output.captured).toBe(false)
+    expect(output.requests).toHaveLength(0)
   })
 
   test("does not send when OpenSwarm opt-out is set", async () => {
     await using tmp = await tmpdir()
-    const requests: unknown[] = []
-    enableTelemetry({ stateDir: tmp.path })
-    process.env.OPEN_SWARM_TELEMETRY = "0"
-    useFetch(
-      asFetch(async () => {
-        requests.push({})
-        return new Response(null, { status: 200 })
-      }),
-    )
+    const output = await runCompiledTelemetry({
+      env: { OPEN_SWARM_TELEMETRY: "0" },
+      event: "app_started",
+      properties: { entrypoint: "tui" },
+      stateDir: tmp.path,
+    })
 
-    await expect(Telemetry.capture("app_started", { entrypoint: "tui" })).resolves.toBe(false)
-    await Telemetry.flush()
-
-    expect(requests).toHaveLength(0)
+    expect(output.captured).toBe(false)
+    expect(output.requests).toHaveLength(0)
   })
 
   test("does not send when generic telemetry opt-out is set", async () => {
     await using tmp = await tmpdir()
-    const requests: unknown[] = []
-    enableTelemetry({ stateDir: tmp.path })
-    process.env.ENABLE_TELEMETRY = "0"
-    useFetch(
-      asFetch(async () => {
-        requests.push({})
-        return new Response(null, { status: 200 })
-      }),
-    )
+    const output = await runCompiledTelemetry({
+      env: { ENABLE_TELEMETRY: "0" },
+      event: "app_started",
+      properties: { entrypoint: "tui" },
+      stateDir: tmp.path,
+    })
 
-    await expect(Telemetry.capture("app_started", { entrypoint: "tui" })).resolves.toBe(false)
-    await Telemetry.flush()
-
-    expect(requests).toHaveLength(0)
+    expect(output.captured).toBe(false)
+    expect(output.requests).toHaveLength(0)
   })
 
   test("uses the anonymous install id from state", async () => {
     await using tmp = await tmpdir()
-    const requests: { body: Captured }[] = []
     await Bun.write(path.join(tmp.path, "telemetry.json"), JSON.stringify({ installID: "known-install-id" }))
-    enableTelemetry({ stateDir: tmp.path })
-    useFetch(
-      asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
-        return new Response(null, { status: 200 })
-      }),
-    )
-    await Telemetry.capture("app_started", { entrypoint: "tui" })
-    await Telemetry.flush()
+    const output = await runCompiledTelemetry({
+      event: "app_started",
+      properties: { entrypoint: "tui" },
+      readState: true,
+      stateDir: tmp.path,
+    })
 
-    expect(requests).toHaveLength(1)
-    expect(requests[0].body.distinct_id).toBe("known-install-id")
-    expect(await Bun.file(path.join(tmp.path, "telemetry.json")).json()).toEqual({
+    expect(output.requests).toHaveLength(1)
+    expect(output.requests[0].body.distinct_id).toBe("known-install-id")
+    expect(output.state).toEqual({
       installID: "known-install-id",
     })
   })
 
   test("flush waits for fire-and-forget capture setup", async () => {
     await using tmp = await tmpdir()
-    const requests: { body: Captured }[] = []
-    enableTelemetry({ stateDir: tmp.path })
-    useFetch(
-      asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
-        return new Response(null, { status: 200 })
-      }),
-    )
+    const output = await runCompiledTelemetry({
+      event: "app_started",
+      mode: "flush-before-capture",
+      properties: { entrypoint: "tui" },
+      stateDir: tmp.path,
+    })
 
-    const capture = Telemetry.capture("app_started", { entrypoint: "tui" })
-    await Telemetry.flush()
-    await capture
-
-    expect(requests).toHaveLength(1)
-    expect(requests[0].body.event).toBe("app_started")
+    expect(output.requests).toHaveLength(1)
+    expect(output.requests[0].body.event).toBe("app_started")
   })
 
   test("flush can be bounded for shutdown", async () => {
     await using tmp = await tmpdir()
-    enableTelemetry({ stateDir: tmp.path })
-    useFetch(
-      asFetch(
-        (_url, init) =>
-          new Promise<Response>((resolve) => {
-            const timeout = setTimeout(() => resolve(new Response(null, { status: 200 })), 50)
-            init?.signal?.addEventListener(
-              "abort",
-              () => {
-                clearTimeout(timeout)
-                resolve(new Response(null, { status: 499 }))
-              },
-              { once: true },
-            )
-          }),
-      ),
-    )
+    const output = await runCompiledTelemetry({
+      event: "app_started",
+      mode: "bounded-flush",
+      properties: { entrypoint: "tui" },
+      stateDir: tmp.path,
+    })
 
-    await Telemetry.capture("app_started", { entrypoint: "tui" })
-    const started = Date.now()
-    await Telemetry.flush({ timeoutMs: 1 })
-
-    expect(Date.now() - started).toBeLessThan(40)
+    expect(output.elapsed).toBeLessThan(40)
   })
 
   test("bounded flush aborts pending telemetry requests", async () => {
     await using tmp = await tmpdir()
-    enableTelemetry({ stateDir: tmp.path })
-    let aborted = false
-    let enter!: () => void
-    const entered = new Promise<void>((resolve) => {
-      enter = resolve
+    const output = await runCompiledTelemetry({
+      event: "app_started",
+      mode: "abort",
+      properties: { entrypoint: "tui" },
+      stateDir: tmp.path,
     })
-    useFetch(
-      asFetch((_url, init) => {
-        enter()
-        return new Promise<Response>((resolve) => {
-          init?.signal?.addEventListener(
-            "abort",
-            () => {
-              aborted = true
-              resolve(new Response(null, { status: 499 }))
-            },
-            { once: true },
-          )
-        })
-      }),
-    )
 
-    await Telemetry.capture("app_started", { entrypoint: "tui" })
-    await entered
-    await Telemetry.flush({ timeoutMs: 1 })
-
-    expect(aborted).toBe(true)
+    expect(output.aborted).toBe(true)
   })
 
   test("captures provider auth setup without credential material", async () => {
     await using tmp = await tmpdir()
-    const requests: { body: Captured }[] = []
-    enableTelemetry({ stateDir: tmp.path })
-    useFetch(
-      asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
-        return new Response(null, { status: 200 })
-      }),
-    )
-
-    await Telemetry.capture("provider_auth_configured", {
-      auth_method: "api",
-      framework_mode: true,
-      provider_id: "openai",
-      source: "auth_dialog",
-      token: "sk-secret",
+    const output = await runCompiledTelemetry({
+      event: "provider_auth_configured",
+      properties: {
+        auth_method: "api",
+        framework_mode: true,
+        provider_id: "openai",
+        source: "auth_dialog",
+        token: "sk-secret",
+      },
+      stateDir: tmp.path,
     })
-    await Telemetry.flush()
 
-    expect(requests[0].body.event).toBe("provider_auth_configured")
-    expect(requests[0].body.properties).toMatchObject({
+    expect(output.requests[0].body.event).toBe("provider_auth_configured")
+    expect(output.requests[0].body.properties).toMatchObject({
       $process_person_profile: false,
       auth_method: "api",
       framework_mode: true,
       provider_id: "openai",
       source: "auth_dialog",
     })
-    expect(JSON.stringify(requests[0].body)).not.toContain("sk-secret")
+    expect(JSON.stringify(output.requests[0].body)).not.toContain("sk-secret")
   })
 
   test("captures the approved trust-safe event properties", async () => {
@@ -782,24 +886,18 @@ describe("Telemetry", () => {
 
   test("buckets custom provider ids", async () => {
     await using tmp = await tmpdir()
-    const requests: { body: Captured }[] = []
-    enableTelemetry({ stateDir: tmp.path })
-    useFetch(
-      asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
-        return new Response(null, { status: 200 })
-      }),
-    )
-
-    await Telemetry.capture("provider_auth_configured", {
-      auth_method: "api",
-      provider_id: "internal-client-gateway",
-      source: "auth_dialog",
+    const output = await runCompiledTelemetry({
+      event: "provider_auth_configured",
+      properties: {
+        auth_method: "api",
+        provider_id: "internal-client-gateway",
+        source: "auth_dialog",
+      },
+      stateDir: tmp.path,
     })
-    await Telemetry.flush()
 
-    expect(requests[0].body.properties?.provider_id).toBe("custom")
-    expect(JSON.stringify(requests[0].body)).not.toContain("internal-client-gateway")
+    expect(output.requests[0].body.properties?.provider_id).toBe("custom")
+    expect(JSON.stringify(output.requests[0].body)).not.toContain("internal-client-gateway")
   })
 
   test("preserves well-known provider ids", async () => {
@@ -816,73 +914,54 @@ describe("Telemetry", () => {
 
   test("does not send custom command telemetry", async () => {
     await using tmp = await tmpdir()
-    const requests: { body: Captured }[] = []
-    enableTelemetry({ stateDir: tmp.path })
-    useFetch(
-      asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
-        return new Response(null, { status: 200 })
-      }),
-    )
-
-    captureCommand({
-      category: "Plugin",
-      keybind: "ctrl+x",
-      source: "palette",
-      value: "private.plugin.command",
+    const output = await runCompiledTelemetry({
+      command: {
+        category: "Plugin",
+        keybind: "ctrl+x",
+        source: "palette",
+        value: "private.plugin.command",
+      },
+      mode: "command",
+      stateDir: tmp.path,
     })
-    await Telemetry.flush()
 
-    expect(requests).toHaveLength(0)
-    expect(JSON.stringify(requests)).not.toContain("private.plugin.command")
-    expect(JSON.stringify(requests)).not.toContain("ctrl+x")
+    expect(output.requests).toHaveLength(0)
+    expect(JSON.stringify(output.requests)).not.toContain("private.plugin.command")
+    expect(JSON.stringify(output.requests)).not.toContain("ctrl+x")
   })
 
   test("does not send broad command telemetry at the privacy boundary", async () => {
     await using tmp = await tmpdir()
-    const requests: { body: Captured }[] = []
-    enableTelemetry({ stateDir: tmp.path })
-    useFetch(
-      asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
-        return new Response(null, { status: 200 })
-      }),
-    )
-
-    await expect(
-      Telemetry.capture("ui_command_executed", {
+    const output = await runCompiledTelemetry({
+      event: "ui_command_executed",
+      properties: {
         category: "Provider",
         command: "provider.connect",
         source: "slash",
-      }),
-    ).resolves.toBe(false)
-    await Telemetry.flush()
+      },
+      stateDir: tmp.path,
+    })
 
-    expect(requests).toHaveLength(0)
-    expect(JSON.stringify(requests)).not.toContain("provider.connect")
+    expect(output.captured).toBe(false)
+    expect(output.requests).toHaveLength(0)
+    expect(JSON.stringify(output.requests)).not.toContain("provider.connect")
   })
 
   test("tracks docs click command telemetry with a safe command shape", async () => {
     await using tmp = await tmpdir()
-    const requests: { body: Captured }[] = []
-    enableTelemetry({ stateDir: tmp.path })
-    useFetch(
-      asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
-        return new Response(null, { status: 200 })
-      }),
-    )
-
-    captureCommand({
-      category: "System",
-      source: "palette",
-      value: "docs.open",
+    const output = await runCompiledTelemetry({
+      command: {
+        category: "System",
+        source: "palette",
+        value: "docs.open",
+      },
+      mode: "command",
+      stateDir: tmp.path,
     })
-    await Telemetry.flush()
 
-    expect(requests).toHaveLength(1)
-    expect(requests[0].body.event).toBe("ui_command_executed")
-    expect(requests[0].body.properties).toMatchObject({
+    expect(output.requests).toHaveLength(1)
+    expect(output.requests[0].body.event).toBe("ui_command_executed")
+    expect(output.requests[0].body.properties).toMatchObject({
       category: "System",
       command: "docs.open",
       keybind: false,
@@ -892,41 +971,29 @@ describe("Telemetry", () => {
 
   test("does not send broad slash command telemetry", async () => {
     await using tmp = await tmpdir()
-    const requests: { body: Captured }[] = []
-    enableTelemetry({ stateDir: tmp.path })
-    useFetch(
-      asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
-        return new Response(null, { status: 200 })
-      }),
-    )
-
-    captureCommand({
-      category: "Provider",
-      source: "slash",
-      value: "provider.connect",
+    const output = await runCompiledTelemetry({
+      command: {
+        category: "Provider",
+        source: "slash",
+        value: "provider.connect",
+      },
+      mode: "command",
+      stateDir: tmp.path,
     })
-    await Telemetry.flush()
 
-    expect(requests).toHaveLength(0)
-    expect(JSON.stringify(requests)).not.toContain("provider.connect")
+    expect(output.requests).toHaveLength(0)
+    expect(JSON.stringify(output.requests)).not.toContain("provider.connect")
   })
 
   test("sanitizes built-in properties through the privacy boundary", async () => {
     await using tmp = await tmpdir()
-    const requests: { body: Captured }[] = []
-    enableTelemetry({ stateDir: tmp.path })
-    process.env.OPENCODE_CLIENT = "bad\nterminal"
-    useFetch(
-      asFetch(async (_url, init) => {
-        requests.push({ body: JSON.parse(String(init?.body)) as Captured })
-        return new Response(null, { status: 200 })
-      }),
-    )
+    const output = await runCompiledTelemetry({
+      env: { OPENCODE_CLIENT: "bad\nterminal" },
+      event: "app_started",
+      properties: { entrypoint: "tui" },
+      stateDir: tmp.path,
+    })
 
-    await Telemetry.capture("app_started", { entrypoint: "tui" })
-    await Telemetry.flush()
-
-    expect(requests[0].body.properties?.terminal).toBeUndefined()
+    expect(output.requests[0].body.properties?.terminal).toBeUndefined()
   })
 })
