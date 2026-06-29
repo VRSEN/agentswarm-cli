@@ -371,6 +371,19 @@ describe("Telemetry", () => {
       expected: Record<string, unknown>
     }> = [
       {
+        event: "agent_created",
+        properties: {
+          mode: "subagent",
+          scope: "project",
+          tool_count_bucket: "4_7",
+        },
+        expected: {
+          mode: "subagent",
+          scope: "project",
+          tool_count_bucket: "4_7",
+        },
+      },
+      {
         event: "provider_requested",
         properties: {
           connected_before: false,
@@ -417,6 +430,17 @@ describe("Telemetry", () => {
           provider_id: "openai",
           source: "auth_dialog",
           step: "oauth_callback",
+        },
+      },
+      {
+        event: "project_initialized",
+        properties: {
+          source: "init_command",
+          vcs: "git",
+        },
+        expected: {
+          source: "init_command",
+          vcs: "git",
         },
       },
       {
@@ -479,9 +503,13 @@ describe("Telemetry", () => {
     for (const item of cases) {
       const body = await captureBody(item.event, {
         ...item.properties,
+        agent_name: "private-agent-name",
+        agent_path: "/Users/example/.agents/private-agent.md",
+        description: "private agent description",
         env_var: "OPENAI_API_KEY=sk-env-secret",
         error_text: "Invalid API key: sk-error-secret",
         file_path: "/Users/example/private.ts",
+        generated_prompt: "private generated system prompt",
         message: "secret prompt text",
         message_content: "private conversation content",
         messageID: "msg_secret",
@@ -492,6 +520,7 @@ describe("Telemetry", () => {
         secret: "sk-explicit-secret",
         sessionID: "ses_secret",
         source_content: "private source content",
+        tool_count: 7,
         tool_input: "private tool input",
         tool_output: "private tool output",
       })
@@ -500,12 +529,16 @@ describe("Telemetry", () => {
       expect(body.properties).toMatchObject(item.expected)
       const serialized = JSON.stringify(body)
       expect(serialized).not.toContain("secret prompt text")
+      expect(serialized).not.toContain("private-agent-name")
+      expect(serialized).not.toContain("private-agent.md")
+      expect(serialized).not.toContain("private agent description")
       expect(serialized).not.toContain("OPENAI_API_KEY")
       expect(serialized).not.toContain("sk-env-secret")
       expect(serialized).not.toContain("sk-error-secret")
       expect(serialized).not.toContain("msg_secret")
       expect(serialized).not.toContain("/Users/example/private.ts")
       expect(serialized).not.toContain("private conversation content")
+      expect(serialized).not.toContain("private generated system prompt")
       expect(serialized).not.toContain("openai/gpt-5.4-mini")
       expect(serialized).not.toContain("proj_secret")
       expect(serialized).not.toContain("private prompt text")
@@ -554,6 +587,26 @@ describe("Telemetry", () => {
     })
     expect(JSON.stringify(integration)).not.toContain("private-crm")
     expect(JSON.stringify(integration)).not.toContain("private-provider")
+
+    const project = await captureBody("project_initialized", {
+      source: "private source",
+      vcs: "hg",
+    })
+
+    expect(project.properties?.source).toBeUndefined()
+    expect(project.properties?.vcs).toBeUndefined()
+    expect(JSON.stringify(project)).not.toContain("private source")
+
+    const agent = await captureBody("agent_created", {
+      mode: "debug",
+      scope: "private-scope",
+      tool_count_bucket: "11",
+    })
+
+    expect(agent.properties?.mode).toBeUndefined()
+    expect(agent.properties?.scope).toBeUndefined()
+    expect(agent.properties?.tool_count_bucket).toBeUndefined()
+    expect(JSON.stringify(agent)).not.toContain("private-scope")
   })
 
   test("drops string payloads passed to boolean telemetry fields", async () => {
@@ -676,6 +729,14 @@ describe("Telemetry", () => {
     expect(Telemetry.errorBucket(new Error("fetch failed ECONNREFUSED"))).toBe("network")
     expect(Telemetry.errorBucket({ status: 502 })).toBe("server")
     expect(Telemetry.errorBucket(new Error("private backend stack trace"))).toBe("unknown")
+
+    expect(Telemetry.toolCountBucket(0)).toBe("0")
+    expect(Telemetry.toolCountBucket(1)).toBe("1_3")
+    expect(Telemetry.toolCountBucket(3)).toBe("1_3")
+    expect(Telemetry.toolCountBucket(4)).toBe("4_7")
+    expect(Telemetry.toolCountBucket(7)).toBe("4_7")
+    expect(Telemetry.toolCountBucket(8)).toBe("8_plus")
+    expect(Telemetry.toolCountBucket(Number.NaN)).toBe("unknown")
   })
 
   test("buckets nested SDK error wrapper data without exposing raw text", async () => {

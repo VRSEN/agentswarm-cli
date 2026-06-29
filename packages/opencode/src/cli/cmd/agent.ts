@@ -14,8 +14,10 @@ import type { Argv } from "yargs"
 import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
 import { AgencyBrand } from "@/agency-swarm/brand"
+import { Telemetry } from "@/telemetry/telemetry"
 
 type AgentMode = "all" | "primary" | "subagent"
+type AgentScope = "custom" | "global" | "project"
 
 // Permission keys (not raw tool names). Multiple tools can map to a single
 // permission — e.g. write/edit/apply_patch all gate on `edit` — so we configure
@@ -83,11 +85,13 @@ const AgentCreateCommand = effectCmd({
       const project = ctx.project
 
       // Determine scope/path
+      let scope: AgentScope
       let targetPath: string
       if (cliPath) {
+        scope = "custom"
         targetPath = path.join(cliPath, "agent")
       } else {
-        let scope: "global" | "project" = "global"
+        scope = "global"
         if (project.vcs === "git") {
           const scopeResult = await prompts.select({
             message: "Location",
@@ -222,6 +226,12 @@ const AgentCreateCommand = effectCmd({
       }
 
       await Filesystem.write(filePath, content)
+      await Telemetry.capture("agent_created", {
+        mode,
+        scope,
+        tool_count_bucket: Telemetry.toolCountBucket(selected.length),
+      })
+      await Telemetry.flush({ timeoutMs: 500 })
 
       if (isFullyNonInteractive) {
         console.log(filePath)

@@ -47,11 +47,13 @@ const publicIntegrationIDs = new Set([
 ])
 
 const allowedEvents = new Set([
+  "agent_created",
   "app_started",
   "integration_requested",
   "provider_auth_configured",
   "provider_auth_failed",
   "provider_auth_started",
+  "project_initialized",
   "provider_requested",
   "task_failed",
   "task_succeeded",
@@ -60,11 +62,13 @@ const allowedEvents = new Set([
 ])
 
 type TelemetryEvent =
+  | "agent_created"
   | "app_started"
   | "integration_requested"
   | "provider_auth_configured"
   | "provider_auth_failed"
   | "provider_auth_started"
+  | "project_initialized"
   | "provider_requested"
   | "task_failed"
   | "task_succeeded"
@@ -73,6 +77,7 @@ type TelemetryEvent =
 type SafeValue = string | boolean
 export type TelemetryDurationBucket = "lt_2s" | "2s_10s" | "10s_60s" | "gte_60s" | "unknown"
 export type TelemetryErrorBucket = "auth_rejected" | "network" | "server" | "timeout" | "unknown"
+export type TelemetryToolCountBucket = "0" | "1_3" | "4_7" | "8_plus" | "unknown"
 type PropertySpec =
   | {
       type: "boolean"
@@ -99,16 +104,20 @@ type InstallID = {
 
 const authMethods = new Set(["api", "oauth"])
 const authDialogSources = new Set(["auth_dialog"])
+const agentModes = new Set(["all", "primary", "subagent"])
+const agentScopes = new Set(["custom", "global", "project"])
 const booleanField = { type: "boolean" } satisfies PropertySpec
 const providerIDField = { type: "provider_id" } satisfies PropertySpec
 const integrationIDField = { type: "integration_id" } satisfies PropertySpec
 const durationBuckets = new Set(["lt_2s", "2s_10s", "10s_60s", "gte_60s", "unknown"])
 const errorBuckets = new Set(["auth_rejected", "network", "server", "timeout", "unknown"])
 const platforms = new Set(["aix", "darwin", "freebsd", "linux", "openbsd", "sunos", "win32"])
+const projectVcs = new Set(["git", "none"])
 const promptModes = new Set(["normal", "shell"])
 const promptTypes = new Set(["prompt", "server_command", "shell"])
 const swarmOrigins = new Set(["original", "fork", "unknown"])
 const terminalClients = new Set(["app", "cli", "desktop"])
+const toolCountBuckets = new Set(["0", "1_3", "4_7", "8_plus", "unknown"])
 
 function stringField(values?: ReadonlySet<string>): PropertySpec {
   return {
@@ -130,6 +139,11 @@ const baseProperties: Record<string, PropertySpec> = {
 }
 
 const eventProperties: Record<TelemetryEvent, Record<string, PropertySpec>> = {
+  agent_created: {
+    mode: stringField(agentModes),
+    scope: stringField(agentScopes),
+    tool_count_bucket: stringField(toolCountBuckets),
+  },
   app_started: {
     entrypoint: stringField(new Set(["tui"])),
     framework_mode: booleanField,
@@ -160,6 +174,10 @@ const eventProperties: Record<TelemetryEvent, Record<string, PropertySpec>> = {
     framework_mode: booleanField,
     provider_id: providerIDField,
     source: stringField(authDialogSources),
+  },
+  project_initialized: {
+    source: stringField(new Set(["init_command"])),
+    vcs: stringField(projectVcs),
   },
   provider_requested: {
     connected_before: booleanField,
@@ -445,6 +463,14 @@ export function errorBucket(error: unknown): TelemetryErrorBucket {
   return "unknown"
 }
 
+export function toolCountBucket(count: number): TelemetryToolCountBucket {
+  if (!Number.isFinite(count) || count < 0) return "unknown"
+  if (count === 0) return "0"
+  if (count <= 3) return "1_3"
+  if (count <= 7) return "4_7"
+  return "8_plus"
+}
+
 function errorStatus(error: unknown): number | undefined {
   for (const item of errorPayloads(error)) {
     if (!isRecord(item)) continue
@@ -488,4 +514,5 @@ export const Telemetry = {
   errorBucket,
   flush,
   isEnabled,
+  toolCountBucket,
 }
