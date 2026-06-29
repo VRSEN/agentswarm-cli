@@ -444,7 +444,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
         AGENTSWARM_POSTHOG_API_KEY: postHogKey,
         AGENTSWARM_POSTHOG_HOST: currentTelemetryServer.url,
         AGENTSWARM_TELEMETRY: undefined,
-        AGENTSWARM_TELEMETRY_ALLOW_TEST: undefined,
+        AGENTSWARM_TELEMETRY_ALLOW_TEST: "1",
         BUN_TEST: "",
         CI: "",
         NODE_ENV: "",
