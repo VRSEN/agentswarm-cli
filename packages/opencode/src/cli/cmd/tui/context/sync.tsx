@@ -113,6 +113,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const kv = useKV()
 
     const fullSyncedSessions = new Set<string>()
+    const closedQuestions = new Set<string>()
 
     function sessionListQuery(): { scope?: "project"; path?: string } {
       if (!kv.get("session_directory_filter_enabled", true)) return { scope: "project" }
@@ -128,6 +129,34 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       return sdk.client.session
         .list({ start: Date.now() - 30 * 24 * 60 * 60 * 1000, ...sessionListQuery() })
         .then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
+    }
+
+    function upsertQuestion(request: QuestionRequest) {
+      if (closedQuestions.has(request.id)) return
+      const requests = store.question[request.sessionID]
+      if (!requests) {
+        setStore("question", request.sessionID, [request])
+        return
+      }
+      const match = Binary.search(requests, request.id, (r) => r.id)
+      if (match.found) {
+        setStore("question", request.sessionID, match.index, reconcile(request))
+        return
+      }
+      setStore(
+        "question",
+        request.sessionID,
+        produce((draft) => {
+          draft.splice(match.index, 0, request)
+        }),
+      )
+    }
+
+    async function syncQuestions(workspace: string | undefined) {
+      const response = await sdk.client.question.list({ workspace })
+      batch(() => {
+        for (const request of response.data ?? []) upsertQuestion(request)
+      })
     }
 
     event.subscribe((event, { workspace }) => {
@@ -174,6 +203,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
         case "question.replied":
         case "question.rejected": {
+          closedQuestions.add(event.properties.requestID)
           const requests = store.question[event.properties.sessionID]
           if (!requests) break
           const match = Binary.search(requests, event.properties.requestID, (r) => r.id)
@@ -189,24 +219,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         }
 
         case "question.asked": {
-          const request = event.properties
-          const requests = store.question[request.sessionID]
-          if (!requests) {
-            setStore("question", request.sessionID, [request])
-            break
-          }
-          const match = Binary.search(requests, request.id, (r) => r.id)
-          if (match.found) {
-            setStore("question", request.sessionID, match.index, reconcile(request))
-            break
-          }
-          setStore(
-            "question",
-            request.sessionID,
-            produce((draft) => {
-              draft.splice(match.index, 0, request)
-            }),
-          )
+          closedQuestions.delete(event.properties.id)
+          upsertQuestion(event.properties)
           break
         }
 
@@ -457,6 +471,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             sdk.client.session.status({ workspace }).then((x) => {
               setStore("session_status", reconcile(x.data ?? {}))
             }),
+            syncQuestions(workspace),
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
             sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
             project.workspace.sync(),
@@ -520,11 +535,13 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         },
         async sync(sessionID: string) {
           if (fullSyncedSessions.has(sessionID)) return
+          const workspace = project.workspace.current()
           const [session, messages, todo, diff] = await Promise.all([
             sdk.client.session.get({ sessionID }, { throwOnError: true }),
             sdk.client.session.messages({ sessionID, limit: 100 }),
             sdk.client.session.todo({ sessionID }),
             sdk.client.session.diff({ sessionID }),
+            syncQuestions(workspace),
           ])
           setStore(
             produce((draft) => {

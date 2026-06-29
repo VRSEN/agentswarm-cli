@@ -962,6 +962,41 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(currentServer.requests).toHaveLength(0)
   })
 
+  test("startup Plan handoff recovers the pending approval question", async () => {
+    const planPrompt = "startup plan prompt with native plan_exit"
+    const buildPrompt = "continue after startup plan approval"
+    currentNativeServer = await startNativeLLMServer()
+    currentNativeServer.planExitNext()
+    currentTui = await startTui({
+      args: ["--model", latestOpenAITestModel, "--agent", "plan", "--prompt", planPrompt],
+      env: {
+        OPENCODE_CONFIG_CONTENT: JSON.stringify(nativeOpenAIOnlyConfig(currentNativeServer.baseURL)),
+      },
+    })
+
+    await currentTui.waitFor(
+      () => currentTui!.screen().includes("Would you like") && currentTui!.screen().includes("switch to Build"),
+      "startup Plan approval question",
+      tuiInteractionTimeoutMs,
+    )
+    expect(currentTui.screen()).toContain("plan_exit")
+    expect(footerHasMode(currentTui.screen(), "Build")).toBe(false)
+
+    currentTui.write("\r")
+    await currentTui.waitFor(
+      () => footerHasMode(currentTui!.screen(), "Build"),
+      "Build footer after startup plan approval",
+      tuiInteractionTimeoutMs,
+    )
+
+    currentTui.write(`${buildPrompt}\r`)
+    await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
+    const request = await waitForNativeLLMRequest(currentTui, currentNativeServer, buildPrompt)
+    const body = JSON.stringify(request.body)
+    expect(body).toContain("Agent Swarm Build Instructions")
+    expect(body).not.toContain("Agent Swarm Planner Instructions")
+  })
+
   test("/modes Build and Plan compact and follow-up stay native", async () => {
     for (const mode of ["Build", "Plan"] as const) {
       const prompt = `native compact setup ${mode.toLowerCase()}`
