@@ -12,14 +12,6 @@ export class InstanceContextMiddleware extends HttpApiMiddleware.Service<
   }
 >()("@opencode/ExperimentalHttpApiInstanceContext") {}
 
-function decode(input: string): string {
-  try {
-    return decodeURIComponent(input)
-  } catch {
-    return input
-  }
-}
-
 function provideInstanceContext<E>(
   effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E>,
   store: InstanceStore.Interface,
@@ -27,7 +19,7 @@ function provideInstanceContext<E>(
   return Effect.gen(function* () {
     const route = yield* WorkspaceRouteContext
     return yield* store.provide(
-      { directory: decode(route.directory) },
+      { directory: route.directory },
       effect.pipe(Effect.provideService(WorkspaceRef, route.workspaceID)),
     )
   })
