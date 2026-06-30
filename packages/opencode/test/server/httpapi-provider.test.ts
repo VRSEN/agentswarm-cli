@@ -72,14 +72,6 @@ function hasProviderMutationMarker(input: unknown, key: "all" | "providers", id:
   return isRecord(provider.options) && provider.options.mutatedByPlugin === true
 }
 
-function hasProviderListMutationMarker(input: unknown, id: string) {
-  if (!Array.isArray(input)) return false
-  const provider = input.find((item) => isRecord(item) && item.id === id)
-  if (!isRecord(provider)) return false
-  if (provider.name === "mutated-provider") return true
-  return isRecord(provider.options) && provider.options.mutatedByPlugin === true
-}
-
 function requestAuthorize(input: {
   providerID: string
   method: number
@@ -388,19 +380,6 @@ describe("provider HttpApi", () => {
       expect(hasProviderMutationMarker(providerBody, "all", "google")).toBe(false)
       expect(hasProviderMutationMarker(configBody, "providers", "google")).toBe(false)
       expect(hasNonZeroModelCost(providerBody, "all", "google")).toBe(true)
-    }),
-    { ...projectOptions, init: writeProviderModelsMutationPlugin },
-  )
-
-  it.instance(
-    "serves v2 provider lists from the directory query",
-    Effect.gen(function* () {
-      const directory = (yield* TestInstance).directory
-
-      const response = yield* request(`/api/provider?directory=${encodeURIComponent(directory)}`)
-
-      expect(response.status).toBe(200)
-      expect(hasProviderListMutationMarker(yield* response.json, "google")).toBe(false)
     }),
     { ...projectOptions, init: writeProviderModelsMutationPlugin },
   )

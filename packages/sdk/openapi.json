@@ -9115,9 +9115,6 @@
       "Event": {
         "anyOf": [
           {
-            "$ref": "#/components/schemas/EventServerInstanceDisposed"
-          },
-          {
             "$ref": "#/components/schemas/Event.tui.prompt.append"
           },
           {
@@ -9128,6 +9125,15 @@
           },
           {
             "$ref": "#/components/schemas/Event.tui.session.select"
+          },
+          {
+            "$ref": "#/components/schemas/EventServerConnected"
+          },
+          {
+            "$ref": "#/components/schemas/EventGlobalDisposed"
+          },
+          {
+            "$ref": "#/components/schemas/EventServerInstanceDisposed"
           },
           {
             "$ref": "#/components/schemas/EventMcpToolsChanged"
@@ -9224,12 +9230,6 @@
           },
           {
             "$ref": "#/components/schemas/EventInstallationUpdate-available"
-          },
-          {
-            "$ref": "#/components/schemas/EventServerConnected"
-          },
-          {
-            "$ref": "#/components/schemas/EventGlobalDisposed"
           },
           {
             "$ref": "#/components/schemas/EventMessageUpdated"
@@ -10489,6 +10489,9 @@
           },
           "command": {
             "type": "string"
+          },
+          "metadata": {
+            "type": "object"
           }
         },
         "required": ["id", "sessionID", "messageID", "type", "prompt", "description", "agent"],
@@ -11146,6 +11149,9 @@
           "tail_start_id": {
             "type": "string",
             "pattern": "^msg"
+          },
+          "metadata": {
+            "type": "object"
           }
         },
         "required": ["id", "sessionID", "messageID", "type", "auto"],
@@ -11426,9 +11432,6 @@
           "payload": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/EventServerInstanceDisposed"
-              },
-              {
                 "$ref": "#/components/schemas/Event.tui.prompt.append"
               },
               {
@@ -11439,6 +11442,15 @@
               },
               {
                 "$ref": "#/components/schemas/Event.tui.session.select"
+              },
+              {
+                "$ref": "#/components/schemas/EventServerConnected"
+              },
+              {
+                "$ref": "#/components/schemas/EventGlobalDisposed"
+              },
+              {
+                "$ref": "#/components/schemas/EventServerInstanceDisposed"
               },
               {
                 "$ref": "#/components/schemas/EventMcpToolsChanged"
@@ -11535,12 +11547,6 @@
               },
               {
                 "$ref": "#/components/schemas/EventInstallationUpdate-available"
-              },
-              {
-                "$ref": "#/components/schemas/EventServerConnected"
-              },
-              {
-                "$ref": "#/components/schemas/EventGlobalDisposed"
               },
               {
                 "$ref": "#/components/schemas/EventMessageUpdated"
@@ -14216,6 +14222,9 @@
           },
           "command": {
             "type": "string"
+          },
+          "metadata": {
+            "type": "object"
           }
         },
         "required": ["type", "prompt", "description", "agent"],
@@ -16368,6 +16377,42 @@
         "required": ["type", "name", "id", "seq", "aggregateID", "data"],
         "additionalProperties": false
       },
+      "EventServerConnected": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["server.connected"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventGlobalDisposed": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["global.disposed"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventServerInstanceDisposed": {
         "type": "object",
         "properties": {
@@ -17217,42 +17262,6 @@
             },
             "required": ["version"],
             "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventServerConnected": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["server.connected"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {}
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventGlobalDisposed": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["global.disposed"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {}
           }
         },
         "required": ["id", "type", "properties"],

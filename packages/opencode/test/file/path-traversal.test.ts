@@ -54,16 +54,6 @@ describe("Filesystem.contains", () => {
     }),
   )
 
-  it.effect("handles Windows root-relative prefix collisions", () =>
-    Effect.sync(() => {
-      if (process.platform !== "win32") return
-
-      expect(Filesystem.contains("/project", "/project-other/file")).toBe(false)
-      expect(Filesystem.contains("/project", "/projectfile")).toBe(false)
-      expect(Filesystem.contains("/project", "/project/..config")).toBe(true)
-      expect(Filesystem.contains("/project", "/project/..config/file")).toBe(true)
-    }),
-  )
 })
 
 describe("Filesystem.overlaps", () => {
@@ -89,16 +79,6 @@ describe("Filesystem.overlaps", () => {
     }),
   )
 
-  it.effect("rejects Windows root-relative sibling paths", () =>
-    Effect.sync(() => {
-      if (process.platform !== "win32") return
-
-      expect(Filesystem.overlaps("/project", "/project-other")).toBe(false)
-      expect(Filesystem.overlaps("/project", "/projectfile")).toBe(false)
-      expect(Filesystem.overlaps("/project", "/project/..config")).toBe(true)
-      expect(Filesystem.overlaps("/project", "/project/..config/file")).toBe(true)
-    }),
-  )
 })
 
 /*

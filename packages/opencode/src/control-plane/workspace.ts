@@ -459,7 +459,7 @@ export const layer = Layer.effect(
                 const event = evt as { directory?: string; project?: string; payload: unknown }
                 GlobalBus.emit("event", {
                   directory: event.directory,
-                  project: space.projectID,
+                  project: event.project,
                   workspace: space.id,
                   payload: event.payload,
                 })
@@ -620,8 +620,8 @@ export const layer = Layer.effect(
         )
 
         const previous = current?.workspaceID ? yield* get(current.workspaceID) : undefined
-        const claimSessionOwner = (ownerID: string | undefined) =>
-          ownerID ? sync.claim(input.sessionID, ownerID) : Effect.void
+        const claimPreviousSession = (ownerID: string | undefined) =>
+          previous && ownerID ? sync.claim(input.sessionID, ownerID) : Effect.void
 
         if (previous) {
           const adapter = getAdapter(previous.projectID, previous.type)
@@ -686,7 +686,7 @@ export const layer = Layer.effect(
               workspaceID: null,
             },
           })
-          yield* claimSessionOwner(previous?.projectID)
+          yield* claimPreviousSession(previous?.projectID)
 
           log.info("session warp complete", {
             workspaceID: input.workspaceID,
@@ -714,7 +714,7 @@ export const layer = Layer.effect(
               workspaceID: input.workspaceID,
             },
           })
-          yield* claimSessionOwner(input.workspaceID)
+          yield* claimPreviousSession(input.workspaceID)
 
           log.info("session warp complete", {
             workspaceID: input.workspaceID,
@@ -724,115 +724,113 @@ export const layer = Layer.effect(
           return
         }
 
-        const previousOwnerID = previous?.id ?? space.projectID
-        yield* claimSessionOwner(input.workspaceID)
-        yield* Effect.gen(function* () {
-          const rows = yield* db((db) =>
-            db
-              .select({
-                id: EventTable.id,
-                aggregateID: EventTable.aggregate_id,
-                seq: EventTable.seq,
-                type: EventTable.type,
-                data: EventTable.data,
-              })
-              .from(EventTable)
-              .where(eq(EventTable.aggregate_id, input.sessionID))
-              .orderBy(asc(EventTable.seq))
-              .all(),
-          )
-          if (rows.length === 0)
-            return yield* new SessionEventsNotFoundError({
-              message: `No events found for session: ${input.sessionID}`,
-              sessionID: input.sessionID,
+        yield* claimPreviousSession(input.workspaceID)
+
+        const rows = yield* db((db) =>
+          db
+            .select({
+              id: EventTable.id,
+              aggregateID: EventTable.aggregate_id,
+              seq: EventTable.seq,
+              type: EventTable.type,
+              data: EventTable.data,
             })
-
-          const batches = Iterable.chunksOf(rows, 10)
-          const total = Iterable.size(batches)
-
-          log.info("session warp prepared", {
-            workspaceID: input.workspaceID,
+            .from(EventTable)
+            .where(eq(EventTable.aggregate_id, input.sessionID))
+            .orderBy(asc(EventTable.seq))
+            .all(),
+        )
+        if (rows.length === 0)
+          return yield* new SessionEventsNotFoundError({
+            message: `No events found for session: ${input.sessionID}`,
             sessionID: input.sessionID,
-            target: String(route(target.url, "/sync/replay")),
-            events: rows.length,
-            batches: total,
-            first: rows[0]?.seq,
-            last: rows.at(-1)?.seq,
           })
 
-          yield* Effect.forEach(
-            batches,
-            (events, i) =>
-              Effect.gen(function* () {
-                const response = yield* http.execute(
-                  HttpClientRequest.post(route(target.url, "/sync/replay"), {
-                    headers: new Headers(target.headers),
-                    body: HttpBody.jsonUnsafe({
-                      directory: space.directory ?? "",
-                      events,
-                    }),
+        const batches = Iterable.chunksOf(rows, 10)
+        const total = Iterable.size(batches)
+
+        log.info("session warp prepared", {
+          workspaceID: input.workspaceID,
+          sessionID: input.sessionID,
+          target: String(route(target.url, "/sync/replay")),
+          events: rows.length,
+          batches: total,
+          first: rows[0]?.seq,
+          last: rows.at(-1)?.seq,
+        })
+
+        yield* Effect.forEach(
+          batches,
+          (events, i) =>
+            Effect.gen(function* () {
+              const response = yield* http.execute(
+                HttpClientRequest.post(route(target.url, "/sync/replay"), {
+                  headers: new Headers(target.headers),
+                  body: HttpBody.jsonUnsafe({
+                    directory: space.directory ?? "",
+                    events,
                   }),
-                )
+                }),
+              )
 
-                if (response.status < 200 || response.status >= 300) {
-                  const body = yield* response.text
-                  log.error("session warp batch failed", {
-                    workspaceID: input.workspaceID,
-                    sessionID: input.sessionID,
-                    step: i + 1,
-                    total,
-                    status: response.status,
-                    body,
-                  })
-                  return yield* new SessionWarpHttpError({
-                    message: `Failed to warp session ${input.sessionID} into workspace ${workspaceID}: HTTP ${response.status} ${body}`,
-                    workspaceID,
-                    sessionID: input.sessionID,
-                    status: response.status,
-                    body,
-                  })
-                }
-
-                log.info("session warp batch posted", {
+              if (response.status < 200 || response.status >= 300) {
+                const body = yield* response.text
+                log.error("session warp batch failed", {
                   workspaceID: input.workspaceID,
                   sessionID: input.sessionID,
                   step: i + 1,
                   total,
                   status: response.status,
+                  body,
                 })
-              }),
-            { discard: true },
-          )
+                return yield* new SessionWarpHttpError({
+                  message: `Failed to warp session ${input.sessionID} into workspace ${workspaceID}: HTTP ${response.status} ${body}`,
+                  workspaceID,
+                  sessionID: input.sessionID,
+                  status: response.status,
+                  body,
+                })
+              }
 
-          const response = yield* http.execute(
-            HttpClientRequest.post(route(target.url, "/sync/steal"), {
-              headers: new Headers(target.headers),
-              body: HttpBody.jsonUnsafe({ sessionID: input.sessionID }),
+              log.info("session warp batch posted", {
+                workspaceID: input.workspaceID,
+                sessionID: input.sessionID,
+                step: i + 1,
+                total,
+                status: response.status,
+              })
             }),
-          )
-          if (response.status < 200 || response.status >= 300) {
-            const body = yield* response.text
-            log.error("session warp steal failed", {
-              workspaceID: input.workspaceID,
-              sessionID: input.sessionID,
-              status: response.status,
-              body,
-            })
-            return yield* new SessionWarpHttpError({
-              message: `Failed to steal session ${input.sessionID} into workspace ${workspaceID}: HTTP ${response.status} ${body}`,
-              workspaceID,
-              sessionID: input.sessionID,
-              status: response.status,
-              body,
-            })
-          }
+          { discard: true },
+        )
 
-          log.info("session warp complete", {
+        const response = yield* http.execute(
+          HttpClientRequest.post(route(target.url, "/sync/steal"), {
+            headers: new Headers(target.headers),
+            body: HttpBody.jsonUnsafe({ sessionID: input.sessionID }),
+          }),
+        )
+        if (response.status < 200 || response.status >= 300) {
+          const body = yield* response.text
+          log.error("session warp steal failed", {
             workspaceID: input.workspaceID,
             sessionID: input.sessionID,
-            batches: total,
+            status: response.status,
+            body,
           })
-        }).pipe(Effect.tapError(() => claimSessionOwner(previousOwnerID)))
+          return yield* new SessionWarpHttpError({
+            message: `Failed to steal session ${input.sessionID} into workspace ${workspaceID}: HTTP ${response.status} ${body}`,
+            workspaceID,
+            sessionID: input.sessionID,
+            status: response.status,
+            body,
+          })
+        }
+
+        log.info("session warp complete", {
+          workspaceID: input.workspaceID,
+          sessionID: input.sessionID,
+          batches: total,
+        })
       }).pipe(
         Effect.tapError((err) =>
           Effect.sync(() =>

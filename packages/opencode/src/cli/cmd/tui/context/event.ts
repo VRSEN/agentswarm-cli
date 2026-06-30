@@ -15,24 +15,8 @@ export function useEvent() {
       if (event.payload.type === "sync") {
         return
       }
-      if (event.payload.type === "server.heartbeat") {
-        return
-      }
 
-      if (event.directory === "global") {
-        handler(event.payload, { workspace: event.workspace })
-        return
-      }
-      if (event.project && event.project !== project.project()) {
-        return
-      }
-
-      const current = project.workspace.current()
-      if (current && event.workspace && event.workspace !== current) {
-        return
-      }
-
-      if (event.project === project.project() || event.directory === project.instance.directory()) {
+      if (event.directory === "global" || event.project === project.project()) {
         handler(event.payload, { workspace: event.workspace })
       }
     })

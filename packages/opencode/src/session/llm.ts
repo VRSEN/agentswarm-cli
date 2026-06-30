@@ -29,28 +29,8 @@ export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 type Result = Awaited<ReturnType<typeof streamText>>
 
 // Avoid re-instantiating remeda's deep merge types in this hot LLM path; the runtime behavior is still mergeDeep.
-const mergeOptions = (target: Record<string, any>, source: Record<string, any> | undefined): Record<string, any> => {
-  let sourceOptions = source ?? {}
-  if (isReasoningDisabled(target.reasoning) && source?.reasoning !== undefined) {
-    sourceOptions = { ...source }
-    delete sourceOptions.reasoning
-  }
-  const result = mergeDeep(target, sourceOptions) as Record<string, any>
-  const reasoning = source?.reasoning
-  if (isReasoningDisabled(reasoning)) {
-    result.reasoning = reasoning
-  }
-  return result
-}
-
-function isReasoningDisabled(value: unknown) {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "enabled" in value &&
-    (value as Record<string, unknown>).enabled === false
-  )
-}
+const mergeOptions = (target: Record<string, any>, source: Record<string, any> | undefined): Record<string, any> =>
+  mergeDeep(target, source ?? {}) as Record<string, any>
 
 export type StreamInput = {
   user: MessageV2.User
@@ -214,15 +194,11 @@ const live: Layer.Layer<
 
       const tools = resolveTools(input)
 
-      const isLiteLLMProxy =
-        item.options?.["litellmProxy"] === true ||
-        input.model.providerID.toLowerCase().includes("litellm") ||
-        input.model.api.id.toLowerCase().includes("litellm")
-
-      // Some providers reject history with tool calls unless a tools parameter is
-      // present, even when no tools are active during compaction or replay.
+      // GitHub Copilot may require the tools parameter when message history contains
+      // tool calls but no tools are active (e.g. compaction). Inject a stub tool that
+      // is never meant to be invoked. LiteLLM-backed providers are excluded.
       if (
-        (isLiteLLMProxy || input.model.providerID.includes("github-copilot")) &&
+        input.model.providerID.includes("github-copilot") &&
         Object.keys(tools).length === 0 &&
         hasToolCalls(input.messages)
       ) {

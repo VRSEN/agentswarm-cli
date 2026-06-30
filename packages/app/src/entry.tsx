@@ -8,6 +8,7 @@ import { dict as en } from "@/i18n/en"
 import { dict as zh } from "@/i18n/zh"
 import { handleNotificationClick } from "@/utils/notification-click"
 import { authFromToken } from "@/utils/server"
+import { readStartupAuthToken, stripStartupAuthToken } from "@/utils/startup-auth"
 import pkg from "../package.json"
 import { ServerConnection } from "./context/server"
 
@@ -112,33 +113,10 @@ const getDefaultUrl = () => {
   return getCurrentUrl()
 }
 
-const AUTH_TOKEN_PARAM = "auth_token"
-
-const readHashAuthToken = () => {
-  if (!location.hash) return null
-  const params = new URLSearchParams(location.hash.slice(1))
-  return params.get(AUTH_TOKEN_PARAM)
-}
-
-const readStartupAuthToken = () => {
-  const hash = readHashAuthToken()
-  if (hash) return hash
-  return new URLSearchParams(location.search).get(AUTH_TOKEN_PARAM)
-}
-
 const clearAuthToken = () => {
-  const params = new URLSearchParams(location.search)
-  const hadSearch = params.has(AUTH_TOKEN_PARAM)
-  params.delete(AUTH_TOKEN_PARAM)
-
-  const hashParams = new URLSearchParams(location.hash.slice(1))
-  const hadHash = hashParams.has(AUTH_TOKEN_PARAM)
-  hashParams.delete(AUTH_TOKEN_PARAM)
-
-  if (!hadSearch && !hadHash) return
-  const search = params.size ? `?${params}` : ""
-  const hash = hadHash ? (hashParams.size ? `#${hashParams}` : "") : location.hash
-  history.replaceState(null, "", location.pathname + search + hash)
+  const next = stripStartupAuthToken(location)
+  if (!next) return
+  history.replaceState(null, "", next)
 }
 
 const platform: Platform = {
@@ -177,7 +155,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 }
 
 if (root instanceof HTMLElement) {
-  const auth = authFromToken(readStartupAuthToken())
+  const auth = authFromToken(readStartupAuthToken(location))
   clearAuthToken()
   const server: ServerConnection.Http = {
     type: "http",

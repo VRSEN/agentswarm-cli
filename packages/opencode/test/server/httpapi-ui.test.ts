@@ -407,18 +407,13 @@ describe("HttpApi UI fallback", () => {
   )
 
   // Regression for #25698 (Ope): the browser fetches the PWA manifest and
-  // its icons and boot chunks via flows that don't carry app-managed credentials (the
+  // its icons via flows that don't carry app-managed credentials (the
   // `<link rel="manifest">` request is not under page-auth control), so the
   // server returning 401 breaks PWA install. These specific public assets
   // should bypass auth.
-  it.live("serves public UI assets without auth even when a server password is set", () =>
+  it.live("serves the PWA manifest without auth even when a server password is set", () =>
     Effect.gen(function* () {
-      for (const path of [
-        "/site.webmanifest",
-        "/web-app-manifest-192x192.png",
-        "/web-app-manifest-512x512.png",
-        "/assets/app.js",
-      ]) {
+      for (const path of ["/site.webmanifest", "/web-app-manifest-192x192.png", "/web-app-manifest-512x512.png"]) {
         const response = yield* uiApp({
           password: "secret",
           username: "opencode",
