@@ -4,6 +4,7 @@ declare const AGENTSWARM_PRODUCT_DISPLAY_NAME: string | undefined
 declare const AGENTSWARM_PRODUCT_COMMAND: string | undefined
 declare const AGENTSWARM_PRODUCT_PACKAGE_NAME: string | undefined
 declare const AGENTSWARM_PRODUCT_LAUNCHER_PACKAGE_NAME: string | undefined
+declare const AGENTSWARM_PRODUCT_VERSION: string | undefined
 declare const AGENTSWARM_PRODUCT_RELEASE_REPO: string | undefined
 declare const AGENTSWARM_PRODUCT_DOCS_URL: string | undefined
 declare const AGENTSWARM_PRODUCT_ISSUE_URL: string | undefined
@@ -45,6 +46,7 @@ export namespace AgencyProduct {
     cmd: string
     packageName: string
     launcherPackageName: string
+    productVersion?: string
     mdnsDomain: string
     releaseRepo: string
     docs: string
@@ -94,6 +96,8 @@ export namespace AgencyProduct {
       typeof AGENTSWARM_PRODUCT_LAUNCHER_PACKAGE_NAME === "undefined"
         ? undefined
         : AGENTSWARM_PRODUCT_LAUNCHER_PACKAGE_NAME,
+    AGENTSWARM_PRODUCT_VERSION:
+      typeof AGENTSWARM_PRODUCT_VERSION === "undefined" ? undefined : AGENTSWARM_PRODUCT_VERSION,
     AGENTSWARM_PRODUCT_RELEASE_REPO:
       typeof AGENTSWARM_PRODUCT_RELEASE_REPO === "undefined" ? undefined : AGENTSWARM_PRODUCT_RELEASE_REPO,
     AGENTSWARM_PRODUCT_DOCS_URL:
@@ -256,6 +260,7 @@ export namespace AgencyProduct {
       cmd: readValue(env, "AGENTSWARM_PRODUCT_COMMAND"),
       packageName: readValue(env, "AGENTSWARM_PRODUCT_PACKAGE_NAME"),
       launcherPackageName: readValue(env, "AGENTSWARM_PRODUCT_LAUNCHER_PACKAGE_NAME"),
+      productVersion: readValue(env, "AGENTSWARM_PRODUCT_VERSION"),
       releaseRepo: readValue(env, "AGENTSWARM_PRODUCT_RELEASE_REPO"),
       docs: readValue(env, "AGENTSWARM_PRODUCT_DOCS_URL"),
       issue: readValue(env, "AGENTSWARM_PRODUCT_ISSUE_URL"),
@@ -294,6 +299,7 @@ export namespace AgencyProduct {
       cmd: overrides.cmd ?? defaults.cmd,
       packageName: overrides.packageName ?? defaults.packageName,
       launcherPackageName: overrides.launcherPackageName ?? defaults.launcherPackageName,
+      productVersion: overrides.productVersion,
       releaseRepo: overrides.releaseRepo ?? defaults.releaseRepo,
       docs: overrides.docs ?? defaults.docs,
       issue: overrides.issue ?? defaults.issue,
@@ -323,6 +329,7 @@ export namespace AgencyProduct {
   export const name = current.name
   export const packageName = current.packageName
   export const launcherPackageName = current.launcherPackageName
+  export const productVersion = current.productVersion
   export const cmd = current.cmd
   export const mdnsDomain = current.mdnsDomain
   export const releaseRepo = current.releaseRepo

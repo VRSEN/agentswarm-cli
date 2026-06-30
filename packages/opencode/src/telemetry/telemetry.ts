@@ -133,6 +133,7 @@ const baseProperties: Record<string, PropertySpec> = {
   channel: stringField(),
   parent_swarm_id: stringField(),
   platform: stringField(platforms),
+  product_version: stringField(),
   swarm_id: stringField(),
   swarm_origin: stringField(swarmOrigins),
   terminal: stringField(terminalClients),
@@ -338,6 +339,7 @@ function sanitize(event: TelemetryEvent, input: Record<string, unknown> | undefi
   assignSafe(output, baseProperties, "channel", InstallationChannel)
   assignSafe(output, baseProperties, "parent_swarm_id", AgencyProduct.marketplaceParentSwarmID)
   assignSafe(output, baseProperties, "platform", os.platform())
+  assignSafe(output, baseProperties, "product_version", AgencyProduct.productVersion)
   assignSafe(output, baseProperties, "swarm_id", AgencyProduct.marketplaceSwarmID)
   assignSafe(output, baseProperties, "swarm_origin", AgencyProduct.marketplaceSwarmOrigin)
   assignSafe(output, baseProperties, "version", InstallationVersion)

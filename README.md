@@ -58,9 +58,9 @@ Release builds may send privacy-safe product analytics to the official Agent Swa
 
 Set `ENABLE_TELEMETRY=0`, `OPEN_SWARM_TELEMETRY=0`, `AGENTSWARM_TELEMETRY=0`, or pass `--no-telemetry` to disable this telemetry.
 
-Every sent PostHog event sets `$process_person_profile: false`.
+Every sent PostHog event sets `$process_person_profile: false` and includes safe base properties such as `version` (the Agent Swarm binary version), `app`, `platform`, `arch`, `channel`, and `terminal` when available.
 
-Product launchers may attach allowlisted marketplace metadata to each event: `swarm_id`, `parent_swarm_id`, and `swarm_origin` (`original`, `fork`, or `unknown`). Official release binaries use the embedded capture key; runtime PostHog key environment variables do not redirect production telemetry.
+Product launchers may attach an allowlisted package version as `product_version` and marketplace metadata as `swarm_id`, `parent_swarm_id`, and `swarm_origin` (`original`, `fork`, or `unknown`). Official release binaries use the embedded capture key; runtime PostHog key environment variables do not redirect production telemetry.
 
 Supported events and properties:
 

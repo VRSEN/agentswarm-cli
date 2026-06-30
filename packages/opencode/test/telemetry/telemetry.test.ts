@@ -21,6 +21,7 @@ type Captured = {
 type RunnerMode = "capture" | "flush-before-capture" | "bounded-flush" | "abort" | "command"
 
 type RunnerInput = {
+  binaryVersion?: string
   command?: {
     category?: string
     keybind?: string
@@ -32,6 +33,7 @@ type RunnerInput = {
   host?: string | null
   key?: string | null
   mode?: RunnerMode
+  productVersion?: string | null
   properties?: Record<string, unknown>
   readState?: boolean
   stateDir: string
@@ -46,8 +48,8 @@ type RunnerOutput = {
   state?: unknown
 }
 
-function defineString(value: string | null | undefined, fallback: string) {
-  if (value === null) return "undefined"
+function defineString(value: string | null | undefined, fallback?: string) {
+  if (value === null || (value === undefined && fallback === undefined)) return "undefined"
   return JSON.stringify(value ?? fallback)
 }
 
@@ -148,7 +150,9 @@ async function buildRunnerUnlocked(input: RunnerInput) {
     define: {
       AGENTSWARM_POSTHOG_API_KEY: defineString(input.key, "ph_test"),
       AGENTSWARM_POSTHOG_HOST: defineString(input.host, "https://posthog.example"),
+      AGENTSWARM_PRODUCT_VERSION: defineString(input.productVersion),
       AGENTSWARM_TELEMETRY_TEST: input.testMode === false ? "undefined" : "true",
+      OPENCODE_VERSION: defineString(input.binaryVersion, "local"),
     },
   }
   const builder = path.join(dir, "build-runner.js")
@@ -308,6 +312,45 @@ describe("Telemetry", () => {
     expect(output.captured).toBe(true)
     expect(output.requests[0].url).toBe("https://compiled.example/i/v0/e/")
     expect(output.requests[0].body.api_key).toBe("ph_compiled")
+  })
+
+  test("sends product version separately from binary version without prompt content", async () => {
+    await using tmp = await tmpdir()
+    const output = await runCompiledTelemetry({
+      binaryVersion: "9.9.9-agentswarm",
+      env: {
+        AGENTSWARM_PRODUCT_VERSION: "1.2.3-openswarm",
+      },
+      event: "ui_prompt_submitted",
+      properties: {
+        framework_mode: true,
+        has_file_parts: false,
+        message: "secret prompt",
+        mode: "normal",
+        provider_id: "agency-swarm",
+        type: "prompt",
+      },
+      stateDir: tmp.path,
+    })
+
+    expect(output.captured).toBe(true)
+    expect(output.requests[0].body.properties).toMatchObject({
+      product_version: "1.2.3-openswarm",
+      version: "9.9.9-agentswarm",
+    })
+    expect(JSON.stringify(output.requests[0].body)).not.toContain("secret prompt")
+  })
+
+  test("uses compiled product version when runtime product env is blank", async () => {
+    await using tmp = await tmpdir()
+    const output = await runCompiledTelemetry({
+      event: "app_started",
+      productVersion: "2.0.0-compiled",
+      properties: { entrypoint: "tui" },
+      stateDir: tmp.path,
+    })
+
+    expect(output.requests[0].body.properties?.product_version).toBe("2.0.0-compiled")
   })
 
   test("uses the default host when no host is compiled", async () => {
@@ -988,12 +1031,17 @@ describe("Telemetry", () => {
   test("sanitizes built-in properties through the privacy boundary", async () => {
     await using tmp = await tmpdir()
     const output = await runCompiledTelemetry({
-      env: { OPENCODE_CLIENT: "bad\nterminal" },
+      env: {
+        AGENTSWARM_PRODUCT_VERSION: "bad\nprivate product sentinel",
+        OPENCODE_CLIENT: "bad\nterminal",
+      },
       event: "app_started",
       properties: { entrypoint: "tui" },
       stateDir: tmp.path,
     })
 
     expect(output.requests[0].body.properties?.terminal).toBeUndefined()
+    expect(output.requests[0].body.properties?.product_version).toBeUndefined()
+    expect(JSON.stringify(output.requests[0].body)).not.toContain("private product sentinel")
   })
 })

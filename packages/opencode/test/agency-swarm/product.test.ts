@@ -20,6 +20,7 @@ describe("AgencyProduct profile", () => {
     expect(profile.cmd).toBe("agentswarm")
     expect(profile.packageName).toBe("agentswarm-cli")
     expect(profile.launcherPackageName).toBe("@vrsen/agentswarm")
+    expect(profile.productVersion).toBeUndefined()
     expect(profile.mdnsDomain).toBe("agentswarm.local")
     expect(profile.releaseRepo).toBe("VRSEN/agentswarm-cli")
     expect(profile.docs).toBe("https://agency-swarm.ai/core-framework/agencies/agent-swarm-cli")
@@ -52,6 +53,7 @@ describe("AgencyProduct profile", () => {
       AGENTSWARM_PRODUCT_COMMAND: "example",
       AGENTSWARM_PRODUCT_PACKAGE_NAME: "example-cli",
       AGENTSWARM_PRODUCT_LAUNCHER_PACKAGE_NAME: "@example/product",
+      AGENTSWARM_PRODUCT_VERSION: "2.0.0-example",
       AGENTSWARM_PRODUCT_RELEASE_REPO: "example/product-cli",
       AGENTSWARM_PRODUCT_DOCS_URL: "https://example.com/docs",
       AGENTSWARM_PRODUCT_ISSUE_URL: "https://example.com/issues/new",
@@ -101,6 +103,7 @@ describe("AgencyProduct profile", () => {
     expect(profile.cmd).toBe("example")
     expect(profile.packageName).toBe("example-cli")
     expect(profile.launcherPackageName).toBe("@example/product")
+    expect(profile.productVersion).toBe("2.0.0-example")
     expect(profile.mdnsDomain).toBe("example.local")
     expect(profile.releaseRepo).toBe("example/product-cli")
     expect(profile.docs).toBe("https://example.com/docs")
