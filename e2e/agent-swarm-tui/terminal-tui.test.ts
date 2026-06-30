@@ -1904,7 +1904,21 @@ describe("Agent Swarm terminal TUI e2e", () => {
     currentTui.write("/connect")
     await currentTui.waitForText("/connect", tuiInteractionTimeoutMs)
     currentTui.write("\r")
-    const screen = await currentTui.waitForText("Connect to local agency-swarm server", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => {
+        const screen = currentTui!.screen()
+        return (
+          screen.includes("http://127.0.0.1:8000") &&
+          screen.includes("http://127.0.0.1:8080") &&
+          screen.includes("Add local port") &&
+          screen.includes("Authentication") &&
+          !screen.includes("Connect a provider")
+        )
+      },
+      "Agency Swarm connect dialog without configured server",
+      tuiInteractionTimeoutMs,
+    )
+    const screen = currentTui.screen()
 
     expect(screen).toContain("http://127.0.0.1:8000")
     expect(screen).toContain("http://127.0.0.1:8080")
