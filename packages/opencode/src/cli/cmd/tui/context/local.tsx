@@ -70,6 +70,7 @@ export function inferProductMode(input: {
   if (input.storedBridge === true) return agencySwarmEnabled ? "run" : "build"
   if (input.agentName === "plan") return "plan"
   if (input.storedBridge === false) return "build"
+  if (input.hasAgencySwarmProvider && agencySwarmEnabled) return "run"
   if (
     input.agentName === "build" &&
     !input.argModel &&
@@ -79,7 +80,6 @@ export function inferProductMode(input: {
   ) {
     return "build"
   }
-  if (input.hasAgencySwarmProvider && agencySwarmEnabled) return "run"
   if (
     agencySwarmEnabled &&
     isAgencySwarmRunMode({

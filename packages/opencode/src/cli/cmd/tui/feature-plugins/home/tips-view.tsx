@@ -68,7 +68,7 @@ function parse(tip: string): TipPart[] {
   return parts
 }
 
-const NO_MODELS_TIP = "Run {highlight}/connect{/highlight} to add an AI provider and start coding"
+const NO_MODELS_TIP = "Use {highlight}/auth{/highlight} for provider credentials, then {highlight}/connect{/highlight} for a local server"
 
 function shortcutText(value: string) {
   return `{highlight}${value}{/highlight}`

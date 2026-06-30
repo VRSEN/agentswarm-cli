@@ -796,7 +796,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "provider.auth",
-        title: "Manage provider auth",
+        title: AgencyProduct.auth,
         suggested: !connected(),
         slashName: "auth",
         slashAliases: ["logout"],
@@ -828,7 +828,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         suggested: !connected(),
         slashName: "connect",
         run: () => {
-          dialog.replace(() => (frameworkMode() ? <DialogAgencySwarmConnect /> : <DialogProviderConnect />))
+          dialog.replace(() => <DialogAgencySwarmConnect />)
         },
         category: "Provider",
       },

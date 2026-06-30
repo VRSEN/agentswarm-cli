@@ -4,7 +4,7 @@ import { testRender } from "@opentui/solid"
 import { createStore } from "solid-js/store"
 import * as ArgsContext from "../../../src/cli/cmd/tui/context/args"
 import * as EventContext from "../../../src/cli/cmd/tui/context/event"
-import { LocalProvider, useLocal } from "../../../src/cli/cmd/tui/context/local"
+import { inferProductMode, LocalProvider, useLocal } from "../../../src/cli/cmd/tui/context/local"
 import * as RouteContext from "../../../src/cli/cmd/tui/context/route"
 import * as SDKContext from "../../../src/cli/cmd/tui/context/sdk"
 import * as SyncContext from "../../../src/cli/cmd/tui/context/sync"
@@ -15,6 +15,73 @@ import { Filesystem } from "../../../src/util/filesystem"
 function flushEffects() {
   return Promise.resolve().then(() => Promise.resolve())
 }
+
+describe("tui local context product mode inference", () => {
+  test("keeps Run mode when Agency Swarm is configured over stale explicit provider state", () => {
+    expect(
+      inferProductMode({
+        agentName: "build",
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+          explicit: true,
+        },
+        currentProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+        hasAgencySwarmProvider: true,
+      }),
+    ).toBe("run")
+  })
+
+  test("preserves explicit Build and Plan mode selections", () => {
+    expect(
+      inferProductMode({
+        storedMode: "build",
+        agentName: "build",
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+          explicit: true,
+        },
+        currentProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+        hasAgencySwarmProvider: true,
+      }),
+    ).toBe("build")
+
+    expect(
+      inferProductMode({
+        storedMode: "plan",
+        agentName: "plan",
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+          explicit: true,
+        },
+        currentProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+        hasAgencySwarmProvider: true,
+      }),
+    ).toBe("plan")
+  })
+
+  test("keeps stored native bridge sessions out of Run mode", () => {
+    expect(
+      inferProductMode({
+        agentName: "build",
+        storedBridge: false,
+        storedModel: {
+          providerID: "openai",
+          modelID: "gpt-5",
+          explicit: true,
+        },
+        currentProviderID: "openai",
+        configuredModel: "agency-swarm/default",
+        hasAgencySwarmProvider: true,
+      }),
+    ).toBe("build")
+  })
+})
 
 describe("tui local context model sync", () => {
   afterEach(() => {
