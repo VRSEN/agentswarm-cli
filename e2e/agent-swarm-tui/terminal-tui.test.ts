@@ -43,6 +43,10 @@ function hasCommand(screen: string, command: string) {
   return screen.split("\n").some((line) => new RegExp(`┃\\s+${command}\\b`).test(line))
 }
 
+function commandLine(screen: string, command: string) {
+  return screen.split("\n").find((line) => new RegExp(`┃\\s+${command}\\b`).test(line)) ?? ""
+}
+
 function hasCompletedRunTurn(screen: string) {
   return /▣\s+Run · .+ · \d+(?:\.\d+)?(?:ms|s)\b/.test(screen)
 }
@@ -262,6 +266,10 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     expect(hasCommand(screen, "/auth")).toBe(true)
     expect(hasCommand(screen, "/connect")).toBe(true)
+    expect(commandLine(screen, "/auth")).toContain("Manage provider auth")
+    expect(commandLine(screen, "/connect")).toContain("Connect to local agency-swarm server")
+    expect(commandLine(screen, "/connect")).not.toContain("Manage provider auth")
+    expect(commandLine(screen, "/connect")).not.toContain("Authenticate providers")
     expect(hasCommand(screen, "/models")).toBe(true)
     expect(hasCommand(screen, "/agents")).toBe(true)
     expect(hasCommand(screen, "/addons")).toBe(false)
@@ -1823,7 +1831,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(screen).not.toContain("1.5K (0%)")
   })
 
-  test("/connect opens the Agency Swarm server dialog with visible OpenAI model state", async () => {
+  test("/connect opens the Agency Swarm server dialog with visible OpenAI model state outside Run mode", async () => {
     currentServer = await startAgencyProtocolServer()
     currentTui = await startTui({
       baseURL: currentServer.baseURL,
@@ -1832,10 +1840,12 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
 
     await currentTui.waitForText(latestOpenAITestModelLabel, tuiReadyTimeoutMs)
-    currentTui.write("/con")
+    await selectProductMode(currentTui, "Build")
+    await currentTui.waitForText("Build ·", tuiInteractionTimeoutMs)
+    currentTui.write("/connect")
     await currentTui.waitFor(
-      () => currentTui!.screen().includes("/connect") && currentTui!.screen().includes("/con"),
-      "filtered /connect slash command",
+      () => currentTui!.screen().includes("/connect"),
+      "/connect slash command",
       tuiInteractionTimeoutMs,
     )
     currentTui.write("\r")
@@ -1869,6 +1879,52 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(tokenScreen).toContain("Update token")
     expect(tokenScreen).toContain("Clear token")
     expect(tokenScreen).not.toContain("Connect a provider")
+  })
+
+  test("/connect opens local server controls when Agency Swarm is not configured", async () => {
+    currentTui = await startTui({
+      args: ["--model", latestOpenAITestModel],
+      env: {
+        OPENCODE_CONFIG_CONTENT: JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          enabled_providers: ["openai"],
+          model: latestOpenAITestModel,
+          provider: {
+            openai: {
+              options: {
+                apiKey: "test-openai-key",
+              },
+            },
+          },
+        }),
+      },
+    })
+
+    await currentTui.waitForText(latestOpenAITestModelLabel, tuiReadyTimeoutMs)
+    currentTui.write("/connect")
+    await currentTui.waitForText("/connect", tuiInteractionTimeoutMs)
+    currentTui.write("\r")
+    await currentTui.waitFor(
+      () => {
+        const screen = currentTui!.screen()
+        return (
+          screen.includes("http://127.0.0.1:8000") &&
+          screen.includes("http://127.0.0.1:8080") &&
+          screen.includes("Add local port") &&
+          screen.includes("Authentication") &&
+          !screen.includes("Connect a provider")
+        )
+      },
+      "Agency Swarm connect dialog without configured server",
+      tuiInteractionTimeoutMs,
+    )
+    const screen = currentTui.screen()
+
+    expect(screen).toContain("http://127.0.0.1:8000")
+    expect(screen).toContain("http://127.0.0.1:8080")
+    expect(screen).toContain("Add local port")
+    expect(screen).toContain("Authentication")
+    expect(screen).not.toContain("Connect a provider")
   })
 
   test("Run-mode auth failures open /auth with visible OpenAI model state", async () => {

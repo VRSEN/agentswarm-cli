@@ -308,7 +308,8 @@ export namespace AgencyProduct {
   export const wordmarkLines = current.wordmarkLines
   export const pythonEnvironment = current.pythonEnvironment
   export const stateRoot = current.stateRoot
-  export const connect = "Authenticate providers"
+  export const auth = "Manage provider auth"
+  export const connect = "Connect to local agency-swarm server"
   export const start = [
     "Authenticate providers and connect to a local agency-swarm server before sending prompts.",
     "Use /auth for provider credentials, then /connect to choose the server and store a token.",

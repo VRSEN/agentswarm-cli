@@ -53,8 +53,12 @@ function View(props: { api: TuiPluginApi }) {
             <text fg={theme().textMuted}>{AgencyProduct.start[0]}</text>
             <text fg={theme().textMuted}>{AgencyProduct.start[1]}</text>
             <box flexDirection="row" gap={1} justifyContent="space-between">
-              <text fg={theme().text}>{AgencyProduct.connect}</text>
+              <text fg={theme().text}>{AgencyProduct.auth}</text>
               <text fg={theme().textMuted}>/auth</text>
+            </box>
+            <box flexDirection="row" gap={1} justifyContent="space-between">
+              <text fg={theme().text}>{AgencyProduct.connect}</text>
+              <text fg={theme().textMuted}>/connect</text>
             </box>
           </box>
         </box>
