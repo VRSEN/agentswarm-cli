@@ -11,7 +11,7 @@
 - `USER_FLOWS.md` `/modes`, Build, and Plan: users can repair or change a swarm in Build, return to Run, and verify the fixed swarm; users can also recover from a failed Run attempt by switching to Build, then back to Run for a successful response.
 - `USER_FLOWS.md` `/modes`, Build, and Plan: when the Run server is unreachable, the reconnect UI appears and the user can switch to Build for a server-free repair prompt.
 - `USER_FLOWS.md` `/modes`, Build, and Plan: Tab switches OpenCode agents in Build and Plan, and Agency Swarm targets in Run.
-- `USER_FLOWS.md` `/modes`, Build, and Plan: native Plan approval keeps keyboard input on the approval question, switches to Build after approval, and keeps the approved Build follow-up off the Agency Swarm server.
+- `USER_FLOWS.md` `/modes`, Build, and Plan: native Plan approval keeps keyboard input on the approval question, handles arrow-key Yes/No selection, switches to Build after approval, stays in Plan after decline, recovers a missed active approval prompt on session reopen, and keeps the approved Build follow-up off the Agency Swarm server.
 - `USER_FLOWS.md` `/modes`, Build, and Plan: mixed-mode message actions keep Run undo/redo surfaces hidden while preserving native Build redo.
 - `USER_FLOWS.md` Run Mode: the sidebar shows the selected swarm and main/subagent counts; `/agents` uses Swarm and agent wording, live agency labels, swarm-row routing, and specific-agent routing against an Agency Swarm TUI-demo-shaped swarm.
 - `USER_FLOWS.md` Run Mode: prompt submit reaches a local Agency Swarm protocol server with the configured agent.

@@ -103,10 +103,8 @@ function hasModeOrder(screen: string) {
 }
 
 function footerHasMode(screen: string, mode: string) {
-  return screen
-    .split("\n")
-    .slice(-16)
-    .some((line) => line.includes(`${mode} ·`) && line.includes("OpenAI"))
+  const lines = screen.split("\n")
+  return lines.some((line, index) => line.includes(`${mode} ·`) && (lines[index + 1] ?? "").includes("▀▀"))
 }
 
 function nativeOpenAIConfig(baseURL: string) {
@@ -915,7 +913,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(currentServer.requests).toHaveLength(0)
   })
 
-  test("approving native Plan handoff switches the TUI to Build", async () => {
+  test("Plan handoff repeated arrow selection on Yes switches to Build", async () => {
     const planPrompt = "finish test plan with native plan_exit"
     const buildPrompt = "continue after approved native plan"
     currentServer = await startTuiDemoAgencyServer()
@@ -945,6 +943,11 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(footerHasMode(currentTui.screen(), "Build")).toBe(false)
     expect(currentServer.requests).toHaveLength(0)
 
+    currentTui.write("\x1b[B\x1b[B\x1b[A\x1b[A")
+    await Bun.sleep(100)
+    expect(currentTui.screen()).toContain("Yes")
+    expect(currentTui.screen()).toContain("switch to Build")
+
     currentTui.write("\r")
     await currentTui.waitFor(
       () => footerHasMode(currentTui!.screen(), "Build"),
@@ -960,6 +963,43 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(body).toContain("Agent Swarm Build Instructions")
     expect(body).not.toContain("Agent Swarm Planner Instructions")
     expect(currentServer.requests).toHaveLength(0)
+  })
+
+  test("Plan handoff arrow selection on No keeps Plan", async () => {
+    const planPrompt = "decline test plan with native plan_exit"
+    currentServer = await startTuiDemoAgencyServer()
+    currentNativeServer = await startNativeLLMServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      config: nativeOpenAIConfig(currentNativeServer.baseURL),
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    await selectProductMode(currentTui, "Plan")
+    await currentTui.waitFor(() => footerHasMode(currentTui!.screen(), "Plan"), "Plan footer", tuiInteractionTimeoutMs)
+
+    currentNativeServer.planExitNext()
+    currentTui.write(`${planPrompt}\r`)
+    await currentTui.waitFor(
+      () => currentTui!.screen().includes("Would you like to") && currentTui!.screen().includes("switch to Build"),
+      "Plan approval question",
+      tuiInteractionTimeoutMs,
+    )
+    currentTui.write("\x1b[B")
+    await Bun.sleep(100)
+    expect(currentTui.screen()).toContain("No")
+    expect(currentTui.screen()).toContain("switch to Build")
+
+    currentTui.write("\r")
+    await currentTui.waitFor(
+      () => !currentTui!.screen().includes("switch to Build") && footerHasMode(currentTui!.screen(), "Plan"),
+      "Plan footer after declined plan approval",
+      tuiInteractionTimeoutMs,
+    )
+    expect(currentServer.requests).toHaveLength(0)
+    expect(footerHasMode(currentTui.screen(), "Build")).toBe(false)
   })
 
   test("startup Plan handoff recovers the pending approval question", async () => {
@@ -986,6 +1026,72 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await currentTui.waitFor(
       () => footerHasMode(currentTui!.screen(), "Build"),
       "Build footer after startup plan approval",
+      tuiInteractionTimeoutMs,
+    )
+
+    currentTui.write(`${buildPrompt}\r`)
+    await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
+    const request = await waitForNativeLLMRequest(currentTui, currentNativeServer, buildPrompt)
+    const body = JSON.stringify(request.body)
+    expect(body).toContain("Agent Swarm Build Instructions")
+    expect(body).not.toContain("Agent Swarm Planner Instructions")
+  })
+
+  test("reopened active Plan handoff recovers a missed pending approval question", async () => {
+    const planPrompt = "active plan prompt with missed plan_exit event"
+    const buildPrompt = "continue after recovered active plan approval"
+    const markerDir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-tui-question-marker-"))
+    tempDirs.push(markerDir)
+    const marker = path.join(markerDir, "question.json")
+    currentServer = await startTuiDemoAgencyServer()
+    currentNativeServer = await startNativeLLMServer()
+    currentTui = await startTui({
+      baseURL: currentServer.baseURL,
+      agency: "tui-demo-agency",
+      recipientAgent: "UserSupportAgent",
+      config: nativeOpenAIConfig(currentNativeServer.baseURL),
+      env: {
+        OPENCODE_TEST_DROP_TUI_QUESTION_ASKED_ONCE: "1",
+        OPENCODE_TEST_DROPPED_QUESTION_MARKER: marker,
+      },
+    })
+
+    await currentTui.waitForText("Swarm Default", tuiReadyTimeoutMs)
+    await selectProductMode(currentTui, "Plan")
+    await currentTui.waitFor(() => footerHasMode(currentTui!.screen(), "Plan"), "Plan footer", tuiInteractionTimeoutMs)
+
+    currentNativeServer.planExitNext()
+    currentTui.write(`${planPrompt}\r`)
+    await currentTui.waitForText("plan_exit", tuiInteractionTimeoutMs)
+    await waitForFile(marker, "dropped Plan approval question marker")
+    await Bun.sleep(500)
+    expect(currentTui.screen()).not.toContain("Would you like to")
+
+    await runPaletteCommand(currentTui, "New session")
+    await currentTui.waitFor(
+      () =>
+        currentTui!.screen().includes("Ask anything") &&
+        !currentTui!.screen().includes(planPrompt) &&
+        !currentTui!.screen().includes("esc interrupt"),
+      "new empty prompt after missed Plan question",
+      tuiInteractionTimeoutMs,
+    )
+
+    await runPaletteCommand(currentTui, "Switch session")
+    await currentTui.waitForText("Sessions", tuiInteractionTimeoutMs)
+    currentTui.write("\x1b[B\r")
+    await currentTui.waitFor(
+      () => currentTui!.screen().includes("Would you like") && currentTui!.screen().includes("switch to Build"),
+      "recovered active Plan approval question",
+      tuiInteractionTimeoutMs,
+    )
+    expect(currentTui.screen()).toContain("plan_exit")
+    expect(footerHasMode(currentTui.screen(), "Build")).toBe(false)
+
+    currentTui.write("\r")
+    await currentTui.waitFor(
+      () => footerHasMode(currentTui!.screen(), "Build"),
+      "Build footer after recovered active plan approval",
       tuiInteractionTimeoutMs,
     )
 
@@ -1790,7 +1896,11 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await currentTui.waitForText("UserSupportAgent", tuiReadyTimeoutMs)
     await selectProductMode(currentTui, "Build")
     currentTui.write("\t")
-    await currentTui.waitFor(() => currentTui!.screen().includes("Plan"), "native Plan agent", tuiInteractionTimeoutMs)
+    await currentTui.waitFor(
+      () => footerHasMode(currentTui!.screen(), "Plan"),
+      "native Plan agent",
+      tuiInteractionTimeoutMs,
+    )
 
     await selectProductMode(currentTui, "Run")
     currentTui.write("\t")
@@ -2731,6 +2841,28 @@ async function selectProductMode(tui: TuiProcess, mode: "Build" | "Plan" | "Run"
   tui.write("\r")
   await tui.waitFor(() => !tui.screen().includes("Select mode"), `${mode} mode selected`, tuiInteractionTimeoutMs)
   clearPrompt(tui)
+}
+
+async function runPaletteCommand(tui: TuiProcess, query: string) {
+  tui.write("\x10")
+  await tui.waitForText("Commands", tuiInteractionTimeoutMs)
+  tui.write(query)
+  await tui.waitForText(query, tuiInteractionTimeoutMs)
+  tui.write("\r")
+  await tui.waitFor(() => !tui.screen().includes("Commands"), `${query} command selected`, tuiInteractionTimeoutMs)
+}
+
+async function waitForFile(file: string, label: string) {
+  const deadline = Date.now() + tuiInteractionTimeoutMs
+  while (Date.now() < deadline) {
+    try {
+      await readFile(file, "utf8")
+      return
+    } catch {
+      await Bun.sleep(50)
+    }
+  }
+  throw new Error(`Timed out waiting for ${label}: ${file}`)
 }
 
 async function waitForNativeLLMRequest(tui: TuiProcess, server: NativeLLMServer, prompt: string) {

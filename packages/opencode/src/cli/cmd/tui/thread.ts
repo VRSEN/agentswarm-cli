@@ -57,9 +57,18 @@ function createWorkerFetch(client: RpcClient): typeof fetch {
 }
 
 function createEventSource(client: RpcClient): EventSource {
+  let dropQuestionAsked =
+    process.env.OPENCODE_TEST_HOME !== undefined && process.env.OPENCODE_TEST_DROP_TUI_QUESTION_ASKED_ONCE === "1"
+  const droppedQuestionMarker = process.env.OPENCODE_TEST_DROPPED_QUESTION_MARKER
+
   return {
     subscribe: async (handler) => {
       return client.on<GlobalEvent>("global.event", (e) => {
+        if (dropQuestionAsked && e.payload.type === "question.asked") {
+          dropQuestionAsked = false
+          if (droppedQuestionMarker) void Bun.write(droppedQuestionMarker, JSON.stringify(e.payload))
+          return
+        }
         handler(e)
       })
     },

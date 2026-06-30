@@ -12,7 +12,7 @@ import { useBindings, useOpencodeModeStack } from "../../keymap"
 
 const QUESTION_MODE = "question"
 
-export function QuestionPrompt(props: { request: QuestionRequest }) {
+export function QuestionPrompt(props: { request: QuestionRequest; workspace?: string }) {
   const sdk = useSDK()
   const { theme } = useTheme()
   const renderer = useRenderer()
@@ -51,6 +51,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     const answers = questions().map((_, i) => store.answers[i] ?? [])
     void sdk.client.question.reply({
       requestID: props.request.id,
+      workspace: props.workspace,
       answers,
     })
   }
@@ -58,6 +59,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
   function reject() {
     void sdk.client.question.reject({
       requestID: props.request.id,
+      workspace: props.workspace,
     })
   }
 
@@ -73,6 +75,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     if (single()) {
       void sdk.client.question.reply({
         requestID: props.request.id,
+        workspace: props.workspace,
         answers: [[answer]],
       })
       return
@@ -101,12 +104,9 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     setStore("selected", 0)
   }
 
-  function selectOption(selected = store.selected) {
-    const opts = options()
-    const customSelected = custom() && selected === opts.length
-    if (customSelected) {
+  function selectOption() {
+    if (other()) {
       if (!multi()) {
-        setStore("selected", selected)
         setStore("editing", true)
         return
       }
@@ -118,9 +118,8 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
       setStore("editing", true)
       return
     }
-    const opt = opts[selected]
+    const opt = options()[store.selected]
     if (!opt) return
-    setStore("selected", selected)
     if (multi()) {
       toggle(opt.label)
       return
@@ -262,7 +261,8 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
                 desc: `Select answer ${index + 1}`,
                 group: "Question",
                 cmd: () => {
-                  selectOption(index)
+                  moveTo(index)
+                  selectOption()
                 },
               })),
               {
@@ -373,7 +373,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
                       onMouseDown={() => moveTo(i())}
                       onMouseUp={() => {
                         if (renderer.getSelection()?.getSelectedText()) return
-                        selectOption(i())
+                        selectOption()
                       }}
                     >
                       <box flexDirection="row">

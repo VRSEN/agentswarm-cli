@@ -13,7 +13,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 - `/auth` is the credentials flow, not a product mode switch.
 - `/models` chooses the LLM config passed to Agency Swarm, not a product mode switch.
 - Upstream OpenCode provider/model state may still exist internally for auth and LLM choice, but it must not pull the user out of Run mode by accident.
-- `/modes` is the product mode switch. It exposes Plan, Build, and Run without making Tab switch product modes.
+- `/modes` is the product mode switch. It exposes Plan, Build, and Run without adding `/build` or `/plan` commands.
 - Build and Plan rely on native OpenCode behavior plus fork-specific Agent Swarm instructions. Run is the Agency Swarm server-backed mode.
 - Bug-like changes are not product features. Compare them against upstream, find the root cause, reduce divergence, and avoid fork-only workarounds.
 - Install, launcher, and package behavior count as user experience and belong in this file when they are intentional fork behavior.
@@ -257,9 +257,9 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Implementation: product mode state in `packages/opencode/src/cli/cmd/tui/context/local.tsx`, `DialogMode` in `packages/opencode/src/cli/cmd/tui/component/dialog-mode.tsx`, framework-mode gates in `packages/opencode/src/cli/cmd/tui/session-error.ts`, native routing metadata in `packages/opencode/src/session/prompt.ts` and `packages/opencode/src/session/compaction.ts`, selected-turn message actions in `packages/opencode/src/cli/cmd/tui/routes/session/dialog-message.tsx`, redo gating in `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`, and upstream-aligned question keymap isolation in `packages/opencode/src/cli/cmd/tui/keymap.tsx` and `packages/opencode/src/cli/cmd/tui/routes/session/question.tsx`.
   - Added by: `d6b9ed38`, PR #300
 
-- **Tab switches agents inside the current mode**
-  - Intent: keep Tab from switching product modes while preserving fast agent switching in each mode.
-  - Behavior: pressing Tab in Run mode cycles through available Agency Swarm targets. In Build and Plan, Tab keeps the OpenCode agent-cycle behavior.
+- **Tab switches native agents outside Run and swarm agents in Run**
+  - Intent: preserve upstream native agent cycling while keeping fast target switching during Run sessions.
+  - Behavior: pressing Tab in Run mode cycles through available Agency Swarm targets. In Build and Plan, Tab keeps the native OpenCode agent-cycle behavior, and the visible mode follows the selected native agent when that agent is Build or Plan.
   - Implementation: `cycleAgencyRunTarget` in `packages/opencode/src/cli/cmd/tui/app.tsx` and `cycleAgencyTargetSelection` in `packages/opencode/src/cli/cmd/tui/util/agency-target.ts`.
   - Added by: `d6b9ed38`
 
