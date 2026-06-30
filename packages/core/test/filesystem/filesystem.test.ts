@@ -8,6 +8,16 @@ import path from "path"
 const live = AppFileSystem.layer.pipe(Layer.provideMerge(NodeFileSystem.layer))
 const { effect: it } = testEffect(live)
 
+function withPlatform<T>(platform: NodeJS.Platform, fn: () => T) {
+  const original = process.platform
+  Object.defineProperty(process, "platform", { configurable: true, value: platform })
+  try {
+    return fn()
+  } finally {
+    Object.defineProperty(process, "platform", { configurable: true, value: original })
+  }
+}
+
 describe("AppFileSystem", () => {
   describe("isDir", () => {
     it(
@@ -362,6 +372,16 @@ describe("AppFileSystem", () => {
       expect(AppFileSystem.contains("/a/b", "/a/bc")).toBe(false)
     })
 
+    test("contains rejects Windows root-relative prefix collisions", () => {
+      withPlatform("win32", () => {
+        expect(AppFileSystem.contains("/project", "/project-other/file")).toBe(false)
+        expect(AppFileSystem.contains("/project", "/projectfile")).toBe(false)
+        expect(AppFileSystem.contains("/project", "/project/..config")).toBe(true)
+        expect(AppFileSystem.contains("/project", "/project/..config/file")).toBe(true)
+        expect(AppFileSystem.contains("C:/Project", "c:/project/src/file.ts")).toBe(true)
+      })
+    })
+
     test("overlaps detects overlapping paths", () => {
       expect(AppFileSystem.overlaps("/a/b", "/a/b/c")).toBe(true)
       expect(AppFileSystem.overlaps("/a/b", "/a/b")).toBe(true)
@@ -373,5 +393,13 @@ describe("AppFileSystem", () => {
       expect(AppFileSystem.overlaps("/a/b", "/a/bc")).toBe(false)
     })
 
+    test("overlaps rejects Windows root-relative prefix collisions", () => {
+      withPlatform("win32", () => {
+        expect(AppFileSystem.overlaps("/project", "/project-other/file")).toBe(false)
+        expect(AppFileSystem.overlaps("/project", "/projectfile")).toBe(false)
+        expect(AppFileSystem.overlaps("/project", "/project/..config")).toBe(true)
+        expect(AppFileSystem.overlaps("/project", "/project/..config/file")).toBe(true)
+      })
+    })
   })
 })

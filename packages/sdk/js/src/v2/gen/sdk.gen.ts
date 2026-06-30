@@ -4414,6 +4414,8 @@ export class Model extends HeyApiClient {
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
+      directory?: string
+      workspace?: string
       instance?: {
         directory?: string
         workspace?: string
@@ -4421,7 +4423,18 @@ export class Model extends HeyApiClient {
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "instance" }] }])
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "instance" },
+          ],
+        },
+      ],
+    )
     return (options?.client ?? this.client).get<V2ModelListResponses, unknown, ThrowOnError>({
       url: "/api/model",
       ...options,
@@ -4438,6 +4451,8 @@ export class Provider2 extends HeyApiClient {
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
+      directory?: string
+      workspace?: string
       instance?: {
         directory?: string
         workspace?: string
@@ -4445,7 +4460,18 @@ export class Provider2 extends HeyApiClient {
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "instance" }] }])
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "instance" },
+          ],
+        },
+      ],
+    )
     return (options?.client ?? this.client).get<V2ProviderListResponses, unknown, ThrowOnError>({
       url: "/api/provider",
       ...options,
@@ -4461,6 +4487,8 @@ export class Provider2 extends HeyApiClient {
   public get<ThrowOnError extends boolean = false>(
     parameters: {
       providerID: string
+      directory?: string
+      workspace?: string
       instance?: {
         directory?: string
         workspace?: string
@@ -4474,6 +4502,8 @@ export class Provider2 extends HeyApiClient {
         {
           args: [
             { in: "path", key: "providerID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
             { in: "query", key: "instance" },
           ],
         },

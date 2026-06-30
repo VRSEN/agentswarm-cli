@@ -1,12 +1,13 @@
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { Flag } from "@opencode-ai/core/flag/flag"
-import { describe, expect } from "bun:test"
-import { Config, Context, Effect, FileSystem, Layer, Path } from "effect"
+import { describe, expect, test } from "bun:test"
+import { Config, Context, Effect, FileSystem, Layer, Path, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter, HttpServer } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { WorkspaceID } from "../../src/control-plane/schema"
 import { ControlPaths } from "../../src/server/routes/instance/httpapi/groups/control"
 import { InstancePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
+import { InstanceQuery } from "../../src/server/routes/instance/httpapi/groups/v2/instance"
 import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { HEADER as FenceHeader } from "../../src/server/shared/fence"
@@ -53,6 +54,28 @@ const handlerContext = Context.empty() as Context.Context<unknown>
 const directoryHeader = (dir: string) => HttpClientRequest.setHeader("x-opencode-directory", dir)
 
 describe("instance HttpApi", () => {
+  test("v2 instance query keeps SDK top-level and deep object params", () => {
+    const decode = Schema.decodeUnknownSync(InstanceQuery)
+
+    expect(
+      decode({
+        directory: "/sdk-dir",
+        workspace: "wrk_sdk",
+        instance: {
+          directory: "/deep-dir",
+          workspace: "wrk_deep",
+        },
+      }),
+    ).toEqual({
+      directory: "/sdk-dir",
+      workspace: "wrk_sdk",
+      instance: {
+        directory: "/deep-dir",
+        workspace: "wrk_deep",
+      },
+    })
+  })
+
   it.live("serves the OpenAPI document", () =>
     Effect.gen(function* () {
       const response = yield* HttpClient.get("/doc")
@@ -63,6 +86,7 @@ describe("instance HttpApi", () => {
         openapi: expect.any(String),
         info: expect.any(Object),
         paths: expect.objectContaining({
+          "/api/model": expect.any(Object),
           "/global/health": expect.any(Object),
           "/session": expect.any(Object),
         }),
@@ -89,6 +113,46 @@ describe("instance HttpApi", () => {
 
       expect(response.status).toBe(200)
       expect(JSON.parse(response.headers[FenceHeader] ?? "{}")).not.toEqual({})
+    }),
+  )
+
+  it.live("publishes SDK top-level v2 instance query params", () =>
+    Effect.gen(function* () {
+      const response = yield* HttpClient.get("/doc")
+      const doc = (yield* response.json) as {
+        paths?: Record<
+          string,
+          {
+            get?: {
+              parameters?: Array<{ name?: string; in?: string; style?: string; explode?: boolean }>
+            }
+          }
+        >
+      }
+      const params = doc.paths?.["/api/model"]?.get?.parameters ?? []
+
+      expect(params).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ in: "query", name: "directory" }),
+          expect.objectContaining({ in: "query", name: "workspace" }),
+          expect.objectContaining({ in: "query", name: "instance", style: "deepObject", explode: true }),
+        ]),
+      )
+    }),
+  )
+
+  it.live("decodes SDK directory headers for mutations", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const response = yield* HttpClientRequest.post(SessionPaths.create).pipe(
+        directoryHeader(encodeURIComponent(dir)),
+        HttpClientRequest.bodyJson({ title: "encoded directory" }),
+        Effect.flatMap(HttpClient.execute),
+      )
+
+      expect(response.status).toBe(200)
+      const body = (yield* response.json) as { directory: string }
+      expect(body.directory).toBe(dir)
     }),
   )
 

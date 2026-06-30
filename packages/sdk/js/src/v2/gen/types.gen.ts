@@ -6744,6 +6744,8 @@ export type V2ModelListData = {
   body?: never
   path?: never
   query?: {
+    directory?: string
+    workspace?: string
     instance?: {
       directory?: string
       workspace?: string
@@ -6765,6 +6767,8 @@ export type V2ProviderListData = {
   body?: never
   path?: never
   query?: {
+    directory?: string
+    workspace?: string
     instance?: {
       directory?: string
       workspace?: string
@@ -6788,6 +6792,8 @@ export type V2ProviderGetData = {
     providerID: string
   }
   query?: {
+    directory?: string
+    workspace?: string
     instance?: {
       directory?: string
       workspace?: string

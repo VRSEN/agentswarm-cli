@@ -7,6 +7,8 @@ import { HttpServerRequest } from "effect/unstable/http"
 import { HttpApiMiddleware, OpenApi } from "effect/unstable/httpapi"
 
 export const InstanceQuery = Schema.Struct({
+  directory: Schema.optional(Schema.String),
+  workspace: Schema.optional(Schema.String),
   instance: Schema.optional(
     Schema.Struct({
       directory: Schema.optional(Schema.String),
@@ -39,9 +41,20 @@ export class V2InstanceMiddleware extends HttpApiMiddleware.Service<
 
 function ref(request: HttpServerRequest.HttpServerRequest): Instance.Ref {
   const query = new URL(request.url, "http://localhost").searchParams
+  const directory =
+    query.get("instance[directory]") || query.get("directory") || decodeHeader(request.headers["x-opencode-directory"])
   return {
-    directory: query.get("instance[directory]") || request.headers["x-opencode-directory"] || process.cwd(),
-    workspaceID: query.get("instance[workspace]") || request.headers["x-opencode-workspace"],
+    directory: directory || process.cwd(),
+    workspaceID: query.get("instance[workspace]") || query.get("workspace") || request.headers["x-opencode-workspace"],
+  }
+}
+
+function decodeHeader(header: string | undefined): string | undefined {
+  if (!header) return
+  try {
+    return decodeURIComponent(header)
+  } catch {
+    return header
   }
 }
 

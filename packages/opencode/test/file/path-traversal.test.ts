@@ -19,6 +19,16 @@ const expectAccessDenied = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     expect(Cause.squash(exit.cause)).toHaveProperty("message", "Access denied: path escapes project directory")
   })
 
+function withPlatform<T>(platform: NodeJS.Platform, fn: () => T) {
+  const original = process.platform
+  Object.defineProperty(process, "platform", { configurable: true, value: platform })
+  try {
+    return fn()
+  } finally {
+    Object.defineProperty(process, "platform", { configurable: true, value: original })
+  }
+}
+
 describe("Filesystem.contains", () => {
   it.effect("allows paths within project", () =>
     Effect.sync(() => {
@@ -54,6 +64,17 @@ describe("Filesystem.contains", () => {
     }),
   )
 
+  it.effect("handles Windows root-relative prefix collisions", () =>
+    Effect.sync(() =>
+      withPlatform("win32", () => {
+        expect(Filesystem.contains("/project", "/project-other/file")).toBe(false)
+        expect(Filesystem.contains("/project", "/projectfile")).toBe(false)
+        expect(Filesystem.contains("/project", "/project/..config")).toBe(true)
+        expect(Filesystem.contains("/project", "/project/..config/file")).toBe(true)
+        expect(Filesystem.contains("C:/Project", "c:/project/src/file.ts")).toBe(true)
+      }),
+    ),
+  )
 })
 
 describe("Filesystem.overlaps", () => {
@@ -79,6 +100,16 @@ describe("Filesystem.overlaps", () => {
     }),
   )
 
+  it.effect("rejects Windows root-relative sibling paths", () =>
+    Effect.sync(() =>
+      withPlatform("win32", () => {
+        expect(Filesystem.overlaps("/project", "/project-other")).toBe(false)
+        expect(Filesystem.overlaps("/project", "/projectfile")).toBe(false)
+        expect(Filesystem.overlaps("/project", "/project/..config")).toBe(true)
+        expect(Filesystem.overlaps("/project", "/project/..config/file")).toBe(true)
+      }),
+    ),
+  )
 })
 
 /*
