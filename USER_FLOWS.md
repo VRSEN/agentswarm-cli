@@ -29,6 +29,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Trigger:** Start from `npx @vrsen/agentswarm`, an installed `agentswarm`, or the direct fork binary.
 - **Happy-path proof:** Launcher mode can be inferred from the `agentswarm` command shape or `AGENTSWARM_LAUNCHER=1`.
 - **Happy-path proof:** The wrapper finds the fork package or platform binary, sets or preserves `AGENTSWARM_LAUNCHER=1`, and opens the default TUI command with Agent Swarm branding.
+- **Happy-path proof:** First-use database setup says `Getting Agent Swarm ready for first use. This can take a few minutes...` and finishes with `Agent Swarm is ready.`
 - **Failure scenarios to test:** Missing fork package or platform binary fails before the TUI opens.
 - **Failure scenarios to test:** The end-user path does not rely on the unapproved local `dist/` fallback.
 
@@ -37,6 +38,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Trigger:** Start from a downstream wrapper or release binary that sets `AGENTSWARM_PRODUCT_*` values.
 - **Happy-path proof:** Help, upgrade, mDNS, release repository, docs, issue links, and package copy use the configured downstream values.
 - **Happy-path proof:** The launcher detects configured entry files; the default Agent Swarm profile still detects only `agency.py`.
+- **Happy-path proof:** If a configured entry file exists but cannot be read, detection keeps checking later configured entry files and uses a later valid entry before showing read-recovery choices.
 - **Happy-path proof:** A missing local project creates the configured starter repository in the configured starter folder.
 - **Happy-path proof:** A downstream wrapper that reuses the Agent Swarm binary reports its own version before delegation, while the embedded binary keeps its operational version for updates and compatibility checks.
 - **Happy-path proof:** A downstream profile can provide `AGENTSWARM_PRODUCT_ADDONS` to expose `/addons`, while the default Agent Swarm profile keeps `/addons` hidden.
@@ -50,6 +52,7 @@ For each failure scenario, capture the visible user result and cite the matching
 
 - **Trigger:** Launch from a directory containing `agency.py` with `def create_agency` and an `agency_swarm` import.
 - **Happy-path proof:** Onboarding shows `Checking Agent Swarm project files...`, then offers `Use detected Agent Swarm project` first.
+- **Happy-path proof:** Setup output stays compact: environment checking, refresh, setup, start, and ready states are shown while raw Python, uv, pip, dependency, and FastAPI details stay in launcher logs.
 - **Happy-path proof:** A healthy `.venv` is reused.
 - **Happy-path proof:** A broken `.venv` is rebuilt when Python 3.12+ is available.
 - **Happy-path proof:** Launcher-managed uv is installed or repaired inside `.venv`.
@@ -80,6 +83,8 @@ For each failure scenario, capture the visible user result and cite the matching
 
 - **Trigger:** Launch without a detected project and choose `Create a new Agent Swarm project`.
 - **Happy-path proof:** Empty, unsafe, or already-used project names are rejected.
+- **Happy-path proof:** The project-name prompt shows `Project name` with the configured starter name already filled in, so Enter accepts it.
+- **Happy-path proof:** When GitHub creation is available, the creation-location prompt asks `Where should this project be created?` with `On GitHub` and `On this computer`.
 - **Happy-path proof:** The starter uses `agency-ai-solutions/agency-starter-template`.
 - **Happy-path proof:** GitHub template creation is used only when `gh` is present and authenticated.
 - **Happy-path proof:** Local clone mode is used when GitHub template creation is unavailable.
@@ -175,6 +180,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** Selecting a swarm routes through the default agency path without a stale explicit recipient.
 - **Happy-path proof:** Selecting an agent routes the next prompt to that agent.
 - **Happy-path proof:** Compatible configured provider credentials pass through the credential bridge.
+- **Happy-path proof:** Direct OpenRouter runs use the OpenRouter API key without inheriting stored OpenAI OAuth base URLs or default headers.
 - **Happy-path proof:** Provider auth stays a credential flow and does not act as a Run-mode switch.
 - **Happy-path proof:** `/models` selects the LLM config passed to Agency Swarm and does not act as a product mode switch.
 - **Happy-path proof:** Selecting an Ollama local model in `/models` routes the run through Agency Swarm as a LiteLLM `ollama_chat` model.
@@ -195,6 +201,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Failure scenarios to test:** Server reachability or authorization failure opens `/connect`.
 - **Failure scenarios to test:** Provider credential failure opens `/auth`.
 - **Failure scenarios to test:** Non-OpenAI LiteLLM agency runs do not receive Codex OAuth credentials while OpenAI-based LiteLLM runs still keep them.
+- **Failure scenarios to test:** HTML gateway or proxy error pages from streaming, HTTP, or raw-response failures are compacted into short actionable auth/routing errors instead of raw HTML.
 - **Failure scenarios to test:** Missing or unreachable Ollama fails visibly without switching out of Run mode.
 
 #### `/modes`, Build, and Plan
@@ -220,6 +227,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** The Plan approval question owns keyboard input while it is open, so session shortcuts do not fire at the same time.
 - **Happy-path proof:** Switching back to Run in the same project reconnects to or keeps using the Agency Swarm server and returns `/agents` to the swarm/agent picker.
 - **Happy-path proof:** Message actions use the selected turn's saved or legacy-inferred Run/native routing metadata, so Revert is shown or hidden for the selected turn even after switching modes.
+- **Happy-path proof:** Redo restore affordances stay hidden when the reverted turn or next redo target belongs to Run, while native Build redo stays available for native Build turns.
 - **User story:** After changing or repairing a swarm in Build, the user can return to Run in the same project and confirm the fixed swarm works.
 - **Success looks like:** Run uses the repaired swarm and gives a good response instead of staying on the earlier broken behavior.
 - **User story:** When a Run attempt shows the swarm needs work, the user can switch to Build, make the fix, return to Run, and try again.
