@@ -1,6 +1,9 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import { Bus } from "@/bus"
+import { Command } from "@/command"
+import { InstanceRef } from "@/effect/instance-ref"
 import { Project } from "@/project/project"
+import { MessageID, SessionID } from "@/session/schema"
 import * as Log from "@opencode-ai/core/util/log"
 import { $ } from "bun"
 import path from "path"
@@ -21,6 +24,15 @@ const encoder = new TextEncoder()
 
 const layer = Layer.mergeAll(Project.defaultLayer, CrossSpawnSpawner.defaultLayer)
 const it = testEffect(layer)
+const telemetryIt = testEffect(
+  Project.layer.pipe(
+    Layer.provideMerge(Bus.defaultLayer),
+    Layer.provide(CrossSpawnSpawner.defaultLayer),
+    Layer.provide(AppFileSystem.defaultLayer),
+    Layer.provide(NodePath.layer),
+    Layer.provide(RuntimeFlags.defaultLayer),
+  ),
+)
 
 function run<A>(fn: (svc: Project.Interface) => Effect.Effect<A>) {
   return Effect.gen(function* () {
@@ -149,6 +161,36 @@ describe("Project.fromDirectory", () => {
       const { project: b } = yield* run((svc) => svc.fromDirectory(tmp))
       expect(b.id).toBe(a.id)
     }),
+  )
+})
+
+describe("Project.init", () => {
+  telemetryIt.instance(
+    "sets project initialized time from init command events",
+    () =>
+      Effect.gen(function* () {
+        const svc = yield* Project.Service
+        const bus = yield* Bus.Service
+        const ctx = yield* InstanceRef
+        if (!ctx) throw new Error("InstanceRef not provided")
+
+        yield* svc.init()
+        let project: Project.Info | undefined
+        for (let attempt = 0; attempt < 50; attempt++) {
+          yield* bus.publish(Command.Event.Executed, {
+            arguments: "",
+            messageID: MessageID.make("msg_project-init-telemetry"),
+            name: Command.Default.INIT,
+            sessionID: SessionID.make("session-project-init-telemetry"),
+          })
+          project = yield* svc.get(ctx.project.id)
+          if (project?.time.initialized) break
+          yield* Effect.sleep("10 millis")
+        }
+
+        expect(project?.time.initialized).toBeNumber()
+      }),
+    { git: true },
   )
 })
 

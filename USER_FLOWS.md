@@ -38,7 +38,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** Help, upgrade, mDNS, release repository, docs, issue links, and package copy use the configured downstream values.
 - **Happy-path proof:** The launcher detects configured entry files; the default Agent Swarm profile still detects only `agency.py`.
 - **Happy-path proof:** A missing local project creates the configured starter repository in the configured starter folder.
-- **Happy-path proof:** A release-built binary reports `AGENTSWARM_PRODUCT_VERSION` when it is set.
+- **Happy-path proof:** A downstream wrapper that reuses the Agent Swarm binary reports its own version before delegation, while the embedded binary keeps its operational version for updates and compatibility checks.
 - **Happy-path proof:** A downstream profile can provide `AGENTSWARM_PRODUCT_ADDONS` to expose `/addons`, while the default Agent Swarm profile keeps `/addons` hidden.
 - **Happy-path proof:** With `AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT=standalone`, launcher setup creates or repairs project `.venv` environments with standalone Python 3.12+ and rebuilds existing Conda-family `.venv` environments.
 - **Happy-path proof:** With `AGENTSWARM_PRODUCT_STATE_ROOT`, the product project, launcher logs, and add-on `.env` reads and writes stay under the fixed product state root.
@@ -275,7 +275,7 @@ For each failure scenario, capture the visible user result and cite the matching
 
 #### Telemetry metrics and privacy contract
 
-- **Trigger:** A release build with telemetry enabled exercises supported fork-owned flows: provider demand, provider auth start or failure, normal TUI prompt task success or failure, supported slash commands, docs clicks, and integration request.
+- **Trigger:** A release build with telemetry enabled exercises supported fork-owned flows: provider demand, provider auth start or failure, normal TUI prompt task success or failure, supported slash commands, docs clicks, project initialization, agent creation, and integration request.
 - **Boundary:** Telemetry events outside the listed supported flows are not supported.
 - **Boundary:** Agent run internals, artifacts generated, crashes, build or release failures, signup, demo, book-demo, and the Agent Swarm connect funnel are deferred.
 - **Happy-path proof:** Provider demand records only the safe provider family or `custom`; raw model IDs are not sent.
@@ -283,13 +283,17 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** Provider auth start and failure events record only safe flow fields such as provider family, auth method, source, and outcome; credential material and raw error text are not sent.
 - **Happy-path proof:** Normal TUI prompt task success and failure metrics record only safe task shape and outcome fields; prompt text, conversation text, source content, tool inputs, and tool outputs are not sent.
 - **Happy-path proof:** Command telemetry records docs clicks as `command=docs.open` and supported slash commands as the command name without `/`, while excluding prompt text, command arguments, command bodies, file paths, credentials, and private command names.
+- **Happy-path proof:** Project initialization telemetry records only `source=init_command` and a safe VCS bucket, without project IDs, project names, worktree paths, file paths, source data, or session/message IDs.
+- **Happy-path proof:** Agent creation telemetry records only scope, mode, and a tool count bucket, without agent names, file paths, descriptions, generated prompts, or raw tool lists.
 - **Happy-path proof:** Integration requested metrics record the user action without project IDs, file paths, source data, tokens, secrets, environment variables, or external account identifiers.
+- **Happy-path proof:** Marketplace metadata records only explicit allowlisted launcher fields: `swarm_id`, `parent_swarm_id`, and `swarm_origin` with `original`, `fork`, or `unknown`.
+- **Happy-path proof:** Official release binaries use their embedded PostHog capture key instead of accepting user-supplied runtime telemetry keys.
 - **Happy-path proof:** Sent PostHog events include `$process_person_profile: false`.
 - **Happy-path proof:** Event-list docs enumerate the supported telemetry events, allowed properties, opt-out controls, deferred metrics, and privacy red lines.
 - **Happy-path proof:** Dashboard metrics are derived from supported events or existing safe events instead of adding separate raw-content collection.
-- **Failure scenarios to test:** `OPEN_SWARM_TELEMETRY=0`, `AGENTSWARM_TELEMETRY=0`, and `--no-telemetry` block capture.
+- **Failure scenarios to test:** `ENABLE_TELEMETRY=0`, `OPEN_SWARM_TELEMETRY=0`, `AGENTSWARM_TELEMETRY=0`, and `--no-telemetry` block capture.
 - **Failure scenarios to test:** Installing the package alone does not send install phone-home telemetry.
-- **Failure scenarios to test:** Privacy tests fail when a payload contains raw model IDs, project IDs, file paths, prompt text, error text, source or content data, secrets, environment variables, conversation text, tool inputs, or tool outputs.
+- **Failure scenarios to test:** Privacy tests fail when a payload contains raw model IDs, project IDs, file paths, prompt text, error text, source or content data, secrets, environment variables, conversation text, agent names, agent descriptions, generated prompts, tool inputs, or tool outputs.
 - **Failure scenarios to test:** Only supported metrics appear in event-list docs or emitted telemetry.
 
 ### Branding, Config, Upgrade, And Visual Checks

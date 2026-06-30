@@ -54,28 +54,32 @@ Do not share sessions that contain secrets, private code, private customer data,
 
 ## Telemetry
 
-Release builds may send privacy-safe product analytics to PostHog so maintainers can understand which Agent Swarm TUI features are used. Events cover app start, `/auth` provider setup, supported slash command usage, docs clicks, prompt submission shape, task success or failure, and selected add-ons. They do not include prompt text, slash command arguments, credentials, file paths, tool payloads, message content, raw model IDs, project IDs, session IDs, message IDs, source content, environment variables, raw error text, tool inputs, or tool outputs.
+Release builds may send privacy-safe product analytics to the official Agent Swarm PostHog project so maintainers can understand which Agent Swarm CLI and TUI features are used. Events cover app start, `/auth` provider setup, supported slash command usage, docs clicks, prompt submission shape, task success or failure, project initialization, agent creation, and selected add-ons. They do not include prompt text, slash command arguments, credentials, file paths, tool payloads, message content, raw model IDs, project IDs, session IDs, message IDs, source content, environment variables, raw error text, agent names, agent descriptions, generated prompts, tool inputs, or tool outputs.
 
-Set `OPEN_SWARM_TELEMETRY=0`, `AGENTSWARM_TELEMETRY=0`, or pass `--no-telemetry` to disable this telemetry.
+Set `ENABLE_TELEMETRY=0`, `OPEN_SWARM_TELEMETRY=0`, `AGENTSWARM_TELEMETRY=0`, or pass `--no-telemetry` to disable this telemetry.
 
-Every sent PostHog event sets `$process_person_profile: false`.
+Every sent PostHog event sets `$process_person_profile: false` and includes safe base properties such as `version` (the Agent Swarm binary version), `app`, `platform`, `arch`, `channel`, and `terminal` when available.
+
+Product launchers may attach an allowlisted package version as `product_version` and marketplace metadata as `swarm_id`, `parent_swarm_id`, and `swarm_origin` (`original`, `fork`, or `unknown`). Official release binaries use the embedded capture key; runtime PostHog key environment variables do not redirect production telemetry.
 
 Supported events and properties:
 
 - `app_started`: `entrypoint`, `framework_mode`, `provider_id`.
+- `agent_created`: `scope`, `mode`, `tool_count_bucket`.
 - `provider_requested`: `provider_id`, `framework_mode`, `source`, `connected_before`.
 - `provider_auth_started`: `provider_id`, `auth_method`, `framework_mode`, `source`.
 - `provider_auth_configured`: `provider_id`, `auth_method`, `framework_mode`, `source`.
 - `provider_auth_failed`: `provider_id`, `auth_method`, `framework_mode`, `source`, `step`, `error_bucket`.
+- `project_initialized`: `source`, `vcs`.
 - `ui_command_executed`: docs clicks and supported slash commands; `category`, `command` (`docs.open` or the slash command name without `/`), `keybind`, `source`.
 - `ui_prompt_submitted`: `framework_mode`, `has_agent_parts`, `has_editor_selection`, `has_file_parts`, `mode`, `provider_id`, `type`.
 - `task_succeeded`: `framework_mode`, `provider_id`, `mode`, `duration_bucket`, `has_agent_parts`, `has_file_parts`.
 - `task_failed`: `framework_mode`, `provider_id`, `mode`, `duration_bucket`, `has_agent_parts`, `has_file_parts`, `error_bucket`.
 - `integration_requested`: `provider_id`, `integration_id`, `source`, `already_configured`.
 
-Dashboard metrics are derived from those events where possible. `first_run` and D1/D7/D30 retention cohorts use `app_started`; `sessions_per_user` counts `app_started`; `first_task_started` uses `ui_prompt_submitted` with `type=prompt`; `first_successful_task`, `time_to_first_success`, and `tasks_completed` use `task_succeeded`; docs clicks use `ui_command_executed` with `command=docs.open`; slash command usage uses `ui_command_executed` with `source=slash`; `provider_demand` uses provider requested, started, configured, and failed events.
+Dashboard metrics are derived from those events where possible. `first_run` and D1/D7/D30 retention cohorts use `app_started`; `sessions_per_user` counts `app_started`; `first_task_started` uses `ui_prompt_submitted` with `type=prompt`; `first_successful_task`, `time_to_first_success`, and `tasks_completed` use `task_succeeded`; docs clicks use `ui_command_executed` with `command=docs.open`; slash command usage uses `ui_command_executed` with `source=slash`; `provider_demand` uses provider requested, started, configured, and failed events; project setup uses `project_initialized`; agent creation uses `agent_created`.
 
-Deferred telemetry includes agent run internals, generated artifacts, crashes, build or release failures, signup or demo funnels, book-demo flows, and Agent Swarm connect funnel metrics.
+Deferred telemetry includes agent run internals, generated artifacts beyond safe agent creation shape, crashes, build or release failures, signup or demo funnels, book-demo flows, and Agent Swarm connect funnel metrics.
 
 ## Customizing Agent Swarm CLI
 

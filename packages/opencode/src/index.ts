@@ -99,6 +99,7 @@ const cli = yargs(args)
       process.env.OPENCODE_PURE = "1"
     }
     if (opts.telemetry === false) {
+      process.env.ENABLE_TELEMETRY = "0"
       process.env.OPEN_SWARM_TELEMETRY = "0"
       process.env.AGENTSWARM_TELEMETRY = "0"
     }

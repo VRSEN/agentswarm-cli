@@ -9,6 +9,7 @@ import { commandCategories, commandSources, isTrackedCommandValue } from "./comm
 
 declare const AGENTSWARM_POSTHOG_API_KEY: string | undefined
 declare const AGENTSWARM_POSTHOG_HOST: string | undefined
+declare const AGENTSWARM_TELEMETRY_TEST: boolean | undefined
 
 const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com"
 const STATE_FILE = "telemetry.json"
@@ -47,11 +48,13 @@ const publicIntegrationIDs = new Set([
 ])
 
 const allowedEvents = new Set([
+  "agent_created",
   "app_started",
   "integration_requested",
   "provider_auth_configured",
   "provider_auth_failed",
   "provider_auth_started",
+  "project_initialized",
   "provider_requested",
   "task_failed",
   "task_succeeded",
@@ -60,11 +63,13 @@ const allowedEvents = new Set([
 ])
 
 type TelemetryEvent =
+  | "agent_created"
   | "app_started"
   | "integration_requested"
   | "provider_auth_configured"
   | "provider_auth_failed"
   | "provider_auth_started"
+  | "project_initialized"
   | "provider_requested"
   | "task_failed"
   | "task_succeeded"
@@ -73,6 +78,7 @@ type TelemetryEvent =
 type SafeValue = string | boolean
 export type TelemetryDurationBucket = "lt_2s" | "2s_10s" | "10s_60s" | "gte_60s" | "unknown"
 export type TelemetryErrorBucket = "auth_rejected" | "network" | "server" | "timeout" | "unknown"
+export type TelemetryToolCountBucket = "0" | "1_3" | "4_7" | "8_plus" | "unknown"
 type PropertySpec =
   | {
       type: "boolean"
@@ -99,15 +105,20 @@ type InstallID = {
 
 const authMethods = new Set(["api", "oauth"])
 const authDialogSources = new Set(["auth_dialog"])
+const agentModes = new Set(["all", "primary", "subagent"])
+const agentScopes = new Set(["custom", "global", "project"])
 const booleanField = { type: "boolean" } satisfies PropertySpec
 const providerIDField = { type: "provider_id" } satisfies PropertySpec
 const integrationIDField = { type: "integration_id" } satisfies PropertySpec
 const durationBuckets = new Set(["lt_2s", "2s_10s", "10s_60s", "gte_60s", "unknown"])
 const errorBuckets = new Set(["auth_rejected", "network", "server", "timeout", "unknown"])
 const platforms = new Set(["aix", "darwin", "freebsd", "linux", "openbsd", "sunos", "win32"])
+const projectVcs = new Set(["git", "none"])
 const promptModes = new Set(["normal", "shell"])
 const promptTypes = new Set(["prompt", "server_command", "shell"])
+const swarmOrigins = new Set(["original", "fork", "unknown"])
 const terminalClients = new Set(["app", "cli", "desktop"])
+const toolCountBuckets = new Set(["0", "1_3", "4_7", "8_plus", "unknown"])
 
 function stringField(values?: ReadonlySet<string>): PropertySpec {
   return {
@@ -120,12 +131,21 @@ const baseProperties: Record<string, PropertySpec> = {
   app: stringField(),
   arch: stringField(),
   channel: stringField(),
+  parent_swarm_id: stringField(),
   platform: stringField(platforms),
+  product_version: stringField(),
+  swarm_id: stringField(),
+  swarm_origin: stringField(swarmOrigins),
   terminal: stringField(terminalClients),
   version: stringField(),
 }
 
 const eventProperties: Record<TelemetryEvent, Record<string, PropertySpec>> = {
+  agent_created: {
+    mode: stringField(agentModes),
+    scope: stringField(agentScopes),
+    tool_count_bucket: stringField(toolCountBuckets),
+  },
   app_started: {
     entrypoint: stringField(new Set(["tui"])),
     framework_mode: booleanField,
@@ -156,6 +176,10 @@ const eventProperties: Record<TelemetryEvent, Record<string, PropertySpec>> = {
     framework_mode: booleanField,
     provider_id: providerIDField,
     source: stringField(authDialogSources),
+  },
+  project_initialized: {
+    source: stringField(new Set(["init_command"])),
+    vcs: stringField(projectVcs),
   },
   provider_requested: {
     connected_before: booleanField,
@@ -216,9 +240,17 @@ function clean(value: string | undefined) {
   return trimmed ? trimmed : undefined
 }
 
+function isTelemetryTestBuild() {
+  try {
+    return AGENTSWARM_TELEMETRY_TEST === true
+  } catch {
+    return false
+  }
+}
+
 function config() {
-  const apiKey = clean(process.env.AGENTSWARM_POSTHOG_API_KEY ?? definedValue("AGENTSWARM_POSTHOG_API_KEY"))
-  const host = clean(process.env.AGENTSWARM_POSTHOG_HOST ?? definedValue("AGENTSWARM_POSTHOG_HOST"))
+  const apiKey = clean(definedValue("AGENTSWARM_POSTHOG_API_KEY"))
+  const host = clean(definedValue("AGENTSWARM_POSTHOG_HOST"))
   return {
     apiKey,
     host: host ?? DEFAULT_POSTHOG_HOST,
@@ -253,13 +285,15 @@ async function anonymousInstallID() {
 }
 
 function isDisabledByEnvironment() {
-  const explicit = [process.env.OPEN_SWARM_TELEMETRY, process.env.AGENTSWARM_TELEMETRY, process.env.OPENCODE_TELEMETRY]
+  const explicit = [
+    process.env.ENABLE_TELEMETRY,
+    process.env.OPEN_SWARM_TELEMETRY,
+    process.env.AGENTSWARM_TELEMETRY,
+    process.env.OPENCODE_TELEMETRY,
+  ]
   if (explicit.some((value) => value && FALSE_VALUES.has(value.trim().toLowerCase()))) return true
-  const allowTest =
-    process.env.AGENTSWARM_TELEMETRY_ALLOW_TEST === "1" &&
-    !!(process.env.BUN_TEST || process.env.NODE_ENV === "test" || process.env.OPENCODE_TEST_HOME)
-  if (Flag.OPENCODE_PURE && !allowTest) return true
-  if (allowTest) return false
+  if (isTelemetryTestBuild()) return false
+  if (Flag.OPENCODE_PURE) return true
   if (process.env.CI) return true
   if (process.env.NODE_ENV === "test" || process.env.BUN_TEST) return true
   return false
@@ -303,7 +337,11 @@ function sanitize(event: TelemetryEvent, input: Record<string, unknown> | undefi
   assignSafe(output, baseProperties, "app", AgencyProduct.name)
   assignSafe(output, baseProperties, "arch", os.arch())
   assignSafe(output, baseProperties, "channel", InstallationChannel)
+  assignSafe(output, baseProperties, "parent_swarm_id", AgencyProduct.marketplaceParentSwarmID)
   assignSafe(output, baseProperties, "platform", os.platform())
+  assignSafe(output, baseProperties, "product_version", AgencyProduct.productVersion)
+  assignSafe(output, baseProperties, "swarm_id", AgencyProduct.marketplaceSwarmID)
+  assignSafe(output, baseProperties, "swarm_origin", AgencyProduct.marketplaceSwarmOrigin)
   assignSafe(output, baseProperties, "version", InstallationVersion)
   assignSafe(output, baseProperties, "terminal", Flag.OPENCODE_CLIENT)
 
@@ -423,6 +461,14 @@ export function errorBucket(error: unknown): TelemetryErrorBucket {
   return "unknown"
 }
 
+export function toolCountBucket(count: number): TelemetryToolCountBucket {
+  if (!Number.isFinite(count) || count < 0) return "unknown"
+  if (count === 0) return "0"
+  if (count <= 3) return "1_3"
+  if (count <= 7) return "4_7"
+  return "8_plus"
+}
+
 function errorStatus(error: unknown): number | undefined {
   for (const item of errorPayloads(error)) {
     if (!isRecord(item)) continue
@@ -466,4 +512,5 @@ export const Telemetry = {
   errorBucket,
   flush,
   isEnabled,
+  toolCountBucket,
 }

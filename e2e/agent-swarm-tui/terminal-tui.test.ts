@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import {
   agencyClientConfigModel,
   alternateOpenAITestModel,
@@ -25,6 +26,8 @@ let currentTui: TuiProcess | undefined
 let currentServer: AgencyProtocolServer | undefined
 let currentNativeServer: NativeLLMServer | undefined
 let currentTelemetryServer: ReturnType<typeof startTelemetryServer> | undefined
+let sharedTelemetryServer: ReturnType<typeof startTelemetryServer> | undefined
+let sharedTelemetryBuildDir: string | undefined
 const tempDirs: string[] = []
 const tuiReadyTimeoutMs = process.env.CI ? 120_000 : 30_000
 const tuiInteractionTimeoutMs = process.env.CI ? 60_000 : 45_000
@@ -177,13 +180,125 @@ afterEach(async () => {
   currentServer = undefined
   currentNativeServer?.stop()
   currentNativeServer = undefined
-  currentTelemetryServer?.stop()
+  if (currentTelemetryServer && currentTelemetryServer !== sharedTelemetryServer) currentTelemetryServer.stop()
   currentTelemetryServer = undefined
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
+afterAll(async () => {
+  sharedTelemetryServer?.stop()
+  sharedTelemetryServer = undefined
+  if (sharedTelemetryBuildDir) {
+    await rm(sharedTelemetryBuildDir, { recursive: true, force: true })
+    sharedTelemetryBuildDir = undefined
+  }
+})
+
 describe("Agent Swarm terminal TUI e2e", () => {
   const packageRoot = path.join(import.meta.dir, "..", "..", "packages", "opencode")
+  let telemetryMigrations: Promise<{ sql: string; timestamp: number; name: string }[]> | undefined
+  let sharedTelemetryBinary: Promise<string> | undefined
+  type BuildConfig = Parameters<typeof Bun.build>[0]
+  type BuildPlugin = NonNullable<BuildConfig["plugins"]>[number]
+
+  async function useSharedTelemetryTui() {
+    sharedTelemetryServer ??= startTelemetryServer()
+    sharedTelemetryServer.reset()
+    currentTelemetryServer = sharedTelemetryServer
+    sharedTelemetryBinary ??= buildTelemetryTui({ host: sharedTelemetryServer.url, shared: true })
+    return sharedTelemetryBinary
+  }
+
+  async function buildTelemetryTui(input: { host: string; key?: string; shared?: boolean }) {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "agentswarm-telemetry-tui-build-"))
+    if (input.shared) sharedTelemetryBuildDir = dir
+    else tempDirs.push(dir)
+    const binary = path.join(dir, "agentswarm")
+    const workerPath = "./src/cli/cmd/tui/worker.ts"
+    const result = await Bun.build({
+      entrypoints: ["./src/index.ts", await resolveParserWorker(), workerPath],
+      outdir: dir,
+      target: "bun",
+      format: "esm",
+      conditions: ["browser"],
+      tsconfig: "./tsconfig.json",
+      plugins: [await createSolidPlugin()],
+      external: ["jsonc-parser", "node-gyp"],
+      minify: true,
+      sourcemap: "none",
+      splitting: true,
+      write: true,
+      compile: {
+        autoloadBunfig: false,
+        autoloadDotenv: false,
+        autoloadTsconfig: true,
+        autoloadPackageJson: true,
+        outfile: binary,
+        execArgv: ["--use-system-ca", "--"],
+      },
+      define: {
+        AGENTSWARM_POSTHOG_API_KEY: JSON.stringify(input.key ?? "ph_test"),
+        AGENTSWARM_POSTHOG_HOST: JSON.stringify(input.host),
+        AGENTSWARM_TELEMETRY_TEST: "true",
+        OPENCODE_MIGRATIONS: JSON.stringify(await loadTelemetryMigrations()),
+        OPENCODE_WORKER_PATH: workerPath,
+        OPENCODE_LIBC: JSON.stringify("glibc"),
+        OPENCODE_CHANNEL: JSON.stringify("dev"),
+        OPENCODE_VERSION: JSON.stringify("local"),
+      },
+    })
+    if (!result.success) throw new Error(result.logs.map((log) => log.message).join("\n"))
+    if (!(await Bun.file(binary).exists())) throw new Error("Telemetry TUI build did not emit a binary")
+    return binary
+  }
+
+  async function createSolidPlugin(): Promise<BuildPlugin> {
+    const plugin = (await import(
+      pathToFileURL(path.join(packageRoot, "node_modules", "@opentui", "solid", "scripts", "solid-plugin.ts")).href
+    )) as {
+      createSolidTransformPlugin: () => BuildPlugin
+    }
+    return plugin.createSolidTransformPlugin()
+  }
+
+  async function resolveParserWorker() {
+    const paths = [
+      path.join(packageRoot, "node_modules", "@opentui", "core", "parser.worker.js"),
+      path.join(packageRoot, "..", "..", "node_modules", "@opentui", "core", "parser.worker.js"),
+    ]
+    for (const item of paths) {
+      if (await Bun.file(item).exists()) return item
+    }
+    throw new Error("Could not find @opentui/core parser.worker.js for telemetry TUI build")
+  }
+
+  async function loadTelemetryMigrations() {
+    telemetryMigrations ??= readTelemetryMigrations()
+    return telemetryMigrations
+  }
+
+  async function readTelemetryMigrations() {
+    const dir = path.join(packageRoot, "migration")
+    const entries = await readdir(dir, { withFileTypes: true })
+    return Promise.all(
+      entries
+        .filter((entry) => entry.isDirectory() && /^\d{14}/.test(entry.name))
+        .map((entry) => entry.name)
+        .sort()
+        .map(async (name) => ({
+          name,
+          timestamp: Date.UTC(
+            Number(name.slice(0, 4)),
+            Number(name.slice(4, 6)) - 1,
+            Number(name.slice(6, 8)),
+            Number(name.slice(8, 10)),
+            Number(name.slice(10, 12)),
+            Number(name.slice(12, 14)),
+          ),
+          sql: await readFile(path.join(dir, name, "migration.sql"), "utf8"),
+        })),
+    )
+  }
 
   test("launcher shows the detected-project choice before any venv work", async () => {
     const project = await mkdtemp(path.join(os.tmpdir(), "agentswarm-detected-project-"))
@@ -293,16 +408,16 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(screen).not.toContain("Connect a provider")
   })
 
-  test("run-mode /auth emits telemetry by default when PostHog config is present", async () => {
+  test("run-mode /auth emits telemetry by default when PostHog config is embedded", async () => {
     currentServer = await startAgencyProtocolServer()
-    currentTelemetryServer = startTelemetryServer()
+    const binaryPath = await useSharedTelemetryTui()
     currentTui = await startTui({
       baseURL: currentServer.baseURL,
+      binaryPath,
       env: {
-        AGENTSWARM_POSTHOG_API_KEY: "ph_test",
-        AGENTSWARM_POSTHOG_HOST: currentTelemetryServer.url,
+        AGENTSWARM_POSTHOG_API_KEY: "ph_runtime",
+        AGENTSWARM_POSTHOG_HOST: "http://127.0.0.1:1",
         AGENTSWARM_TELEMETRY: undefined,
-        AGENTSWARM_TELEMETRY_ALLOW_TEST: "1",
         OPEN_SWARM_TELEMETRY: undefined,
       },
     })
@@ -355,6 +470,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
     const authEvent = currentTelemetryServer.events.find((event) => event.event === "provider_auth_configured")
     expect(authEvent?.api_key).toBe("ph_test")
+    expect(JSON.stringify(currentTelemetryServer.events)).not.toContain("ph_runtime")
     expect(authEvent?.properties).toMatchObject({
       $process_person_profile: false,
       app: "Agent Swarm",
@@ -368,15 +484,15 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
   test("run-mode normal prompt emits task telemetry without content or ids", async () => {
     currentServer = await startAgencyProtocolServer()
-    currentTelemetryServer = startTelemetryServer()
+    const binaryPath = await useSharedTelemetryTui()
     currentTui = await startTui({
       baseURL: currentServer.baseURL,
+      binaryPath,
       config: openAIProviderTestConfig,
       env: {
-        AGENTSWARM_POSTHOG_API_KEY: "ph_test",
-        AGENTSWARM_POSTHOG_HOST: currentTelemetryServer.url,
+        AGENTSWARM_POSTHOG_API_KEY: "ph_runtime",
+        AGENTSWARM_POSTHOG_HOST: "http://127.0.0.1:1",
         AGENTSWARM_TELEMETRY: undefined,
-        AGENTSWARM_TELEMETRY_ALLOW_TEST: "1",
         OPEN_SWARM_TELEMETRY: undefined,
       },
     })
@@ -424,6 +540,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     expect(Object.keys(succeeded?.properties ?? {})).not.toContain("messageID")
     expect(Object.keys(succeeded?.properties ?? {})).not.toContain("sessionID")
     expect(JSON.stringify(currentTelemetryServer.events)).not.toContain("telemetry prompt sentinel")
+    expect(JSON.stringify(currentTelemetryServer.events)).not.toContain("ph_runtime")
   })
 
   livePostHogTest("run-mode /auth telemetry reaches live PostHog ingestion", async () => {
@@ -438,13 +555,14 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
     currentServer = await startAgencyProtocolServer()
     currentTelemetryServer = startTelemetryServer({ forwardHost: postHogHost })
+    const binaryPath = await buildTelemetryTui({ host: currentTelemetryServer.url, key: postHogKey })
     currentTui = await startTui({
       baseURL: currentServer.baseURL,
+      binaryPath,
       env: {
-        AGENTSWARM_POSTHOG_API_KEY: postHogKey,
-        AGENTSWARM_POSTHOG_HOST: currentTelemetryServer.url,
+        AGENTSWARM_POSTHOG_API_KEY: "ph_runtime",
+        AGENTSWARM_POSTHOG_HOST: "http://127.0.0.1:1",
         AGENTSWARM_TELEMETRY: undefined,
-        AGENTSWARM_TELEMETRY_ALLOW_TEST: undefined,
         BUN_TEST: "",
         CI: "",
         NODE_ENV: "",
@@ -468,6 +586,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     if (!authEvent || authEvent.forwardStatus === undefined || authEvent.forwardStatus >= 300) {
       throw new Error("Live PostHog ingestion did not accept provider_auth_configured")
     }
+    expect(authEvent.api_key).toBe(postHogKey)
     if (JSON.stringify(currentTelemetryServer.events).includes("sk-live-telemetry-test")) {
       throw new Error("Provider API key leaked into telemetry")
     }
@@ -1929,16 +2048,16 @@ describe("Agent Swarm terminal TUI e2e", () => {
 
   test("Run-mode auth failures open /auth with visible OpenAI model state", async () => {
     currentServer = await startAuthFailureAgencyServer()
-    currentTelemetryServer = startTelemetryServer()
+    const binaryPath = await useSharedTelemetryTui()
     currentTui = await startTui({
       baseURL: currentServer.baseURL,
+      binaryPath,
       args: ["--model", latestOpenAITestModel],
       config: openAIProviderTestConfig,
       env: {
-        AGENTSWARM_POSTHOG_API_KEY: "ph_test",
-        AGENTSWARM_POSTHOG_HOST: currentTelemetryServer.url,
+        AGENTSWARM_POSTHOG_API_KEY: "ph_runtime",
+        AGENTSWARM_POSTHOG_HOST: "http://127.0.0.1:1",
         AGENTSWARM_TELEMETRY: undefined,
-        AGENTSWARM_TELEMETRY_ALLOW_TEST: "1",
         OPEN_SWARM_TELEMETRY: undefined,
       },
     })
@@ -1965,6 +2084,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     })
     expect(JSON.stringify(currentTelemetryServer.events)).not.toContain("trigger upstream auth failure")
     expect(JSON.stringify(currentTelemetryServer.events)).not.toContain("Invalid API key for OpenAI")
+    expect(JSON.stringify(currentTelemetryServer.events)).not.toContain("ph_runtime")
   })
 
   test("/new keeps Run mode usable and starts the next Agency request without old chat history", async () => {
@@ -2539,6 +2659,9 @@ function startTelemetryServer(input: { forwardHost?: string } = {}) {
   return {
     events,
     url: `http://127.0.0.1:${server.port}`,
+    reset: () => {
+      events.length = 0
+    },
     stop: () => server.stop(true),
   }
 }

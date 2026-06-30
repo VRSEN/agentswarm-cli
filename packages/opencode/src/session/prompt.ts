@@ -67,6 +67,7 @@ import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { isAgencySwarmRunMode } from "@/agency-swarm/run-mode"
 import { agentBuilderInstructions } from "./agent-builder"
 import { agentPlannerInstructions } from "./agent-planner"
+import { Telemetry } from "@/telemetry/telemetry"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -2197,6 +2198,15 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         arguments: input.arguments,
         messageID: result.info.id,
       })
+      if (input.command === Command.Default.INIT) {
+        const ctx = yield* InstanceState.context
+        yield* Effect.promise(() =>
+          Telemetry.capture("project_initialized", {
+            source: "init_command",
+            vcs: ctx.project.vcs ?? "none",
+          }).then(() => Telemetry.flush({ timeoutMs: 500 })),
+        )
+      }
       return result
     })
 

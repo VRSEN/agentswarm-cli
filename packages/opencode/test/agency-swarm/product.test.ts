@@ -20,6 +20,7 @@ describe("AgencyProduct profile", () => {
     expect(profile.cmd).toBe("agentswarm")
     expect(profile.packageName).toBe("agentswarm-cli")
     expect(profile.launcherPackageName).toBe("@vrsen/agentswarm")
+    expect(profile.productVersion).toBeUndefined()
     expect(profile.mdnsDomain).toBe("agentswarm.local")
     expect(profile.releaseRepo).toBe("VRSEN/agentswarm-cli")
     expect(profile.docs).toBe("https://agency-swarm.ai/core-framework/agencies/agent-swarm-cli")
@@ -32,6 +33,9 @@ describe("AgencyProduct profile", () => {
     expect(profile.wordmarkLines).toBeUndefined()
     expect(profile.pythonEnvironment).toBe("any")
     expect(profile.stateRoot).toBeUndefined()
+    expect(profile.marketplaceSwarmID).toBeUndefined()
+    expect(profile.marketplaceParentSwarmID).toBeUndefined()
+    expect(profile.marketplaceSwarmOrigin).toBeUndefined()
     expect(AgencyProduct.tuiLogo(profile)).toBeUndefined()
   })
 
@@ -49,6 +53,7 @@ describe("AgencyProduct profile", () => {
       AGENTSWARM_PRODUCT_COMMAND: "example",
       AGENTSWARM_PRODUCT_PACKAGE_NAME: "example-cli",
       AGENTSWARM_PRODUCT_LAUNCHER_PACKAGE_NAME: "@example/product",
+      AGENTSWARM_PRODUCT_VERSION: "2.0.0-example",
       AGENTSWARM_PRODUCT_RELEASE_REPO: "example/product-cli",
       AGENTSWARM_PRODUCT_DOCS_URL: "https://example.com/docs",
       AGENTSWARM_PRODUCT_ISSUE_URL: "https://example.com/issues/new",
@@ -63,6 +68,9 @@ describe("AgencyProduct profile", () => {
       AGENTSWARM_PRODUCT_WORDMARK_LINES: "WORD\\n MARK",
       AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT: "standalone",
       AGENTSWARM_PRODUCT_STATE_ROOT: "/tmp/example-product",
+      AGENTSWARM_MARKETPLACE_SWARM_ID: "example-product",
+      AGENTSWARM_MARKETPLACE_PARENT_SWARM_ID: "example-parent",
+      AGENTSWARM_MARKETPLACE_SWARM_ORIGIN: "fork",
       AGENTSWARM_PRODUCT_ADDONS: JSON.stringify([
         { id: "search", title: "Search", keys: ["SEARCH_API_KEY"] },
         {
@@ -95,6 +103,7 @@ describe("AgencyProduct profile", () => {
     expect(profile.cmd).toBe("example")
     expect(profile.packageName).toBe("example-cli")
     expect(profile.launcherPackageName).toBe("@example/product")
+    expect(profile.productVersion).toBe("2.0.0-example")
     expect(profile.mdnsDomain).toBe("example.local")
     expect(profile.releaseRepo).toBe("example/product-cli")
     expect(profile.docs).toBe("https://example.com/docs")
@@ -107,6 +116,9 @@ describe("AgencyProduct profile", () => {
     expect(profile.wordmarkLines).toEqual(["WORD", " MARK"])
     expect(profile.pythonEnvironment).toBe("standalone")
     expect(profile.stateRoot).toBe(path.resolve("/tmp/example-product"))
+    expect(profile.marketplaceSwarmID).toBe("example-product")
+    expect(profile.marketplaceParentSwarmID).toBe("example-parent")
+    expect(profile.marketplaceSwarmOrigin).toBe("fork")
     expect(AgencyProduct.tuiLogo(profile)).toEqual({
       left: [" LEFT", "LEFT2"],
       right: ["RIGHT", "RIGHT2"],
@@ -227,6 +239,15 @@ describe("AgencyProduct profile", () => {
 
     expect(profile.custom).toBe(false)
     expect(profile.pythonEnvironment).toBe("any")
+  })
+
+  test("ignores invalid marketplace origin values", () => {
+    const profile = AgencyProduct.resolve({
+      AGENTSWARM_MARKETPLACE_SWARM_ORIGIN: "mirror",
+    })
+
+    expect(profile.custom).toBe(false)
+    expect(profile.marketplaceSwarmOrigin).toBeUndefined()
   })
 
   test("custom entry files alone do not force starter creation", () => {

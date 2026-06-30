@@ -4,6 +4,7 @@ declare const AGENTSWARM_PRODUCT_DISPLAY_NAME: string | undefined
 declare const AGENTSWARM_PRODUCT_COMMAND: string | undefined
 declare const AGENTSWARM_PRODUCT_PACKAGE_NAME: string | undefined
 declare const AGENTSWARM_PRODUCT_LAUNCHER_PACKAGE_NAME: string | undefined
+declare const AGENTSWARM_PRODUCT_VERSION: string | undefined
 declare const AGENTSWARM_PRODUCT_RELEASE_REPO: string | undefined
 declare const AGENTSWARM_PRODUCT_DOCS_URL: string | undefined
 declare const AGENTSWARM_PRODUCT_ISSUE_URL: string | undefined
@@ -19,9 +20,13 @@ declare const AGENTSWARM_PRODUCT_WORDMARK_LINES: string | undefined
 declare const AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT: string | undefined
 declare const AGENTSWARM_PRODUCT_ADDONS: string | undefined
 declare const AGENTSWARM_PRODUCT_STATE_ROOT: string | undefined
+declare const AGENTSWARM_MARKETPLACE_SWARM_ID: string | undefined
+declare const AGENTSWARM_MARKETPLACE_PARENT_SWARM_ID: string | undefined
+declare const AGENTSWARM_MARKETPLACE_SWARM_ORIGIN: string | undefined
 
 export namespace AgencyProduct {
   export type PythonEnvironment = "any" | "standalone"
+  export type MarketplaceSwarmOrigin = "original" | "fork" | "unknown"
 
   export interface Addon {
     id: string
@@ -41,6 +46,7 @@ export namespace AgencyProduct {
     cmd: string
     packageName: string
     launcherPackageName: string
+    productVersion?: string
     mdnsDomain: string
     releaseRepo: string
     docs: string
@@ -53,6 +59,9 @@ export namespace AgencyProduct {
     wordmarkLines?: string[]
     pythonEnvironment: PythonEnvironment
     stateRoot?: string
+    marketplaceSwarmID?: string
+    marketplaceParentSwarmID?: string
+    marketplaceSwarmOrigin?: MarketplaceSwarmOrigin
   }
 
   const defaults: Profile = {
@@ -87,6 +96,8 @@ export namespace AgencyProduct {
       typeof AGENTSWARM_PRODUCT_LAUNCHER_PACKAGE_NAME === "undefined"
         ? undefined
         : AGENTSWARM_PRODUCT_LAUNCHER_PACKAGE_NAME,
+    AGENTSWARM_PRODUCT_VERSION:
+      typeof AGENTSWARM_PRODUCT_VERSION === "undefined" ? undefined : AGENTSWARM_PRODUCT_VERSION,
     AGENTSWARM_PRODUCT_RELEASE_REPO:
       typeof AGENTSWARM_PRODUCT_RELEASE_REPO === "undefined" ? undefined : AGENTSWARM_PRODUCT_RELEASE_REPO,
     AGENTSWARM_PRODUCT_DOCS_URL:
@@ -120,6 +131,14 @@ export namespace AgencyProduct {
     AGENTSWARM_PRODUCT_ADDONS: typeof AGENTSWARM_PRODUCT_ADDONS === "undefined" ? undefined : AGENTSWARM_PRODUCT_ADDONS,
     AGENTSWARM_PRODUCT_STATE_ROOT:
       typeof AGENTSWARM_PRODUCT_STATE_ROOT === "undefined" ? undefined : AGENTSWARM_PRODUCT_STATE_ROOT,
+    AGENTSWARM_MARKETPLACE_SWARM_ID:
+      typeof AGENTSWARM_MARKETPLACE_SWARM_ID === "undefined" ? undefined : AGENTSWARM_MARKETPLACE_SWARM_ID,
+    AGENTSWARM_MARKETPLACE_PARENT_SWARM_ID:
+      typeof AGENTSWARM_MARKETPLACE_PARENT_SWARM_ID === "undefined"
+        ? undefined
+        : AGENTSWARM_MARKETPLACE_PARENT_SWARM_ID,
+    AGENTSWARM_MARKETPLACE_SWARM_ORIGIN:
+      typeof AGENTSWARM_MARKETPLACE_SWARM_ORIGIN === "undefined" ? undefined : AGENTSWARM_MARKETPLACE_SWARM_ORIGIN,
   } satisfies Record<string, string | undefined>
 
   function clean(value: string | undefined) {
@@ -180,6 +199,13 @@ export namespace AgencyProduct {
     return undefined
   }
 
+  function readMarketplaceSwarmOrigin(value: string | undefined): MarketplaceSwarmOrigin | undefined {
+    const normalized = clean(value)?.toLowerCase()
+    if (!normalized) return undefined
+    if (normalized === "original" || normalized === "fork" || normalized === "unknown") return normalized
+    return undefined
+  }
+
   function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value)
   }
@@ -234,6 +260,7 @@ export namespace AgencyProduct {
       cmd: readValue(env, "AGENTSWARM_PRODUCT_COMMAND"),
       packageName: readValue(env, "AGENTSWARM_PRODUCT_PACKAGE_NAME"),
       launcherPackageName: readValue(env, "AGENTSWARM_PRODUCT_LAUNCHER_PACKAGE_NAME"),
+      productVersion: readValue(env, "AGENTSWARM_PRODUCT_VERSION"),
       releaseRepo: readValue(env, "AGENTSWARM_PRODUCT_RELEASE_REPO"),
       docs: readValue(env, "AGENTSWARM_PRODUCT_DOCS_URL"),
       issue: readValue(env, "AGENTSWARM_PRODUCT_ISSUE_URL"),
@@ -249,6 +276,9 @@ export namespace AgencyProduct {
       pythonEnvironment: readPythonEnvironment(readValue(env, "AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT")),
       addons: readAddons(readValue(env, "AGENTSWARM_PRODUCT_ADDONS")),
       stateRoot: readStateRoot(env),
+      marketplaceSwarmID: readValue(env, "AGENTSWARM_MARKETPLACE_SWARM_ID"),
+      marketplaceParentSwarmID: readValue(env, "AGENTSWARM_MARKETPLACE_PARENT_SWARM_ID"),
+      marketplaceSwarmOrigin: readMarketplaceSwarmOrigin(readValue(env, "AGENTSWARM_MARKETPLACE_SWARM_ORIGIN")),
     }
     const custom = Object.values(overrides).some((value) => value !== undefined)
     const customBranding =
@@ -269,6 +299,7 @@ export namespace AgencyProduct {
       cmd: overrides.cmd ?? defaults.cmd,
       packageName: overrides.packageName ?? defaults.packageName,
       launcherPackageName: overrides.launcherPackageName ?? defaults.launcherPackageName,
+      productVersion: overrides.productVersion,
       releaseRepo: overrides.releaseRepo ?? defaults.releaseRepo,
       docs: overrides.docs ?? defaults.docs,
       issue: overrides.issue ?? defaults.issue,
@@ -281,6 +312,9 @@ export namespace AgencyProduct {
       wordmarkLines: overrides.wordmarkLines,
       pythonEnvironment: overrides.pythonEnvironment ?? defaults.pythonEnvironment,
       stateRoot: overrides.stateRoot,
+      marketplaceSwarmID: overrides.marketplaceSwarmID,
+      marketplaceParentSwarmID: overrides.marketplaceParentSwarmID,
+      marketplaceSwarmOrigin: overrides.marketplaceSwarmOrigin,
     }
   }
 
@@ -295,6 +329,7 @@ export namespace AgencyProduct {
   export const name = current.name
   export const packageName = current.packageName
   export const launcherPackageName = current.launcherPackageName
+  export const productVersion = current.productVersion
   export const cmd = current.cmd
   export const mdnsDomain = current.mdnsDomain
   export const releaseRepo = current.releaseRepo
@@ -308,6 +343,9 @@ export namespace AgencyProduct {
   export const wordmarkLines = current.wordmarkLines
   export const pythonEnvironment = current.pythonEnvironment
   export const stateRoot = current.stateRoot
+  export const marketplaceSwarmID = current.marketplaceSwarmID
+  export const marketplaceParentSwarmID = current.marketplaceParentSwarmID
+  export const marketplaceSwarmOrigin = current.marketplaceSwarmOrigin
   export const auth = "Manage provider auth"
   export const connect = "Connect to local agency-swarm server"
   export const start = [
