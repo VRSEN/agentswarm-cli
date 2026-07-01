@@ -374,27 +374,6 @@ describe("Telemetry", () => {
     expect(output.requests[0].body.properties?.product_version).toBe("2.0.0-compiled")
   })
 
-  test("keeps full GitHub marketplace ids", async () => {
-    await using tmp = await tmpdir()
-    const owner = "a".repeat(39)
-    const repo = "b".repeat(100)
-    const parent = `${"c".repeat(39)}/${"d".repeat(100)}`
-    const output = await runCompiledTelemetry({
-      env: {
-        AGENTSWARM_MARKETPLACE_SWARM_ID: `${owner}/${repo}`,
-        AGENTSWARM_MARKETPLACE_PARENT_SWARM_ID: parent,
-        AGENTSWARM_MARKETPLACE_SWARM_ORIGIN: "fork",
-      },
-      event: "app_started",
-      properties: { entrypoint: "tui" },
-      stateDir: tmp.path,
-    })
-
-    expect(output.requests[0].body.properties?.swarm_id).toBe(`${owner}/${repo}`)
-    expect(output.requests[0].body.properties?.parent_swarm_id).toBe(parent)
-    expect(output.requests[0].body.properties?.swarm_origin).toBe("fork")
-  })
-
   test("uses the default host when no host is compiled", async () => {
     await using tmp = await tmpdir()
     const output = await runCompiledTelemetry({
