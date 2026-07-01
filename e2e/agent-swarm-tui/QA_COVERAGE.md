@@ -7,10 +7,13 @@
 - `USER_FLOWS.md` Detected Local Project: launcher mode shows startup project-file checking, the detected-project choice before `.venv` work begins, unreadable `agency.py` recovery choices, and Agent Swarm connect copy.
 - `USER_FLOWS.md` Startup `/auth` and In-TUI `/connect`: `/auth` and `/connect` stay separate in the real terminal UI.
 - `USER_FLOWS.md` Run Mode: native `/editor`, `/variants`, `/init`, and `/review` slash commands stay hidden.
-- `USER_FLOWS.md` `/modes`, Build, and Plan: `/modes` appears as the product switch, `/build` and `/plan` do not exist, Build and Plan restore native `/review` and `/init`, native `/review` execution stays server-free, and switching back to Run hides native commands again.
-- `USER_FLOWS.md` `/modes`, Build, and Plan: users can repair or change a swarm in Build, return to Run, and verify the fixed swarm; users can also recover from a failed Run attempt by switching to Build, then back to Run for a successful response.
-- `USER_FLOWS.md` `/modes`, Build, and Plan: Tab cycles native local agents outside Run and Agency Swarm targets in Run.
-- `USER_FLOWS.md` `/modes`, Build, and Plan: mixed-mode message actions keep Run undo/redo surfaces hidden while preserving native Build redo.
+- `USER_FLOWS.md` `/agents`, Build, and Plan: `/agents` appears as the product switch, Build and Plan work without an Agency Swarm server, restore native `/review` and `/init`, keep `/compact` and shell-command reopen flows on OpenCode routing, and switching back to Run hides native commands again.
+- `USER_FLOWS.md` `/agents`, Build, and Plan: users can repair or change a swarm in Build, return to Run, and verify the fixed swarm; users can also recover from a failed Run attempt by switching to Build, then back to Run for a successful response.
+- `USER_FLOWS.md` `/agents`, Build, and Plan: when the Run server is unreachable, the reconnect UI appears and the user can switch to Build for a server-free repair prompt.
+- `USER_FLOWS.md` `/agents`, Build, and Plan: Tab toggles Build and Plan, and switches Agency Swarm targets in Run.
+- `USER_FLOWS.md` `/agents`, Build, and Plan: native Plan approval keeps keyboard input on the approval question, handles arrow-key Yes/No selection, switches to Build after approval, stays in Plan after decline, keeps the approved Build follow-up off the Agency Swarm server.
+- `USER_FLOWS.md` `/agents`, Build, and Plan: pending Plan approval recovery is not permanently closed by a transient empty question recovery response.
+- `USER_FLOWS.md` `/agents`, Build, and Plan: mixed-mode message actions keep Run undo/redo surfaces hidden while preserving native Build redo.
 - `USER_FLOWS.md` Run Mode: the sidebar shows the selected swarm and main/subagent counts; `/agents` uses Swarm and agent wording, live agency labels, swarm-row routing, and specific-agent routing against an Agency Swarm TUI-demo-shaped swarm.
 - `USER_FLOWS.md` Run Mode: prompt submit reaches a local Agency Swarm protocol server with the configured agent.
 - `USER_FLOWS.md` Run Mode: simulated visible OpenAI model state does not pull prompts, slash-command `/new`, run-session local-project marking, `/connect`, or runtime auth recovery out of Agency Swarm routing.
@@ -24,6 +27,8 @@
 Full launcher project preparation, cold-start `.venv` creation, Python bridge execution, and live LLM decisions intentionally stay manual because the deterministic CI path cannot depend on Python 3.12 availability, network package install, live credentials, or the live `agency-swarm[fastapi,litellm]` package. The real-project automated handoff test copies a real `agency.py` project and launches the TUI directly with that exact project path plus file config for a local protocol server, so it proves project-path wiring and handoff semantics without claiming launcher or Python bridge startup coverage.
 
 OpenAI browser/headless auth-method picker visibility remains manual because the deterministic terminal E2E disables default plugins and only exposes API-key auth in the isolated provider catalog. The local unit test for `getVisibleProviderAuthMethods` owns the filter behavior until a plugin-enabled terminal harness exists.
+
+Full replacement-server reconnect after a dead Run server remains manual or future harness work because the current deterministic terminal harness can prove the reconnect UI and Build fallback, but selecting and validating a replacement server through the live `/connect` dialog would need brittle cursor navigation or new harness support.
 
 Manual QA command from a clean detected Agency project with no `.venv`:
 

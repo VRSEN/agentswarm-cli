@@ -1392,7 +1392,7 @@ export function Session() {
                   <PermissionPrompt request={permissions()[0]} />
                 </Show>
                 <Show when={permissions().length === 0 && questions().length > 0}>
-                  <QuestionPrompt request={questions()[0]} />
+                  <QuestionPrompt request={questions()[0]} workspace={sync.question.workspace(questions()[0].id)} />
                 </Show>
                 <Show when={session()?.parentID}>
                   <SubagentFooter />

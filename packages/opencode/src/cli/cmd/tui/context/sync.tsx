@@ -113,6 +113,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const kv = useKV()
 
     const fullSyncedSessions = new Set<string>()
+    const closedQuestions = new Set<string>()
+    const questionWorkspaces = new Map<string, string | undefined>()
+    const questionSyncVersions = new Map<string, number>()
 
     function sessionListQuery(): { scope?: "project"; path?: string } {
       if (!kv.get("session_directory_filter_enabled", true)) return { scope: "project" }
@@ -128,6 +131,67 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       return sdk.client.session
         .list({ start: Date.now() - 30 * 24 * 60 * 60 * 1000, ...sessionListQuery() })
         .then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
+    }
+
+    function upsertQuestion(request: QuestionRequest, workspace: string | undefined) {
+      if (closedQuestions.has(request.id)) return
+      questionWorkspaces.set(request.id, workspace)
+      const requests = store.question[request.sessionID]
+      if (!requests) {
+        setStore("question", request.sessionID, [request])
+        return
+      }
+      const match = Binary.search(requests, request.id, (r) => r.id)
+      if (match.found) {
+        setStore("question", request.sessionID, match.index, reconcile(request))
+        return
+      }
+      setStore(
+        "question",
+        request.sessionID,
+        produce((draft) => {
+          draft.splice(match.index, 0, request)
+        }),
+      )
+    }
+
+    async function syncQuestions(workspace: string | undefined) {
+      const key = workspace ?? ""
+      const version = (questionSyncVersions.get(key) ?? 0) + 1
+      questionSyncVersions.set(key, version)
+      const seen = new Map(
+        Object.entries(store.question).map(([sessionID, requests]) => [sessionID, new Set(requests.map((r) => r.id))]),
+      )
+      const response = await sdk.client.question.list({ workspace }).catch(() => undefined)
+      if (!response) return
+      if (response.error || response.data === undefined) return
+      if (questionSyncVersions.get(key) !== version) return
+      const questions = response.data
+      const pending = new Map<string, Set<string>>()
+      for (const request of questions) {
+        const ids = pending.get(request.sessionID)
+        if (ids) ids.add(request.id)
+        if (!ids) pending.set(request.sessionID, new Set([request.id]))
+      }
+      batch(() => {
+        for (const request of questions) upsertQuestion(request, workspace)
+        for (const [sessionID, ids] of seen) {
+          const requests = store.question[sessionID]
+          if (!requests) continue
+          const next = requests.filter((request) => {
+            if (!ids.has(request.id)) return true
+            if (questionWorkspaces.get(request.id) !== workspace) return true
+            return pending.get(sessionID)?.has(request.id) ?? false
+          })
+          if (next.length === requests.length) continue
+          for (const request of requests) {
+            if (!next.includes(request)) {
+              questionWorkspaces.delete(request.id)
+            }
+          }
+          setStore("question", sessionID, reconcile(next))
+        }
+      })
     }
 
     event.subscribe((event, { workspace }) => {
@@ -174,6 +238,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
         case "question.replied":
         case "question.rejected": {
+          closedQuestions.add(event.properties.requestID)
+          questionWorkspaces.delete(event.properties.requestID)
           const requests = store.question[event.properties.sessionID]
           if (!requests) break
           const match = Binary.search(requests, event.properties.requestID, (r) => r.id)
@@ -189,24 +255,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         }
 
         case "question.asked": {
-          const request = event.properties
-          const requests = store.question[request.sessionID]
-          if (!requests) {
-            setStore("question", request.sessionID, [request])
-            break
-          }
-          const match = Binary.search(requests, request.id, (r) => r.id)
-          if (match.found) {
-            setStore("question", request.sessionID, match.index, reconcile(request))
-            break
-          }
-          setStore(
-            "question",
-            request.sessionID,
-            produce((draft) => {
-              draft.splice(match.index, 0, request)
-            }),
-          )
+          closedQuestions.delete(event.properties.id)
+          upsertQuestion(event.properties, workspace)
           break
         }
 
@@ -457,6 +507,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             sdk.client.session.status({ workspace }).then((x) => {
               setStore("session_status", reconcile(x.data ?? {}))
             }),
+            syncQuestions(workspace),
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
             sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
             project.workspace.sync(),
@@ -495,6 +546,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       get path() {
         return project.instance.path()
       },
+      question: {
+        workspace(id: string) {
+          return questionWorkspaces.get(id)
+        },
+      },
       session: {
         get(sessionID: string) {
           const match = Binary.search(store.session, sessionID, (s) => s.id)
@@ -519,12 +575,17 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           return last.time.completed ? "idle" : "working"
         },
         async sync(sessionID: string) {
-          if (fullSyncedSessions.has(sessionID)) return
+          const workspace = project.workspace.current()
+          if (fullSyncedSessions.has(sessionID)) {
+            await syncQuestions(workspace)
+            return
+          }
           const [session, messages, todo, diff] = await Promise.all([
             sdk.client.session.get({ sessionID }, { throwOnError: true }),
             sdk.client.session.messages({ sessionID, limit: 100 }),
             sdk.client.session.todo({ sessionID }),
             sdk.client.session.diff({ sessionID }),
+            syncQuestions(workspace),
           ])
           setStore(
             produce((draft) => {
