@@ -217,7 +217,8 @@ function use() {
 
 export function Session() {
   const route = useRouteData("session")
-  const { navigate } = useRoute()
+  const routeContext = useRoute()
+  const { navigate } = routeContext
   const sync = useSync()
   const event = useEvent()
   const project = useProject()
@@ -421,6 +422,7 @@ export function Session() {
     if (seeded || !route.prompt || !r) return
     seeded = true
     r.set(route.prompt)
+    routeContext.clearPrompt()
   }
   const command = useCommandPalette()
   const dialog = useDialog()

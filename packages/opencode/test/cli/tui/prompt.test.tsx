@@ -3,7 +3,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { RGBA, TextareaRenderable, type Renderable } from "@opentui/core"
 import { testRender, useRenderer } from "@opentui/solid"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
-import { createEffect, createSignal, Match, Switch, type ParentProps } from "solid-js"
+import { createEffect, createSignal, Match, Show, Switch, type ParentProps } from "solid-js"
 import * as AutocompleteModule from "../../../src/cli/cmd/tui/component/prompt/autocomplete"
 import * as CommandDialogModule from "../../../src/cli/cmd/tui/component/dialog-command"
 import { CommandPaletteProvider } from "../../../src/cli/cmd/tui/context/command-palette"
@@ -2631,6 +2631,291 @@ describe("prompt auth rejection handling", () => {
     await runFirstPromptNavigationFailure({
       existingSessionID: "session_existing_home_retry",
       returnHome: true,
+    })
+  })
+
+  async function renderRecoveredSessionRoutePrompt() {
+    const sessionID = "session_recovered_route_prompt"
+    const recovered = {
+      input: "recover this draft",
+      parts: [],
+    }
+    const routes: Array<{ prompt?: unknown; type: string }> = []
+    const promptSets: Array<ReturnType<typeof mock>> = []
+    const [showSession, setShowSession] = createSignal(true)
+
+    spyOn(EventContext, "useEvent").mockReturnValue({
+      subscribe: () => () => {},
+      on: () => () => {},
+    } as any)
+    spyOn(ExitContext, "useExit").mockReturnValue(
+      Object.assign(async () => {}, {
+        message: {
+          set: () => () => {},
+          clear: () => undefined,
+          get: () => undefined,
+        },
+      }) as any,
+    )
+    spyOn(ProjectContext, "useProject").mockReturnValue({
+      workspace: {
+        current: () => "workspace_recovered_route_prompt",
+        get: () => undefined,
+        list: () => [],
+        set: () => undefined,
+        status: () => "connected",
+      },
+      instance: { directory: () => "/tmp" },
+    } as any)
+    spyOn(EditorContext, "useEditorContext").mockReturnValue({
+      enabled: () => false,
+      connected: () => false,
+      selection: () => undefined,
+      labelState: () => "idle",
+      clearSelection: () => undefined,
+      markSelectionSent: () => undefined,
+      preserveSelectionFromNewSession: () => undefined,
+      restoreSelectionPending: () => undefined,
+      reconnect: () => undefined,
+      onMention: () => () => {},
+      server: () => undefined,
+    } as any)
+    spyOn(KeybindContext, "useKeybind").mockReturnValue({
+      leader: false,
+      match: () => false,
+      print: () => "",
+    } as any)
+    spyOn(KVContext, "useKV").mockReturnValue({
+      get: (_key: string, fallback?: unknown) => fallback,
+      signal: (_key: string, fallback: unknown) => [() => fallback, () => undefined],
+    } as any)
+    spyOn(LocalContext, "useLocal").mockReturnValue({
+      agent: {
+        color: () => RGBA.fromHex("#38bdf8"),
+        current: () => ({
+          name: "build",
+          model: {
+            providerID: "openai",
+            modelID: "gpt-4.1",
+          },
+        }),
+        list: () => [{ name: "build" }],
+        set: () => undefined,
+      },
+      model: {
+        current: () => ({
+          providerID: "openai",
+          modelID: "gpt-4.1",
+        }),
+        parsed: () => ({
+          provider: "OpenAI",
+          model: "gpt-4.1",
+        }),
+        set: () => undefined,
+        variant: {
+          current: () => undefined,
+          list: () => [],
+          set: () => undefined,
+        },
+      },
+      product: {
+        current: () => "build",
+        set: () => undefined,
+      },
+    } as any)
+    spyOn(SDKContext, "useSDK").mockReturnValue({
+      client: {
+        session: {
+          get: async () => ({
+            data: {
+              id: sessionID,
+              title: "Recovered route prompt",
+              workspaceID: "workspace_recovered_route_prompt",
+              directory: "/tmp",
+            },
+          }),
+        },
+      },
+    } as any)
+    spyOn(SyncContext, "useSync").mockReturnValue({
+      path: { directory: "/tmp", worktree: "/tmp" },
+      bootstrap: async () => undefined,
+      data: {
+        command: [],
+        config: {
+          experimental: {},
+          model: "openai/gpt-4.1",
+          provider: {},
+          share: "disabled",
+        },
+        message: {
+          [sessionID]: [],
+        },
+        part: {},
+        permission: {},
+        provider: [
+          {
+            id: "openai",
+            name: "OpenAI",
+            source: "config",
+            env: [],
+            options: {},
+            models: {},
+          },
+        ],
+        provider_auth: {},
+        provider_next: {
+          all: [],
+          connected: [],
+          default: {},
+        },
+        question: {},
+        session: [
+          {
+            id: sessionID,
+            title: "Recovered route prompt",
+            workspaceID: "workspace_recovered_route_prompt",
+            directory: "/tmp",
+          },
+        ],
+        session_status: {},
+      },
+      session: {
+        get: (id: string) =>
+          id === sessionID
+            ? {
+                id: sessionID,
+                title: "Recovered route prompt",
+                workspaceID: "workspace_recovered_route_prompt",
+                directory: "/tmp",
+              }
+            : undefined,
+        sync: async () => undefined,
+      },
+    } as any)
+    spyOn(ThemeContext, "useTheme").mockReturnValue({
+      theme: {
+        _hasSelectedListItemText: false,
+        accent: RGBA.fromHex("#14b8a6"),
+        background: RGBA.fromHex("#020617"),
+        backgroundElement: RGBA.fromHex("#111827"),
+        backgroundPanel: RGBA.fromHex("#0f172a"),
+        border: RGBA.fromHex("#334155"),
+        diffAdded: RGBA.fromHex("#22c55e"),
+        diffRemoved: RGBA.fromHex("#ef4444"),
+        error: RGBA.fromHex("#ef4444"),
+        primary: RGBA.fromHex("#38bdf8"),
+        secondary: RGBA.fromHex("#94a3b8"),
+        selectedListItemText: RGBA.fromHex("#f8fafc"),
+        success: RGBA.fromHex("#22c55e"),
+        text: RGBA.fromHex("#f8fafc"),
+        textMuted: RGBA.fromHex("#94a3b8"),
+        warning: RGBA.fromHex("#f59e0b"),
+      },
+      syntax: () => ({
+        getStyleId: () => 1,
+      }),
+    } as any)
+    spyOn(TuiConfigContext, "useTuiConfig").mockReturnValue(testTuiConfig)
+    spyOn(ToastModule, "useToast").mockReturnValue({
+      show: () => undefined,
+      error: () => undefined,
+      currentToast: null,
+    } as any)
+    spyOn(TuiPluginRuntime, "Slot").mockImplementation(
+      (props: { children?: unknown; name?: string; ref?: (ref: PromptRef | undefined) => void }) => {
+        if (props.name === "session_prompt") {
+          let current: PromptRef["current"] = {
+            input: "newer typed draft",
+            parts: [],
+          }
+          const set = mock((prompt: PromptRef["current"]) => {
+            current = prompt
+          })
+          promptSets.push(set)
+          props.ref?.({
+            focused: false,
+            get current() {
+              return current
+            },
+            blur() {},
+            focus() {},
+            reset() {},
+            set,
+            submit() {},
+          })
+          return null
+        }
+        return (props.children ?? null) as any
+      },
+    )
+
+    const { Session } = await import("../../../src/cli/cmd/tui/routes/session")
+    const CaptureRoute = () => {
+      const route = useRoute()
+
+      createEffect(() => {
+        routes.push({
+          type: route.data.type,
+          prompt: route.data.type === "plugin" ? undefined : route.data.prompt,
+        })
+      })
+
+      return <box />
+    }
+
+    await testRender(() => (
+      <TestKeymapProvider>
+        <RouteProvider
+          initialRoute={{
+            type: "session",
+            sessionID,
+            prompt: recovered,
+          }}
+        >
+          <PromptRefContext.PromptRefProvider>
+            <DialogProvider>
+              <CommandPaletteProvider>
+                <CaptureRoute />
+                <Show when={showSession()}>
+                  <Session />
+                </Show>
+              </CommandPaletteProvider>
+            </DialogProvider>
+          </PromptRefContext.PromptRefProvider>
+        </RouteProvider>
+      </TestKeymapProvider>
+    ))
+
+    return {
+      promptSets,
+      recovered,
+      routes,
+      async remount() {
+        setShowSession(false)
+        await flushEffects()
+        setShowSession(true)
+        await flushEffects()
+      },
+    }
+  }
+
+  test("clears recovered session route prompts after seeding", async () => {
+    const rendered = await renderRecoveredSessionRoutePrompt()
+
+    expect(rendered.promptSets[0]).toHaveBeenCalledWith(rendered.recovered)
+    expect(rendered.routes.at(-1)).toEqual({
+      type: "session",
+      prompt: undefined,
+    })
+
+    await rendered.remount()
+
+    expect(rendered.promptSets).toHaveLength(2)
+    expect(rendered.promptSets.reduce((count, set) => count + set.mock.calls.length, 0)).toBe(1)
+    expect(rendered.routes.at(-1)).toEqual({
+      type: "session",
+      prompt: undefined,
     })
   })
 
