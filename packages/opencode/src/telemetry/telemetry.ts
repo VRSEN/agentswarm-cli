@@ -15,6 +15,8 @@ const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com"
 const STATE_FILE = "telemetry.json"
 const FALSE_VALUES = new Set(["0", "false", "off", "no"])
 const REQUEST_TIMEOUT_MS = 2_000
+const STRING_FIELD_MAX_LENGTH = 128
+const MARKETPLACE_REPO_MAX_LENGTH = 140
 const publicProviderIDs = new Set([
   "agency-swarm",
   "amazon-bedrock",
@@ -91,6 +93,7 @@ type PropertySpec =
     }
   | {
       type: "string"
+      max?: number
       values?: ReadonlySet<string>
     }
 type Pending = {
@@ -120,8 +123,9 @@ const swarmOrigins = new Set(["original", "fork", "unknown"])
 const terminalClients = new Set(["app", "cli", "desktop"])
 const toolCountBuckets = new Set(["0", "1_3", "4_7", "8_plus", "unknown"])
 
-function stringField(values?: ReadonlySet<string>): PropertySpec {
+function stringField(values?: ReadonlySet<string>, opts: { max?: number } = {}): PropertySpec {
   return {
+    max: opts.max,
     type: "string",
     values,
   }
@@ -131,10 +135,10 @@ const baseProperties: Record<string, PropertySpec> = {
   app: stringField(),
   arch: stringField(),
   channel: stringField(),
-  parent_swarm_id: stringField(),
+  parent_swarm_id: stringField(undefined, { max: MARKETPLACE_REPO_MAX_LENGTH }),
   platform: stringField(platforms),
   product_version: stringField(),
-  swarm_id: stringField(),
+  swarm_id: stringField(undefined, { max: MARKETPLACE_REPO_MAX_LENGTH }),
   swarm_origin: stringField(swarmOrigins),
   terminal: stringField(terminalClients),
   version: stringField(),
@@ -299,9 +303,9 @@ function isDisabledByEnvironment() {
   return false
 }
 
-function safeString(value: string) {
+function safeString(value: string, max = STRING_FIELD_MAX_LENGTH) {
   const trimmed = value.trim()
-  if (!trimmed || trimmed.length > 128) return undefined
+  if (!trimmed || trimmed.length > max) return undefined
   if (/[\r\n\t]/.test(trimmed)) return undefined
   return trimmed
 }
@@ -310,7 +314,7 @@ function safeValue(spec: PropertySpec, value: unknown): SafeValue | undefined {
   if (spec.type === "boolean") return typeof value === "boolean" ? value : undefined
   if (typeof value !== "string") return undefined
 
-  const safe = safeString(value)
+  const safe = safeString(value, spec.type === "string" ? spec.max : undefined)
   if (!safe) return undefined
   if (spec.type === "provider_id") return publicProviderIDs.has(safe) ? safe : "custom"
   if (spec.type === "integration_id") return publicIntegrationIDs.has(safe) ? safe : "custom"
