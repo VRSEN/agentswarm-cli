@@ -1029,10 +1029,12 @@ describe("Agent Swarm terminal TUI e2e", () => {
       tuiInteractionTimeoutMs,
     )
 
+    const requestCount = currentNativeServer.requests.length
     currentTui.write(`${buildPrompt}\r`)
     await currentTui.waitForText("native-mode-ok", tuiInteractionTimeoutMs)
-    const request = await waitForNativeLLMRequest(currentTui, currentNativeServer, buildPrompt)
-    const body = JSON.stringify(request.body)
+    const request = await waitForNextNativeLLMRequest(currentTui, currentNativeServer, requestCount, buildPrompt)
+    const body = nativeRequestBody(request)
+    expect(body).toContain(buildPrompt)
     expect(body).toContain("Agent Swarm Build Instructions")
     expect(body).not.toContain("Agent Swarm Planner Instructions")
   })
@@ -2865,17 +2867,40 @@ async function waitForFile(file: string, label: string) {
   throw new Error(`Timed out waiting for ${label}: ${file}`)
 }
 
+function nativeRequestBody(request: NativeLLMServer["requests"][number]) {
+  return JSON.stringify(request.body)
+}
+
+function isNativeTitleRequest(request: NativeLLMServer["requests"][number]) {
+  const body = nativeRequestBody(request)
+  return body.includes("title generator") || body.includes("Generate a title for this conversation")
+}
+
 async function waitForNativeLLMRequest(tui: TuiProcess, server: NativeLLMServer, prompt: string) {
   let request: NativeLLMServer["requests"][number] | undefined
   await tui.waitFor(
     () => {
       request = server.requests.find((item) => {
-        const body = JSON.stringify(item.body)
-        return body.includes(prompt) && !body.includes("title generator")
+        return nativeRequestBody(item).includes(prompt) && !isNativeTitleRequest(item)
       })
       return request !== undefined
     },
     `native LLM request containing ${prompt}`,
+    tuiInteractionTimeoutMs,
+  )
+  return request!
+}
+
+async function waitForNextNativeLLMRequest(tui: TuiProcess, server: NativeLLMServer, count: number, prompt: string) {
+  let request: NativeLLMServer["requests"][number] | undefined
+  await tui.waitFor(
+    () => {
+      request = server.requests.slice(count).find((item) => {
+        return nativeRequestBody(item).includes(prompt) && !isNativeTitleRequest(item)
+      })
+      return request !== undefined
+    },
+    `native LLM request after request ${count} containing ${prompt}`,
     tuiInteractionTimeoutMs,
   )
   return request!
