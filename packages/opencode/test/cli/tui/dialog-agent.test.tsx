@@ -75,7 +75,7 @@ describe("DialogAgent agency selection", () => {
     await testRender(() => <DialogAgent />)
     await flushEffects()
 
-    expect(selectProps?.current).toEqual({ kind: "local", agent: "plan" })
+    expect(selectProps?.current).toEqual({ kind: "mode", mode: "plan" })
   })
 
   test("selecting a swarm row uses live labels without forcing an agent", async () => {
@@ -126,6 +126,9 @@ describe("DialogAgent agency selection", () => {
       currentToast: null,
     } as any)
     spyOn(LocalContext, "useLocal").mockReturnValue({
+      product: {
+        current: () => "run",
+      },
       agent: {
         current: () => ({
           name: "build",

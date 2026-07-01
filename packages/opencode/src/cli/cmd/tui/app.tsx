@@ -39,7 +39,6 @@ import { SyncProvider, useSync } from "@tui/context/sync"
 import { SyncProviderV2 } from "@tui/context/sync-v2"
 import { LocalProvider, useLocal } from "@tui/context/local"
 import { DialogModel } from "@tui/component/dialog-model"
-import { DialogMode } from "@tui/component/dialog-mode"
 import { useConnected } from "@tui/component/use-connected"
 import { DialogMcp } from "@tui/component/dialog-mcp"
 import { DialogStatus } from "@tui/component/dialog-status"
@@ -116,7 +115,6 @@ const appBindingCommands = [
   "model.cycle_recent_reverse",
   "model.cycle_favorite",
   "model.cycle_favorite_reverse",
-  "product.mode",
   "agent.list",
   "mcp.list",
   "agent.cycle",
@@ -654,15 +652,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
           ]
         : []),
       {
-        name: "product.mode",
-        title: "Switch mode",
-        category: "Agent",
-        slashName: "modes",
-        run: () => {
-          dialog.replace(() => <DialogMode />)
-        },
-      },
-      {
         name: "model.list",
         title: "Switch model",
         suggested: true,
@@ -747,9 +736,12 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
             })
             return
           }
-          local.agent.move(1)
-          const agent = local.agent.current()
-          if (agent?.name === "build" || agent?.name === "plan") void local.product.set(agent.name)
+          const mode = local.product?.current()
+          if (mode === "plan") {
+            void local.product.set("build")
+            return
+          }
+          void local.product?.set("plan")
         },
       },
       {
@@ -789,9 +781,12 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
             })
             return
           }
-          local.agent.move(-1)
-          const agent = local.agent.current()
-          if (agent?.name === "build" || agent?.name === "plan") void local.product.set(agent.name)
+          const mode = local.product?.current()
+          if (mode === "plan") {
+            void local.product.set("build")
+            return
+          }
+          void local.product?.set("plan")
         },
       },
       {

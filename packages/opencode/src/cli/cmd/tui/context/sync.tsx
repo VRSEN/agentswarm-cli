@@ -115,6 +115,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const fullSyncedSessions = new Set<string>()
     const closedQuestions = new Set<string>()
     const questionWorkspaces = new Map<string, string | undefined>()
+    const questionSyncVersions = new Map<string, number>()
 
     function sessionListQuery(): { scope?: "project"; path?: string } {
       if (!kv.get("session_directory_filter_enabled", true)) return { scope: "project" }
@@ -155,12 +156,16 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     }
 
     async function syncQuestions(workspace: string | undefined) {
+      const key = workspace ?? ""
+      const version = (questionSyncVersions.get(key) ?? 0) + 1
+      questionSyncVersions.set(key, version)
       const seen = new Map(
         Object.entries(store.question).map(([sessionID, requests]) => [sessionID, new Set(requests.map((r) => r.id))]),
       )
       const response = await sdk.client.question.list({ workspace }).catch(() => undefined)
       if (!response) return
       if (response.error || response.data === undefined) return
+      if (questionSyncVersions.get(key) !== version) return
       const questions = response.data
       const pending = new Map<string, Set<string>>()
       for (const request of questions) {
@@ -181,7 +186,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           if (next.length === requests.length) continue
           for (const request of requests) {
             if (!next.includes(request)) {
-              closedQuestions.add(request.id)
               questionWorkspaces.delete(request.id)
             }
           }

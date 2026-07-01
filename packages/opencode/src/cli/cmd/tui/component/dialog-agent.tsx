@@ -1,6 +1,6 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
 import { displayAgentName } from "@/agent/display"
-import { useLocal } from "@tui/context/local"
+import { useLocal, type ProductMode } from "@tui/context/local"
 import { useSDK } from "@tui/context/sdk"
 import { useSync } from "@tui/context/sync"
 import { useDialog } from "@tui/ui/dialog"
@@ -17,6 +17,10 @@ import {
 } from "../util/agency-target"
 
 type AgentOptionValue =
+  | {
+      kind: "mode"
+      mode: ProductMode
+    }
   | {
       kind: "local"
       agent: string
@@ -91,20 +95,58 @@ export function DialogAgent() {
   )
 
   const options = createMemo<DialogSelectOption<AgentOptionValue>[]>(() => {
+    const product = local.product.current()
+    const modes: DialogSelectOption<AgentOptionValue>[] = [
+      {
+        value: {
+          kind: "mode",
+          mode: "plan",
+        },
+        title: "Plan",
+        description: "Plan work before building",
+      },
+      {
+        value: {
+          kind: "mode",
+          mode: "build",
+        },
+        title: "Build",
+        description: "Agent Builder for swarms and agents",
+      },
+      ...(product === "run"
+        ? []
+        : [
+            {
+              value: {
+                kind: "mode" as const,
+                mode: "run" as const,
+              },
+              title: "Run",
+              description: "Use the connected swarm",
+            },
+          ]),
+    ]
+
     if (!agencySwarmEnabled()) {
-      return local.agent.list().map((item) => {
-        return {
-          value: {
-            kind: "local",
-            agent: item.name,
-          } as AgentOptionValue,
-          title: displayAgentName(item.name),
-          description: item.native ? "native" : item.description,
-        }
-      })
+      return [
+        ...modes,
+        ...local.agent
+          .list()
+          .filter((item) => item.name !== "build" && item.name !== "plan")
+          .map((item) => {
+            return {
+              value: {
+                kind: "local",
+                agent: item.name,
+              } as AgentOptionValue,
+              title: displayAgentName(item.name),
+              description: item.native ? "native" : item.description,
+            }
+          }),
+      ]
     }
 
-    const result: DialogSelectOption<AgentOptionValue>[] = []
+    const result: DialogSelectOption<AgentOptionValue>[] = [...modes]
     const discovered = discovery()
     const error = discovered?.error
 
@@ -172,7 +214,7 @@ export function DialogAgent() {
       }
     }
 
-    if (result.length === 0) {
+    if (result.length === modes.length) {
       result.push({
         value: {
           kind: "agency",
@@ -189,14 +231,19 @@ export function DialogAgent() {
   })
 
   const current = createMemo<AgentOptionValue | undefined>(() => {
+    const product = local.product?.current()
+    if (product === "build" || product === "plan") {
+      return {
+        kind: "mode",
+        mode: product,
+      }
+    }
+
     if (!agencySwarmEnabled()) {
-      const product = local.product?.current()
       const agent = local.agent.current()?.name
       return {
         kind: "local",
-        agent: (product === "build" || product === "plan") && (!agent || agent === "build" || agent === "plan")
-          ? product
-          : (agent ?? "build"),
+        agent: agent ?? "build",
       }
     }
 
@@ -231,18 +278,19 @@ export function DialogAgent() {
 
   return (
     <DialogSelect
-      title={agencySwarmEnabled() ? "Select swarm" : "Select agent"}
+      title="Select agent"
       current={current()}
       options={options()}
       onSelect={(option) => {
+        if (option.value.kind === "mode") {
+          void local.product.set(option.value.mode).then(
+            () => dialog.clear(),
+            () => dialog.clear(),
+          )
+          return
+        }
+
         if (option.value.kind === "local") {
-          if (option.value.agent === "build" || option.value.agent === "plan") {
-            void local.product.set(option.value.agent).then(
-              () => dialog.clear(),
-              () => dialog.clear(),
-            )
-            return
-          }
           local.agent.set(option.value.agent)
           dialog.clear()
           return
