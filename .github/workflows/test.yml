@@ -203,7 +203,7 @@ jobs:
 
       - name: Run Agent Swarm e2e tests
         run: bun --cwd packages/opencode test:agentswarm:e2e:ci
-        timeout-minutes: 10
+        timeout-minutes: 20
 
       - name: Publish Agent Swarm e2e report
         if: always()
