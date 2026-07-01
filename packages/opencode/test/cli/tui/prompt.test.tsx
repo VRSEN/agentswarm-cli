@@ -467,7 +467,8 @@ describe("prompt auth rejection handling", () => {
     expect(syncRunSession).not.toHaveBeenCalled()
     expect(clearRunSession).not.toHaveBeenCalled()
     const payload = promptSession.mock.calls[0]?.[0] as
-      { $body_agencySwarmBridge?: boolean; agent?: string } | undefined
+      | { $body_agencySwarmBridge?: boolean; agent?: string }
+      | undefined
     expect(payload?.$body_agencySwarmBridge).toBe(false)
     expect(payload?.agent).toBe("plan")
   })
@@ -850,7 +851,8 @@ describe("prompt auth rejection handling", () => {
 
     expect(promptSession).toHaveBeenCalledTimes(1)
     const payload = promptSession.mock.calls[0]?.[0] as
-      { parts: Array<{ synthetic?: boolean; text?: string }> } | undefined
+      | { parts: Array<{ synthetic?: boolean; text?: string }> }
+      | undefined
     const editorText = payload?.parts[0]?.text
     if (editorText === undefined) throw new Error("missing editor context payload")
     expect(payload?.parts[0]?.synthetic).toBe(true)
@@ -1825,6 +1827,7 @@ describe("prompt auth rejection handling", () => {
     newerDraft?: string
     newerLiveDraft?: string
     newerSubmit?: string
+    routeRecipientState?: boolean
     runMode?: boolean
     serverPersistenceError?: boolean
     serverPersisted?: boolean
@@ -1832,6 +1835,7 @@ describe("prompt auth rejection handling", () => {
   }) {
     process.env.OPENAI_API_KEY = "sk-test"
 
+    const routeRecipientState = input.routeRecipientState
     const routeStates: string[] = []
     const dialogDepth: number[] = []
     const toasts: Array<{ duration?: number; variant?: string; message?: string }> = []
@@ -2245,7 +2249,7 @@ describe("prompt auth rejection handling", () => {
 
     expect(promptRef!.focused).toBe(true)
 
-    if (input.explicitRecipientRetry) {
+    if (input.explicitRecipientRetry || routeRecipientState) {
       setSyncData((data) => ({
         ...data,
         config: {
@@ -2274,6 +2278,12 @@ describe("prompt auth rejection handling", () => {
       await Bun.sleep(60)
       await flushEffects()
       expect(routeStates.at(-1)).toBe(`session:${targetSessionID}`)
+    }
+    if (routeRecipientState) {
+      activeContext!.set(undefined)
+      promptRef = undefined
+      await flushEffects()
+      expect(activeContext!.current).toBeUndefined()
     }
 
     if (input.newerDraft) {
@@ -2366,6 +2376,22 @@ describe("prompt auth rejection handling", () => {
     rejects[0]?.(promptError)
     await failures[0]?.catch(() => undefined)
     await flushEffects()
+    if (routeRecipientState) {
+      expect(routeContext!.data).toEqual({
+        type: "session",
+        sessionID: targetSessionID,
+        promptRecipientSelectedAt: 123,
+        prompt: {
+          input: "recover this draft",
+          mode: "normal",
+          parts: [],
+        },
+      })
+      expect(promptSession).toHaveBeenCalledTimes(1)
+      expect(markSelectionSent).toHaveBeenCalledTimes(1)
+      expect(restoreSelectionPending).toHaveBeenCalledWith(selection)
+      return
+    }
     if (input.deferRunSessionSync) {
       expect(syncRunSession).toHaveBeenCalledWith({
         sessionID: targetSessionID,
@@ -2567,6 +2593,12 @@ describe("prompt auth rejection handling", () => {
     })
   })
 
+  test("preserves explicit recipient on restored session route prompts", async () => {
+    await runFirstPromptNavigationFailure({
+      routeRecipientState: true,
+    })
+  })
+
   test("keeps newer session draft when first-prompt failure arrives after navigation", async () => {
     await runFirstPromptNavigationFailure({
       newerDraft: "newer session draft",
@@ -2634,7 +2666,7 @@ describe("prompt auth rejection handling", () => {
     })
   })
 
-  async function renderRecoveredSessionRoutePrompt() {
+  async function renderRecoveredSessionRoutePrompt(input: { promptRecipientSelectedAt?: number } = {}) {
     const sessionID = "session_recovered_route_prompt"
     const recovered = {
       input: "recover this draft",
@@ -2642,6 +2674,7 @@ describe("prompt auth rejection handling", () => {
     }
     const routes: Array<{ prompt?: unknown; type: string }> = []
     const promptSets: Array<ReturnType<typeof mock>> = []
+    const restoreRecipients: Array<ReturnType<typeof mock>> = []
     const [showSession, setShowSession] = createSignal(true)
 
     spyOn(EventContext, "useEvent").mockReturnValue({
@@ -2832,7 +2865,9 @@ describe("prompt auth rejection handling", () => {
           const set = mock((prompt: PromptRef["current"]) => {
             current = prompt
           })
+          const restoreRecipientSelection = mock((_selectedAt: number | undefined) => undefined)
           promptSets.push(set)
+          restoreRecipients.push(restoreRecipientSelection)
           props.ref?.({
             focused: false,
             get current() {
@@ -2842,6 +2877,7 @@ describe("prompt auth rejection handling", () => {
             focus() {},
             reset() {},
             set,
+            restoreRecipientSelection,
             submit() {},
           })
           return null
@@ -2870,6 +2906,7 @@ describe("prompt auth rejection handling", () => {
           initialRoute={{
             type: "session",
             sessionID,
+            promptRecipientSelectedAt: input.promptRecipientSelectedAt,
             prompt: recovered,
           }}
         >
@@ -2890,6 +2927,7 @@ describe("prompt auth rejection handling", () => {
     return {
       promptSets,
       recovered,
+      restoreRecipients,
       routes,
       async remount() {
         setShowSession(false)
@@ -2913,6 +2951,19 @@ describe("prompt auth rejection handling", () => {
 
     expect(rendered.promptSets).toHaveLength(2)
     expect(rendered.promptSets.reduce((count, set) => count + set.mock.calls.length, 0)).toBe(1)
+    expect(rendered.routes.at(-1)).toEqual({
+      type: "session",
+      prompt: undefined,
+    })
+  })
+
+  test("restores recovered session route prompt recipient state", async () => {
+    const rendered = await renderRecoveredSessionRoutePrompt({
+      promptRecipientSelectedAt: 123,
+    })
+
+    expect(rendered.promptSets[0]).toHaveBeenCalledWith(rendered.recovered)
+    expect(rendered.restoreRecipients[0]).toHaveBeenCalledWith(123)
     expect(rendered.routes.at(-1)).toEqual({
       type: "session",
       prompt: undefined,
@@ -3092,5 +3143,103 @@ describe("prompt auth rejection handling", () => {
     })
     expect(promptSession).not.toHaveBeenCalled()
     expect(clearSelection).not.toHaveBeenCalled()
+  })
+
+  test("restores recovered home route prompt recipient state", async () => {
+    const recovered = {
+      input: "recovered draft",
+      parts: [],
+    }
+    const setPrompt = mock((_prompt: PromptRef["current"]) => undefined)
+    const restoreRecipientSelection = mock((_selectedAt: number | undefined) => undefined)
+    const routeStates: Array<{ prompt?: unknown; promptRecipientSelectedAt?: number; type: string }> = []
+
+    spyOn(ArgsContext, "useArgs").mockReturnValue({} as any)
+    spyOn(ProjectContext, "useProject").mockReturnValue({
+      workspace: { current: () => "workspace_home_recipient" },
+      instance: { directory: () => "/tmp" },
+    } as any)
+    spyOn(EditorContext, "useEditorContext").mockReturnValue({
+      clearSelection: () => undefined,
+    } as any)
+    spyOn(PromptRefContext, "usePromptRef").mockReturnValue({
+      set: () => undefined,
+    } as any)
+    spyOn(SyncContext, "useSync").mockReturnValue({
+      ready: false,
+    } as any)
+    spyOn(LocalContext, "useLocal").mockReturnValue({
+      model: {
+        ready: false,
+      },
+    } as any)
+    spyOn(ToastModule, "useToast").mockReturnValue({
+      show: () => undefined,
+      error: () => undefined,
+      currentToast: null,
+    } as any)
+    spyOn(TuiPluginRuntime, "Slot").mockImplementation(
+      (props: { children?: unknown; name?: string; ref?: (ref: PromptRef | undefined) => void }) => {
+        if (props.name === "home_prompt") {
+          props.ref?.({
+            focused: false,
+            current: {
+              input: "typed draft",
+              parts: [],
+            },
+            blur() {},
+            focus() {},
+            reset() {},
+            restoreRecipientSelection,
+            set: setPrompt,
+            submit() {},
+          })
+        }
+        return null
+      },
+    )
+
+    const { Home } = await import("../../../src/cli/cmd/tui/routes/home")
+    const CaptureRoute = () => {
+      const route = useRoute()
+
+      createEffect(() => {
+        routeStates.push({
+          type: route.data.type,
+          prompt: route.data.type === "plugin" ? undefined : route.data.prompt,
+          promptRecipientSelectedAt: route.data.type === "plugin" ? undefined : route.data.promptRecipientSelectedAt,
+        })
+      })
+
+      return <box />
+    }
+
+    await testRender(() => (
+      <TestKeymapProvider>
+        <RouteProvider
+          initialRoute={{
+            type: "home",
+            promptRecipientSelectedAt: 123,
+            prompt: recovered,
+          }}
+        >
+          <DialogProvider>
+            <CommandPaletteProvider>
+              <CaptureRoute />
+              <Home />
+            </CommandPaletteProvider>
+          </DialogProvider>
+        </RouteProvider>
+      </TestKeymapProvider>
+    ))
+    await flushEffects()
+
+    expect(setPrompt).toHaveBeenCalledWith(recovered)
+    expect(restoreRecipientSelection).toHaveBeenCalledWith(123)
+    expect(routeStates.at(-1)).toEqual({
+      type: "home",
+      prompt: undefined,
+      promptRecipientSelectedAt: undefined,
+    })
   })
 })

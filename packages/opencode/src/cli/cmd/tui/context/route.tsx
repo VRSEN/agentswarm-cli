@@ -5,12 +5,14 @@ import type { PromptInfo } from "../component/prompt/history"
 export type HomeRoute = {
   type: "home"
   prompt?: PromptInfo
+  promptRecipientSelectedAt?: number
 }
 
 export type SessionRoute = {
   type: "session"
   sessionID: string
   prompt?: PromptInfo
+  promptRecipientSelectedAt?: number
 }
 
 export type PluginRoute = {

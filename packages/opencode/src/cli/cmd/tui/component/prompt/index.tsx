@@ -1980,6 +1980,9 @@ export function Prompt(props: PromptProps) {
                 route.navigate({
                   type: "session",
                   sessionID: routeSessionID,
+                  ...(usedExplicitRecipient && explicitSelectedAt !== undefined
+                    ? { promptRecipientSelectedAt: explicitSelectedAt }
+                    : {}),
                   prompt: restoredPrompt,
                 })
                 restored = true
@@ -2014,6 +2017,9 @@ export function Prompt(props: PromptProps) {
               } else {
                 route.navigate({
                   type: "home",
+                  ...(usedExplicitRecipient && explicitSelectedAt !== undefined
+                    ? { promptRecipientSelectedAt: explicitSelectedAt }
+                    : {}),
                   prompt: restoredPrompt,
                 })
               }

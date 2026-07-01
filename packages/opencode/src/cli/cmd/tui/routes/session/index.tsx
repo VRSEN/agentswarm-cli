@@ -422,6 +422,7 @@ export function Session() {
     if (seeded || !route.prompt || !r) return
     seeded = true
     r.set(route.prompt)
+    if (route.promptRecipientSelectedAt !== undefined) r.restoreRecipientSelection?.(route.promptRecipientSelectedAt)
     routeContext.clearPrompt()
   }
   const command = useCommandPalette()

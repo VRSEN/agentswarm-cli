@@ -41,6 +41,7 @@ export function Home() {
     if (route.prompt) {
       const prompt = route.prompt
       r.set(prompt)
+      if (route.promptRecipientSelectedAt !== undefined) r.restoreRecipientSelection?.(route.promptRecipientSelectedAt)
       routeContext.clearPrompt()
       routePromptApplied = true
       once = true
