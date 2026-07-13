@@ -33,6 +33,16 @@ describe("agency session errors", () => {
     ).toBe(true)
   })
 
+  test("opens connect dialog when agency discovery returns no agencies", () => {
+    expect(
+      shouldOpenAgencyConnectDialog({
+        providerID: "agency-swarm",
+        message:
+          "No agencies were discovered from agency-swarm OpenAPI metadata. Configure provider.options.agency in your config, or run `agentswarm agency use <agency-id>`.",
+      }),
+    ).toBe(true)
+  })
+
   test("ignores unrelated providers and errors", () => {
     expect(
       shouldOpenAgencyConnectDialog({

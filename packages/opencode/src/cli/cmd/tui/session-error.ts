@@ -245,7 +245,11 @@ export function shouldHideNativeCommandInRunMode(input: { frameworkMode: boolean
 
 export function shouldOpenAgencyConnectDialog(input: { providerID?: string; message: string }) {
   if (input.providerID !== AgencySwarmAdapter.PROVIDER_ID) return false
-  if (/cannot reach agency-swarm backend/i.test(input.message)) {
+  if (
+    /cannot reach agency-swarm backend|no agencies were discovered from agency-swarm OpenAPI metadata/i.test(
+      input.message,
+    )
+  ) {
     log.error("agency-swarm bridge failure requires reconnect dialog", {
       message: input.message,
     })
