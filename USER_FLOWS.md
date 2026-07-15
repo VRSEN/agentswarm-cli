@@ -61,13 +61,14 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** Launcher-managed `agency-swarm[fastapi,litellm]` is used only when no manifest exists.
 - **Happy-path proof:** Local `.venv` uv is used for launcher-managed fallback installs into `.venv`.
 - **Happy-path proof:** After Build changes dependency manifests, switching back to Run refreshes the existing project `.venv` before starting the local server.
-- **Happy-path proof:** While that switch to Run is starting the swarm, the TUI shows a visible starting state instead of looking frozen.
+- **Happy-path proof:** That Run refresh installs new or newly constrained manifest dependencies without upgrading packages whose installed versions already satisfy the manifest.
+- **Happy-path proof:** While that switch to Run refreshes dependencies and starts the swarm, the TUI names the active phase instead of looking frozen.
 - **Happy-path proof:** After that refresh and server start, the TUI still accepts the next Run prompt.
 - **Failure scenarios to test:** Missing Python 3.12+ produces a visible launcher failure.
 - **Failure scenarios to test:** Failed project imports after the Python environment is ready open Build instead of exiting, prefill the startup error, and let the user start Run from the same project after the fix.
 - **Failure scenarios to test:** The prefilled startup error in Build does not trap the user; slash commands stay available without manually clearing the repair prompt.
 - **Failure scenarios to test:** An unreadable existing `agency.py` shows `Could not read agency.py. Make sure the project files are downloaded and readable, then try again.` and offers only `Try again`, `Connect to a running Agent Swarm`, and `Cancel`.
-- **Failure scenarios to test:** If Run cannot refresh changed dependency manifests, it stops before starting the local server and shows the dependency-refresh failure.
+- **Failure scenarios to test:** If Run cannot refresh changed dependency manifests, it stops before starting the local server and keeps the complete dependency-refresh failure visible in `/agents` until the user retries or closes the picker.
 - **Failure scenarios to test:** uv install or repair failure produces a visible launcher failure.
 - **Failure scenarios to test:** Dependency setup failure produces a visible launcher failure.
 

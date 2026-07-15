@@ -4,12 +4,13 @@ import { AgencySwarmRunSession } from "@/agency-swarm/run-session"
 import { displayAgentName } from "@/agent/display"
 import { Config } from "@/config"
 import { useLocal, type ProductMode } from "@tui/context/local"
+import { useTheme } from "@tui/context/theme"
 import { useSDK } from "@tui/context/sdk"
 import { useSync } from "@tui/context/sync"
 import { useDialog } from "@tui/ui/dialog"
 import { DialogSelect, type DialogSelectOption } from "@tui/ui/dialog-select"
 import { useToast } from "@tui/ui/toast"
-import { createMemo, createResource, createSignal } from "solid-js"
+import { createMemo, createResource, createSignal, Show } from "solid-js"
 import { DialogAgencySwarmConnect } from "./dialog-provider"
 import { isAgencySwarmFrameworkMode } from "../session-error"
 import {
@@ -73,8 +74,11 @@ export function DialogAgent() {
   const sync = useSync()
   const sdk = useSDK()
   const dialog = useDialog()
+  const { theme } = useTheme()
   const toast = useToast()
   const [pendingMode, setPendingMode] = createSignal<ProductMode>()
+  const [runProgress, setRunProgress] = createSignal<string>()
+  const [runError, setRunError] = createSignal<string>()
 
   const currentModel = createMemo(() => local.model.current())
   const agencySwarmEnabled = createMemo(() =>
@@ -153,8 +157,13 @@ export function DialogAgent() {
                 mode: "run" as const,
               },
               title: "Run",
-              description: pendingMode() === "run" ? "Starting the swarm..." : "Use the connected swarm",
-              footer: pendingMode() === "run" ? "Starting..." : undefined,
+              description:
+                pendingMode() === "run"
+                  ? (runProgress() ?? "Preparing the project...")
+                  : runError()
+                    ? "Startup failed — press Enter to retry"
+                    : "Use the connected swarm",
+              footer: pendingMode() === "run" ? "Working..." : runError() ? "Failed" : undefined,
             },
           ]),
     ]
@@ -316,40 +325,53 @@ export function DialogAgent() {
   })
 
   return (
-    <DialogSelect
-      title="Select agent"
-      current={current()}
-      options={options()}
-      onSelect={(option) => {
-        if (option.value.kind === "mode") {
-          void setProductMode(option.value.mode)
-          return
-        }
+    <box gap={1}>
+      <DialogSelect
+        title="Select agent"
+        current={current()}
+        options={options()}
+        onSelect={(option) => {
+          if (option.value.kind === "mode") {
+            void setProductMode(option.value.mode)
+            return
+          }
 
-        if (option.value.kind === "local") {
-          local.agent.set(option.value.agent)
-          dialog.clear()
-          return
-        }
+          if (option.value.kind === "local") {
+            local.agent.set(option.value.agent)
+            dialog.clear()
+            return
+          }
 
-        if (option.value.kind === "connect") {
-          dialog.replace(() => <DialogAgencySwarmConnect />)
-          return
-        }
+          if (option.value.kind === "connect") {
+            dialog.replace(() => <DialogAgencySwarmConnect />)
+            return
+          }
 
-        void setAgencySwarmTarget(option.value).catch((error) => {
-          toast.show({
-            variant: "error",
-            message: error instanceof Error ? error.message : String(error),
-            duration: 6000,
+          void setAgencySwarmTarget(option.value).catch((error) => {
+            toast.show({
+              variant: "error",
+              message: error instanceof Error ? error.message : String(error),
+              duration: 6000,
+            })
           })
-        })
-      }}
-    />
+        }}
+      />
+      <Show when={runError()}>
+        {(message) => (
+          <box paddingLeft={4} paddingRight={4} paddingBottom={1}>
+            <text fg={theme.error} wrapMode="word">
+              Run failed: {message()}
+            </text>
+          </box>
+        )}
+      </Show>
+    </box>
   )
 
   async function setProductMode(mode: ProductMode) {
     if (pendingMode()) return
+    setRunError(undefined)
+    setRunProgress(mode === "run" ? "Preparing the project..." : undefined)
     setPendingMode(mode)
     try {
       if (mode === "run") {
@@ -358,13 +380,12 @@ export function DialogAgent() {
       await local.product.set(mode)
       dialog.clear()
     } catch (error) {
-      toast.show({
-        variant: "error",
-        message: error instanceof Error ? error.message : String(error),
-        duration: 8000,
-      })
+      const message = error instanceof Error ? error.message : String(error)
+      if (mode === "run") setRunError(message)
+      else toast.show({ variant: "error", message, duration: 8000 })
     } finally {
       setPendingMode(undefined)
+      setRunProgress(undefined)
     }
   }
 
@@ -374,6 +395,7 @@ export function DialogAgent() {
       process.env[AgencySwarmRunSession.LOCAL_PROJECT_ENV]
     if (!directory) return
     const launch = await prepareLocalProjectRunLaunch(directory, undefined, readRunPythonCommand(), {
+      onProgress: setRunProgress,
       terminalUI: false,
     })
     try {

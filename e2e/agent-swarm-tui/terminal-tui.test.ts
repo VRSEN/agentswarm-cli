@@ -409,7 +409,9 @@ describe("Agent Swarm terminal TUI e2e", () => {
       currentTui.write("try fixed swarm from startup fallback\r")
       await currentTui.waitForText("first repaired local run response", tuiInteractionTimeoutMs)
       await currentTui.waitForText("recipient=entry-agent", tuiInteractionTimeoutMs)
-      expect(await readFile(path.join(project, ".uv-run-refresh-log"), "utf8")).toContain("pip install --python")
+      const refresh = await readFile(path.join(project, ".uv-run-refresh-log"), "utf8")
+      expect(refresh).toContain("pip install --python")
+      expect(refresh).not.toContain("--upgrade")
       await waitForLocalRunSession(stateHome, project)
       expect(await readGlobalAgencyConfigText(currentTui)).not.toContain("local-agency")
 
@@ -422,8 +424,33 @@ describe("Agent Swarm terminal TUI e2e", () => {
         "native agent picker dismissed",
         tuiInteractionTimeoutMs,
       )
+      clearPrompt(currentTui)
+      await writeFailingLocalRunRefreshManifest(project)
+      currentTui.write("/agents\r")
+      await currentTui.waitFor(() => hasAgentModeDialog(currentTui!.screen()), "agent mode dialog", tuiInteractionTimeoutMs)
+      await Bun.sleep(100)
+      currentTui.write("Run")
+      await currentTui.waitFor(
+        () => hasSelectedMode(currentTui!.screen(), "Run") || hasFilteredMode(currentTui!.screen(), "Run"),
+        "Run mode option",
+        tuiInteractionTimeoutMs,
+      )
+      currentTui.write("\r")
+      const failure = await currentTui.waitForText("dependency refresh exploded", tuiInteractionTimeoutMs)
+      expect(failure).toContain("Run failed:")
+      expect(failure).toContain("Startup failed — press Enter to retry")
+      expect(failure).toContain("Select agent")
+      expect(footerHasMode(currentTui.screen(), "Build")).toBe(true)
+
+      await writeLocalRunRefreshManifest(project)
       await writeRunVersion(project, "second repaired local run response")
-      await selectProductMode(currentTui, "Run")
+      currentTui.write("\r")
+      await currentTui.waitFor(
+        () => !currentTui!.screen().includes("Select agent"),
+        "Run retry selected",
+        tuiInteractionTimeoutMs,
+      )
+      clearPrompt(currentTui)
       currentTui.write("try fixed swarm after second repair\r")
       await currentTui.waitForText("second repaired local run response", tuiInteractionTimeoutMs)
       await currentTui.waitForText("recipient=entry-agent", tuiInteractionTimeoutMs)
@@ -2000,6 +2027,28 @@ async function writeLocalRunRefreshManifest(dir: string, delayMs = 0) {
       "  echo 'uv 0.8.0'",
       "fi",
       "exit 0",
+      "",
+    ].join("\n"),
+  )
+  await chmod(uv, 0o755)
+}
+
+async function writeFailingLocalRunRefreshManifest(dir: string) {
+  const uv = path.join(dir, ".venv", process.platform === "win32" ? "Scripts" : "bin", "uv")
+  const log = path.join(dir, ".uv-run-refresh-log")
+  await writeFile(path.join(dir, "requirements.txt"), "agency-swarm==1.9.6\n")
+  await writeFile(
+    uv,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      `printf '%s\\n' "$*" >> ${JSON.stringify(log)}`,
+      'if [[ "${1:-}" == "--version" ]]; then',
+      "  echo 'uv 0.8.0'",
+      "  exit 0",
+      "fi",
+      "echo 'dependency refresh exploded' >&2",
+      "exit 1",
       "",
     ].join("\n"),
   )

@@ -246,9 +246,11 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Behavior: `/agents` switches product mode and lists choices in work order. Outside Run, it lists Plan, Build, and Run before native agent choices. In Run, it lists Plan and Build before live swarm and agent choices. Build selects the native `build` agent, Plan selects the native `plan` agent, and Run keeps prompts server-backed through Agency Swarm.
   - Behavior: leaving Run stops prompt routing through the Agency Swarm backend but preserves the saved Run target for the session; returning to Run reconnects to or keeps using the configured Agency Swarm server.
   - Behavior: returning to local-project Run after Build relaunches from current project files, refreshes manifest dependencies into the project `.venv`, and preserves the selected local Run target.
-  - Behavior: while the local Run switch starts the swarm, `/agents` shows a visible starting state instead of leaving the picker looking frozen.
+  - Behavior: while the local Run switch refreshes dependencies and starts the swarm, `/agents` names the active phase instead of leaving the picker looking frozen.
   - Behavior: dependency refresh during an in-TUI switch back to Run does not use launcher terminal spinners, so keyboard input remains owned by the TUI after the local server starts.
+  - Behavior: the in-TUI refresh installs manifest changes without upgrading already-satisfied packages, so returning to Run does not introduce unrelated dependency drift.
   - Behavior: if manifest dependency refresh fails while returning to Run, the local server does not start with stale packages.
+  - Behavior: a Run startup failure stays visible in `/agents` with the complete error and a direct retry path instead of disappearing with a transient toast.
   - Behavior: selecting the already-current local Run server in `/connect` is a no-op that preserves local project state instead of persisting a stale random port. Selecting the already-current external server from Build fallback clears pending local repair state so Run stays external.
   - Behavior: Build and Plan prompts, commands, shell turns, and compaction turns persist native routing metadata so reopened sessions do not silently fall back to Run.
   - Behavior: reopened Plan sessions keep Plan selected in `/agents` instead of using a stale Build default.
