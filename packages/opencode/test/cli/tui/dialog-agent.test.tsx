@@ -1,11 +1,12 @@
 /** @jsxImportSource @opentui/solid */
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { RGBA } from "@opentui/core"
 import { AgencySwarmAdapter } from "../../../src/agency-swarm/adapter"
 import * as LocalContext from "../../../src/cli/cmd/tui/context/local"
 import * as SDKContext from "../../../src/cli/cmd/tui/context/sdk"
 import * as SyncContext from "../../../src/cli/cmd/tui/context/sync"
+import * as ThemeContext from "../../../src/cli/cmd/tui/context/theme"
 import * as DialogContext from "../../../src/cli/cmd/tui/ui/dialog"
 import * as DialogSelectModule from "../../../src/cli/cmd/tui/ui/dialog-select"
 import * as ToastModule from "../../../src/cli/cmd/tui/ui/toast"
@@ -15,6 +16,14 @@ function flushEffects() {
 }
 
 describe("DialogAgent agency selection", () => {
+  beforeEach(() => {
+    spyOn(ThemeContext, "useTheme").mockReturnValue({
+      theme: {
+        error: RGBA.fromHex("#ff5555"),
+      },
+    } as any)
+  })
+
   afterEach(() => {
     mock.restore()
   })
