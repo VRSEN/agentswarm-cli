@@ -12,9 +12,11 @@ describe("AgencyProduct profile", () => {
     expect(profile.customBranding).toBe(false)
     expect(profile.skipPostAuthModelSelection).toBe(false)
     expect(profile.hideModelSelection).toBe(false)
+    expect(profile.hideConnect).toBe(false)
     expect(profile.addons).toEqual([])
     expect(AgencyProduct.shouldShowPostAuthModelSelection(profile)).toBe(true)
     expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(true)
+    expect(AgencyProduct.shouldShowConnect(profile)).toBe(true)
     expect(AgencyProduct.shouldShowAddons(profile)).toBe(false)
     expect(profile.name).toBe("Agent Swarm")
     expect(profile.cmd).toBe("agentswarm")
@@ -63,6 +65,7 @@ describe("AgencyProduct profile", () => {
       AGENTSWARM_PRODUCT_ENTRY_FILES: "main.py, agency.py",
       AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION: "true",
       AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION: "true",
+      AGENTSWARM_PRODUCT_HIDE_CONNECT: "true",
       AGENTSWARM_PRODUCT_TUI_LOGO_LEFT: JSON.stringify([" LEFT", "LEFT2"]),
       AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: "RIGHT\\nRIGHT2",
       AGENTSWARM_PRODUCT_WORDMARK_LINES: "WORD\\n MARK",
@@ -87,6 +90,7 @@ describe("AgencyProduct profile", () => {
     expect(profile.customStarter).toBe(true)
     expect(profile.skipPostAuthModelSelection).toBe(true)
     expect(profile.hideModelSelection).toBe(true)
+    expect(profile.hideConnect).toBe(true)
     expect(profile.addons).toEqual([
       { id: "search", title: "Search", keys: ["SEARCH_API_KEY"] },
       {
@@ -98,6 +102,7 @@ describe("AgencyProduct profile", () => {
     ])
     expect(AgencyProduct.shouldShowPostAuthModelSelection(profile)).toBe(false)
     expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(false)
+    expect(AgencyProduct.shouldShowConnect(profile)).toBe(false)
     expect(AgencyProduct.shouldShowAddons(profile)).toBe(true)
     expect(profile.name).toBe("Example Product")
     expect(profile.cmd).toBe("example")
@@ -284,8 +289,10 @@ describe("AgencyProduct profile", () => {
     expect(profile.custom).toBe(false)
     expect(profile.skipPostAuthModelSelection).toBe(false)
     expect(profile.hideModelSelection).toBe(false)
+    expect(profile.hideConnect).toBe(false)
     expect(AgencyProduct.shouldShowPostAuthModelSelection(profile)).toBe(true)
     expect(AgencyProduct.shouldShowModelSelection(profile)).toBe(true)
+    expect(AgencyProduct.shouldShowConnect(profile)).toBe(true)
   })
 
   test("keeps model switching commands available when only post-auth model selection is skipped", () => {
@@ -311,6 +318,19 @@ describe("AgencyProduct profile", () => {
       enabled: false,
       hidden: true,
     })
+  })
+
+  test("keeps /connect visible by default and hides it only from downstream profile config", () => {
+    expect(AgencyProduct.connectCommandState({ hideConnect: false })).toEqual({
+      enabled: true,
+      hidden: false,
+    })
+    expect(AgencyProduct.connectCommandState({ hideConnect: true })).toEqual({
+      enabled: false,
+      hidden: true,
+    })
+    expect(AgencyProduct.resolve({}).hideConnect).toBe(false)
+    expect(AgencyProduct.resolve({ AGENTSWARM_PRODUCT_HIDE_CONNECT: "true" }).hideConnect).toBe(true)
   })
 })
 
@@ -356,5 +376,26 @@ describe("AgencyProduct.tips", () => {
     expect(rendered.join("\n")).not.toContain("agentswarm agent create")
     expect(rendered.join("\n")).not.toContain("{highlight}/models{/highlight}")
     expect(rendered).toContain("Run {highlight}agentswarm auth list{/highlight} to see configured provider credentials")
+  })
+
+  test("removes every /connect tip only from hidden downstream profiles", () => {
+    type Tip = string | (() => string | undefined)
+    const input: Tip[] = [
+      "Use {highlight}/connect{/highlight} for a custom server",
+      () => "Use {highlight}/connect{/highlight} after an outage",
+      "Use {highlight}/auth{/highlight} for provider credentials",
+    ]
+    const render = (tips: Tip[]) =>
+      tips.flatMap((tip) => {
+        const value = typeof tip === "string" ? tip : tip()
+        return value ? [value] : []
+      })
+
+    const defaults = render(AgencyProduct.tips(input, { hideConnect: false }))
+    const hidden = render(AgencyProduct.tips(input, { hideConnect: true }))
+
+    expect(defaults.join("\n")).toContain("/connect")
+    expect(hidden.join("\n")).not.toContain("/connect")
+    expect(hidden).toContain("Use {highlight}/auth{/highlight} for provider credentials")
   })
 })

@@ -821,6 +821,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       {
         name: "provider.connect",
         title: AgencyProduct.connect,
+        ...AgencyProduct.connectCommandState(),
         suggested: !connected(),
         slashName: "connect",
         run: () => {
@@ -1063,6 +1064,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     if (error && typeof error === "object" && error.name === "MessageAbortedError") return
     const message = errorMessage(error)
     if (
+      AgencyProduct.shouldShowConnect() &&
       shouldOpenAgencyConnectDialog({
         providerID: frameworkMode() ? AgencySwarmAdapter.PROVIDER_ID : local.model.current()?.providerID,
         message,

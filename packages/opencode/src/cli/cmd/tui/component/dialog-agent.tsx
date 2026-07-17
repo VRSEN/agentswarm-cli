@@ -1,4 +1,5 @@
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { AgencyProduct } from "@/agency-swarm/product"
 import { cleanupLocalProjectRunLaunch, prepareLocalProjectRunLaunch } from "@/agency-swarm/npx"
 import { AgencySwarmRunSession } from "@/agency-swarm/run-session"
 import { displayAgentName } from "@/agent/display"
@@ -215,14 +216,16 @@ export function DialogAgent() {
         disabled: true,
         category: "agency-swarm",
       })
-      result.push({
-        value: {
-          kind: "connect",
-        },
-        title: "Open /connect",
-        description: "Select a local server or update token",
-        category: "agency-swarm",
-      })
+      if (AgencyProduct.shouldShowConnect()) {
+        result.push({
+          value: {
+            kind: "connect",
+          },
+          title: "Open /connect",
+          description: "Select a local server or update token",
+          category: "agency-swarm",
+        })
+      }
       return result
     }
 

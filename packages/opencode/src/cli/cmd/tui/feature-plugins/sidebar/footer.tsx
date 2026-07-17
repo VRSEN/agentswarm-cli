@@ -15,6 +15,9 @@ function View(props: { api: TuiPluginApi }) {
   )
   const done = createMemo(() => props.api.kv.get("dismissed_getting_started", false))
   const show = createMemo(() => !has() && !done())
+  const start = createMemo(() =>
+    AgencyProduct.shouldShowConnect() ? AgencyProduct.start : AgencyProduct.startWithoutConnect,
+  )
   const path = createMemo(() => {
     const dir = props.api.state.path.directory || process.cwd()
     const out = dir.replace(Global.Path.home, "~")
@@ -50,16 +53,18 @@ function View(props: { api: TuiPluginApi }) {
                 ✕
               </text>
             </box>
-            <text fg={theme().textMuted}>{AgencyProduct.start[0]}</text>
-            <text fg={theme().textMuted}>{AgencyProduct.start[1]}</text>
+            <text fg={theme().textMuted}>{start()[0]}</text>
+            <text fg={theme().textMuted}>{start()[1]}</text>
             <box flexDirection="row" gap={1} justifyContent="space-between">
               <text fg={theme().text}>{AgencyProduct.auth}</text>
               <text fg={theme().textMuted}>/auth</text>
             </box>
-            <box flexDirection="row" gap={1} justifyContent="space-between">
-              <text fg={theme().text}>{AgencyProduct.connect}</text>
-              <text fg={theme().textMuted}>/connect</text>
-            </box>
+            <Show when={AgencyProduct.shouldShowConnect()}>
+              <box flexDirection="row" gap={1} justifyContent="space-between">
+                <text fg={theme().text}>{AgencyProduct.connect}</text>
+                <text fg={theme().textMuted}>/connect</text>
+              </box>
+            </Show>
           </box>
         </box>
       </Show>

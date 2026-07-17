@@ -68,7 +68,8 @@ function parse(tip: string): TipPart[] {
   return parts
 }
 
-const NO_MODELS_TIP = "Use {highlight}/auth{/highlight} for provider credentials, then {highlight}/connect{/highlight} for a local server"
+const NO_MODELS_TIP = "Use {highlight}/auth{/highlight} for provider credentials"
+const NO_MODELS_CONNECT_TIP = `${NO_MODELS_TIP}, then {highlight}/connect{/highlight} for a local server`
 
 function shortcutText(value: string) {
   return `{highlight}${value}{/highlight}`
@@ -132,9 +133,11 @@ export function Tips(props: { api: TuiPluginApi; connected?: boolean }) {
     terminalSuspend: useCommandShortcut("terminal.suspend"),
   }
   const tip = createMemo(() => {
-    if (props.connected === false) return NO_MODELS_TIP
+    const showConnect = AgencyProduct.shouldShowConnect()
+    if (props.connected === false) return showConnect ? NO_MODELS_CONNECT_TIP : NO_MODELS_TIP
     const tips = TIPS.flatMap((item) => {
       const value = typeof item === "string" ? item : item(shortcuts)
+      if (!showConnect && value?.includes("{highlight}/connect{/highlight}")) return []
       return value ? [value] : []
     })
     return tips[Math.floor(tipOffset * tips.length)] ?? NO_MODELS_TIP
