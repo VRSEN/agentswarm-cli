@@ -25,7 +25,7 @@ When a change is suspicious, unproven, not clearly fork-specific, or not clearly
 Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implementation.
 
 - Launcher bootstrap: `packages/opencode/bin/agentswarm-npx`, `packages/opencode/bin/agentswarm`, `packages/opencode/package.json`, `packages/opencode/script/postinstall.mjs`, `packages/opencode/script/publish.ts`.
-- Downstream product profile: `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/cli/cmd/tui/util/env-file.ts`, `packages/opencode/src/agency-swarm/server-launcher.ts`, `packages/opencode/src/installation/distribution.ts`, `packages/opencode/script/build.ts`.
+- Downstream product profile and release build inputs: `packages/opencode/src/agency-swarm/product.ts`, `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/cli/cmd/tui/util/env-file.ts`, `packages/opencode/src/agency-swarm/server-launcher.ts`, `packages/opencode/src/installation/distribution.ts`, `packages/opencode/script/build.ts`, `packages/opencode/script/generate.ts`.
 - Local project setup, starter creation, and onboarding auto-launch: `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/cli/cmd/tui/thread.ts`, `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/routes/home.tsx`.
 - Agency session resume and bridge recovery: `packages/opencode/src/agency-swarm/run-session.ts`, `packages/opencode/src/agency-swarm/npx.ts`, `packages/opencode/src/session/agency-swarm.ts`, `packages/opencode/src/cli/cmd/tui/session-error.ts`, `packages/opencode/src/cli/cmd/tui/context/agency-swarm-connection.tsx`.
 - Connection, auth, mode, and provider dialogs: `packages/opencode/src/cli/cmd/tui/app.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-agent.tsx`, `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx`, `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`, `packages/opencode/src/cli/cmd/tui/session-error.ts`.
@@ -63,10 +63,12 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Behavior: Agent Swarm defaults remain unchanged when no downstream product inputs are set.
   - Behavior: release builds can use `AGENTSWARM_PRODUCT_VERSION` as a build-time package version. Downstream wrappers that reuse an Agent Swarm binary keep the binary's operational version and report wrapper package versions before delegation.
   - Behavior: downstream profiles can set `AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION` to skip the model prompt after auth. `/models` stays available unless `AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION` explicitly hides it.
+  - Behavior: downstream profiles can set `AGENTSWARM_PRODUCT_HIDE_CONNECT` to hide `/connect`, reconnect affordances, and automatic connect dialogs. The Agent Swarm default keeps `/connect` available.
   - Behavior: downstream profiles can set `AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT=standalone` so launcher-created or repaired project `.venv` environments use standalone Python instead of Conda-family Python. The Agent Swarm default remains `any`.
   - Behavior: downstream profiles can set `AGENTSWARM_PRODUCT_ADDONS` to a JSON add-ons list to expose the native `/addons` command and post-auth add-ons setup flow. The Agent Swarm default keeps `/addons` hidden.
   - Behavior: downstream profiles can set `AGENTSWARM_PRODUCT_STATE_ROOT` so the product project, launcher logs, and add-on `.env` reads and writes live under a fixed product state root. The Agent Swarm default still uses the caller project and temporary launcher logs.
-  - Implementation: `AgencyProduct` in `packages/opencode/src/agency-swarm/product.ts`, launcher detection in `packages/opencode/src/agency-swarm/npx.ts`, add-on env storage in `packages/opencode/src/cli/cmd/tui/util/env-file.ts`, the FastAPI server launcher module argument, installation distribution metadata, native TUI provider dialogs, and `packages/opencode/script/build.ts`.
+  - Behavior: release builds fail before changing generated files when the model catalog is invalid or contains no providers or models.
+  - Implementation: `AgencyProduct` in `packages/opencode/src/agency-swarm/product.ts`, launcher detection in `packages/opencode/src/agency-swarm/npx.ts`, add-on env storage in `packages/opencode/src/cli/cmd/tui/util/env-file.ts`, the FastAPI server launcher module argument, installation distribution metadata, native TUI provider dialogs, `packages/opencode/script/build.ts`, and `packages/opencode/script/generate.ts`.
 
 - **One-command launcher npm package**
   - Intent: let users start the fork through one npm package instead of setting up the Python side first.
@@ -198,6 +200,11 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Behavior: the auth modal owns input focus until it closes, and Esc dismisses it.
   - Implementation: `closeDialogAuthOnEscape` in `packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx` and the auth guard in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`.
   - Added by: `2cc6e94a`
+
+- **Rejected prompt requests restore untouched drafts**
+  - Intent: keep a failed send from erasing text or attachments that the user would otherwise have to reconstruct.
+  - Behavior: when the prompt request rejects, the submitted text and attachments return to the active composer only if it is still empty; newer input is never replaced.
+  - Implementation: rejection recovery in `Prompt` and active-composer tracking through `PromptRefProvider` in `packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx` and `packages/opencode/src/cli/cmd/tui/context/prompt.tsx`.
 
 - **Manage provider auth can remove stored credentials**
   - Intent: let users remove a saved provider credential from the same TUI flow they use to add one.

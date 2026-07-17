@@ -42,6 +42,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** A missing local project creates the configured starter repository in the configured starter folder.
 - **Happy-path proof:** A downstream wrapper that reuses the Agent Swarm binary reports its own version before delegation, while the embedded binary keeps its operational version for updates and compatibility checks.
 - **Happy-path proof:** A downstream profile can provide `AGENTSWARM_PRODUCT_ADDONS` to expose `/addons`, while the default Agent Swarm profile keeps `/addons` hidden.
+- **Happy-path proof:** A downstream profile can set `AGENTSWARM_PRODUCT_HIDE_CONNECT=true` to hide `/connect` and automatic connect dialogs, while the default Agent Swarm profile keeps `/connect` available.
 - **Happy-path proof:** With `AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT=standalone`, launcher setup creates or repairs project `.venv` environments with standalone Python 3.12+ and rebuilds existing Conda-family `.venv` environments.
 - **Happy-path proof:** With `AGENTSWARM_PRODUCT_STATE_ROOT`, the product project, launcher logs, and add-on `.env` reads and writes stay under the fixed product state root.
 - **Failure scenarios to test:** Missing custom product values fall back to Agent Swarm defaults instead of inventing a downstream product.
@@ -256,6 +257,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** Structured-capable Agency runs receive files and images as structured `message` content.
 - **Happy-path proof:** Older backends receive legacy `file_urls` payloads.
 - **Happy-path proof:** Attached file and image context stays available across follow-up prompts without requiring reattachment.
+- **Happy-path proof:** A rejected prompt request restores its submitted text and attachments when the active composer is still empty.
 - **Happy-path proof:** Manual history replay may resend inline attachment content or references.
 - **Happy-path proof:** Handoff-selected recipient agents persist across turns.
 - **Happy-path proof:** Explicit current-prompt handoff recipients persist across metadata-refresh outages.
@@ -266,6 +268,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** Loopback history recovers across local server URL or port changes.
 - **Happy-path proof:** Agency tool-output metadata stays attached to the correct wrapper call.
 - **Failure scenarios to test:** Structured-capability mismatch uses the legacy payload instead of dropping attachments.
+- **Failure scenarios to test:** A rejected earlier request never replaces newer composer input.
 - **Failure scenarios to test:** History compaction does not lose caller agent identity.
 - **Failure scenarios to test:** A metadata outage after an explicit current-prompt handoff recipient does not drop the next prompt back to the coordinator.
 - **Failure scenarios to test:** Flat Agency metadata on text, reasoning, or tool parts does not break compaction.
