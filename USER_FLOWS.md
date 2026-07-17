@@ -243,6 +243,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **User story:** When restarting a project fails because the swarm code cannot load or start, the user lands in Build with the startup error already in the prompt.
 - **Success looks like:** The user can submit that prompt to Build, fix the code, choose Run from `/agents`, and start the same project as the Run server.
 - **Success looks like:** The user can type `/` from that Build fallback and access slash commands, even while the startup error is prefilled.
+- **Success looks like:** A toast explains that the project failed to start and that the error was placed in the message, so the prefilled text is not mistaken for typed input.
 - **Success looks like:** After choosing Run, the next prompt is handled by the repaired swarm, not echoed or ignored by the terminal.
 - **Success looks like:** A stale env-provided Agency Swarm server config cannot override the repaired local project when the user returns to Run.
 - **Success looks like:** Selecting the already-current local server in `/connect` keeps the local project Run state instead of saving a stale random port.
