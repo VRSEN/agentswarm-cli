@@ -1042,6 +1042,118 @@ planMode.instance(
       const payload = JSON.stringify(input)
       expect(payload).toContain("Agent Swarm Build Instructions")
       expect(payload).toContain("plan_enter")
+      expect(payload).not.toContain("{{")
+    }),
+  { git: true },
+)
+
+it.instance(
+  "Build prompt asks for the output location in chat when plan_enter is unavailable",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Build without plan mode",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "build a cold email swarm" }],
+      })
+
+      yield* llm.text("building")
+      const result = yield* prompt.loop({ sessionID: chat.id })
+      expect(result.info.role).toBe("assistant")
+
+      const [input] = yield* llm.inputs
+      const payload = JSON.stringify(input)
+      expect(payload).toContain("Agent Swarm Build Instructions")
+      expect(payload).not.toContain("plan_enter")
+      expect(payload).toContain("ask the user in chat for the output location")
+      expect(payload).not.toContain("{{")
+    }),
+  { git: true },
+)
+
+planMode.instance(
+  "plan_enter appends a synthetic Plan message after the user confirms the switch",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const question = yield* Question.Service
+      const chat = yield* sessions.create({
+        title: "Build to plan switch",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "build a cold email swarm" }],
+      })
+      yield* llm.tool("plan_enter", {})
+      yield* llm.text("switching")
+
+      const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkScoped)
+      const request = yield* pollWithTimeout(
+        question.list().pipe(Effect.map((items) => items[0])),
+        "plan_enter never asked the switch question",
+      )
+      expect(request.questions[0]?.question).toContain("switch to Plan")
+      yield* question.reply({ requestID: request.id, answers: [["Yes"]] })
+      const result = yield* Fiber.join(fiber)
+      expect(result.info.role).toBe("assistant")
+
+      const msgs = yield* sessions.messages({ sessionID: chat.id })
+      const planMsg = msgs.find((msg) => msg.info.role === "user" && msg.info.agent === "plan")
+      expect(planMsg).toBeDefined()
+      const part = planMsg?.parts.find((part) => part.type === "text" && part.synthetic)
+      expect(part?.type === "text" ? part.text : "").toContain("Build needs planning before implementation")
+    }),
+  { git: true },
+)
+
+planMode.instance(
+  "plan_enter keeps the session in Build when the user declines the switch",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const question = yield* Question.Service
+      const chat = yield* sessions.create({
+        title: "Build stays in build",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "build a cold email swarm" }],
+      })
+      yield* llm.tool("plan_enter", {})
+      yield* llm.text("continuing in build")
+
+      const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkScoped)
+      const request = yield* pollWithTimeout(
+        question.list().pipe(Effect.map((items) => items[0])),
+        "plan_enter never asked the switch question",
+      )
+      yield* question.reply({ requestID: request.id, answers: [["No"]] })
+      const result = yield* Fiber.join(fiber)
+      expect(result.info.role).toBe("assistant")
+
+      const msgs = yield* sessions.messages({ sessionID: chat.id })
+      expect(msgs.some((msg) => msg.info.role === "user" && msg.info.agent === "plan")).toBe(false)
     }),
   { git: true },
 )

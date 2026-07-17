@@ -238,8 +238,17 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
 - **Plan instructions are retuned for Agency Swarm handoffs**
   - Intent: keep Plan behavior aligned with the fork while preserving native OpenCode Plan behavior.
   - Behavior: the Plan prompt keeps the native OpenCode system prompt and adds fork-specific Agency Swarm handoff instructions.
+  - Behavior: Plan asks how the result should be delivered (add agents to the existing OpenSwarm or create a standalone agency), requires an explicit user-provided output location before a standalone plan counts as complete, runs MCP and existing-API discovery when the planned agents need tools, and proposes switching to Build via `plan_exit` once the plan is complete.
   - Implementation: `agentPlannerInstructions` in `packages/opencode/src/session/agent-planner.ts` with `packages/opencode/src/session/prompt/agent-planner.txt`.
   - Added by: `7643fcde`
+
+- **Build can propose switching to Plan for unclear swarm work**
+  - Intent: route unclear or new swarm work through Plan before Build edits files, without making the user switch modes manually.
+  - Behavior: with native plan mode active in the CLI client, Build has a `plan_enter` tool that asks the user whether to switch to Plan. Choosing `Yes` appends a synthetic Plan handoff turn so the session continues in Plan; choosing `No` keeps Build working without planning.
+  - Behavior: the injected Build prompt mentions `plan_enter` only when the tool is actually registered for the session. When it is unavailable, the prompt instead tells Build to ask the user in chat for clarifications and for the standalone-agency output location.
+  - Behavior: Build never copies an existing parent-directory `.env` into a new standalone agency silently. It asks the user in chat for explicit confirmation first, naming source and destination. On decline, or when no `.env` exists, it creates a template `.env` containing only the required key names with empty values and tells the user which keys to fill. Secret values are never read into the conversation or exposed.
+  - Behavior: smoke tests for generated swarms stay safe. Tools whose real execution would send messages or emails, spend money, or delete or modify external data are smoke-tested with read-only or clearly reversible inputs, and Build never makes a destructive or outward-facing real call without explicit user confirmation in chat.
+  - Implementation: `PlanEnterTool` in `packages/opencode/src/tool/plan.ts`, registration in `packages/opencode/src/tool/registry.ts`, availability-aware prompt substitution in `packages/opencode/src/session/agent-builder.ts` with `packages/opencode/src/session/prompt/agent-builder.txt`, and injection wiring in `packages/opencode/src/session/prompt.ts`.
 
 - **`/agents` exposes Plan, Build, and Run**
   - Intent: let users move between native Build, native Plan, and server-backed Run inside one project without adding parallel Build or Plan behavior.
