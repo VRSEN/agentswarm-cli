@@ -40,12 +40,14 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** The launcher detects configured entry files; the default Agent Swarm profile still detects only `agency.py`.
 - **Happy-path proof:** If a configured entry file exists but cannot be read, detection keeps checking later configured entry files and uses a later valid entry before showing read-recovery choices.
 - **Happy-path proof:** A missing local project creates the configured starter repository in the configured starter folder.
-- **Happy-path proof:** A downstream wrapper that reuses the Agent Swarm binary reports its own version before delegation, while the embedded binary keeps its operational version for updates and compatibility checks.
+- **Happy-path proof:** A downstream wrapper that reuses the Agent Swarm binary reports its own version before delegation, while the embedded binary keeps its operational version for compatibility checks.
+- **Happy-path proof:** With `AGENTSWARM_PRODUCT_VERSION` set, the update-available check compares the registry version against the product version and offers an update only when the registry version is strictly newer; the default Agent Swarm profile still compares the binary version.
 - **Happy-path proof:** A downstream profile can provide `AGENTSWARM_PRODUCT_ADDONS` to expose `/addons`, while the default Agent Swarm profile keeps `/addons` hidden.
 - **Happy-path proof:** A downstream profile can set `AGENTSWARM_PRODUCT_HIDE_CONNECT=true` to hide `/connect` and automatic connect dialogs, while the default Agent Swarm profile keeps `/connect` available.
 - **Happy-path proof:** With `AGENTSWARM_PRODUCT_PYTHON_ENVIRONMENT=standalone`, launcher setup creates or repairs project `.venv` environments with standalone Python 3.12+ and rebuilds existing Conda-family `.venv` environments.
 - **Happy-path proof:** With `AGENTSWARM_PRODUCT_STATE_ROOT`, the product project, launcher logs, and add-on `.env` reads and writes stay under the fixed product state root.
 - **Failure scenarios to test:** Missing custom product values fall back to Agent Swarm defaults instead of inventing a downstream product.
+- **Failure scenarios to test:** An equal or lower registry version never offers an update to a downstream product.
 - **Failure scenarios to test:** The default Agent Swarm profile does not expose `/addons`.
 - **Failure scenarios to test:** With standalone Python required, a machine without standalone Python 3.12+ fails visibly instead of silently using Conda-family Python.
 

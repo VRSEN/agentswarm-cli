@@ -334,6 +334,38 @@ describe("AgencyProduct profile", () => {
   })
 })
 
+describe("AgencyProduct.updateCheck", () => {
+  test("keeps binary-version comparison when no product version is set", () => {
+    const profile = AgencyProduct.resolve({})
+
+    expect(AgencyProduct.updateCheck("1.4.41", "1.4.42", profile)).toEqual({ current: "1.4.41", available: true })
+    expect(AgencyProduct.updateCheck("1.4.41", "1.4.41", profile)).toEqual({ current: "1.4.41", available: false })
+    expect(AgencyProduct.updateCheck("1.4.41", "1.4.40", profile)).toEqual({ current: "1.4.41", available: true })
+    expect(AgencyProduct.updateCheck("local", "1.4.41", profile)).toEqual({ current: "local", available: true })
+  })
+
+  test("compares the downstream product version instead of the binary version", () => {
+    const profile = AgencyProduct.resolve({ AGENTSWARM_PRODUCT_VERSION: "1.1.0" })
+
+    expect(AgencyProduct.updateCheck("1.4.41", "1.1.1", profile)).toEqual({ current: "1.1.0", available: true })
+    expect(AgencyProduct.updateCheck("1.4.41", "1.2.0", profile)).toEqual({ current: "1.1.0", available: true })
+    expect(AgencyProduct.updateCheck("1.4.41", "2.0.0", profile)).toEqual({ current: "1.1.0", available: true })
+  })
+
+  test("never offers equal or lower registry versions to downstream products", () => {
+    const profile = AgencyProduct.resolve({ AGENTSWARM_PRODUCT_VERSION: "1.1.0" })
+
+    expect(AgencyProduct.updateCheck("1.4.41", "1.1.0", profile)).toEqual({ current: "1.1.0", available: false })
+    expect(AgencyProduct.updateCheck("1.4.41", "1.0.9", profile)).toEqual({ current: "1.1.0", available: false })
+    expect(AgencyProduct.updateCheck("1.4.41", "0.9.0", profile)).toEqual({ current: "1.1.0", available: false })
+  })
+
+  test("treats non-semver versions as no update for downstream products", () => {
+    expect(AgencyProduct.updateCheck("1.4.41", "1.1.1", { productVersion: "dev" }).available).toBe(false)
+    expect(AgencyProduct.updateCheck("1.4.41", "next", { productVersion: "1.1.0" }).available).toBe(false)
+  })
+})
+
 describe("AgencyProduct.tips", () => {
   test("removes Run-mode-invalid upstream tips", () => {
     const tips = AgencyProduct.tips([
