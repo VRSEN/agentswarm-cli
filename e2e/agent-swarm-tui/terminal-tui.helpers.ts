@@ -113,7 +113,7 @@ export async function selectProductMode(
     tuiInteractionTimeoutMs,
   )
   tui.write("\r")
-  if (options?.expectStarting) await tui.waitForText("Starting...", tuiInteractionTimeoutMs)
+  if (options?.expectStarting) await tui.waitForText("Refreshing project dependencies...", tuiInteractionTimeoutMs)
   await tui.waitFor(() => !tui.screen().includes("Select agent"), `${mode} mode selected`, tuiInteractionTimeoutMs)
   clearPrompt(tui)
 }

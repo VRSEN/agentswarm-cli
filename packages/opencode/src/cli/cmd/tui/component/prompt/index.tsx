@@ -64,6 +64,7 @@ import { DialogSkill } from "../dialog-skill"
 import { downloadOllamaModel } from "../download-ollama-model"
 import { CONSOLE_MANAGED_ICON, consoleManagedProviderLabel } from "@tui/util/provider-origin"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { AgencyProduct } from "@/agency-swarm/product"
 import { AgencySwarmOllama } from "@/agency-swarm/ollama"
 import { AgencySwarmRunSession } from "@/agency-swarm/run-session"
 import {
@@ -103,6 +104,7 @@ import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, u
 import { useTuiConfig } from "../../context/tui-config"
 import { Telemetry } from "@/telemetry/telemetry"
 import { captureCommand } from "@/telemetry/command"
+import { useOptionalPromptRef } from "../../context/prompt"
 
 export type PromptProps = {
   sessionID?: string
@@ -124,6 +126,8 @@ export type PromptProps = {
 export type PromptRef = {
   focused: boolean
   current: PromptInfo
+  sessionID?: string
+  empty?(): boolean
   set(prompt: PromptInfo): void
   reset(): void
   blur(): void
@@ -218,6 +222,8 @@ export function Prompt(props: PromptProps) {
   const tuiConfig = useTuiConfig()
   const dialog = useDialog()
   const toast = useToast()
+  const activePrompt = useOptionalPromptRef()
+  let generation = 0
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
   const history = usePromptHistory()
   const stash = usePromptStash()
@@ -738,13 +744,20 @@ export function Prompt(props: PromptProps) {
 
   function promptModelWarning() {
     const agency = frameworkMode()
+    const connect = AgencyProduct.shouldShowConnect()
     toast.show({
       variant: "warning",
-      message: agency ? "Connect to an agency-swarm server to send prompts" : "Connect a provider to send prompts",
+      message: agency
+        ? connect
+          ? "Connect to an agency-swarm server to send prompts"
+          : `${AgencyProduct.name}'s local server is unavailable. Restart ${AgencyProduct.name} and try again.`
+        : "Connect a provider to send prompts",
       duration: 3000,
     })
     if (agency || sync.data.provider.length === 0) {
-      dialog.replace(() => (agency ? <DialogAgencySwarmConnect /> : <DialogProviderConnect />))
+      if (!agency || connect) {
+        dialog.replace(() => (agency ? <DialogAgencySwarmConnect /> : <DialogProviderConnect />))
+      }
     }
   }
 
@@ -1113,6 +1126,15 @@ export function Prompt(props: PromptProps) {
     },
     get current() {
       return store.prompt
+    },
+    get sessionID() {
+      return props.sessionID
+    },
+    empty() {
+      if (store.prompt.input !== "" || store.prompt.parts.length > 0) return false
+      if (input.isDestroyed) return false
+      if (input.plainText !== "") return false
+      return input.extmarks.getAllForTypeId(promptPartTypeId).length === 0
     },
     focus() {
       input.focus()
@@ -1670,12 +1692,15 @@ export function Prompt(props: PromptProps) {
     }
 
     if (currentMode !== "shell" && frameworkMode() && agencyConnection.requiresReconnect()) {
+      const connect = AgencyProduct.shouldShowConnect()
       toast.show({
         variant: "warning",
-        message: "Reconnect to a local agency-swarm server before sending a message",
+        message: connect
+          ? "Reconnect to a local agency-swarm server before sending a message"
+          : `${AgencyProduct.name}'s local server is unavailable. Restart ${AgencyProduct.name} and try again.`,
         duration: 4000,
       })
-      agencyConnection.openConnectDialog()
+      if (connect) agencyConnection.openConnectDialog()
       return false
     }
 
@@ -1703,6 +1728,7 @@ export function Prompt(props: PromptProps) {
       return false
     }
 
+    const createdSession = props.sessionID == null
     let sessionID = props.sessionID
     if (sessionID == null) {
       const workspace = workspaceSelection()
@@ -1842,6 +1868,11 @@ export function Prompt(props: PromptProps) {
         : undefined
       const agencyLabelAgency = frameworkMode() ? (agencyLabelSelection?.agency ?? options.agency) : undefined
       const usedExplicitRecipient = !!explicitRecipient && agencyRecipientAgent === explicitRecipient
+      const submittedPrompt = structuredClone({
+        ...unwrap(store.prompt),
+        mode: currentMode,
+      })
+      const submission = activePrompt?.next() ?? ++generation
       const promptPayload: Parameters<typeof sdk.client.session.prompt>[0] & {
         $body_agencyRecipientAgent?: string
         $body_agencyLabelAgency?: string
@@ -1887,6 +1918,26 @@ export function Prompt(props: PromptProps) {
         })
         .catch((error) => {
           captureTaskFailed(messageID, error)
+          if (submission === (activePrompt?.generation ?? generation)) {
+            const active = activePrompt?.current
+            if (active) {
+              const samePrompt = active === ref
+              const sameSession = active.sessionID === sessionID
+              const activeIsEmpty =
+                active.empty?.() ?? (active.current.input === "" && active.current.parts.length === 0)
+              if ((samePrompt || sameSession) && activeIsEmpty) active.set(submittedPrompt)
+            } else if (ref.empty?.()) {
+              ref.set(submittedPrompt)
+            } else if (createdSession) {
+              const currentRoute = route.data
+              if (currentRoute.type === "home" && !currentRoute.prompt) {
+                route.navigate({ type: "home", prompt: submittedPrompt })
+              }
+              if (currentRoute.type === "session" && currentRoute.sessionID === sessionID && !currentRoute.prompt) {
+                route.navigate({ type: "session", sessionID, prompt: submittedPrompt })
+              }
+            }
+          }
           const message = toErrorMessage(error)
           const shouldReopenAuth = shouldOpenAgencyAuthDialog({
             providerID: productProviderID,
@@ -1916,9 +1967,12 @@ export function Prompt(props: PromptProps) {
     if (!props.sessionID) {
       if (editorParts.length > 0) editor.preserveSelectionFromNewSession()
       setTimeout(() => {
+        const active = activePrompt?.current
+        const prompt = active === ref && !active.empty?.() ? structuredClone(unwrap(active.current)) : undefined
         route.navigate({
           type: "session",
           sessionID,
+          ...(prompt ? { prompt } : {}),
         })
       }, 50)
     }
@@ -2299,7 +2353,7 @@ export function Prompt(props: PromptProps) {
                             {currentModelLabelDisplay()}
                           </text>
                           <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
-                          <Show when={showAgencyReconnect()}>
+                          <Show when={showAgencyReconnect() && AgencyProduct.shouldShowConnect()}>
                             <text fg={theme.error}>·</text>
                             <text fg={theme.error} onMouseUp={() => agencyConnection.openConnectDialog()}>
                               disconnected

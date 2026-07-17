@@ -14,6 +14,7 @@ declare const AGENTSWARM_PRODUCT_STARTER_FOLDER: string | undefined
 declare const AGENTSWARM_PRODUCT_ENTRY_FILES: string | undefined
 declare const AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION: string | undefined
 declare const AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION: string | undefined
+declare const AGENTSWARM_PRODUCT_HIDE_CONNECT: string | undefined
 declare const AGENTSWARM_PRODUCT_TUI_LOGO_LEFT: string | undefined
 declare const AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT: string | undefined
 declare const AGENTSWARM_PRODUCT_WORDMARK_LINES: string | undefined
@@ -41,6 +42,7 @@ export namespace AgencyProduct {
     customStarter: boolean
     skipPostAuthModelSelection: boolean
     hideModelSelection: boolean
+    hideConnect: boolean
     addons: Addon[]
     name: string
     cmd: string
@@ -70,6 +72,7 @@ export namespace AgencyProduct {
     customStarter: false,
     skipPostAuthModelSelection: false,
     hideModelSelection: false,
+    hideConnect: false,
     addons: [],
     name: "Agent Swarm",
     cmd: "agentswarm",
@@ -120,6 +123,8 @@ export namespace AgencyProduct {
       typeof AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION === "undefined"
         ? undefined
         : AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION,
+    AGENTSWARM_PRODUCT_HIDE_CONNECT:
+      typeof AGENTSWARM_PRODUCT_HIDE_CONNECT === "undefined" ? undefined : AGENTSWARM_PRODUCT_HIDE_CONNECT,
     AGENTSWARM_PRODUCT_TUI_LOGO_LEFT:
       typeof AGENTSWARM_PRODUCT_TUI_LOGO_LEFT === "undefined" ? undefined : AGENTSWARM_PRODUCT_TUI_LOGO_LEFT,
     AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT:
@@ -270,6 +275,7 @@ export namespace AgencyProduct {
       agencyEntryFiles: readEntryFiles(readValue(env, "AGENTSWARM_PRODUCT_ENTRY_FILES")),
       skipPostAuthModelSelection: readBoolean(readValue(env, "AGENTSWARM_PRODUCT_SKIP_POST_AUTH_MODEL_SELECTION")),
       hideModelSelection: readBoolean(readValue(env, "AGENTSWARM_PRODUCT_HIDE_MODEL_SELECTION")),
+      hideConnect: readBoolean(readValue(env, "AGENTSWARM_PRODUCT_HIDE_CONNECT")),
       tuiLogoLeft: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_TUI_LOGO_LEFT")),
       tuiLogoRight: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_TUI_LOGO_RIGHT")),
       wordmarkLines: readLines(readRawValue(env, "AGENTSWARM_PRODUCT_WORDMARK_LINES")),
@@ -294,6 +300,7 @@ export namespace AgencyProduct {
       customStarter,
       skipPostAuthModelSelection: overrides.skipPostAuthModelSelection ?? defaults.skipPostAuthModelSelection,
       hideModelSelection: overrides.hideModelSelection ?? defaults.hideModelSelection,
+      hideConnect: overrides.hideConnect ?? defaults.hideConnect,
       addons: overrides.addons ?? defaults.addons,
       name: overrides.name ?? defaults.name,
       cmd: overrides.cmd ?? defaults.cmd,
@@ -325,6 +332,7 @@ export namespace AgencyProduct {
   export const customStarter = current.customStarter
   export const skipPostAuthModelSelection = current.skipPostAuthModelSelection
   export const hideModelSelection = current.hideModelSelection
+  export const hideConnect = current.hideConnect
   export const addons = current.addons
   export const name = current.name
   export const packageName = current.packageName
@@ -352,6 +360,10 @@ export namespace AgencyProduct {
     "Authenticate providers and connect to a local agency-swarm server before sending prompts.",
     "Use /auth for provider credentials, then /connect to choose the server and store a token.",
   ]
+  export const startWithoutConnect = [
+    "Authenticate a provider before sending prompts.",
+    "Use /auth to add or update provider credentials.",
+  ]
 
   export function shouldShowPostAuthModelSelection(profile: Pick<Profile, "skipPostAuthModelSelection"> = current) {
     return !profile.skipPostAuthModelSelection
@@ -361,12 +373,24 @@ export namespace AgencyProduct {
     return !profile.hideModelSelection
   }
 
+  export function shouldShowConnect(profile: Pick<Profile, "hideConnect"> = current) {
+    return !profile.hideConnect
+  }
+
   export function shouldShowAddons(profile: Pick<Profile, "addons"> = current) {
     return profile.addons.length > 0
   }
 
   export function modelSwitchCommandState(profile: Pick<Profile, "hideModelSelection"> = current) {
     const enabled = shouldShowModelSelection(profile)
+    return {
+      enabled,
+      hidden: !enabled,
+    }
+  }
+
+  export function connectCommandState(profile: Pick<Profile, "hideConnect"> = current) {
+    const enabled = shouldShowConnect(profile)
     return {
       enabled,
       hidden: !enabled,
@@ -396,7 +420,7 @@ export namespace AgencyProduct {
     "OpenCode auto-handles OAuth",
     "Switch to {highlight}Plan{/highlight}",
     "Create JSON theme files in {highlight}.agentswarm/themes/{/highlight}",
-    "Use {highlight}\"theme\": \"system\"{/highlight}",
+    'Use {highlight}"theme": "system"{/highlight}',
     "Themes support dark/light variants",
     "Use numeric xterm color codes",
     "Run {highlight}opencode serve{/highlight}",
@@ -454,11 +478,12 @@ export namespace AgencyProduct {
     return next
   }
 
-  function transform<T>(item: T): T | undefined {
+  function transform<T>(item: T, showConnect: boolean): T | undefined {
     if (typeof item === "string") {
       if (skipped(item)) return undefined
       const next = rewrite(item)
       if (skipped(next)) return undefined
+      if (!showConnect && next.includes("{highlight}/connect{/highlight}")) return undefined
       return next as T
     }
     if (typeof item === "function") {
@@ -469,21 +494,24 @@ export namespace AgencyProduct {
         if (skipped(value)) return undefined
         const next = rewrite(value)
         if (skipped(next)) return undefined
+        if (!showConnect && next.includes("{highlight}/connect{/highlight}")) return undefined
         return next
       }) as T
     }
     return item
   }
 
-  export function tips<T>(input: T[]): T[] {
+  export function tips<T>(input: T[], profile: Pick<Profile, "hideConnect"> = current): T[] {
     const seen = new Set<string>()
+    const showConnect = shouldShowConnect(profile)
     const base = input.reduce<T[]>((acc, item) => {
-      const next = transform(item)
+      const next = transform(item, showConnect)
       if (next !== undefined) acc.push(next)
       return acc
     }, [])
     const list = base.concat(add as T[]).filter((item) => {
       if (typeof item !== "string") return true
+      if (!showConnect && item.includes("{highlight}/connect{/highlight}")) return false
       if (seen.has(item)) return false
       seen.add(item)
       return true

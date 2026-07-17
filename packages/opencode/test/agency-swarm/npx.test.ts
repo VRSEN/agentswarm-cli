@@ -2826,6 +2826,7 @@ describe("agency-swarm npx onboarding", () => {
     await Bun.write(path.join(dir.path, "requirements.txt"), "python-dotenv\n")
 
     const calls: string[][] = []
+    const progress: string[] = []
     const stderr = createTextOutputStream()
     let resolveExit: (code: number) => void = () => undefined
 
@@ -2859,7 +2860,9 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     try {
-      const launch = await prepareLocalProjectRunLaunch(dir.path, AgencyProduct, [getTestVenvPython(dir.path)])
+      const launch = await prepareLocalProjectRunLaunch(dir.path, AgencyProduct, [getTestVenvPython(dir.path)], {
+        onProgress: (message) => progress.push(message),
+      })
 
       expect(launch.runProjectDirectory).toBe(dir.path)
       const installIndex = calls.findIndex((cmd) => isUvPipInstallCommand(cmd))
@@ -2867,7 +2870,9 @@ describe("agency-swarm npx onboarding", () => {
       expect(installIndex).toBeGreaterThan(-1)
       expect(calls[installIndex]).toContain("-r")
       expect(calls[installIndex]).toContain("requirements.txt")
+      expect(calls[installIndex]).not.toContain("--upgrade")
       expect(serverIndex).toBeGreaterThan(installIndex)
+      expect(progress).toEqual(["Refreshing project dependencies...", "Starting the swarm..."])
     } finally {
       await cleanupLocalProjectRunLaunch()
     }

@@ -1066,6 +1066,7 @@ export async function prepareLocalProjectRunLaunch(
   profile: ProductProfile = AgencyProduct,
   python?: string[],
   options: {
+    onProgress?: (message: string) => void
     terminalUI?: boolean
   } = {},
 ): Promise<{
@@ -1084,8 +1085,10 @@ export async function prepareLocalProjectRunLaunch(
     throw new Error(`Project .venv is not ready. Use Build to repair it, then switch to Run again.`)
   }
   await refreshLocalRunProjectDependencies(project.directory, command, launchProfile(profile), {
+    onProgress: options.onProgress,
     terminalUI: options.terminalUI ?? true,
   })
+  options.onProgress?.("Starting the swarm...")
   const server = await startProjectServer(project.directory, command, project.moduleName, project.agencyFile)
   const config = buildAgencyConfigData({
     baseURL: server.baseURL,
@@ -1109,12 +1112,14 @@ async function refreshLocalRunProjectDependencies(
   command: string[],
   profile: Pick<LaunchProfile, "name" | "stateRoot">,
   options: {
+    onProgress?: (message: string) => void
     terminalUI: boolean
   },
 ) {
   if (!isProjectVenvPythonCommand(directory, command)) return
   if (!(await hasDependencyManifest(directory))) return
 
+  options.onProgress?.("Refreshing project dependencies...")
   const venvPython = command[0]!
   const refreshLogFile = await tryCreateProjectCommandLogFile(
     directory,
@@ -1132,6 +1137,7 @@ async function refreshLocalRunProjectDependencies(
       logFile: refreshLogFile,
       signal,
       timeoutMs: REBUILD_INSTALL_TIMEOUT_MS,
+      upgrade: false,
     })
     if (result.timedOut) {
       throw new Error(formatCommandTimeout(result, "Project dependency refresh", REBUILD_INSTALL_TIMEOUT_MS))
@@ -1406,12 +1412,14 @@ async function installProjectDependencies(
     logFile?: string
     signal?: AbortSignal
     timeoutMs: number
+    upgrade?: boolean
   },
 ): Promise<DependencyInstallResult> {
+  const upgrade = options.upgrade === false ? [] : ["--upgrade"]
   const requirements = path.join(directory, "requirements.txt")
   if (await Filesystem.exists(requirements)) {
     const result = await runCommand(
-      [localUv, "pip", "install", "--python", venvPython, "--upgrade", "-r", "requirements.txt"],
+      [localUv, "pip", "install", "--python", venvPython, ...upgrade, "-r", "requirements.txt"],
       {
         cwd: directory,
         logFile: options.logFile,
@@ -1424,7 +1432,7 @@ async function installProjectDependencies(
 
   const pyproject = path.join(directory, "pyproject.toml")
   if (await Filesystem.exists(pyproject)) {
-    const result = await runCommand([localUv, "pip", "install", "--python", venvPython, "--upgrade", "-e", "."], {
+    const result = await runCommand([localUv, "pip", "install", "--python", venvPython, ...upgrade, "-e", "."], {
       cwd: directory,
       logFile: options.logFile,
       signal: options.signal,

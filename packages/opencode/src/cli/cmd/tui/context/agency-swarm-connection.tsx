@@ -1,6 +1,7 @@
 import { createMemo, createEffect, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { AgencySwarmAdapter } from "@/agency-swarm/adapter"
+import { AgencyProduct } from "@/agency-swarm/product"
 import { Log } from "@opencode-ai/core/util/log"
 import { createSimpleContext } from "./helper"
 import { useLocal } from "./local"
@@ -263,6 +264,7 @@ export const { use: useAgencySwarmConnection, provider: AgencySwarmConnectionPro
       frameworkMode,
       config,
       openConnectDialog: () => {
+        if (!AgencyProduct.shouldShowConnect()) return false
         if (dialog.stack.length > 0) return false
         dialog.replace(() => <DialogAgencySwarmConnect />)
         return true

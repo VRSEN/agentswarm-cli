@@ -1,9 +1,9 @@
 /** @jsxImportSource @opentui/solid */
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { RGBA } from "@opentui/core"
+import { RGBA, type CliRenderer } from "@opentui/core"
 import { testRender, useRenderer } from "@opentui/solid"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
-import { createEffect, type ParentProps } from "solid-js"
+import { createEffect, createSignal, type ParentProps } from "solid-js"
 import * as AutocompleteModule from "../../../src/cli/cmd/tui/component/prompt/autocomplete"
 import * as CommandDialogModule from "../../../src/cli/cmd/tui/component/dialog-command"
 import { CommandPaletteProvider } from "../../../src/cli/cmd/tui/context/command-palette"
@@ -28,9 +28,11 @@ import * as TextareaKeybindingsModule from "@tui/component/textarea-keybindings"
 import { DialogProvider, useDialog } from "../../../src/cli/cmd/tui/ui/dialog"
 import * as ToastModule from "../../../src/cli/cmd/tui/ui/toast"
 import { AgencySwarmOllama } from "../../../src/agency-swarm/ollama"
+import { AgencyProduct } from "../../../src/agency-swarm/product"
 import { AgencySwarmRunSession } from "../../../src/agency-swarm/run-session"
 import { Telemetry } from "../../../src/telemetry/telemetry"
 import { OpencodeKeymapProvider } from "../../../src/cli/cmd/tui/keymap"
+import { PromptRefProvider, usePromptRef } from "../../../src/cli/cmd/tui/context/prompt"
 
 function TestKeymapProvider(props: ParentProps) {
   const renderer = useRenderer()
@@ -92,7 +94,14 @@ function createEditorSelection(input: { filePath?: string; text?: string } = {})
 }
 
 describe("prompt auth rejection handling", () => {
+  const prompts: PromptRef[] = []
+  const renderers: CliRenderer[] = []
+
   afterEach(() => {
+    for (const prompt of prompts) prompt.reset()
+    for (const renderer of renderers) renderer.destroy()
+    prompts.length = 0
+    renderers.length = 0
     mock.restore()
     delete process.env.OPENAI_API_KEY
     delete process.env.OPENROUTER_API_KEY
@@ -105,9 +114,14 @@ describe("prompt auth rejection handling", () => {
     openaiCredential?: boolean
     openrouterEnv?: string[]
     productMode?: "build" | "plan" | "run"
+    missingModel?: boolean
+    renderToast?: boolean
+    requiresReconnect?: boolean
     selectedModel?: { providerID: string; modelID: string }
+    showConnect?: boolean
     prompt: (input: { messageID: string; sessionID: string }) => Promise<unknown>
-    sessionID: string
+    sessionID?: string
+    createdSessionID?: string
     workspaceID: string
   }) {
     if (input.openaiCredential === false) delete process.env.OPENAI_API_KEY
@@ -119,12 +133,21 @@ describe("prompt auth rejection handling", () => {
     const selectedModel = input.selectedModel ?? { providerID, modelID }
     const openrouterEnv = input.openrouterEnv ?? ["OPENROUTER_API_KEY"]
     const parts: Record<string, unknown[]> = {}
+    const [toast, setToast] = createSignal<ToastModule.ToastOptions | null>(null)
+
+    spyOn(AgencyProduct, "shouldShowConnect").mockReturnValue(input.showConnect ?? true)
 
     const promptSession = spyOn(
       {
         prompt: input.prompt,
       },
       "prompt",
+    )
+    const createSession = spyOn(
+      {
+        create: async () => ({ data: { id: input.createdSessionID ?? "session_created" } }),
+      },
+      "create",
     )
     const shellSession = spyOn(
       {
@@ -158,7 +181,7 @@ describe("prompt auth rejection handling", () => {
       }) as any,
     )
     spyOn(AgencySwarmConnectionContext, "useAgencySwarmConnection").mockReturnValue({
-      requiresReconnect: () => false,
+      requiresReconnect: () => input.requiresReconnect ?? false,
       openConnectDialog: () => false,
       status: () => "connected",
       baseURL: () => undefined,
@@ -179,7 +202,7 @@ describe("prompt auth rejection handling", () => {
       on: input.events.on,
     } as any)
     spyOn(ProjectContext, "useProject").mockReturnValue({
-      workspace: { current: () => undefined, status: () => undefined },
+      workspace: { current: () => undefined, get: () => undefined, list: () => [], status: () => undefined },
       instance: { directory: () => "/tmp" },
     } as any)
     spyOn(KeybindContext, "useKeybind").mockReturnValue({
@@ -205,10 +228,13 @@ describe("prompt auth rejection handling", () => {
         color: () => RGBA.fromHex("#38bdf8"),
       },
       model: {
-        current: () => ({
-          providerID: selectedModel.providerID,
-          modelID: selectedModel.modelID,
-        }),
+        current: () =>
+          input.missingModel
+            ? undefined
+            : {
+                providerID: selectedModel.providerID,
+                modelID: selectedModel.modelID,
+              },
         parsed: () => ({
           provider: selectedModel.providerID === "openrouter" ? "OpenRouter" : agency ? "Agency Swarm" : "OpenAI",
           model: selectedModel.modelID,
@@ -231,6 +257,7 @@ describe("prompt auth rejection handling", () => {
     spyOn(SDKContext, "useSDK").mockReturnValue({
       client: {
         session: {
+          create: createSession,
           prompt: promptSession,
           shell: shellSession,
         },
@@ -328,34 +355,71 @@ describe("prompt auth rejection handling", () => {
     } as any)
     spyOn(TextareaKeybindingsModule, "useTextareaKeybindings").mockReturnValue(() => [] as any)
     spyOn(ToastModule, "useToast").mockReturnValue({
-      show: () => {},
+      show: setToast,
       error: () => {},
-      currentToast: null,
+      get currentToast() {
+        return toast()
+      },
     } as any)
 
     const { Prompt } = await import("../../../src/cli/cmd/tui/component/prompt")
 
     let promptRef: PromptRef | undefined
+    let activePrompt: ReturnType<typeof usePromptRef> | undefined
+    let activeRoute: ReturnType<typeof useRoute> | undefined
 
-    await testRender(() => (
-      <TestKeymapProvider>
-        <RouteProvider>
-          <DialogProvider>
-            <CommandPaletteProvider>
-              <Prompt
-                ref={(value) => (promptRef = value)}
-                sessionID={input.sessionID}
-                workspaceID={input.workspaceID}
-                placeholders={{ normal: [] }}
-              />
-            </CommandPaletteProvider>
-          </DialogProvider>
-        </RouteProvider>
-      </TestKeymapProvider>
-    ))
+    const CapturePrompt = () => {
+      const context = usePromptRef()
+      activeRoute = useRoute()
+      activePrompt = context
+      return (
+        <Prompt
+          ref={(value) => {
+            promptRef = value
+            context.set(value)
+          }}
+          sessionID={input.sessionID}
+          workspaceID={input.workspaceID}
+          placeholders={{ normal: [] }}
+        />
+      )
+    }
+
+    const rendered = await testRender(
+      () => (
+        <TestKeymapProvider>
+          <RouteProvider>
+            <DialogProvider>
+              <CommandPaletteProvider>
+                <PromptRefProvider>
+                  <CapturePrompt />
+                  {input.renderToast ? <ToastModule.Toast /> : null}
+                </PromptRefProvider>
+              </CommandPaletteProvider>
+            </DialogProvider>
+          </RouteProvider>
+        </TestKeymapProvider>
+      ),
+      { width: 120, height: 30 },
+    )
+    renderers.push(rendered.renderer)
 
     expect(promptRef).toBeDefined()
-    return { clearRunSession, parts, promptRef: promptRef!, promptSession, shellSession, syncRunSession }
+    expect(activePrompt).toBeDefined()
+    prompts.push(promptRef!)
+    return {
+      clearRunSession,
+      createSession,
+      parts,
+      promptRef: promptRef!,
+      promptSession,
+      rendered,
+      route: activeRoute!,
+      setActivePrompt: activePrompt!.set,
+      shellSession,
+      syncRunSession,
+      toast,
+    }
   }
 
   test("keeps saved Run session state when submitting a Build prompt", async () => {
@@ -862,6 +926,292 @@ describe("prompt auth rejection handling", () => {
     expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("clear right away")
     expect(JSON.stringify(telemetryCapture.mock.calls)).not.toContain("session_immediate_clear")
     expect(markSelectionSent).toHaveBeenCalledTimes(1)
+  })
+
+  test("restores submitted text and attachments when the prompt request rejects", async () => {
+    let rejectPrompt!: (error: Error) => void
+    const promptFinished = new Promise<unknown>((_, reject) => {
+      rejectPrompt = reject
+    })
+    const { promptRef } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      prompt: () => promptFinished,
+      sessionID: "session_restore_failed_prompt",
+      workspaceID: "workspace_restore_failed_prompt",
+    })
+    const submitted = {
+      input: "[Image 1] inspect this failure",
+      parts: [
+        {
+          type: "file" as const,
+          mime: "image/png",
+          filename: "failure.png",
+          url: "data:image/png;base64,AAAA",
+          source: {
+            type: "file" as const,
+            path: "/tmp/failure.png",
+            text: {
+              start: 0,
+              end: 9,
+              value: "[Image 1]",
+            },
+          },
+        },
+      ],
+    }
+
+    promptRef.set(submitted)
+    promptRef.submit()
+    await flushEffects()
+
+    expect(promptRef.current).toEqual({ input: "", parts: [] })
+
+    rejectPrompt(new Error("request failed"))
+    await flushEffects()
+
+    expect(promptRef.current).toEqual({ ...submitted, mode: "normal" })
+  })
+
+  test("restores a failed first prompt into the active session composer", async () => {
+    let rejectPrompt!: (error: Error) => void
+    const promptFinished = new Promise<unknown>((_, reject) => {
+      rejectPrompt = reject
+    })
+    const { promptRef, setActivePrompt } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      prompt: () => promptFinished,
+      sessionID: "session_restore_after_navigation",
+      workspaceID: "workspace_restore_after_navigation",
+    })
+    let activeDraft: PromptRef["current"] = { input: "", parts: [] }
+    const setActiveDraft = mock((prompt: PromptRef["current"]) => {
+      activeDraft = prompt
+    })
+    const navigatedPrompt: PromptRef = {
+      focused: true,
+      get current() {
+        return activeDraft
+      },
+      sessionID: "session_restore_after_navigation",
+      empty: () => activeDraft.input === "" && activeDraft.parts.length === 0,
+      set: setActiveDraft,
+      reset() {},
+      blur() {},
+      focus() {},
+      submit() {},
+    }
+
+    promptRef.set({ input: "first prompt", parts: [] })
+    promptRef.submit()
+    await flushEffects()
+    setActivePrompt(navigatedPrompt)
+
+    rejectPrompt(new Error("request failed"))
+    await flushEffects()
+
+    expect(setActiveDraft).toHaveBeenCalledWith({ input: "first prompt", parts: [], mode: "normal" })
+  })
+
+  test("carries a fast failed first prompt into the created session route", async () => {
+    const nativeSetTimeout = globalThis.setTimeout
+    let navigate: (() => void) | undefined
+    const controlledSetTimeout = ((handler: Parameters<typeof setTimeout>[0], timeout?: number) => {
+      if (timeout === 50) {
+        navigate = () => handler()
+        return 1 as unknown as ReturnType<typeof setTimeout>
+      }
+      return nativeSetTimeout(handler, timeout)
+    }) as typeof setTimeout
+    spyOn(globalThis, "setTimeout").mockImplementation(controlledSetTimeout)
+    let rejectPrompt!: (error: Error) => void
+    const promptFinished = new Promise<unknown>((_, reject) => {
+      rejectPrompt = reject
+    })
+    const { promptRef, route } = await renderTelemetryPrompt({
+      createdSessionID: "session_fast_first_rejection",
+      events: createEventBus(),
+      prompt: () => promptFinished,
+      workspaceID: "workspace_fast_first_rejection",
+    })
+    const submitted = {
+      input: "[Image 1] keep this first prompt",
+      parts: [
+        {
+          type: "file" as const,
+          mime: "image/png",
+          filename: "first.png",
+          url: "data:image/png;base64,AAAA",
+          source: {
+            type: "file" as const,
+            path: "/tmp/first.png",
+            text: {
+              start: 0,
+              end: 9,
+              value: "[Image 1]",
+            },
+          },
+        },
+      ],
+    }
+
+    promptRef.set(submitted)
+    promptRef.submit()
+    await flushEffects()
+    rejectPrompt(new Error("request failed before navigation"))
+    await flushEffects()
+
+    expect(promptRef.current).toEqual({ ...submitted, mode: "normal" })
+    expect(navigate).toBeDefined()
+    navigate?.()
+    await flushEffects()
+
+    expect(route.data).toEqual({
+      type: "session",
+      sessionID: "session_fast_first_rejection",
+      prompt: { ...submitted, mode: "normal" },
+    })
+  })
+
+  test("only restores the latest overlapping failed submission", async () => {
+    const rejects: Array<(error: Error) => void> = []
+    const { promptRef } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      prompt: () =>
+        new Promise<unknown>((_, reject) => {
+          rejects.push(reject)
+        }),
+      sessionID: "session_overlapping_rejections",
+      workspaceID: "workspace_overlapping_rejections",
+    })
+
+    promptRef.set({ input: "first request", parts: [] })
+    promptRef.submit()
+    await flushEffects()
+    promptRef.set({ input: "second request", parts: [] })
+    promptRef.submit()
+    await flushEffects()
+
+    expect(rejects).toHaveLength(2)
+    rejects[0]!(new Error("first request failed late"))
+    await flushEffects()
+    expect(promptRef.current).toEqual({ input: "", parts: [] })
+
+    rejects[1]!(new Error("second request failed"))
+    await flushEffects()
+    expect(promptRef.current).toEqual({ input: "second request", parts: [], mode: "normal" })
+  })
+
+  test("does not replace newer input when an earlier prompt request rejects", async () => {
+    let rejectPrompt!: (error: Error) => void
+    const promptFinished = new Promise<unknown>((_, reject) => {
+      rejectPrompt = reject
+    })
+    const { promptRef } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      prompt: () => promptFinished,
+      sessionID: "session_keep_newer_prompt",
+      workspaceID: "workspace_keep_newer_prompt",
+    })
+
+    promptRef.set({ input: "first prompt", parts: [] })
+    promptRef.submit()
+    await flushEffects()
+    promptRef.set({ input: "newer prompt", parts: [] })
+
+    rejectPrompt(new Error("request failed"))
+    await flushEffects()
+
+    expect(promptRef.current).toEqual({ input: "newer prompt", parts: [] })
+  })
+
+  test("renders the default missing-model connect guidance", async () => {
+    const { promptRef, rendered, toast } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      missingModel: true,
+      prompt: async () => ({ data: {} }),
+      renderToast: true,
+      sessionID: "session_default_missing_model_guidance",
+      showConnect: true,
+      workspaceID: "workspace_default_missing_model_guidance",
+    })
+
+    promptRef.set({ input: "send without a model", parts: [] })
+    promptRef.submit()
+    await flushEffects()
+    await rendered.renderOnce()
+
+    expect(toast()?.message).toBe("Connect to an agency-swarm server to send prompts")
+    expect(rendered.captureCharFrame()).toContain("Connect to an agency-swarm server to send prompts")
+  })
+
+  test("renders neutral missing-model guidance when connect is hidden", async () => {
+    const { promptRef, rendered, toast } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      missingModel: true,
+      prompt: async () => ({ data: {} }),
+      renderToast: true,
+      sessionID: "session_hidden_missing_model_guidance",
+      showConnect: false,
+      workspaceID: "workspace_hidden_missing_model_guidance",
+    })
+
+    promptRef.set({ input: "send without a model", parts: [] })
+    promptRef.submit()
+    await flushEffects()
+    await rendered.renderOnce()
+    const frame = rendered.captureCharFrame()
+    const message = `${AgencyProduct.name}'s local server is unavailable. Restart ${AgencyProduct.name} and try again.`
+
+    expect(toast()?.message).toBe(message)
+    expect(frame).toContain(`${AgencyProduct.name}'s local server is unavailable`)
+    expect(frame).toContain("Restart")
+    expect(frame).toContain(`${AgencyProduct.name} and try again`)
+    expect(frame).not.toContain("Connect to an agency-swarm server")
+  })
+
+  test("renders the default reconnect guidance", async () => {
+    const { promptRef, rendered, toast } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      prompt: async () => ({ data: {} }),
+      renderToast: true,
+      requiresReconnect: true,
+      sessionID: "session_default_reconnect_guidance",
+      showConnect: true,
+      workspaceID: "workspace_default_reconnect_guidance",
+    })
+
+    promptRef.set({ input: "send while disconnected", parts: [] })
+    promptRef.submit()
+    await flushEffects()
+    await rendered.renderOnce()
+
+    expect(toast()?.message).toBe("Reconnect to a local agency-swarm server before sending a message")
+    expect(rendered.captureCharFrame()).toContain("Reconnect to a local agency-swarm server")
+  })
+
+  test("renders neutral unavailable-server guidance when reconnect is hidden", async () => {
+    const { promptRef, rendered, toast } = await renderTelemetryPrompt({
+      events: createEventBus(),
+      prompt: async () => ({ data: {} }),
+      renderToast: true,
+      requiresReconnect: true,
+      sessionID: "session_hidden_reconnect_guidance",
+      showConnect: false,
+      workspaceID: "workspace_hidden_reconnect_guidance",
+    })
+
+    promptRef.set({ input: "send while disconnected", parts: [] })
+    promptRef.submit()
+    await flushEffects()
+    await rendered.renderOnce()
+    const frame = rendered.captureCharFrame()
+    const message = `${AgencyProduct.name}'s local server is unavailable. Restart ${AgencyProduct.name} and try again.`
+
+    expect(toast()?.message).toBe(message)
+    expect(frame).toContain(`${AgencyProduct.name}'s local server is unavailable`)
+    expect(frame).toContain("Restart")
+    expect(frame).toContain(`${AgencyProduct.name} and try again`)
+    expect(frame).not.toContain("Reconnect to a local agency-swarm server")
   })
 
   test("drops task telemetry when the assistant run is cancelled", async () => {
@@ -1683,8 +2033,9 @@ describe("prompt auth rejection handling", () => {
     expect(routeStates.some((state) => state.startsWith("session:"))).toBe(true)
     expect(routeStates.at(-1)).toBe("session:session_auth_race")
     expect(promptRef!.current).toEqual({
-      input: "",
+      input: "recover this draft",
       parts: [],
+      mode: "normal",
     })
     expect(promptRef!.focused).toBe(false)
     expect(dialogDepth.at(-1)).toBe(1)
