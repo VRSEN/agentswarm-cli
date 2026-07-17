@@ -9,6 +9,7 @@ import { usePromptRef } from "../context/prompt"
 import { useLocal } from "../context/local"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { useEditorContext } from "@tui/context/editor"
+import { useToast } from "../ui/toast"
 
 let once = false
 const placeholder = {
@@ -25,6 +26,7 @@ export function Home() {
   const args = useArgs()
   const local = useLocal()
   const editor = useEditorContext()
+  const toast = useToast()
   let sent = false
 
   onMount(() => {
@@ -44,6 +46,12 @@ export function Home() {
       r.set({
         input: ["Fix this startup error:", "", args.startupFailure].join("\n"),
         parts: [],
+      })
+      toast.show({
+        variant: "warning",
+        title: "Agency project failed to start",
+        message: "The startup error was added to your message. Press Enter to have Build fix it.",
+        duration: 10000,
       })
       once = true
       return

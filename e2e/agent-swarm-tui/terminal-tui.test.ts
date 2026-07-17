@@ -592,6 +592,7 @@ describe("Agent Swarm terminal TUI e2e", () => {
     await currentTui.waitForText("Your agency project failed to start.", tuiInteractionTimeoutMs)
     await currentTui.waitForText("SyntaxError: invalid syntax", tuiInteractionTimeoutMs)
     await currentTui.waitForText("At: agency.py:1", tuiInteractionTimeoutMs)
+    await currentTui.waitForText("The startup error was added to your message", tuiInteractionTimeoutMs)
 
     currentTui.write("\r")
     const request = await waitForNativeLLMRequest(currentTui, currentNativeServer, "SyntaxError: invalid syntax")
