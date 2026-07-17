@@ -1,4 +1,5 @@
 import path from "node:path"
+import semver from "semver"
 
 declare const AGENTSWARM_PRODUCT_DISPLAY_NAME: string | undefined
 declare const AGENTSWARM_PRODUCT_COMMAND: string | undefined
@@ -395,6 +396,15 @@ export namespace AgencyProduct {
       enabled,
       hidden: !enabled,
     }
+  }
+
+  // Downstream products version their own package independently of the compiled
+  // binary version, so update checks must compare in the product version space.
+  export function updateCheck(installed: string, latest: string, profile: Pick<Profile, "productVersion"> = current) {
+    if (!profile.productVersion) return { current: installed, available: installed !== latest }
+    const version = profile.productVersion
+    const available = !!semver.valid(version) && !!semver.valid(latest) && semver.gt(latest, version)
+    return { current: version, available }
   }
 
   export function tuiLogo(profile: Pick<Profile, "tuiLogoLeft" | "tuiLogoRight"> = current) {

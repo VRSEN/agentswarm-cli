@@ -1,3 +1,4 @@
+import { AgencyProduct } from "@/agency-swarm/product"
 import { Bus } from "@/bus"
 import { Config } from "@/config/config"
 import { AppRuntime } from "@/effect/app-runtime"
@@ -17,9 +18,10 @@ export async function upgrade() {
     return
   }
 
-  if (InstallationVersion === latest) return
+  const check = AgencyProduct.updateCheck(InstallationVersion, latest)
+  if (!check.available) return
 
-  const kind = Installation.getReleaseType(InstallationVersion, latest)
+  const kind = Installation.getReleaseType(check.current, latest)
 
   if (config.autoupdate === "notify" || kind !== "patch") {
     await Bus.publish(Installation.Event.UpdateAvailable, { version: latest })
