@@ -2007,7 +2007,13 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
             const modeInstructions = [
-              ...agentBuilderInstructions(agent.name, model.providerID),
+              // plan_enter is only registered for cli clients with native plan mode (see ToolRegistry);
+              // keep the injected Build instructions aligned with the tools that actually exist.
+              ...agentBuilderInstructions(
+                agent.name,
+                model.providerID,
+                flags.experimentalPlanMode && flags.client === "cli",
+              ),
               ...agentPlannerInstructions(agent.name, model.providerID, flags.experimentalPlanMode),
             ]
             const system = [...env, ...instructions, ...modeInstructions, ...(skills ? [skills] : [])]

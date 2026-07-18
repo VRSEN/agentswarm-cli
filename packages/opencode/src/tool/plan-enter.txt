@@ -1,14 +1,15 @@
-Use this tool to suggest switching to plan agent when the user's request would benefit from planning before implementation.
+Use this tool when Build mode should switch to Plan before implementation.
 
-If they explicitly mention wanting to create a plan ALWAYS call this tool first.
+This tool will ask the user if they want to switch to Plan mode to clarify requirements and create an implementation plan.
 
-This tool will ask the user if they want to switch to plan agent.
+If this tool is needed, call it immediately before doing anything else. Do not plan, research, inspect files, or take any other action first.
 
-Call this tool when:
-- The user's request is complex and would benefit from planning first
-- You want to research and design before making changes
-- The task involves multiple files or significant architectural decisions
+Call this tool:
+- When the task has just started and no approved plan exists
+- When requirements are missing or unclear for new or substantial swarm work
+- When the user request needs planning before file edits
 
 Do NOT call this tool:
-- For simple, straightforward tasks
-- When the user explicitly wants immediate implementation
+- If the user has already approved a plan
+- If the task is a small, clear implementation detail
+- After you have already started making file changes

@@ -233,6 +233,11 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** Shell commands in Build and Plan preserve native mode when the session is reopened.
 - **Happy-path proof:** In Build and Plan, `/compact` and auto-compaction keep prompts on OpenCode routing and do not switch the session back to server-backed Run routing.
 - **Happy-path proof:** When Plan finishes and asks whether to switch to Build, pressing Enter on `Yes` follows the upstream OpenCode Plan approval flow, switches the TUI to Build, and creates the native approved-plan handoff turn.
+- **Happy-path proof:** When Build receives unclear or new swarm work with native plan mode active, it proposes switching to Plan; `Yes` moves the session to Plan with a planning handoff turn, `No` keeps Build working without planning.
+- **Happy-path proof:** Without native plan mode, the Build guidance never mentions `plan_enter` and instead asks the user in chat for clarifications and the standalone-agency output location.
+- **Happy-path proof:** Plan asks whether new agents join the existing OpenSwarm or become a standalone agency, and a standalone plan is not complete until the user names the output location.
+- **Happy-path proof:** Before Build copies an existing parent-folder `.env` into a new standalone agency, it asks for explicit confirmation naming source and destination; on decline or when none exists it creates a template `.env` with empty values and names the keys to fill, and secret values never appear in chat.
+- **Happy-path proof:** Smoke tests for generated tools use read-only or clearly reversible inputs, and Build never makes a destructive or outward-facing real call without explicit user confirmation in chat.
 - **Happy-path proof:** The Plan approval question owns keyboard input while it is open, so session shortcuts do not fire at the same time.
 - **Failure scenario to test:** A transient empty recovery response must not permanently hide a still-pending Plan approval question.
 - **Happy-path proof:** Switching back to Run in the same project reconnects to or keeps using the Agency Swarm server and returns `/agents` to Plan and Build rows above the swarm/agent picker.

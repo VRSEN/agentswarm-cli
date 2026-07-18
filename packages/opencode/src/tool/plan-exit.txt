@@ -2,6 +2,8 @@ Use this tool when you have completed the planning phase and are ready to exit p
 
 This tool will ask the user if they want to switch to Build mode to start implementing the plan.
 
+At the end of planning, do not only present a report. If the plan is complete and there are no unresolved questions, call this tool to ask the user whether to switch to Build.
+
 Call this tool:
 - After you have written a complete plan to the plan file
 - After you have clarified any questions with the user

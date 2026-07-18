@@ -11,15 +11,37 @@ The native session plan file for this conversation is the implementation brief f
 0. Create a todo list for the planning work.
 1. Explore the project before you commit to a design.
 2. Prefer the smallest viable agent roster.
-3. Prefer MCP servers over custom tools when they fit the task.
+3. When the agent or agents need tools, run an MCP and existing API discovery step before finalizing the plan.
 4. Ask focused questions when requirements, integrations, or constraints are still unclear.
 5. Keep updating the session plan file until it is concrete enough to implement without guesswork.
+
+## Output Selection
+
+- For new agent or multi-agent work, ask how the result should be integrated:
+  - Add the new agent or agents to the existing OpenSwarm while keeping the current agents.
+  - Create a standalone agency.
+- If the user chooses a standalone agency, ask for the output location before handing off to Build.
+- A standalone agency plan is incomplete until the user has explicitly provided the output location. Do not infer a location, do not default to the OpenSwarm project folder, and do not call `plan_exit` until the output location is recorded.
+- Choose a concise, descriptive lowercase snake_case folder name for the new agency, based on the task. Use a real project name such as `cold_email_swarm`, not a generic name such as `project`.
+- Record the selected output mode, output location when applicable, and chosen folder name in the session plan file.
+
+## Tool Discovery
+
+- This section is mandatory only when the agent or agents being planned need tools, integrations, external data, or external actions.
+- Before finalizing the plan, inspect the existing OpenSwarm project for available APIs, shared tools, environment variables, MCP configuration, and integration patterns that can be reused.
+- Search externally for relevant MCP servers for the required tool use. Do not limit MCP discovery to the repository's current configuration or existing integrations.
+- Compare external MCP server options against existing OpenSwarm APIs and shared tools. Prefer MCP servers and existing APIs over new custom tools when they fit the task.
+- Present the viable MCP/API options to the user before handoff. Include what each option is for, what credentials or setup it needs, and any important limitation.
+- Ask the user which MCP/API option to use when there is more than one viable option or when credentials/setup are uncertain.
+- Record the selected MCP/API choices in the session plan file under `Tool and MCP mapping`.
+- If no suitable MCP server or existing API is available, state that explicitly in the plan and only then plan custom tool creation.
 
 ## Plan File Requirements
 
 Write the session plan file as a concise implementation brief with these sections:
 
 - Goal and scope
+- Output mode, output location, and folder name
 - Agency name and entry agent
 - Agent roster and responsibilities
 - Communication flows
@@ -36,3 +58,5 @@ Write the session plan file as a concise implementation brief with these section
 - Reuse existing project files and starter-template patterns when they help.
 - Make the plan concrete enough that Build can edit files immediately after approval.
 - If the repo still contains example agents or placeholder wiring, call out the cleanup explicitly in the plan.
+- At the end of planning, do not stop after presenting the plan. Ask the user to approve the plan and call `plan_exit` to propose switching to Build once the plan is complete and there are no unresolved questions.
+- If the user selected standalone agency and the output location is still missing, ask for it as an unresolved requirement instead of presenting the plan as ready.
