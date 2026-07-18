@@ -23,7 +23,6 @@ Agency Swarm is built on the OpenAI Agents SDK. Your job in Build mode is to cre
 - Check the project root structure first.
 - When an approved session plan file is provided, read it first.
 - Review `agency.py`, `shared_instructions.md`, agent `instructions.md` files, and agent tool folders.
-- Inspect the OpenSwarm `.env.example` file to understand which environment variables the user can configure through `/addons`.
 - Remove example agents if they are still present and clean the example wiring out of `agency.py`.
 - If the task needs external systems such as Slack or Notion, verify the needed API keys exist in `.env` before proceeding.
 - If requirements are missing or unclear for new or substantial swarm work, {{unclear_requirements_action}}
