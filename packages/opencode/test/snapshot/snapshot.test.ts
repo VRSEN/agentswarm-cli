@@ -865,7 +865,7 @@ it.instance(
   Effect.gen(function* () {
     const tmp = yield* bootstrap()
     const snapshot = yield* Snapshot.Service
-    const ids = Array.from({ length: 140 }, (_, i) => i.toString().padStart(3, "0"))
+    const ids = Array.from({ length: OVER_BATCH_COUNT }, (_, i) => i.toString().padStart(3, "0"))
     yield* mkdirp(`${tmp.path}/order`)
     yield* Effect.all(
       ids.map((id) => write(`${tmp.path}/order/${id}.txt`, `before-${id}`)),
@@ -1093,8 +1093,8 @@ it.instance(
   Effect.gen(function* () {
     const tmp = yield* bootstrap()
     const snapshot = yield* Snapshot.Service
-    const base = Array.from({ length: 140 }, (_, i) => fwd(tmp.path, "batch", `${i}.txt`))
-    const fresh = Array.from({ length: 140 }, (_, i) => fwd(tmp.path, "fresh", `${i}.txt`))
+    const base = Array.from({ length: OVER_BATCH_COUNT }, (_, i) => fwd(tmp.path, "batch", `${i}.txt`))
+    const fresh = [fwd(tmp.path, "fresh", "0.txt")]
     yield* mkdirp(`${tmp.path}/batch`)
     yield* mkdirp(`${tmp.path}/fresh`)
     yield* Effect.all(

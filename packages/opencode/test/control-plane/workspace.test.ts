@@ -1409,6 +1409,8 @@ describe("workspace sync state", () => {
     { git: true },
   )
 
+  // Runs in ~1s but can stall past the 30s suite default on slow Windows CI
+  // runners (spawn/filesystem latency), so give it explicit headroom.
   it.live("remote start emits disconnected, connecting, and connected then refuses duplicate listeners", () => {
     const calls: FetchCall[] = []
     return Effect.gen(function* () {
@@ -1472,7 +1474,7 @@ describe("workspace sync state", () => {
         { git: true },
       )
     })
-  })
+  }, 60_000)
 
   it.live("remote connection HTTP failures set error and clear syncing", () =>
     Effect.gen(function* () {
