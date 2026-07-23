@@ -90,7 +90,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
           <TuiPluginRuntime.Slot name="sidebar_footer" mode="single_winner" session_id={props.sessionID}>
             <text fg={theme.textMuted}>
               <span style={{ fg: theme.success }}>•</span> <b>{AgencyProduct.name}</b>{" "}
-              <span>{InstallationVersion}</span>
+              <span>{AgencyProduct.productVersion ?? InstallationVersion}</span>
             </text>
           </TuiPluginRuntime.Slot>
         </box>
