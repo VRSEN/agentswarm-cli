@@ -76,20 +76,16 @@ describe("product build config", () => {
         }
       | undefined
     try {
-      const generate = Bun.spawn(["bun", "script/generate.ts"], {
+      const generate = Bun.spawnSync({
+        cmd: [process.execPath, "script/generate.ts"],
         cwd: packageRoot,
         env: { ...process.env, MODELS_DEV_API_JSON: fixture },
         stdout: "pipe",
         stderr: "pipe",
       })
-      const [exitCode, stdout, stderr] = await Promise.all([
-        generate.exited,
-        new Response(generate.stdout).text(),
-        new Response(generate.stderr).text(),
-      ])
       result = {
-        exitCode,
-        output: `${stdout}\n${stderr}`,
+        exitCode: generate.exitCode,
+        output: `${generate.stdout.toString()}\n${generate.stderr.toString()}`,
         generatedSnapshot: await Bun.file(snapshot).text(),
         generatedDeclaration: await Bun.file(snapshotDeclaration).text(),
       }
