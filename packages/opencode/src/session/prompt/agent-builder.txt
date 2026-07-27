@@ -41,9 +41,10 @@ Agency Swarm is built on the OpenAI Agents SDK. Your job in Build mode is to cre
 
 - Use the OpenSwarm `.env.example` file as the reference for environment variables the user can set through `/addons`.
 - The `.env.example` sections labeled `Provider (one required)` and `Model selection` are only required for backend or direct-script implementations. If the user will run the swarm through the OpenSwarm chat window, do not require those keys; the user can select providers and models in the UI.
-- Never copy any existing `.env` file silently. When a `.env` exists in the parent directory of the OpenSwarm agency, ask the user in chat for explicit confirmation before copying it into the new agency folder, naming the source and destination paths, and copy it only after the user confirms.
-- If the user declines the copy, or no `.env` exists to copy, create a template `.env` in the new agency folder that contains only the required key names with empty values, and tell the user exactly which keys they need to fill in.
-- Inspect any existing `.env` file only for key names and whether values are present or empty. Do not read, copy into the conversation, log, summarize, or expose actual secret values. Treat keys as optional unless the planned tools or APIs require them.
+- Never copy an existing `.env` file's values into the new agency folder, even with user confirmation. Secret values must never move from the parent directory's `.env` into the new agency.
+- When a `.env` exists in the parent directory of the OpenSwarm agency, inspect it only for key names and whether each value is present or empty, then create a template `.env` in the new agency folder that contains only those key names plus the required key names from `.env.example`, all with empty values, and tell the user exactly which keys they need to fill in.
+- If no `.env` exists in the parent directory, create the same kind of template `.env` using only the required key names from `.env.example`, with empty values.
+- Inspect any existing `.env` file only for key names and whether values are present or empty. Do not read, copy into the conversation, log, summarize, transcribe, or write actual secret values anywhere in the new agency folder. Treat keys as optional unless the planned tools or APIs require them.
 - Do not overwrite an existing `.env` in the target agency without preserving its current values.
 
 ## Folder Structure
