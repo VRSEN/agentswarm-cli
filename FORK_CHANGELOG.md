@@ -458,9 +458,9 @@ Use this index with `USER_FLOWS.md` when a QA row needs the owning fork implemen
   - Implementation: `## Fork Context` in `AGENTS.md`.
   - Added by: `27e66122`
 
-- **Codex pre-release review gate**
-  - Intent: stop release work from shipping before the fork's required Codex review is complete.
-  - Behavior: release work stays open until the release gate has a clean Codex review and no unresolved PR state.
+- **Independent pre-release review gate**
+  - Intent: stop release work from shipping before the fork's required independent review is complete.
+  - Behavior: release work stays open until the release gate has a clean independent review and no unresolved PR state.
   - Implementation: the release-gate rules in `AGENTS.md`.
   - Added by: `f143e53d`
 

@@ -7,7 +7,7 @@ description: Own manual QA scripts and user-testable binary proof for functional
 
 Use this skill for functional AgentSwarm CLI changes before asking the user to test, approve, merge, or release the change.
 
-Functional changes alter runtime behavior, user-visible flows, build, install, release, API, schema, generated shipped artifacts, or tests that gate shipped behavior. Non-functional changes do not use this skill unless they need a manual repro path; they still need a clean Codex review before approval under `AGENTS.md`.
+Functional changes alter runtime behavior, user-visible flows, build, install, release, API, schema, generated shipped artifacts, or tests that gate shipped behavior. Non-functional changes do not use this skill unless they need a manual repro path; they still need a clean independent review before approval under `AGENTS.md`.
 
 ## Owner
 

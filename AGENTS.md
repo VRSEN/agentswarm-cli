@@ -76,7 +76,7 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 - Build-impact changes must go through a pull request before they reach the fork default branch. Build-impact includes runtime code, packaging, release scripts, generated binaries, dependency manifests or lockfiles, CI/build workflows, and tests or harnesses that gate shipped behavior. Direct default-branch commits for build-impact changes are forbidden unless the user explicitly approves an emergency exception for that exact change.
 - Pull-request-specific work includes comment review, thread replies, issue-link checks, pull-request body edits, outside-signal polling, and other GitHub-side mutations. Keep those checks tied to the live pull request, current head SHA, and repo gates.
 - Pull-request reviews are global for the changed behavior: reconcile related routes, clients, SDKs, docs, tests, generated artifacts, and TUI flows together instead of approving isolated hunks. Judge each PR as regression-free, correct, aligned with user intent, policy-compliant, globally optimal, elegant, future-proof, maintainable, testable, extensible or modular as appropriate, and tasteful.
-- Before requesting merge approval, verify the final diff, source/base/head SHAs, required checks, unresolved threads, official review findings, and related codebase parts. The latest head is merge-ready only with a clean current-head local Codex review, green required checks, zero unresolved threads, and no unresolved evidence gap in the PR judgment criteria.
+- Before requesting merge approval, verify the final diff, source/base/head SHAs, required checks, unresolved threads, official review findings, and related codebase parts. The latest head is merge-ready only with a clean current-head independent review, green required checks, zero unresolved threads, and no unresolved evidence gap in the PR judgment criteria.
 - For upstream-sync pull requests, aim that local review at the fork-owned surface: merge shape, merge-resolution or fork-delta changes against the requested upstream target, and explicit follow-up commits after the upstream merge. Do not spend review on upstream-owned commits already present in the requested upstream target.
 - Every pull-request merge needs explicit user approval and a human alignment gate. Pull requests with changed functionality need thorough manual QA across different realistic situations before merge approval; user-testable behavior also needs a human QA gate. Worker review can inform these gates but cannot replace them.
 - Pending GitHub checks, hosted reviews, unresolved pull-request comments, unresolved official review findings, and other agent-visible workflows are open work until fixed, rerun green, or classified as non-blocking with checked evidence.
@@ -84,8 +84,8 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
 ## Change Approval Gates
 
 - Before asking for approval on AgentSwarm CLI work, classify the diff as functional or non-functional. Functional changes alter runtime behavior, user-visible flows, build, install, release, API, schema, generated shipped artifacts, or tests that gate shipped behavior. Non-functional changes are policy, docs, comments, naming, formatting, or refactors that preserve behavior.
-- Non-functional changes are allowed only after Codex review approves the current diff or branch with no blocking findings.
-- Functional changes require 100% proof before approval: a proof package that separates logical/static proof (types, contracts, invariants, diff reasoning, or relevant static checks) from empirical proof (matching local checks, user-testable binary smoke, and the manual QA script required by the merge-readiness gate). The binary must be built from the exact change every time. Existing Codex review, pull-request, release, and human QA gates still apply.
+- Non-functional changes are allowed only after an independent review approves the current diff or branch with no blocking findings.
+- Functional changes require 100% proof before approval: a proof package that separates logical/static proof (types, contracts, invariants, diff reasoning, or relevant static checks) from empirical proof (matching local checks, user-testable binary smoke, and the manual QA script required by the merge-readiness gate). The binary must be built from the exact change every time. Existing independent review, pull-request, release, and human QA gates still apply.
 - Manual QA and user-testable binary proof are owned by `.opencode/skills/manual-qa-binary-proof/SKILL.md`; load that skill for functional changes before asking the user to test, approve, merge, or release.
 
 ## Completion Artifacts And QA
@@ -121,7 +121,7 @@ Policy summaries live in AGENTS.md files. Do not check in duplicate copies of gl
   5. Only then tag the release, create the GitHub Release, and publish to npm.
 - Regenerate and commit `bun.lock` on every release when package manifests, resolved dependencies, or generated package artifacts changed.
 - Before release approval or any release safety claim, prove the exact release commit against the repo's release checks, TUI flow checks when relevant, installed-build proof, and human QA gate.
-- No tag, GitHub Release, or npm publish may happen without a green Codex pre-release review of the exact release commit against the fork default branch; if any review finding remains, stop and surface it to the user.
+- No tag, GitHub Release, or npm publish may happen without a green independent pre-release review of the exact release commit against the fork default branch; if any review finding remains, stop and surface it to the user.
 
 ## Documentation Rules
 
