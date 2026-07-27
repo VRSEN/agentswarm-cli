@@ -41,6 +41,7 @@ For each failure scenario, capture the visible user result and cite the matching
 - **Happy-path proof:** If a configured entry file exists but cannot be read, detection keeps checking later configured entry files and uses a later valid entry before showing read-recovery choices.
 - **Happy-path proof:** A missing local project creates the configured starter repository in the configured starter folder.
 - **Happy-path proof:** A downstream wrapper that reuses the Agent Swarm binary reports its own version before delegation, while the embedded binary keeps its operational version for compatibility checks.
+- **Happy-path proof:** The TUI sidebar shows the downstream product version when configured and the Agent Swarm installation version otherwise.
 - **Happy-path proof:** With `AGENTSWARM_PRODUCT_VERSION` set, the update-available check compares the registry version against the product version and offers an update only when the registry version is strictly newer; the default Agent Swarm profile still compares the binary version.
 - **Happy-path proof:** A downstream profile can provide `AGENTSWARM_PRODUCT_ADDONS` to expose `/addons`, while the default Agent Swarm profile keeps `/addons` hidden.
 - **Happy-path proof:** A downstream profile can set `AGENTSWARM_PRODUCT_HIDE_CONNECT=true` to hide `/connect` and automatic connect dialogs, while the default Agent Swarm profile keeps `/connect` available.
