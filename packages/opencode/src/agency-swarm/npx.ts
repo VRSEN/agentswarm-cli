@@ -15,6 +15,7 @@ import { AgencyProduct } from "./product"
 import {
   collectUnixPythonCandidates,
   findPythonExecutable,
+  formatPython,
   inspectPython,
   isCondaPython,
   type PythonInfo,
@@ -1213,6 +1214,7 @@ async function ensureProjectPython(
           }),
       )
       if (canary.healthy) {
+        prompts.log.info(`Python: ${formatPython(info, [venvPython])}`)
         return [venvPython]
       }
       const refreshLogFile = await tryCreateProjectCommandLogFile(
@@ -1271,6 +1273,7 @@ async function ensureProjectPython(
       if (refresh.installerFailed) corruptedVenv = true
       if (!corruptedVenv) {
         if (refresh.canary?.healthy) {
+          prompts.log.info(`Python: ${formatPython(info, [venvPython])}`)
           return [venvPython]
         }
         corruptedVenv = true
@@ -1321,6 +1324,7 @@ async function ensureProjectPython(
           "This project does not have a `.venv` yet, and the selected Python environment cannot import `agency_swarm`.",
         )
       }
+      prompts.log.info(`Python: ${formatPython(detected, rebuildCmd)}`)
       return rebuildCmd
     }
   }
@@ -1332,6 +1336,7 @@ async function ensureProjectPython(
     prompts.log.error("Failed to create `.venv`")
     throw new Error(created.stderr.trim() || created.stdout.trim() || "Virtual environment creation failed")
   }
+  prompts.log.info(`Python: ${formatPython(detected, rebuildCmd)} (new .venv)`)
 
   const installLogFile = await tryCreateProjectCommandLogFile(
     directory,

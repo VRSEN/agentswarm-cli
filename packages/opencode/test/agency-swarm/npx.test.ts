@@ -555,7 +555,7 @@ describe("agency-swarm npx onboarding", () => {
     await Bun.write(path.join(dir.path, "requirements.txt"), "agency-swarm==1.9.6\n")
     await writeVenvPython(dir.path)
 
-    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    const info = spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
     const commands: string[][] = []
@@ -634,6 +634,9 @@ describe("agency-swarm npx onboarding", () => {
     expect(uvInstallCommands.some((cmd) => cmd.includes("agency-swarm[fastapi,litellm]"))).toBe(false)
     expect(commands.filter(isCanaryCommand).every((cmd) => !(cmd.at(-1) ?? "").includes("meets_floor"))).toBe(true)
     expect(canaryRuns).toBe(2)
+    expect(
+      info.mock.calls.map((call) => String(call[0])).filter((line) => line.startsWith("Python: ")),
+    ).toEqual([`Python: ${getTestVenvPython(dir.path)} (Python 3.12.7)`])
     expect(spinnerStarts).toEqual([
       "Checking Agent Swarm environment",
       "Refreshing Agent Swarm",
@@ -734,7 +737,7 @@ describe("agency-swarm npx onboarding", () => {
     await writeAgency(dir.path)
     await writeVenvPython(dir.path)
 
-    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    const info = spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     const warn = spyOn(prompts.log, "warn").mockImplementation(() => undefined as never)
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
@@ -798,6 +801,9 @@ describe("agency-swarm npx onboarding", () => {
     })
 
     expect(warn).not.toHaveBeenCalled()
+    expect(
+      info.mock.calls.map((call) => String(call[0])).filter((line) => line.startsWith("Python: ")),
+    ).toEqual([`Python: ${getTestVenvPython(dir.path)} (Python 3.12.7)`])
     expect(spinnerStarts).toEqual(["Checking Agent Swarm environment", "Starting Agent Swarm"])
     expect(spinnerStops).toEqual(["Agent Swarm environment checked", "Agent Swarm ready"])
     expect(commands.some(isPythonPipInstallUvCommand)).toBe(false)
@@ -1576,6 +1582,9 @@ describe("agency-swarm npx onboarding", () => {
     expect(confirms).toContain("Create an isolated project environment?")
     expect(confirms.join("\n")).not.toContain(".venv")
     expect(info).toHaveBeenCalledWith("Preparing Agent Swarm...")
+    expect(visible.split("\n").filter((line) => line.startsWith("Python: "))).toEqual([
+      "Python: /usr/bin/python3.12 (Python 3.12.7) (new .venv)",
+    ])
     expect(spinnerStarts).toEqual(["Setting up Agent Swarm", "Starting Agent Swarm"])
     expect(spinnerStops).toEqual(["Agent Swarm setup ready", "Agent Swarm ready"])
     expect(visible).not.toContain("Installing project dependencies...")
@@ -3054,7 +3063,7 @@ describe("agency-swarm npx onboarding", () => {
     }
 
     spyOn(prompts, "confirm").mockResolvedValue(false as never)
-    spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
+    const info = spyOn(prompts.log, "info").mockImplementation(() => undefined as never)
     spyOn(globalThis, "fetch").mockResolvedValue({ ok: true } as never)
 
     const calls: string[][] = []
@@ -3106,6 +3115,9 @@ describe("agency-swarm npx onboarding", () => {
       const server = calls.find((cmd) => cmd.some((item) => item.endsWith("launch_agency.py")))
       expect(server?.slice(0, expected.length)).toEqual(expected)
       expect(existsSync(getTestVenvPython(dir.path))).toBe(false)
+      expect(
+        info.mock.calls.map((call) => String(call[0])).filter((line) => line.startsWith("Python: ")),
+      ).toEqual([`Python: ${python} (Python 3.12.7)`])
     } finally {
       await launch?.cleanup?.()
       if (originalPath === undefined) delete process.env[pathKey]
